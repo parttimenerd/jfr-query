@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>me.bechberger</groupId>
-    <artifactId>jfr-query-experiments</artifactId>
+    <artifactId>jfr-query</artifactId>
     <version>1.0-SNAPSHOT</version>
 
     <properties>
