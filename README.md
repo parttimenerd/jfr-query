@@ -1,7 +1,7 @@
 JFR Query
 =========
 
-![Duke, the Java mascot riding a duck](img/duck_duke.png)
+![Duke, the Java mascot riding a duck](img/duck_duke.jpeg)
 
 Working on JFR files using SQL. Essentially transforming JFR files into a DuckDB database
 and then using [DuckDB](https://duckdb.org/) to query it, with support for all JFR views.
