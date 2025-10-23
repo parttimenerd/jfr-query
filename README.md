@@ -12,7 +12,9 @@ The purpose of this project is to ease the pain of exploring JFR files and findi
 patterns in them.
 
 _If you are looking for the tool based on the JFR internal language, you can find it at
-[jfr-query-experiments](https://github.com/parttimenerd/jfr-query-experiments)_
+[jfr-query-experiments](https://github.com/parttimenerd/jfr-query-experiments)._
+
+**This is an early prototype, to see what's possible. The database schema might change at any point.**
 
 Try it out
 ----------
