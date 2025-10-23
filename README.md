@@ -1,5 +1,7 @@
-JFR Query Experiments
-=====================
+JFR Query
+=========
+
+![Duke, the Java mascot riding a duck](img/duck_duke.png)
 
 Working on JFR files using SQL. Essentially transforming JFR files into a DuckDB database
 and then using [DuckDB](https://duckdb.org/) to query it, with support for all JFR views.
@@ -9,8 +11,23 @@ Previously, we tried to use the JFR query language directly, but it is quite lim
 The purpose of this project is to ease the pain of exploring JFR files and finding interesting
 patterns in them.
 
+_If you are looking for the tool based on the JFR internal language, you can find it at
+[jfr-query-experiments](https://github.com/parttimenerd/jfr-query-experiments)_
+
+Try it out
+----------
+
+Download the [latest release](  https://github.com/parttimenerd/jfr-query/releases/download/snapshot/query.jar) and run it: `java -jar query.jar`
+
+Or use [jbang](https://www.jbang.dev/):
+
+```shell
+jbang jfr-query@parttimenerd/jfr-query
+```
+
 Build
 -----
+
 ```shell
 mvn clean package
 ```
@@ -51,17 +68,33 @@ View names are directly replaced by `SELECT * FROM <view name>`, so `hot-methods
 
 The full list of views is available via the `views` command the full list of macros `macros`.
 
-Limitations:
+All Commands
+------------
+```shell
+> java -jar target/query.jar 
+Usage: query.jar [-hV] [COMMAND]
+Querying JFR recordings with DuckDB
+  -h, --help      Show this help message and exit.
+  -V, --version   Print version information and exit.
+Commands:
+  import   Import a JFR recording into a DuckDB database
+  query    Execute a SQL query or view on the JFR DuckDB database and print the
+             results.
+  macros   List available SQL macros (views) for JFR analysis.
+  views    List available SQL views for JFR analysis.
+  context  Create a description of the tables, macros and views for generating
+             SQL queries using AI
+  help     Display help information about the specified command.
+```
+
+Limitations
+-----------
+
 - Stack traces are stored a fixed size (10 frames by default) and only have methods in their frames
    - so no line number, bytecode index or the type of the frame
    - this saves a lot of space and makes queries faster
 - Only basic support for JFR specific datatypes, as we have to map them to DuckDB types
 
-
-
-TODO
-- performance comparison with Calcite based Gunnar Morling stuff and other tools (like jfr)
-- write basic blog post
 
 License
 -------
