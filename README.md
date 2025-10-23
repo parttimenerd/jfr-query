@@ -40,7 +40,7 @@ Main Usage
 Transform a JFR file into a DuckDB database file:
 
 ```shell
-> java -jar target/query.jar duckdb import jfr_files/recording.jfr duckdb.db
+> java -jar target/query.jar duckdb import jfr_files/default.jfr duckdb.db
 > duckdb duckdb.db "SELECT * FROM Events";
 ┌───────────────────────────────┬───────┐
 │             name              │ count │
