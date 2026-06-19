@@ -1,0 +1,5 @@
+{
+  "name": "JFR SQL Notebook",
+  "description": "An interactive, Jupyter-like notebook for analyzing JFR files using SQL queries. Features a schema explorer, a notebook interface for queries and plots, and an AI assistant to help generate insights.",
+  "requestFramePermissions": []
+}

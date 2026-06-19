@@ -1,0 +1,37 @@
+import { describe, it, expect } from 'vitest';
+import { parseDuration } from '../utils/durationParser';
+
+describe('Duration Parser', () => {
+    it('parses simple milliseconds', () => {
+        expect(parseDuration('500ms')).toBe(500);
+    });
+
+    it('parses seconds', () => {
+        expect(parseDuration('1.5s')).toBe(1500);
+    });
+
+    it('parses mixed units', () => {
+        expect(parseDuration('1m 30s')).toBe(90000);
+    });
+
+    it('returns null for invalid input', () => {
+        expect(parseDuration('abc')).toBeNull();
+        expect(parseDuration('100x')).toBeNull();
+    });
+
+    it('parses minutes only', () => {
+        expect(parseDuration('2m')).toBe(120000);
+    });
+
+    it('parses hours', () => {
+        expect(parseDuration('1h')).toBe(3600000);
+    });
+
+    it('returns null for zero value (explicitly returns null when total is 0)', () => {
+        expect(parseDuration('0ms')).toBeNull();
+    });
+
+    it('handles whitespace variants', () => {
+        expect(parseDuration('  500ms  ')).toBe(500);
+    });
+});

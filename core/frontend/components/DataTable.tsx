@@ -1,0 +1,175 @@
+import React, { useState, useMemo, useContext, useCallback, useRef, useEffect } from 'react';
+import { ChevronDownIcon } from './icons/ChevronDownIcon';
+import { ChevronUpIcon } from './icons/ChevronUpIcon';
+import { SearchIcon } from './icons/SearchIcon';
+import { useDisplaySettings } from '../context/DisplaySettingsContext';
+import { formatTimestamp as formatTimestampUtil } from '../utils/timeFormatter';
+import { formatNumber } from '../utils/numberFormatter';
+
+const isTimestampLike = (key: string, sample: any): boolean => {
+    if (!sample || typeof sample[key] === 'undefined' || sample[key] === null) {
+        return false;
+    }
+
+    const value = sample[key];
+    const keyLower = key.toLowerCase();
+
+    // Rule 1: Strong negative signal. If the key suggests a duration or count, it's not a timestamp.
+    const negativeKeywords = ['duration', 'pause', 'length', 'period', 'age', 'count'];
+    if (negativeKeywords.some(keyword => keyLower.includes(keyword))) {
+        return false;
+    }
+
+    // Rule 2: Strong positive signal from string format.
+    if (typeof value === 'string' && value.match(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/)) {
+        return true;
+    }
+    
+    // Rule 3: For numeric types, check for a combination of suggestive name and plausible value.
+    if (typeof value === 'number' || typeof value === 'bigint' || (typeof value === 'string' && /^\d+$/.test(value))) {
+        const numValue = Number(value);
+
+        // A plausible lower bound for an epoch timestamp in milliseconds (corresponds to year ~2001).
+        // Anything smaller is unlikely to be a modern epoch timestamp.
+        const MIN_EPOCH_MS = 1_000_000_000_000; 
+
+        if (numValue > MIN_EPOCH_MS) {
+            // It's a large number. Now, does the name suggest it's a timestamp?
+            const positiveKeywords = ['time', 'date', 'timestamp', 'start', 'end', 'begin', 'finish', 'at', 'since'];
+            const isNameSuggestive = positiveKeywords.some(keyword => keyLower.includes(keyword));
+
+            if (isNameSuggestive) {
+                return true;
+            }
+        }
+    }
+    
+    // If we've reached here, it's probably not a timestamp.
+    return false;
+};
+
+const isNumericLike = (key: string, sample: any, isTimestamp: boolean): boolean => {
+    if (isTimestamp) return true; // Timestamps are numeric for sorting/alignment
+    if (!sample || typeof sample[key] === 'undefined') return false;
+    const value = sample[key];
+    return typeof value === 'number' || typeof value === 'bigint';
+};
+
+interface DataTableProps {
+    data: any[];
+    showSearch?: boolean;
+    headers?: string[];
+    columnWidths?: (string | number | undefined)[];
+}
+
+
+const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers, columnWidths }) => {
+  const displaySettings = useDisplaySettings();
+  const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
+  const [filterTerm, setFilterTerm] = useState('');
+  const [widths, setWidths] = useState<(string | number | undefined)[]>([]);
+  const resizingColumn = useRef<{index: number; startX: number; startWidth: number} | null>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  
+  const dataHeaders = useMemo(() => (headers || (data[0] ? Object.keys(data[0]) : [])), [data, headers]);
+  const sample = data[0];
+  const timestampColumns = useMemo(() => new Set(dataHeaders.filter(h => isTimestampLike(h, sample))), [dataHeaders, sample]);
+  const numericColumns = useMemo(() => new Set(dataHeaders.filter(h => isNumericLike(h, sample, timestampColumns.has(h)))), [dataHeaders, sample, timestampColumns]);
+
+  const finalHeaders = dataHeaders;
+
+  useEffect(() => {
+    setWidths(columnWidths || []);
+  }, [columnWidths]);
+
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (resizingColumn.current !== null) {
+      const { index, startX, startWidth } = resizingColumn.current;
+      const newWidth = startWidth + (e.clientX - startX);
+      setWidths(prev => {
+          const newWidths = [...prev];
+          newWidths[index] = Math.max(newWidth, 50); // newWidth is a number (pixels)
+          return newWidths;
+      });
+    }
+  }, []);
+
+  const handleMouseUp = useCallback(() => { resizingColumn.current = null; }, []);
+  
+  const handleMouseDown = useCallback((index: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    const headers = tableRef.current?.querySelectorAll('thead th');
+    if (!headers) return;
+
+    const currentPixelWidths = Array.from(headers).map(th => (th as HTMLElement).offsetWidth);
+    setWidths(currentPixelWidths);
+    
+    resizingColumn.current = { index, startX: e.clientX, startWidth: currentPixelWidths[index] };
+    
+    const handleGlobalMouseMove = (event: MouseEvent) => handleMouseMove(event);
+    const handleGlobalMouseUp = () => {
+      handleMouseUp();
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+  }, [handleMouseMove, handleMouseUp]);
+  
+  const requestSort = (key: string) => setSortConfig(c => c.key===key ? (c.direction==='ascending' ? {key,direction:'descending'} : {key:null,direction:'ascending'}) : {key,direction:'ascending'});
+  const formatCell = (value: any, header: string): string => timestampColumns.has(header) ? formatTimestampUtil(value, displaySettings.timeFormat) : numericColumns.has(header) ? formatNumber(value, displaySettings.decimalPlaces) : String(value);
+
+  const processedData = useMemo(() => {
+    let filtered = filterTerm ? data.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(filterTerm.toLowerCase()))) : [...data];
+    if (sortConfig.key) {
+      const { key, direction } = sortConfig;
+      filtered.sort((a, b) => {
+        const asc = direction === 'ascending' ? 1 : -1;
+        if(a[key]==null) return 1; if(b[key]==null) return -1;
+        if (typeof a[key] === 'number' && typeof b[key] === 'number') return (a[key]-b[key])*asc;
+        return String(a[key]).localeCompare(String(b[key]))*asc;
+      });
+    }
+    return filtered;
+  }, [data, filterTerm, sortConfig]);
+
+  if (!data || data.length === 0) return <div className="text-center text-gray-500 p-8">No data to display.</div>;
+
+  return (
+    <div className="flex flex-col h-full bg-gray-800">
+      {showSearch && <div className="px-4 py-2 flex-shrink-0"><div className="relative"><SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"/><input type="text" placeholder={`Search...`} value={filterTerm} onChange={e=>setFilterTerm(e.target.value)} className="w-full bg-gray-900/50 border border-gray-700 rounded-md py-1.5 pl-9 pr-3 text-sm"/></div></div>}
+      <div className="overflow-auto flex-grow">
+        <table ref={tableRef} className="w-full text-sm" style={{tableLayout:widths.length>0?'fixed':'auto'}}>
+          <thead className="sticky top-0 bg-gray-700 z-10">
+            <tr>
+              {finalHeaders.map((h,i) => {
+                const isNumeric = numericColumns.has(h);
+                return (
+                  <th key={h} className={`p-2 font-medium whitespace-nowrap overflow-hidden text-ellipsis relative ${isNumeric ?'text-right':'text-left'}`} style={{width: widths[i]}}>
+                      <>
+                        <button onClick={()=>requestSort(h)} className="inline-flex items-center gap-1.5">{h}{sortConfig.key===h&&(sortConfig.direction==='ascending'?<ChevronUpIcon className="w-3 h-3"/>:<ChevronDownIcon className="w-3 h-3"/>)}</button>
+                        <div onMouseDown={e=>handleMouseDown(i,e)} className="resize-handle"/>
+                      </>
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-700">
+            {processedData.map((row,i) => (
+              <tr key={i} className="hover:bg-gray-700/50">
+                {finalHeaders.map((h,j) => {
+                  return <td key={h} className={`p-2 font-mono whitespace-nowrap overflow-hidden text-ellipsis ${numericColumns.has(h)?'text-right':'text-left'}`} style={{width: widths[j]}} title={String(row[h])}>{formatCell(row[h],h)}</td>
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+export default DataTable;

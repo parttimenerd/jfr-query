@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>me.bechberger</groupId>
+        <artifactId>jfr-query-parent</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>jfr-query-wasm</artifactId>
+    <name>jfr-query-wasm</name>
+    <description>Browser-based JFR → DuckDB importer — built with GraalVM Web Image (WASM)</description>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.graalvm.buildtools</groupId>
+                <artifactId>native-maven-plugin</artifactId>
+                <version>0.10.6</version>
+                <extensions>true</extensions>
+                <executions>
+                    <execution>
+                        <id>build-web</id>
+                        <goals>
+                            <goal>compile-no-fork</goal>
+                        </goals>
+                        <phase>package</phase>
+                    </execution>
+                </executions>
+                <configuration>
+                    <imageName>jfr-importer</imageName>
+                    <outputDirectory>${project.basedir}/web</outputDirectory>
+                    <mainClass>me.bechberger.jfr.duckdb.wasm.WasmMain</mainClass>
+                    <buildArgs>
+                        <buildArg>--tool:svm-wasm</buildArg>
+                        <buildArg>--no-fallback</buildArg>
+                        <buildArg>-H:ReflectionConfigurationFiles=${project.build.directory}/reflect-config.json</buildArg>
+                    </buildArgs>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>prepare-web-resources</id>
+                        <phase>generate-resources</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <executable>${project.basedir}/prepare-web-resources.sh</executable>
+                            <arguments>
+                                <argument>${project.build.directory}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-wasm-into-frontend-public</id>
+                        <phase>package</phase>
+                        <goals><goal>copy-resources</goal></goals>
+                        <configuration>
+                            <!-- Vite picks up files in core/frontend/public/ at build/dev time
+                                 and serves them under the site root. The /wasm/ subpath matches
+                                 what jfrToWasmLoader.ts expects (`/wasm/jfr-importer.js`). -->
+                            <outputDirectory>${project.basedir}/../core/frontend/public/wasm</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/web</directory>
+                                    <includes>
+                                        <include>jfr-importer.js</include>
+                                        <include>jfr-importer.js.wasm</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencies>
+        <dependency>
+            <groupId>me.bechberger</groupId>
+            <artifactId>jfr-query</artifactId>
+            <version>${project.version}</version>
+            <!-- Exclude server-only deps from the WASM build. duckdb_jdbc stays so
+                 BasicParallelImporter compiles; GraalVM dead-code eliminates the
+                 JdbcDuckDBSink path since WasmMain only uses JsDuckDBSink. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>io.javalin</groupId>
+                    <artifactId>javalin</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.fasterxml.jackson.core</groupId>
+                    <artifactId>jackson-databind</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.jooq</groupId>
+                    <artifactId>jooq</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+    </dependencies>
+</project>

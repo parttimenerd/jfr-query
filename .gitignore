@@ -22,3 +22,25 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# Build output
+target/
+**/target/
+core/frontend/dist/
+core/frontend/node_modules/
+core/frontend/public/wasm/
+wasm/web/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# JFR cache + test-order plugin scratch
+.jfr.cache
+.test-order/
+
+# Maven local extensions
+.mvn/
+
