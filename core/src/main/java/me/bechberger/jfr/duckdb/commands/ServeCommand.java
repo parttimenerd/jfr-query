@@ -74,7 +74,15 @@ public class ServeCommand implements Runnable {
             } else {
                 config.staticFiles.add("/frontend-dist", Location.CLASSPATH);
             }
-            config.staticFiles.enableWebjars();
+            // SPA fallback: any unmatched path (no extension, not /api/) serves index.html so
+            // client-side routing works. Configured here in Javalin's static-files block so it
+            // runs as a fallthrough — registering it as `app.get("/*")` would shadow the static
+            // asset handler and serve empty 200s for /assets/*.js.
+            if (devDist.toFile().exists()) {
+                config.spaRoot.addFile("/", devDist.resolve("index.html").toAbsolutePath().toString(), Location.EXTERNAL);
+            } else {
+                config.spaRoot.addFile("/", "/frontend-dist/index.html", Location.CLASSPATH);
+            }
         });
 
         // DuckDB-WASM uses SharedArrayBuffer (multi-threaded mode); browsers only
@@ -110,28 +118,7 @@ public class ServeCommand implements Runnable {
             }
         });
 
-        // SPA fallback: serve index.html only for extension-less paths (SPA routes).
-        // Paths with a '.' (e.g. /assets/index-xxx.js) are static assets already handled
-        // by Javalin's static-file handler above; falling through here would serve index.html
-        // instead of the real asset and break the app.
-        app.get("/*", ctx -> {
-            String path = ctx.path();
-            if (!path.startsWith("/api/") && !path.contains(".")) {
-                var devIndex = Path.of("frontend/dist/index.html");
-                if (devIndex.toFile().exists()) {
-                    ctx.result(java.nio.file.Files.newInputStream(devIndex));
-                    ctx.contentType("text/html");
-                } else {
-                    var stream = ServeCommand.class.getResourceAsStream("/frontend-dist/index.html");
-                    if (stream != null) {
-                        ctx.result(stream);
-                        ctx.contentType("text/html");
-                    } else {
-                        ctx.status(404).result("Frontend not built. Run 'npm run build' in frontend/.");
-                    }
-                }
-            }
-        });
+        // SPA fallback for unmatched routes is configured via Javalin's spaRoot above.
 
         app.start(port);
         String url = "http://localhost:" + port;
@@ -161,12 +148,36 @@ public class ServeCommand implements Runnable {
             while (rs.next()) {
                 var row = new LinkedHashMap<String, Object>();
                 for (int i = 1; i <= cols; i++) {
-                    row.put(meta.getColumnName(i), rs.getObject(i));
+                    row.put(meta.getColumnName(i), unwrapForJson(rs.getObject(i)));
                 }
                 rows.add(row);
             }
             return rows;
         }
+    }
+
+    /**
+     * Convert DuckDB-specific result types into JSON-friendly equivalents. Jackson's default
+     * bean serializer tries to serialize {@link java.sql.Array}, {@link java.sql.Struct} etc.
+     * by reflection, which triggers {@code getCursorName()} on DuckDB's array-backed
+     * ResultSet — DuckDB throws {@link java.sql.SQLFeatureNotSupportedException} from there.
+     * Unwrap to plain Java collections instead.
+     */
+    private static Object unwrapForJson(Object v) throws SQLException {
+        if (v == null) return null;
+        if (v instanceof java.sql.Array a) {
+            Object inner = a.getArray();
+            if (inner instanceof Object[] arr) {
+                var list = new ArrayList<Object>(arr.length);
+                for (Object item : arr) list.add(unwrapForJson(item));
+                return list;
+            }
+            return inner;
+        }
+        if (v instanceof java.sql.Struct s) {
+            return s.getAttributes();
+        }
+        return v;
     }
 
     private static void openBrowser(String url) {
