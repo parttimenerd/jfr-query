@@ -1327,11 +1327,12 @@ public class BasicParallelImporter {
     }
 
     public static void addMacrosAndViews(DuckDBSink sink) {
-        // Macros and views only register against JDBC DuckDB connections today. Unwrap if possible;
-        // a future WASM sink would need its own translation.
+        // Macros and views currently use JDBC-only APIs (queries that read tableNames + drop
+        // existing macros). For non-JDBC sinks (e.g. the WASM bridge) we skip silently — the
+        // resulting database is fully usable, just without the convenience macros/views layered
+        // on top. The browser UI can register macros/views client-side if needed.
         if (!(sink instanceof JdbcDuckDBSink jdbc)) {
-            throw new RuntimeSQLException(
-                    "addMacrosAndViews currently only supports JDBC sinks", null);
+            return;
         }
         addMacrosAndViews(jdbc.unwrap());
     }

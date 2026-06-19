@@ -1,6 +1,5 @@
 package me.bechberger.jfr.duckdb.wasm;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import me.bechberger.jfr.duckdb.BasicParallelImporter;
@@ -50,20 +49,40 @@ public class WasmMain {
             for (int i = 0; i < len; i++) {
                 bytes[i] = (byte) getByteAt(bytesJs, i);
             }
+            log("JFR bytes received: " + len);
 
             Path tmp = Files.createTempFile("upload", ".jfr");
             Files.write(tmp, bytes);
+            log("JFR bytes written to " + tmp);
 
             JsDuckDBSink rootSink = new JsDuckDBSink(jsConn);
             BasicParallelImporter importer =
                     new BasicParallelImporter(() -> rootSink, new Options());
+            log("BasicParallelImporter constructed; calling importRecording()");
             importer.importRecording(tmp);
 
             Files.deleteIfExists(tmp);
             log("JFR import complete: " + bytes.length + " bytes");
-        } catch (IOException e) {
-            log("JFR import failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-            throw new RuntimeException(e);
+        } catch (Throwable t) {
+            // Walk the cause chain so `ExceptionInInitializerError` etc. don't hide
+            // the real failure. Printing here logs to the JS console; the rethrow
+            // surfaces it to the JS caller as a proxied exception.
+            StringBuilder sb = new StringBuilder("JFR import failed:\n");
+            Throwable cur = t;
+            while (cur != null) {
+                sb.append("  ").append(cur.getClass().getName());
+                if (cur.getMessage() != null) sb.append(": ").append(cur.getMessage());
+                sb.append('\n');
+                StackTraceElement[] trace = cur.getStackTrace();
+                int n = Math.min(trace.length, 12);
+                for (int i = 0; i < n; i++) {
+                    sb.append("    at ").append(trace[i]).append('\n');
+                }
+                cur = cur.getCause();
+                if (cur != null) sb.append("  Caused by: ");
+            }
+            log(sb.toString());
+            throw new RuntimeException(t);
         }
     }
 
