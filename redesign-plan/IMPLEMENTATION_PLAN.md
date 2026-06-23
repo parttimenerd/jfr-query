@@ -1116,6 +1116,73 @@ Phase B is the first user-visible payoff: a real running app you can open, type 
 
 ---
 
+### M-B9: File ingest UI — drop zone + progress + both file types
+
+**What**: Wire the welcome-cell drop zone and a persistent topbar "Open file" button to the `JfrLoader` service (from M-A7). Accepts two file types: `.jfr` native recordings (routed through the GraalVM `jfr-importer.js` WASM bridge) and `.db` / `.jfr.db` / `.duckdb` pre-converted DuckDB files (loaded directly via DuckDB-WASM `registerFileBuffer`). File selection via drag-and-drop OR click-to-open (`<input type="file" accept=".jfr,.db,.duckdb,.jfr.db">`). A full-screen **loading overlay** (centered spinner + progress bar + phase label: "Parsing JFR events…", "Materializing tables…", "Registering macros…", "Ready") replaces the welcome screen during load. On success, `App` transitions to `NotebookView` with an auto-generated starter notebook containing one SQL cell `SELECT * FROM gc_pauses LIMIT 100` (or the first table in the schema if `gc_pauses` is absent). On error, the overlay shows the failure classification from `JfrError.kind` (`empty-file`, `not-jfr-or-db`, `too-large`, `malformed`, `load-failed`) with a human-readable message and a "Try again" button. The `jfr-importer.js/.wasm/.wat` bundle must be copied from `core/frontend/public/wasm/` to `frontend-v2/public/` as part of this milestone. The topbar "Open" entry from M-B6's command registry fires the same file picker.
+
+**Showcase**: §0c (JFR ingest UX overview), §0c.2 (progress phases + progress bar), §0c.4 (four failure modes → five with empty-file added here), v1 `core/frontend/` drop zone for visual reference.
+
+**Files**:
+- `frontend-v2/src/components/shell/FileDropZone.tsx` (create) — drag-and-drop + click-to-open, fires `onFile(file: File)` callback; renders the dashed border visually (delegates styling to parent — WelcomeCell passes its own wrapper div as `children`, this component only handles the events).
+- `frontend-v2/src/components/shell/LoadingOverlay.tsx` (create) — full-screen spinner + progress bar + phase label + error state + "Try again" CTA.
+- `frontend-v2/src/hooks/useFileIngest.ts` (create) — orchestrates: validate file extension → call `JfrLoader.load(file, …)` → emit progress events → on success dispatch `setNotebook(generated)` → on error surface `JfrError`.
+- `frontend-v2/src/components/shell/WelcomeCell.tsx` (modify) — wrap the existing drop zone div with `<FileDropZone onFile={handleFile}>`, wire `useFileIngest`, show `<LoadingOverlay>` while loading.
+- `frontend-v2/src/components/shell/Topbar.tsx` (modify) — add an "Open file…" button (folder icon, ghost style) that triggers the hidden file input via `ref.current.click()`.
+- `frontend-v2/public/jfr-importer.js` (copy from `core/frontend/public/wasm/jfr-importer.js`).
+- `frontend-v2/public/jfr-importer.wasm` (copy from v1).
+- `frontend-v2/public/jfr-importer.wat` (copy from v1).
+- `frontend-v2/src/__tests__/hooks/useFileIngest.test.ts` (create).
+- `frontend-v2/src/__tests__/components/FileDropZone.test.tsx` (create).
+- `frontend-v2/src/__tests__/components/LoadingOverlay.test.tsx` (create).
+- `frontend-v2/tests/e2e/02-file-ingest.spec.ts` (create).
+
+**Tests**: unit | a11y | e2e
+- `useFileIngest.test.ts`: mock `JfrLoader.load`; assert happy path fires progress callbacks in order and resolves with a generated notebook; assert `empty-file` error surfaces correctly; assert `not-jfr-or-db` fires when a `.txt` file is dropped; assert `.db` files skip the jfr-importer path and go through the DuckDB-register path.
+- `FileDropZone.test.tsx`: dragenter → border changes to accent color; dragleave → border returns to default; drop with a valid file → `onFile` called once; click → hidden input triggered; keyboard: Enter / Space on the zone opens file picker (via `input.click()`).
+- `LoadingOverlay.test.tsx`: renders in `loading` state with spinner + progress bar at 0%; renders phase label "Materializing tables…" at 60%; renders error message + "Try again" button in error state; "Try again" calls `onRetry`; accessible: `role="status"`, `aria-live="polite"`, progress bar has `role="progressbar" aria-valuenow aria-valuemax`.
+- e2e `02-file-ingest.spec.ts`: upload `tests/fixtures/jfr/sample-small.jfr` via `page.setInputFiles`; assert loading overlay appears; assert it disappears and `NotebookView` renders; assert SQL cell has `SELECT * FROM` in source; upload a `.db` file (synthesize a minimal DuckDB binary in the fixture); assert same happy path; upload a `.txt` file → assert error overlay with "not a JFR or DuckDB file" message.
+
+**Gate**: drag a `.jfr.db` file onto the welcome screen → loading overlay → notebook view with starter SQL cell; drag a `.jfr` native file → same flow via jfr-importer; drag an invalid file → error overlay with correct kind label; "Open file…" in topbar fires the file picker; all tests pass.
+
+**Blocked by**: M-A7 (JfrLoader service), M-B1 (AppShell layout), M-B3 (DuckDB client).
+
+> **Agent prompt (M-B9):**
+>
+> Read `frontend-v2/src/services/jfr/jfrLoader.ts` in full — the service layer is complete. Read `frontend-v2/src/services/jfr/jfrTypes.ts` for the `JfrError`, `JfrLoadEvent`, `JfrLoadCallback` types. Read `frontend-v2/src/App.tsx` and `frontend-v2/src/components/shell/WelcomeCell.tsx` to understand current state management. Read v1's `core/frontend/` app root for how it wires the drop zone and progress overlay (visual reference only — don't port v1 code verbatim).
+>
+> Implement `FileDropZone.tsx`: a `<div>` that listens to `dragenter`, `dragover`, `dragleave`, `drop`. On drop, call `onFile(event.dataTransfer.files[0])`. Also render a hidden `<input type="file" accept=".jfr,.db,.duckdb,.jfr.db">` that fires `onFile` on `change`. Expose a `ref` on the input so the parent (Topbar) can trigger `click()`. Apply `data-dragging` attribute during dragenter so CSS can change the border color without state.
+>
+> Implement `useFileIngest.ts`: a hook that accepts `onSuccess: (notebook: Notebook) => void`. Returns `{ state, handleFile, retry }`. State machine: `idle` → `loading` (with `progress: JfrLoadEvent`) → `done` | `error`. In `loading`, call `new JfrLoader(db).load(file, file.name, onProgress)`. On success, generate a starter notebook (`notebookParser.parse(…)` from a template string with one SQL cell). On error, store the `JfrError` in state.
+>
+> Modify `WelcomeCell.tsx`: wrap the existing dashed drop zone with `<FileDropZone onFile={handleFile}>`. When `state === 'loading'`, render `<LoadingOverlay progress={state.progress} />` in a portal over the full app. When `state === 'error'`, render `<LoadingOverlay error={state.error} onRetry={retry} />`.
+>
+> Modify `Topbar.tsx`: add an "Open" button (folder icon, ghost style) that calls `fileInputRef.current?.click()` — the same hidden input inside `FileDropZone`. Wire through a `Context` or a forwarded ref (prefer context to avoid prop-drilling through AppShell).
+>
+> Copy `jfr-importer.js`, `.wasm`, `.wat` from `core/frontend/public/wasm/` to `frontend-v2/public/`. Verify sizes are unchanged (use `wc -c` or `ls -l`).
+>
+> Tests: unit as per Gate. e2e uses `page.setInputFiles` on the hidden `<input>` (give it `data-testid="file-input"`).
+>
+> Acceptance: `npm run test -- useFileIngest FileDropZone LoadingOverlay`, `npm run test:e2e -- 02-file-ingest`, `npm run test:a11y -- file-ingest` all pass.
+
+---
+
+### M-B10: Right-rail layout — Issues + AI chat stub
+
+**What**: Restructure the right rail so it can host both the Issues panel (M-B5) and a Chat panel drawer (Phase D / M-D1). In Phase B the chat panel is a **stub** — a collapsed drawer tab labeled "Chat (Phase D)" that renders a placeholder message "AI assistant coming in Phase D". The Issues panel remains at the top of the right rail. The rail has two tabs: `ISSUES` and `CHAT`. Clicking `CHAT` expands the stub. The tab strip uses `role="tablist"` / `role="tab"` / `role="tabpanel"` ARIA pattern. The right rail can be hidden (⌥H) and restored. This stub is load-bearing: it locks in the layout contract that M-D1 fills with real content, so Phase D doesn't require a layout refactor.
+
+**Files**:
+- `frontend-v2/src/components/shell/RightRail.tsx` (create) — tab strip + panel host; replaces bare `<IssuesPanel>` mount in `AppShell.tsx`.
+- `frontend-v2/src/components/shell/AppShell.tsx` (modify) — swap `<IssuesPanel>` for `<RightRail>`.
+- `frontend-v2/src/__tests__/shell/RightRail.test.tsx` (create).
+
+**Tests**: `RightRail.test.tsx` — ISSUES tab active by default; clicking CHAT tab shows chat stub panel; ⌥H hides the rail; ⌥H again shows it; `role="tablist"` + `role="tab"` + `aria-selected` + `role="tabpanel"` present; focus cycles through tabs with arrow keys.
+
+**Gate**: Right rail shows ISSUES and CHAT tabs; switching tabs works; ⌥H toggles rail; accessible tab pattern; stub renders "AI assistant coming in Phase D" message in chat tab.
+
+**Blocked by**: M-B5 (IssuesPanel).
+
+---
+
 ## Phase C — DSL & Dashboards
 
 Phase C lights up the visual half of the notebook. It builds on Phase A's sugar parser (the `PlotNode` AST from M-A3) and Phase B's editor shell (cell column, issues panel, sidebar slots) to ship the runtime that **actually renders plots**. The work proceeds in seven beats: a renderer base + 5-state machine (M-C1), four batches of three plot types each — line/bar/scatter (M-C2), histogram/boxplot/heatmap (M-C3), pie/flamegraph/table (M-C4), gantt/area/range (M-C5) — composition operators `row{}` / `col{}` / `+` (M-C6), the clause-tail processor that turns parsed clauses into visual + lifecycle effects (M-C7), the full result-table interaction surface (M-C8), prose cells with embedded refs + report mode + HTML/PDF export (M-C9), and finally macros + slash menu (M-C10). Live-coupling clauses are **stub-registered** here; the runtime that pumps brush / hover / zoom / selection values into `$!` lives in Phase E. By end of Phase C the user can author a multi-cell, multi-plot dashboard, see it render against in-memory data, and export it to a self-contained HTML report — even before agents and live coupling come online.
