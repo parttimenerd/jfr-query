@@ -4,7 +4,7 @@
 6ab8dfd
 
 ## Last implemented milestone
-M-C1 (plot renderer base + 5-state machine) at commit TBD_AFTER_COMMIT
+M-C1 (plot renderer base + 5-state machine) at commit dd905c3
 
 ## Last reviewed commit (implementation)
 cff689e
