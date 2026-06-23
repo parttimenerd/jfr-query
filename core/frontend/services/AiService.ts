@@ -3,22 +3,46 @@ import type { TableSchema, ViewSchema, MacroSchema } from '../types';
 import { plotRegistry } from '../components/plots/plotRegistry';
 import { generateSignature } from '../utils/plotUtils';
 import type { PlotRegistration } from '../components/plots/plotTypes';
-import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata, AiProviderType } from './ai/IAiProvider';
+import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata, AiProviderType, PlotSuggestContext } from './ai/IAiProvider';
 import { GeminiProvider } from './ai/GeminiProvider';
 import { OpenAiProvider } from './ai/OpenAiProvider';
 import { GardenerProvider } from './ai/GardenerProvider';
+import { LocalAiProvider } from './ai/LocalAiProvider';
+import { BrowserModelProvider } from './ai/BrowserModelProvider';
 import { Settings } from '../context/SettingsContext';
 
+// Each provider may need provider-specific construction args (e.g. base URL,
+// max tokens). The factory below constructs the right one given current settings.
+type ProviderFactory = (settings: Settings) => IAiProvider;
+
+export const providerFactoryRegistry: Record<AiProviderType, ProviderFactory> = {
+    google: (s) => new GeminiProvider(AiService.getEffectiveApiKey('google', s)),
+    openai: (s) => new OpenAiProvider(AiService.getEffectiveApiKey('openai', s)),
+    gardener: (s) => new GardenerProvider(AiService.getEffectiveApiKey('gardener', s)),
+    local: (s) => new LocalAiProvider(
+        AiService.getEffectiveApiKey('local', s),
+        s.localBaseUrl,
+        s.localMaxTokens,
+    ),
+    browser: (s) => new BrowserModelProvider(s.browserModelId),
+};
+
+// Backward-compat: existing call sites construct directly with `new ProviderClass(apiKey)`.
+// SettingsModal still uses this for the "Test Key" button.
 export const providerRegistry: Record<AiProviderType, new (apiKey: string) => IAiProvider> = {
     google: GeminiProvider,
     openai: OpenAiProvider,
     gardener: GardenerProvider,
+    local: LocalAiProvider as unknown as new (apiKey: string) => IAiProvider,
+    browser: BrowserModelProvider as unknown as new (apiKey: string) => IAiProvider,
 };
 
 export const providerMetadataRegistry: Record<AiProviderType, ProviderMetadata> = {
     google: GeminiProvider.getMetadata(),
     openai: OpenAiProvider.getMetadata(),
     gardener: GardenerProvider.getMetadata(),
+    local: LocalAiProvider.getMetadata(),
+    browser: BrowserModelProvider.getMetadata(),
 };
 
 class AiService {
@@ -35,22 +59,31 @@ class AiService {
             google: process.env.GEMINI_API_KEY || process.env.API_KEY,
             openai: process.env.OPENAI_API_KEY,
             gardener: process.env.GARDENER_API_KEY,
+            local: process.env.LOCAL_AI_API_KEY,
+            browser: undefined,
         };
         const settingsKey = provider === 'google' ? settings.googleApiKey
             : provider === 'openai' ? settings.openaiApiKey
-            : settings.gardenerApiKey;
+            : provider === 'gardener' ? settings.gardenerApiKey
+            : provider === 'local' ? settings.localApiKey
+            : ''; // browser has no API key
         return settingsKey || envKeys[provider] || '';
     }
 
     initialize(settings: Settings): boolean {
         this.settings = settings;
         const { aiProvider } = settings;
-        const apiKey = AiService.getEffectiveApiKey(aiProvider, settings);
-        const ProviderClass = providerRegistry[aiProvider];
+        const factory = providerFactoryRegistry[aiProvider];
 
-        if (ProviderClass && apiKey) {
+        // Local provider doesn't need an API key — it's "configured" as long as
+        // the base URL is set. All other providers require a key.
+        const hasCredentials = aiProvider === 'local'
+            ? !!settings.localBaseUrl
+            : !!AiService.getEffectiveApiKey(aiProvider, settings);
+
+        if (factory && hasCredentials) {
             try {
-                this.provider = new ProviderClass(apiKey);
+                this.provider = factory(settings);
                 return true;
             } catch (error) {
                 console.error(`Failed to initialize AI provider '${aiProvider}':`, error);
@@ -125,14 +158,19 @@ class AiService {
         return doc;
     }
     
+    private getModelFor(tier: 'basic' | 'advanced'): string {
+        if (!this.settings) throw new Error("AI Service not initialized with settings.");
+        const { aiProvider } = this.settings;
+        const suffix = tier === 'advanced' ? 'GoodModel' : 'BasicModel';
+        const key = `${aiProvider}${suffix}` as keyof Settings;
+        return (this.settings[key] as string) ?? '';
+    }
+
     // --- Public API Methods ---
 
     async getAiAgentResponse(conversationHistory: Content[], tables: TableSchema[], views: ViewSchema[], macros: MacroSchema[], customPromptOverride?: string): Promise<AIResponse> {
         if (!this.settings) throw new Error("AI Service not initialized with settings.");
-        const { aiProvider } = this.settings;
-        const model = aiProvider === 'google' ? this.settings.googleGoodModel
-                    : aiProvider === 'openai' ? this.settings.openaiGoodModel
-                    : this.settings.gardenerGoodModel;
+        const model = this.getModelFor('advanced');
 
         const schemaDescription = this.generateSchemaDescription(tables, views, macros);
         const plottingDocs = this.generatePlottingDocsPrompt();
@@ -162,10 +200,7 @@ GUIDELINES:
     
     async getAiInlineSuggestion(request: string, targetType: 'sql' | 'plot', targetValue: string, cellContext: string, fullNotebookContext?: string, data?: any[], customPromptOverride?: string): Promise<AIInlineResponse> {
         if (!this.settings) throw new Error("AI Service not initialized with settings.");
-        const { aiProvider } = this.settings;
-        const model = aiProvider === 'google' ? this.settings.googleGoodModel
-                    : aiProvider === 'openai' ? this.settings.openaiGoodModel
-                    : this.settings.gardenerGoodModel;
+        const model = this.getModelFor('advanced');
         
         const dataSample = data ? `The current query produces this data sample (top 5 rows): ${JSON.stringify(data.slice(0, 5))}` : '';
         let systemInstruction = `You are an expert assistant helping a user refine a piece of code inside a data notebook.
@@ -192,19 +227,13 @@ GUIDELINES:
 
     async getAiCodeFormat(code: string): Promise<string | null> {
         if (!this.settings) throw new Error("AI Service not initialized with settings.");
-        const { aiProvider } = this.settings;
-        const model = aiProvider === 'google' ? this.settings.googleBasicModel
-                    : aiProvider === 'openai' ? this.settings.openaiBasicModel
-                    : this.settings.gardenerBasicModel;
+        const model = this.getModelFor('basic');
         return this.handleApiCall(() => this.provider!.getCodeFormat(code, model));
     }
 
-    async getAiSuggestPlot(sql: string, customPromptOverride?: string): Promise<string | null> {
+    async getAiSuggestPlot(sql: string, customPromptOverride?: string, context?: PlotSuggestContext): Promise<string | null> {
         if (!this.settings) throw new Error("AI Service not initialized with settings.");
-        const { aiProvider } = this.settings;
-        const model = aiProvider === 'google' ? this.settings.googleBasicModel
-                    : aiProvider === 'openai' ? this.settings.openaiBasicModel
-                    : this.settings.gardenerBasicModel;
+        const model = this.getModelFor('basic');
         const plottingDocs = this.generatePlottingDocsPrompt();
         let systemInstruction = `You are a data visualization expert. Given a DuckDB SQL query, suggest the best plot configuration.
 ${plottingDocs}
@@ -218,15 +247,12 @@ Return ONLY the plot configuration string, with no explanation or markdown backt
             systemInstruction += `\n\nADDITIONAL INSTRUCTIONS FROM USER:\n${finalCustomPrompt}`;
         }
 
-        return this.handleApiCall(() => this.provider!.getSuggestPlot(systemInstruction, sql, model));
+        return this.handleApiCall(() => this.provider!.getSuggestPlot(systemInstruction, sql, model, context));
     }
     
     async getAiPlotFixSuggestion(errorMessage: string, sqlQuery: string, data: any[], plotConfig: string, cellContext: string, customPromptOverride?: string): Promise<AIPlotFixResponse> {
         if (!this.settings) throw new Error("AI Service not initialized with settings.");
-        const { aiProvider } = this.settings;
-        const model = aiProvider === 'google' ? this.settings.googleBasicModel
-                    : aiProvider === 'openai' ? this.settings.openaiBasicModel
-                    : this.settings.gardenerBasicModel;
+        const model = this.getModelFor('basic');
         const columns = data && data.length > 0 ? Object.keys(data[0]) : [];
         const dataSample = data ? `The SQL query returned these available columns: [${columns.join(', ')}]` : '';
         let systemInstruction = `You are an expert data visualization assistant. A user's plot configuration has failed. Your task is to analyze the context and provide a corrected plot configuration.

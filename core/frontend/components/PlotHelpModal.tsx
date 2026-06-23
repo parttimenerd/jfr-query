@@ -148,30 +148,30 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                 </header>
                 <main ref={mainContentRef} className="flex-grow overflow-y-auto p-6 space-y-8">
                     <div className="p-4 bg-gray-900/50 rounded-lg mb-8 border border-gray-700">
-                        <h3 className="font-semibold text-lg text-gray-200">General Syntax</h3>
+                        <h3 className="font-semibold text-lg text-gray-200">Plot Syntax Quick Reference</h3>
                         <p className="mt-2 text-sm text-gray-400">
-                            Plots are defined using function-call syntax. You can render multiple plots and arrange them in a grid.
+                            Each plot block uses a function-call syntax. Column names available in your query results are shown as chips above the editor — click one to copy it. The <span className="text-gray-300 font-mono text-xs bg-gray-700 px-1 py-0.5 rounded">switch to:</span> row lets you instantly swap the plot type.
                         </p>
                         <ul className="mt-4 text-sm space-y-4 list-disc list-inside text-gray-300">
                             <li>
                                 <code className="bg-gray-700 p-1 rounded-md">PLOT_A(...); PLOT_B(...)</code>
-                                <span className="text-gray-400"> &mdash; Use a semicolon <code className="bg-gray-700 p-1 rounded-md">;</code> or a single newline to place plots side-by-side in the same row.</span>
+                                <span className="text-gray-400"> &mdash; Semicolon or single newline places plots <strong>side-by-side</strong> in the same row.</span>
                             </li>
                             <li>
                                 <code className="bg-gray-700 p-1 rounded-md leading-relaxed inline-block">PLOT_A(...)<br/><br/>PLOT_B(...)</code>
-                                <span className="text-gray-400"> &mdash; Use an empty line (two newlines) to start a new row of plots.</span>
+                                <span className="text-gray-400"> &mdash; Empty line (two newlines) starts a <strong>new row</strong> of plots.</span>
                             </li>
                              <li>
                                 <code className="bg-gray-700 p-1 rounded-md">... ON query_ref</code>
-                                <span className="text-gray-400"> &mdash; Specify which query to use. `query_ref` is a 1-based number or a query alias (from `CREATE VIEW ...`).</span>
+                                <span className="text-gray-400"> &mdash; Pick which query feeds this plot. <code className="bg-gray-700 p-1 rounded-md">ON 2</code> uses the second SQL block; <code className="bg-gray-700 p-1 rounded-md">ON 1, 2</code> merges both.</span>
                             </li>
                             <li>
-                                <code className="bg-gray-700 p-1 rounded-md">... TITLE "My Chart Title"</code>
+                                <code className="bg-gray-700 p-1 rounded-md">... TITLE "My Chart"</code>
                                 <span className="text-gray-400"> &mdash; Add a title that will be displayed above the plot.</span>
                             </li>
                             <li>
                                 <code className="bg-gray-700 p-1 rounded-md">... LINK_X($start, $end)</code>
-                                <span className="text-gray-400"> &mdash; Link a plot's X-axis to local variables for interactive zooming and panning.</span>
+                                <span className="text-gray-400"> &mdash; Link a plot's X-axis to local variables for interactive panning and zooming.</span>
                             </li>
                         </ul>
                          <div className="mt-6">
@@ -217,7 +217,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                         <h3 className="font-semibold text-lg text-cyan-300">Interactive Dashboard Example</h3>
                         <p className="mt-2 text-sm text-gray-400">
                            Use <code className="bg-gray-700 p-1 rounded-md">LINK_X($start, $end)</code> to link the X-axes of multiple plots to the same local variables.
-                           Interacting with one plot (scrolling to zoom, dragging to pan) will update all other linked plots.
+                           Interacting with one plot (drag to pan, Shift+scroll to zoom) will update all other linked plots.
                         </p>
                         <div className="mt-4 p-4 bg-gray-900/40 rounded-lg border border-gray-700/50">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

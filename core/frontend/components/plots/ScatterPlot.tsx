@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { PlotRegistration, PlotParameter } from './plotTypes';
+import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
@@ -69,8 +69,8 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
 
 export const scatterPlot: PlotRegistration<ScatterPlotConfig> = {
   name: 'SCATTER_PLOT',
-  description: 'Displays relationships between two or three numeric variables.',
-  params,
+  description: 'Plots individual data points by two numeric axes — great for spotting correlations (e.g. pause duration vs. bytes reclaimed). Add a third numeric column as `size` for bubble charts.',
+  params: withCommonParams(params),
   template: 'SCATTER_PLOT(x: , y: )',
   examples: [
     { 

@@ -168,4 +168,60 @@ public class MacroTest {
         assertThat(table).row(3).value("formatted").isEqualTo("1.50s");
         assertThat(table).row(4).value("formatted").isEqualTo("60.00s");
     }
+
+    @Test
+    public void testTimeBucket() {
+        // Bucket epoch_ms 1234567 into 1000-ms windows -> 1234000.
+        var table =
+                conn.request(
+                                "SELECT time_bucket(make_timestamp(1234567 * 1000), 1000) AS b")
+                        .build();
+        assertThat(table).hasNumberOfRows(1);
+        assertThat(table).row(0).value("b").isEqualTo(1234000L);
+    }
+
+    @Test
+    public void testInRange() {
+        var table =
+                conn.request(
+                                """
+                SELECT in_range(make_timestamp(2 * 1000000),
+                                make_timestamp(1 * 1000000),
+                                make_timestamp(3 * 1000000)) AS inside,
+                       in_range(make_timestamp(4 * 1000000),
+                                make_timestamp(1 * 1000000),
+                                make_timestamp(3 * 1000000)) AS outside
+                """)
+                        .build();
+        assertThat(table).row(0).value("inside").isEqualTo(true);
+        assertThat(table).row(0).value("outside").isEqualTo(false);
+    }
+
+    @Test
+    public void testRecordingStartAndEnd() {
+        // Just check the macros return non-null timestamps for the test recording.
+        var table = conn.request("SELECT recording_start() AS s, recording_end() AS e").build();
+        assertThat(table).hasNumberOfRows(1);
+        assertThat(table).row(0).value("s").isNotNull();
+        assertThat(table).row(0).value("e").isNotNull();
+    }
+
+    @Test
+    public void testRelativeMs() {
+        // relative_ms(recording_start()) is always 0.
+        var table = conn.request("SELECT relative_ms(recording_start()) AS r").build();
+        assertThat(table).row(0).value("r").isEqualTo(0L);
+    }
+
+    @Test
+    public void testTimeSince() {
+        var table =
+                conn.request(
+                                """
+                SELECT time_since(make_timestamp(1 * 1000000),
+                                  make_timestamp(2 * 1000000)) AS d
+                """)
+                        .build();
+        assertThat(table).row(0).value("d").isEqualTo(1000L);
+    }
 }

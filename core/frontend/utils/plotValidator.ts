@@ -1,5 +1,6 @@
 import { plotRegistry } from '../components/plots/plotRegistry';
 import { parsePlotCall } from './plotParser';
+import { expandPlotConstants } from './plotConstants';
 
 /**
  * Validates a plot configuration string against a given dataset.
@@ -16,7 +17,13 @@ export const validatePlotConfig = (config: string, data: any[]): string | null =
         return null;
     }
 
-    const configTrimmed = config?.trim() || 'TABLE()';
+    // Expand LET constants first; bail out with the constant error if any.
+    const expansion = expandPlotConstants(config?.trim() || 'TABLE()');
+    if (expansion.errors.length > 0) {
+        return expansion.errors[0];
+    }
+
+    const configTrimmed = expansion.expanded.trim() || 'TABLE()';
     // Join lines that are part of a multi-line function call
     const joinedConfig = configTrimmed.replace(/\(\s*\n([\s\S]*?)\n\s*\)/g, (match) => {
         return match.replace(/\s*\n\s*/g, ' ');

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { PlotRegistration, PlotParameter } from './plotTypes';
+import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec } from '../../utils/plotUtils';
 
@@ -107,20 +107,46 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
 
 export const heatmapPlot: PlotRegistration<HeatmapConfig> = {
   name: 'HEATMAP',
-  description: 'Visualizes the magnitude of a phenomenon as color in two dimensions.',
-  params,
+  description: 'Two-dimensional color grid — great for showing intensity across two categorical dimensions (e.g., thread × time, class × method).',
+  params: withCommonParams(params),
   template: 'HEATMAP(x: , y: , value: )',
   examples: [
     {
-        description: 'A heatmap showing Java monitor lock contention time between threads and lock classes.',
-        code: 'HEATMAP(x: "thread", y: "lockClass", value: "contentionTime") TITLE "Lock Contention Heatmap"',
-        sampleData: [
-            { thread: 'worker-1', lockClass: 'java.util.HashMap', contentionTime: 120 },
-            { thread: 'worker-1', lockClass: 'com.app.Cache', contentionTime: 250 },
-            { thread: 'worker-2', lockClass: 'java.util.HashMap', contentionTime: 80 },
-            { thread: 'worker-2', lockClass: 'com.app.Cache', contentionTime: 300 },
-        ]
-    }
+      description: 'Lock contention heatmap — which threads are spending the most time waiting on which locks.',
+      code: 'HEATMAP(x: "thread", y: "lockClass", value: "contentionMs") TITLE "Lock Contention (ms)"',
+      sampleData: [
+        { thread: 'worker-1', lockClass: 'HashMap', contentionMs: 120 },
+        { thread: 'worker-1', lockClass: 'AppCache', contentionMs: 250 },
+        { thread: 'worker-2', lockClass: 'HashMap', contentionMs: 80 },
+        { thread: 'worker-2', lockClass: 'AppCache', contentionMs: 300 },
+        { thread: 'worker-3', lockClass: 'HashMap', contentionMs: 45 },
+        { thread: 'worker-3', lockClass: 'AppCache', contentionMs: 190 },
+      ]
+    },
+    {
+      description: 'CPU load by hour and day of week — useful for spotting periodic load patterns in long JFR recordings.',
+      code: 'HEATMAP(x: "hour", y: "dayOfWeek", value: "avgCpuLoad") TITLE "CPU Load Heatmap"',
+      sampleData: [
+        { hour: '08:00', dayOfWeek: 'Mon', avgCpuLoad: 0.45 },
+        { hour: '09:00', dayOfWeek: 'Mon', avgCpuLoad: 0.82 },
+        { hour: '10:00', dayOfWeek: 'Mon', avgCpuLoad: 0.91 },
+        { hour: '08:00', dayOfWeek: 'Tue', avgCpuLoad: 0.38 },
+        { hour: '09:00', dayOfWeek: 'Tue', avgCpuLoad: 0.75 },
+        { hour: '10:00', dayOfWeek: 'Tue', avgCpuLoad: 0.88 },
+      ]
+    },
+    {
+      description: 'Allocation rate per class and GC phase — shows which classes allocate most heavily during each GC phase.',
+      code: 'HEATMAP(x: "gcPhase", y: "className", value: "allocatedMB") TITLE "Allocation per GC Phase"',
+      sampleData: [
+        { gcPhase: 'Minor GC', className: 'byte[]', allocatedMB: 142 },
+        { gcPhase: 'Minor GC', className: 'char[]', allocatedMB: 88 },
+        { gcPhase: 'Major GC', className: 'byte[]', allocatedMB: 31 },
+        { gcPhase: 'Major GC', className: 'char[]', allocatedMB: 22 },
+        { gcPhase: 'Concurrent', className: 'byte[]', allocatedMB: 8 },
+        { gcPhase: 'Concurrent', className: 'char[]', allocatedMB: 5 },
+      ]
+    },
   ],
   parseConfig,
   component: HeatmapComponent,

@@ -28,6 +28,8 @@ export const formatTimestamp = (timestamp: number | bigint | string, format: str
     
     if (isNaN(date.getTime())) return originalValue;
 
+    if (format === 'ISO') return date.toISOString();
+
     const replacements = {
         'YYYY': String(date.getFullYear()),
         'MM': pad(date.getMonth() + 1),

@@ -3,6 +3,7 @@ import { aiService } from '../services/AiService';
 import { validatePlotConfig } from '../utils/plotValidator';
 import type { ChatMessage, NotebookMetadata } from '../types';
 import { MessageSender } from '../types';
+import { XMarkIcon } from './icons/XMarkIcon';
 import { SparklesIcon } from './icons/SparklesIcon';
 import { SendIcon } from './icons/SendIcon';
 import { ClipboardIcon } from './icons/ClipboardIcon';
@@ -27,6 +28,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI }) => {
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const cancelledRef = useRef(false);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -35,11 +37,23 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI }) => {
     const handleReset = () => {
         setMessages(initialConversation);
         setIsLoading(false);
+        cancelledRef.current = false;
+    };
+
+    const handleCancel = () => {
+        cancelledRef.current = true;
+        setIsLoading(false);
+        setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            sender: MessageSender.AI,
+            text: 'Request cancelled.',
+        }]);
     };
 
     const handleSend = async () => {
         if (input.trim() === '' || isLoading || !schema) return;
 
+        cancelledRef.current = false;
         const userMessage: ChatMessage = { id: Date.now().toString(), sender: MessageSender.User, text: input };
         setMessages(prev => [...prev, userMessage]);
         setInput('');
@@ -55,8 +69,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI }) => {
         
         let lastAiResponse: any = null;
         let success = false;
+        let lastError: string | null = null;
 
-        while (attempts < MAX_ATTEMPTS && !success) {
+        while (attempts < MAX_ATTEMPTS && !success && !cancelledRef.current) {
             attempts++;
             try {
                 lastAiResponse = await aiService.getAiAgentResponse(conversationHistory, schema.tables, schema.views, schema.macros, metadata.customSystemPrompt);
@@ -78,6 +93,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI }) => {
                 success = true;
 
             } catch (error: any) {
+                lastError = error.message;
                 const feedback = `The last attempt failed with the error: "${error.message}". Please analyze the error and the conversation history, then generate a new, valid response.`;
                 conversationHistory.push({ role: 'user', parts: [{ text: feedback }] });
             }
@@ -93,15 +109,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI }) => {
         } : {
             id: (Date.now() + 1).toString(),
             sender: MessageSender.AI,
-            text: "I'm sorry, I was unable to generate a valid response after a few attempts. Please try rephrasing your request."
+            text: `I'm sorry, I was unable to generate a valid response after ${MAX_ATTEMPTS} attempts. Please try rephrasing your request.${lastError ? `\n\nLast error: ${lastError}` : ''}`
         };
         
+        if (cancelledRef.current) return;
+
         setMessages(prev => [...prev, finalMessage]);
         setIsLoading(false);
     };
     
-    const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent as any).isComposing) { e.preventDefault(); handleSend(); }
     };
 
     const CodeBlock: React.FC<{ code: string }> = ({ code }) => {
@@ -118,7 +136,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI }) => {
                 {isLoading && (<div className="flex justify-start"><div className="bg-gray-700 rounded-lg p-3 inline-flex items-center space-x-2"><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-0"></span><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-150"></span><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-300"></span></div></div>)}
                 <div ref={messagesEndRef}/>
             </div>
-            <div className="p-4 border-t border-gray-700 flex-shrink-0"><div className="relative"><input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyPress={handleKeyPress} placeholder="Ask for a query..." className="w-full bg-gray-800 border border-gray-600 rounded-lg py-2 pl-4 pr-12 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200" disabled={isLoading || !schema}/><button onClick={handleSend} className="absolute top-1/2 right-2 -translate-y-1/2 p-2 bg-cyan-600 hover:bg-cyan-700 rounded-md disabled:bg-gray-600" disabled={isLoading || input.trim() === '' || !schema}><SendIcon className="w-5 h-5 text-white"/></button></div></div>
+            <div className="p-4 border-t border-gray-700 flex-shrink-0">
+                <div className="relative">
+                    <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask for a query..." className="w-full bg-gray-800 border border-gray-600 rounded-lg py-2 pl-4 pr-20 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200" disabled={isLoading || !schema}/>
+                    {isLoading
+                        ? <button onClick={handleCancel} className="absolute top-1/2 right-2 -translate-y-1/2 p-2 bg-red-700 hover:bg-red-600 rounded-md" title="Cancel request"><XMarkIcon className="w-5 h-5 text-white"/></button>
+                        : <button onClick={handleSend} className="absolute top-1/2 right-2 -translate-y-1/2 p-2 bg-cyan-600 hover:bg-cyan-700 rounded-md disabled:bg-gray-600" disabled={input.trim() === '' || !schema}><SendIcon className="w-5 h-5 text-white"/></button>
+                    }
+                </div>
+            </div>
         </div>
     );
 };

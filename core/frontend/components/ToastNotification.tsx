@@ -6,11 +6,12 @@ import { XMarkIcon } from './icons/XMarkIcon';
 interface ToastNotificationProps {
   message: string;
   onClose: () => void;
+  title?: string;
   duration?: number;
   action?: { label: string; onClick: () => void };
 }
 
-const ToastNotification: React.FC<ToastNotificationProps> = ({ message, onClose, duration = 8000, action }) => {
+const ToastNotification: React.FC<ToastNotificationProps> = ({ message, onClose, title = 'Alert', duration = 8000, action }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();
@@ -28,7 +29,7 @@ const ToastNotification: React.FC<ToastNotificationProps> = ({ message, onClose,
           <ExclamationTriangleIcon className="w-6 h-6 text-yellow-200" />
         </div>
         <div className="flex-grow">
-          <p className="font-semibold">AI Assistant Alert</p>
+          <p className="font-semibold">{title}</p>
           <p className="text-sm text-yellow-100">{message}</p>
           {action && (
             <button

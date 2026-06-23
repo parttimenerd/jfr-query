@@ -1,6 +1,6 @@
 import React, { useMemo, useContext } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { PlotRegistration, PlotParameter } from './plotTypes';
+import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec } from '../../utils/plotUtils';
 import { SettingsContext } from '../../context/SettingsContext';
@@ -53,4 +53,4 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
         </div>
     );
 };
-export const histogramPlot: PlotRegistration<Config> = { name:'HISTOGRAM', description:'Visualizes the distribution of a numeric dataset.', params, template:'HISTOGRAM(value: , bins: 10)', examples:[{description:'A histogram showing the distribution of GC pause durations.',code:'HISTOGRAM(value: "duration") TITLE "GC Pause Distribution"'},{description:'A histogram with 20 logarithmically-sized bins, useful for data spanning multiple orders of magnitude.',code:'HISTOGRAM(value: "duration", bins: 20, logBins: true)'}], parseConfig, component:HistogramComponent };
+export const histogramPlot: PlotRegistration<Config> = { name:'HISTOGRAM', description:'Frequency distribution of a single numeric column — shows how values cluster. Use logBins: true for data spanning many orders of magnitude (e.g., pause durations from µs to seconds).', params: withCommonParams(params), template:'HISTOGRAM(value: , bins: 10)', examples:[{description:'Distribution of GC pause durations — reveals if most pauses are short with occasional long ones.',code:'HISTOGRAM(value: "duration") TITLE "GC Pause Distribution"',sampleData:[{duration:5},{duration:8},{duration:12},{duration:6},{duration:150},{duration:7},{duration:9},{duration:200},{duration:11},{duration:6},{duration:8},{duration:14}]},{description:'Log-scale bins for data spanning multiple orders of magnitude — e.g. object allocation sizes from bytes to megabytes.',code:'HISTOGRAM(value: "allocationSize", bins: 20, logBins: true) TITLE "Allocation Size Distribution"',sampleData:[{allocationSize:64},{allocationSize:128},{allocationSize:1024},{allocationSize:4096},{allocationSize:65536},{allocationSize:1048576},{allocationSize:256},{allocationSize:512},{allocationSize:2048}]}], parseConfig, component:HistogramComponent };

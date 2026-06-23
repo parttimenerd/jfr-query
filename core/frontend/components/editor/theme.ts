@@ -1,0 +1,126 @@
+import { EditorView } from '@codemirror/view';
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { tags as t } from '@lezer/highlight';
+
+const palette = {
+  bg: '#263238',
+  fg: '#eeffff',
+  selection: '#1e2a30',
+  cursor: '#fc6d24',
+  gutter: '#263238',
+  caret: '#80cbc4',
+  string: '#c3e88d',
+  number: '#f78c6c',
+  keyword: '#c792ea',
+  operator: '#89ddff',
+  comment: '#546e7a',
+  builtin: '#82aaff',
+  variable: '#82aaff',
+  type: '#f07178',
+  // custom additions
+  table: '#82aaff',
+  view: '#c3e88d',
+  macro: '#ffcb6b',
+  plotFn: '#82aaff',
+  plotParam: '#c792ea',
+  atom: '#f78c6c',
+  localVar: '#ffcb6b',
+  undefVar: '#ff6b6b',
+};
+
+export const editorTheme = EditorView.theme(
+  {
+    '&': {
+      color: palette.fg,
+      backgroundColor: palette.bg,
+      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+      fontSize: '13px',
+    },
+    '.cm-content': { caretColor: palette.caret, padding: '8px 0' },
+    '&.cm-focused .cm-cursor': { borderLeftColor: palette.caret },
+    '.cm-scroller': { overflow: 'auto' },
+    '&.cm-focused .cm-selectionBackground, ::selection, .cm-selectionBackground': {
+      backgroundColor: '#3a4a52 !important',
+    },
+    '.cm-gutters': {
+      backgroundColor: palette.gutter,
+      color: '#546e7a',
+      border: 'none',
+    },
+    '.cm-activeLineGutter, .cm-activeLine': { backgroundColor: 'transparent' },
+    '.cm-tooltip': {
+      backgroundColor: '#1e2a30',
+      border: '1px solid #37474f',
+      color: palette.fg,
+      borderRadius: '4px',
+      boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
+    },
+    '.cm-tooltip.cm-tooltip-autocomplete': { fontSize: '12px' },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'inherit', maxHeight: '20em' },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul > li': { padding: '3px 8px' },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': {
+      backgroundColor: '#37474f',
+      color: '#80cbc4',
+    },
+    '.cm-completionLabel': { color: palette.fg },
+    '.cm-completionDetail': { color: '#78909c', fontStyle: 'normal', marginLeft: '0.7em' },
+    '.cm-completionIcon': { width: '1.2em', opacity: 0.85 },
+    '.cm-completionIcon-table': { color: palette.table },
+    '.cm-completionIcon-view': { color: palette.view },
+    '.cm-completionIcon-macro': { color: palette.macro },
+    '.cm-completionIcon-column': { color: '#80cbc4' },
+    '.cm-completionIcon-variable': { color: palette.localVar },
+    '.cm-completionIcon-keyword': { color: palette.keyword },
+    '.cm-completionIcon-plotFn': { color: palette.plotFn },
+    '.cm-completionIcon-plotParam': { color: palette.plotParam },
+    '.cm-completionIcon-atom': { color: palette.atom },
+    '.cm-diagnostic-error': { borderLeftColor: '#ff6b6b' },
+    '.cm-diagnostic-warning': { borderLeftColor: '#ffcb6b' },
+    '.cm-lintRange-error': {
+      backgroundImage:
+        'linear-gradient(45deg, transparent 65%, #ff6b6b 80%, transparent 90%), linear-gradient(135deg, transparent 5%, #ff6b6b 15%, transparent 25%, #ff6b6b 35%, transparent 50%, #ff6b6b 60%, transparent 70%, #ff6b6b 80%, transparent 90%)',
+      backgroundSize: '6px 3px',
+      backgroundRepeat: 'repeat-x',
+      backgroundPosition: '0 100%',
+    },
+    '.cm-localVar': { color: palette.localVar, fontWeight: '500', cursor: 'pointer' },
+    '.cm-undefVar': {
+      color: palette.undefVar,
+      textDecoration: 'underline wavy',
+      textDecorationColor: palette.undefVar,
+      cursor: 'pointer',
+    },
+    '.cm-varValueWidget': {
+      color: '#78909c',
+      fontStyle: 'italic',
+      fontSize: '0.9em',
+      marginLeft: '2px',
+      pointerEvents: 'none',
+      userSelect: 'none',
+    },
+  },
+  { dark: true },
+);
+
+export const editorHighlight = syntaxHighlighting(
+  HighlightStyle.define([
+    { tag: t.keyword, color: palette.keyword },
+    { tag: t.operator, color: palette.operator },
+    { tag: t.string, color: palette.string },
+    { tag: t.number, color: palette.number },
+    { tag: t.bool, color: palette.atom },
+    { tag: t.atom, color: palette.atom },
+    { tag: t.comment, color: palette.comment, fontStyle: 'italic' },
+    { tag: t.variableName, color: palette.fg },
+    { tag: t.typeName, color: palette.type },
+    { tag: t.function(t.variableName), color: palette.builtin },
+    { tag: t.heading, color: palette.keyword, fontWeight: 'bold' },
+    { tag: t.emphasis, fontStyle: 'italic' },
+    { tag: t.strong, fontWeight: 'bold' },
+    { tag: t.link, color: palette.builtin, textDecoration: 'underline' },
+    { tag: t.url, color: palette.string },
+    { tag: t.processingInstruction, color: palette.plotFn },
+    { tag: t.special(t.variableName), color: palette.macro },
+    { tag: t.labelName, color: palette.plotParam },
+  ]),
+);

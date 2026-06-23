@@ -1,6 +1,6 @@
 import React, { useContext, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { PlotRegistration, PlotParameter } from './plotTypes';
+import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { formatTimestamp } from '../../utils/timeFormatter';
@@ -66,11 +66,11 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
   );
 };
 
-export const lineChartPlot: PlotRegistration<Config> = { 
-    name:'LINE_CHART', 
-    description:'Displays data points connected by lines, ideal for time-series data.', 
-    params, 
-    supportsMultiQuery:true, 
+export const lineChartPlot: PlotRegistration<Config> = {
+    name:'LINE_CHART',
+    description:'Lines over time — ideal for CPU, memory, GC activity, or any metric that changes continuously. Supports zoom, pan, dual Y-axis, and reference lines.',
+    params: withCommonParams(params),
+    supportsMultiQuery:true,
     template:'LINE_CHART(x: , y: [])', 
     examples:[
         {

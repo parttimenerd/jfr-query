@@ -39,13 +39,18 @@ export interface ProviderMetadata {
   isInternal?: boolean;
 }
 
-export type AiProviderType = 'google' | 'openai' | 'gardener';
+export type AiProviderType = 'google' | 'openai' | 'gardener' | 'local' | 'browser';
+
+export interface PlotSuggestContext {
+    columns: { name: string; type: string }[];
+    sample: any[];
+}
 
 export interface IAiProvider {
     getAgentResponse: (conversationHistory: Content[], systemInstruction: string, model?: string) => Promise<AIResponse>;
     getInlineSuggestion: (systemInstruction: string, request: string, model?: string) => Promise<AIInlineResponse>;
     getCodeFormat: (code: string, model?: string) => Promise<string | null>;
-    getSuggestPlot: (systemInstruction: string, sql: string, model?: string) => Promise<string | null>;
+    getSuggestPlot: (systemInstruction: string, sql: string, model?: string, context?: PlotSuggestContext) => Promise<string | null>;
     getPlotFixSuggestion: (systemInstruction: string, model?: string) => Promise<AIPlotFixResponse>;
     verifyCredentials: () => Promise<boolean>;
 }

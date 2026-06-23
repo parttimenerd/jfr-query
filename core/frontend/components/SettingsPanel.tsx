@@ -45,7 +45,9 @@ interface SettingsPanelProps {
 
 const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadataChange, isAiFeatureActive }, ref) => {
     const { settings: globalSettings } = useContext(SettingsContext);
+    const [isPanelCollapsed, setIsPanelCollapsed] = useState(true);
     const [isGeneralCollapsed, setIsGeneralCollapsed] = useState(true);
+    const [isVariablesCollapsed, setIsVariablesCollapsed] = useState(true);
     const [isViewsCollapsed, setIsViewsCollapsed] = useState(true);
     const [isMacrosCollapsed, setIsMacrosCollapsed] = useState(true);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -54,13 +56,62 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
     const [tooltip, setTooltip] = useState<{ visible: boolean; content: React.ReactNode; top: number; left: number } | null>(null);
     const hideTimeout = useRef<number | null>(null);
     const [suggestionIndex, setSuggestionIndex] = useState(0);
+    const variableInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+    const pendingFocusVar = useRef<string | null>(null);
 
     useImperativeHandle(ref, () => ({
         focusVariable: (name: string) => {
-            console.log("Focus variable request:", name);
-            // Placeholder for future implementation
+            // Ensure the section is open, then focus the matching input.
+            // If the variable doesn't exist yet, create it first.
+            const exists = !!(metadata.variables && name in metadata.variables);
+            if (!exists) {
+                onMetadataChange({ ...metadata, variables: { ...(metadata.variables || {}), [name]: '' } });
+            }
+            setIsVariablesCollapsed(false);
+            pendingFocusVar.current = name;
+            // Try immediately; the effect below will retry once the input mounts.
+            setTimeout(() => {
+                const el = variableInputRefs.current[name];
+                if (el) { el.focus(); el.select(); pendingFocusVar.current = null; }
+            }, 50);
         }
-    }));
+    }), [metadata, onMetadataChange]);
+
+    // After variables render, if a focus is pending, apply it.
+    useEffect(() => {
+        const name = pendingFocusVar.current;
+        if (!name) return;
+        const el = variableInputRefs.current[name];
+        if (el) { el.focus(); el.select(); pendingFocusVar.current = null; }
+    }, [metadata.variables, isVariablesCollapsed]);
+
+    const globalVars = metadata.variables || {};
+    const handleAddGlobalVariable = () => {
+        let name = '$$newVar';
+        let i = 1;
+        while (globalVars[name]) name = `$$newVar${i++}`;
+        onMetadataChange({ ...metadata, variables: { ...globalVars, [name]: '' } });
+        pendingFocusVar.current = name;
+        setIsVariablesCollapsed(false);
+    };
+    const handleDeleteGlobalVariable = (name: string) => {
+        const next = { ...globalVars };
+        delete next[name];
+        onMetadataChange({ ...metadata, variables: next });
+    };
+    const handleRenameGlobalVariable = (oldName: string, newName: string) => {
+        if (!newName || oldName === newName) return;
+        if (newName in globalVars) return; // refuse to clobber
+        const next: Record<string, string> = {};
+        for (const k of Object.keys(globalVars)) {
+            if (k === oldName) next[newName] = globalVars[k];
+            else next[k] = globalVars[k];
+        }
+        onMetadataChange({ ...metadata, variables: next });
+    };
+    const handleChangeGlobalVariableValue = (name: string, value: string) => {
+        onMetadataChange({ ...metadata, variables: { ...globalVars, [name]: value } });
+    };
 
     const handleMetadataFieldChange = (field: keyof NotebookMetadata, value: any) => { onMetadataChange({ ...metadata, [field]: value }); };
     const handleAdd = (type: 'view' | 'macro') => { const newItem = { id: `${type}-${Date.now()}`, name: type==='view'?'NewView':'NewMacro', sql: type==='view'?'SELECT 1;':'a + b' }; onMetadataChange(type==='view'?{...metadata, views:[...metadata.views, newItem]}:{...metadata, macros:[...metadata.macros, newItem]}).then(() => handleEdit(type,newItem)).catch(err => console.error('Failed to add item to notebook:', err)); };
@@ -98,13 +149,60 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
     const handleSuggestPrompt = () => { const nextIndex = suggestionIndex % SURPRISE_PROMPTS.length; const newPrompt = SURPRISE_PROMPTS[nextIndex]; handleMetadataFieldChange('customSystemPrompt', newPrompt); setSuggestionIndex(nextIndex + 1); };
 
     const renderEditableItem = (type: 'view' | 'macro', item: CustomView | CustomMacro) => { if (editingId === item.id) { return (<div className="p-2 bg-gray-700/50 rounded-md space-y-2"><input type="text" value={editingName} onChange={e=>setEditingName(e.target.value)} className="w-full bg-gray-800 p-1.5 text-sm"/><div className="border border-gray-600 rounded-md"><SQLEditor value={editingSql} onChange={setEditingSql} /></div><div className="flex justify-end gap-2"><button onClick={handleCancel} className="px-2 py-1 text-xs bg-gray-600 rounded">Cancel</button><button onClick={()=>handleSave(type)} className="px-2 py-1 text-xs bg-cyan-600 rounded">Save</button></div></div>); } return (<div className="flex justify-between items-center p-2 hover:bg-gray-700/50 rounded-md" onMouseEnter={e=>handleShowTooltip(e,<TooltipContent item={item} type={type}/>)} onMouseLeave={handleHideTooltip}><span className="font-mono text-sm">{item.name}</span><div className="flex items-center gap-2"><button onClick={()=>handleEdit(type,item)} className="p-1 text-gray-400 hover:text-cyan-400"><PencilIcon className="w-4 h-4"/></button><button onClick={()=>handleDelete(type,item.id)} className="p-1 text-gray-400 hover:text-red-400"><TrashIcon className="w-4 h-4"/></button></div></div>); };
-    
-    return (<div className="bg-gray-800/50 rounded-lg border border-gray-700"><div className="p-4 space-y-4">
-        <div className="bg-gray-900/50 rounded-lg border border-gray-700"><div className="p-2 border-b border-gray-700 flex items-center justify-between cursor-pointer" onClick={()=>setIsGeneralCollapsed(!isGeneralCollapsed)}><h3 className="flex items-center gap-2 text-sm font-semibold"><DocumentTextIcon className="w-4 h-4"/>Notebook Settings</h3>{isGeneralCollapsed?<ChevronDownIcon className="w-4 h-4"/>:<ChevronUpIcon className="w-4 h-4"/>}</div>{!isGeneralCollapsed && <div className="p-4 space-y-4 animate-fade-in-down">{isAiFeatureActive && (<div><div className="flex items-center justify-between mb-1"><label htmlFor="customSystemPrompt" className="text-sm font-medium text-gray-300 block">Custom System Prompt</label><button onClick={handleSuggestPrompt} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700/50 hover:bg-cyan-600/30 text-gray-400 rounded-md" title="Suggest a fun prompt"><WandSparklesIcon className="w-4 h-4"/>Surprise Me!</button></div><textarea id="customSystemPrompt" name="customSystemPrompt" value={metadata.customSystemPrompt || ''} onChange={e => handleMetadataFieldChange('customSystemPrompt', e.target.value)} rows={3} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" placeholder="e.g., You are a helpful Garbage Collection expert."/><p className="mt-1 text-xs text-gray-500">Adds instructions to the AI chat assistant for this notebook.</p></div>)}<div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label htmlFor="timeFormat" className="text-sm font-medium text-gray-300 block mb-1">Timestamp Format</label><input id="timeFormat" name="timeFormat" type="text" value={metadata.timeFormat || ''} placeholder={globalSettings.timeFormat} onChange={e => handleMetadataFieldChange('timeFormat', e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" /><p className="mt-1 text-xs text-gray-500">Default: YYYY, MM, DD, HH, mm, ss, SSS</p></div><div><label htmlFor="decimalPlaces" className="text-sm font-medium text-gray-300 block mb-1">Max Decimal Places</label><input id="decimalPlaces" name="decimalPlaces" type="number" min="0" max="20" value={metadata.decimalPlaces ?? ''} placeholder={String(globalSettings.decimalPlaces)} onChange={e => handleMetadataFieldChange('decimalPlaces', e.target.value === '' ? undefined : parseInt(e.target.value, 10))} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" /><p className="mt-1 text-xs text-gray-500">For numbers in tables and plots.</p></div></div></div>}</div>
+    const hasContent = Object.keys(globalVars).length > 0 || metadata.views.length > 0 || metadata.macros.length > 0;
 
-        <div className="bg-gray-900/50 rounded-lg border border-gray-700"><div className="p-2 border-b border-gray-700 flex items-center justify-between cursor-pointer" onClick={()=>setIsViewsCollapsed(!isViewsCollapsed)}><h3 className="flex items-center gap-2 text-sm font-semibold"><ViewIcon className="w-4 h-4"/>Custom Views ({metadata.views.length})</h3>{isViewsCollapsed?<ChevronDownIcon className="w-4 h-4"/>:<ChevronUpIcon className="w-4 h-4"/>}</div>{!isViewsCollapsed && <div className="animate-fade-in-down">{metadata.views.map(v=><div key={v.id}>{renderEditableItem('view',v)}</div>)}<div className="p-2 border-t border-gray-700 mt-2"><button onClick={()=>handleAdd('view')} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700 rounded-md"><PlusIcon className="w-3 h-3"/> Add</button></div></div>}</div>
-        <div className="bg-gray-900/50 rounded-lg border border-gray-700"><div className="p-2 border-b border-gray-700 flex items-center justify-between cursor-pointer" onClick={()=>setIsMacrosCollapsed(!isMacrosCollapsed)}><h3 className="flex items-center gap-2 text-sm font-semibold"><CodeBracketIcon className="w-4 h-4"/>Custom Macros ({metadata.macros.length})</h3>{isMacrosCollapsed?<ChevronDownIcon className="w-4 h-4"/>:<ChevronUpIcon className="w-4 h-4"/>}</div>{!isMacrosCollapsed && <div className="animate-fade-in-down">{metadata.macros.map(m=><div key={m.id}>{renderEditableItem('macro',m)}</div>)}<div className="p-2 border-t border-gray-700 mt-2"><button onClick={()=>handleAdd('macro')} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700 rounded-md"><PlusIcon className="w-3 h-3"/> Add</button></div></div>}</div>
-    </div>{tooltip?.visible && ReactDOM.createPortal(<div style={{top:tooltip.top,left:tooltip.left}} className="absolute z-[100] p-2 bg-gray-700 border border-gray-600 rounded shadow-lg w-auto max-w-xs animate-fade-in" onMouseEnter={()=>{if(hideTimeout.current)clearTimeout(hideTimeout.current);}} onMouseLeave={handleHideTooltip}>{tooltip.content}</div>, document.body)}</div>);
+    return (<><div className="border border-gray-700/60 rounded-lg overflow-hidden">
+        {/* Single top-level toggle row */}
+        <div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}>
+            <h3 className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                <DocumentTextIcon className="w-3.5 h-3.5"/>
+                Notebook Settings
+                {hasContent && <span className="text-cyan-500/70">·</span>}
+                {Object.keys(globalVars).length > 0 && <span className="text-gray-600">{Object.keys(globalVars).length} var{Object.keys(globalVars).length !== 1 ? 's' : ''}</span>}
+                {metadata.views.length > 0 && <span className="text-gray-600">{metadata.views.length} view{metadata.views.length !== 1 ? 's' : ''}</span>}
+                {metadata.macros.length > 0 && <span className="text-gray-600">{metadata.macros.length} macro{metadata.macros.length !== 1 ? 's' : ''}</span>}
+            </h3>
+            {isPanelCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5 text-gray-600"/> : <ChevronUpIcon className="w-3.5 h-3.5 text-gray-600"/>}
+        </div>
+        {!isPanelCollapsed && <div className="divide-y divide-gray-700/60 animate-fade-in-down">
+            <div><div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={()=>setIsGeneralCollapsed(!isGeneralCollapsed)}><h3 className="flex items-center gap-2 text-sm font-medium text-gray-400"><DocumentTextIcon className="w-3.5 h-3.5"/>Settings</h3>{isGeneralCollapsed?<ChevronDownIcon className="w-3.5 h-3.5 text-gray-500"/>:<ChevronUpIcon className="w-3.5 h-3.5 text-gray-500"/>}</div>{!isGeneralCollapsed && <div className="px-3 pb-3 pt-1 space-y-4 animate-fade-in-down">{isAiFeatureActive && (<div><div className="flex items-center justify-between mb-1"><label htmlFor="customSystemPrompt" className="text-sm font-medium text-gray-300 block">Custom System Prompt</label><button onClick={handleSuggestPrompt} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700/50 hover:bg-cyan-600/30 text-gray-400 rounded-md" title="Suggest a fun prompt"><WandSparklesIcon className="w-4 h-4"/>Surprise Me!</button></div><textarea id="customSystemPrompt" name="customSystemPrompt" value={metadata.customSystemPrompt || ''} onChange={e => handleMetadataFieldChange('customSystemPrompt', e.target.value)} rows={3} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" placeholder="e.g., You are a helpful Garbage Collection expert."/><p className="mt-1 text-xs text-gray-500">Adds instructions to the AI chat assistant for this notebook.</p></div>)}<div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label htmlFor="timeFormat" className="text-sm font-medium text-gray-300 block mb-1">Timestamp Format</label><input id="timeFormat" name="timeFormat" type="text" value={metadata.timeFormat || ''} placeholder={globalSettings.timeFormat} onChange={e => handleMetadataFieldChange('timeFormat', e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" /><p className="mt-1 text-xs text-gray-500">Default: YYYY, MM, DD, HH, mm, ss, SSS</p></div><div><label htmlFor="decimalPlaces" className="text-sm font-medium text-gray-300 block mb-1">Max Decimal Places</label><input id="decimalPlaces" name="decimalPlaces" type="number" min="0" max="20" value={metadata.decimalPlaces ?? ''} placeholder={String(globalSettings.decimalPlaces)} onChange={e => handleMetadataFieldChange('decimalPlaces', e.target.value === '' ? undefined : parseInt(e.target.value, 10))} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" /><p className="mt-1 text-xs text-gray-500">For numbers in tables and plots.</p></div></div></div>}</div>
+
+            <div>
+                <div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={()=>setIsVariablesCollapsed(!isVariablesCollapsed)}>
+                    <h3 className="flex items-center gap-2 text-sm font-medium text-gray-400"><CodeBracketIcon className="w-3.5 h-3.5"/>Notebook Variables ({Object.keys(globalVars).length})</h3>
+                    {isVariablesCollapsed?<ChevronDownIcon className="w-3.5 h-3.5 text-gray-500"/>:<ChevronUpIcon className="w-3.5 h-3.5 text-gray-500"/>}
+                </div>
+                {!isVariablesCollapsed && <div className="px-3 pb-3 space-y-2 animate-fade-in-down">
+                    <p className="text-xs text-gray-500">Notebook-scoped variables (use <code className="font-mono bg-gray-800 px-1 rounded">$$name</code> in SQL or plot configs). They flow into custom views/macros and are saved with the notebook.</p>
+                    {Object.entries(globalVars).map(([k, v]) => (
+                        <div key={k} className="flex items-center gap-2">
+                            <input
+                                type="text"
+                                defaultValue={k}
+                                onBlur={e => handleRenameGlobalVariable(k, e.target.value.trim())}
+                                ref={el => { variableInputRefs.current[k] = el; }}
+                                className="w-1/3 bg-gray-800 border border-gray-600 rounded-md p-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                placeholder="$$name"
+                            />
+                            <input
+                                type="text"
+                                value={v}
+                                onChange={e => handleChangeGlobalVariableValue(k, e.target.value)}
+                                className="flex-grow bg-gray-800 border border-gray-600 rounded-md p-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                placeholder="value"
+                            />
+                            <button onClick={() => handleDeleteGlobalVariable(k)} className="p-1 text-gray-400 hover:text-red-400" title="Delete variable"><TrashIcon className="w-4 h-4"/></button>
+                        </div>
+                    ))}
+                    {Object.keys(globalVars).length === 0 && <p className="text-sm text-gray-500 text-center py-2">No notebook variables.</p>}
+                    <div className="pt-1"><button onClick={handleAddGlobalVariable} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-md"><PlusIcon className="w-3 h-3"/> Add Variable</button></div>
+                </div>}
+            </div>
+
+            <div><div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={()=>setIsViewsCollapsed(!isViewsCollapsed)}><h3 className="flex items-center gap-2 text-sm font-medium text-gray-400"><ViewIcon className="w-3.5 h-3.5"/>Custom Views ({metadata.views.length})</h3>{isViewsCollapsed?<ChevronDownIcon className="w-3.5 h-3.5 text-gray-500"/>:<ChevronUpIcon className="w-3.5 h-3.5 text-gray-500"/>}</div>{!isViewsCollapsed && <div className="animate-fade-in-down">{metadata.views.map(v=><div key={v.id}>{renderEditableItem('view',v)}</div>)}<div className="px-3 py-2"><button onClick={()=>handleAdd('view')} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700 rounded-md"><PlusIcon className="w-3 h-3"/> Add</button></div></div>}</div>
+            <div><div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={()=>setIsMacrosCollapsed(!isMacrosCollapsed)}><h3 className="flex items-center gap-2 text-sm font-medium text-gray-400"><CodeBracketIcon className="w-3.5 h-3.5"/>Custom Macros ({metadata.macros.length})</h3>{isMacrosCollapsed?<ChevronDownIcon className="w-3.5 h-3.5 text-gray-500"/>:<ChevronUpIcon className="w-3.5 h-3.5 text-gray-500"/>}</div>{!isMacrosCollapsed && <div className="animate-fade-in-down">{metadata.macros.map(m=><div key={m.id}>{renderEditableItem('macro',m)}</div>)}<div className="px-3 py-2"><button onClick={()=>handleAdd('macro')} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700 rounded-md"><PlusIcon className="w-3 h-3"/> Add</button></div></div>}</div>
+        </div>}
+    </div>{tooltip?.visible && ReactDOM.createPortal(<div style={{top:tooltip.top,left:tooltip.left}} className="absolute z-[100] p-2 bg-gray-700 border border-gray-600 rounded shadow-lg w-auto max-w-xs animate-fade-in" onMouseEnter={()=>{if(hideTimeout.current)clearTimeout(hideTimeout.current);}} onMouseLeave={handleHideTooltip}>{tooltip.content}</div>, document.body)}</>);
 });
 
 export default SettingsPanel;

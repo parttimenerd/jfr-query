@@ -1,6 +1,6 @@
 import React, { useContext, useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { PlotRegistration, PlotParameter } from './plotTypes';
+import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
@@ -26,7 +26,7 @@ const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnima
     };
   }, [data, config.name, config.value]);
   
-  const chartData = data.map(row => ({ name: row[nameCol], value: parseFloat(row[valueCol]) })).filter(item => !isNaN(item.value));
+  const chartData = data.map(row => ({ name: row[nameCol], value: parseFloat(row[valueCol]) })).filter(item => !isNaN(item.value) && item.value > 0);
   
   if (chartData.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">No valid data.</div>;
 
@@ -47,19 +47,41 @@ const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnima
 
 export const pieChartPlot: PlotRegistration<PieChartConfig> = {
   name: 'PIE_CHART',
-  description: 'Shows proportions of a whole.',
-  params,
+  description: 'Shows how a total breaks down into parts — best for 3–7 categories. Use BAR_CHART if you need precise comparisons.',
+  params: withCommonParams(params),
   supportsMultiQuery: true,
   template: 'PIE_CHART(name: , value: )',
-  examples: [{ 
-      description: 'A pie chart showing the proportion of time spent in different Java thread states.', 
+  examples: [
+    {
+      description: 'Thread state breakdown — what fraction of time threads spent running, waiting, or blocked.',
       code: 'PIE_CHART(name: "threadState", value: "totalDuration") TITLE "Thread State Proportions"',
       sampleData: [
-          { threadState: 'RUNNABLE', totalDuration: 1500 },
-          { threadState: 'WAITING', totalDuration: 800 },
-          { threadState: 'BLOCKED', totalDuration: 300 },
+        { threadState: 'RUNNABLE', totalDuration: 1500 },
+        { threadState: 'WAITING', totalDuration: 800 },
+        { threadState: 'TIMED_WAITING', totalDuration: 420 },
+        { threadState: 'BLOCKED', totalDuration: 300 },
       ]
-  }],
+    },
+    {
+      description: 'GC cause breakdown — which triggers are responsible for the most garbage collection.',
+      code: 'PIE_CHART(name: "gcCause", value: "count") TITLE "GC Causes"',
+      sampleData: [
+        { gcCause: 'Allocation Failure', count: 142 },
+        { gcCause: 'Metadata GC Threshold', count: 23 },
+        { gcCause: 'System.gc()', count: 8 },
+        { gcCause: 'Ergonomics', count: 5 },
+      ]
+    },
+    {
+      description: 'Memory pool usage split — how heap is divided between young and old generation.',
+      code: 'PIE_CHART(name: "pool", value: "usedBytes") TITLE "Heap Usage by Pool"',
+      sampleData: [
+        { pool: 'Eden Space', usedBytes: 512000 },
+        { pool: 'Survivor Space', usedBytes: 64000 },
+        { pool: 'Old Gen', usedBytes: 920000 },
+      ]
+    },
+  ],
   parseConfig,
   component: PieChartComponent,
 };

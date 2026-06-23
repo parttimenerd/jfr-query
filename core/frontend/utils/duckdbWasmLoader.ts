@@ -1,4 +1,35 @@
 import * as duckdb from '@duckdb/duckdb-wasm';
+import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
+
+export async function loadDuckDbFileIntoWasm(
+  db: AsyncDuckDB,
+  conn: AsyncDuckDBConnection,
+  bytes: Uint8Array
+): Promise<void> {
+  await db.registerFileBuffer('input.db', bytes);
+  await conn.query("ATTACH 'input.db' AS src (READ_ONLY)");
+  try {
+    // duckdb_tables() is a global function — filter by database_name to get
+    // only the attached db's tables, not the in-memory default catalog.
+    const tables = await conn.query(
+      "SELECT table_name FROM duckdb_tables() WHERE database_name='src' AND schema_name='main'"
+    );
+    for (const row of tables.toArray()) {
+      const t = (row as any).table_name;
+      const safe = String(t).replace(/"/g, '""');
+      await conn.query(`CREATE TABLE IF NOT EXISTS "${safe}" AS SELECT * FROM src.main."${safe}"`);
+    }
+    const views = await conn.query(
+      "SELECT view_name, sql FROM duckdb_views() WHERE database_name='src' AND NOT internal AND schema_name='main'"
+    );
+    for (const row of views.toArray()) {
+      const r = row as any;
+      try { await conn.query(r.sql); } catch { /* skip views that can't be recreated */ }
+    }
+  } finally {
+    await conn.query("DETACH src");
+  }
+}
 
 /**
  * Initializes a fresh DuckDB WASM instance using the bundled jsdelivr modules.

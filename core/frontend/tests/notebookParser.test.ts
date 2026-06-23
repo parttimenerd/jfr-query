@@ -121,4 +121,62 @@ describe('Notebook Parser', () => {
         const rebuilt = reconstructNotebook(parseNotebook(md));
         expect(rebuilt).toBe(md);
     });
+
+    it('B-007: metadata.variables map round-trips through frontmatter', () => {
+        const md = "---\nvariables:\n  $start: '0'\n  $end: '1000'\n  $$global: 'hello'\n---\n# Body";
+        const parsed = parseNotebook(md);
+        expect(parsed.metadata.variables).toEqual({ '$start': '0', '$end': '1000', '$$global': 'hello' });
+        const rebuilt = reconstructNotebook(parsed);
+        const reparsed = parseNotebook(rebuilt);
+        expect(reparsed.metadata.variables).toEqual({ '$start': '0', '$end': '1000', '$$global': 'hello' });
+    });
+
+    it('B-007: empty variables map is not serialized', () => {
+        const md = "---\ntimeFormat: 'HH:mm:ss'\n---\n# Body";
+        const parsed = parseNotebook(md);
+        parsed.metadata.variables = {};
+        const rebuilt = reconstructNotebook(parsed);
+        // Should not contain a "variables:" header for an empty map.
+        expect(rebuilt).not.toContain('variables:');
+    });
+
+    it('C: view with params and includes round-trips through frontmatter', () => {
+        const md = `---
+views:
+  - name: 'gc_top_pauses'
+    includes: [gc_phases, heap_summary]
+    params: [{name: n, type: INTEGER, default: 10}]
+    sql: |
+      SELECT * FROM gc_phases LIMIT n
+---
+# Body`;
+        const parsed = parseNotebook(md);
+        const view = parsed.metadata.views?.[0];
+        expect(view?.name).toBe('gc_top_pauses');
+        expect(view?.includes).toEqual(['gc_phases', 'heap_summary']);
+        expect(view?.params).toHaveLength(1);
+        expect(view?.params?.[0].name).toBe('n');
+        expect(view?.params?.[0].type).toBe('INTEGER');
+        expect(view?.params?.[0].default).toBe('10');
+
+        const rebuilt = reconstructNotebook(parsed);
+        expect(rebuilt).toContain('includes: [gc_phases, heap_summary]');
+        expect(rebuilt).toContain('params: [{name: n, type: INTEGER, default: 10}]');
+    });
+
+    it('C: view without params/includes still serializes correctly (backwards compat)', () => {
+        const md = `---
+views:
+  - name: 'my_view'
+    sql: |
+      SELECT 1
+---
+# Body`;
+        const parsed = parseNotebook(md);
+        expect(parsed.metadata.views?.[0]?.params).toBeUndefined();
+        expect(parsed.metadata.views?.[0]?.includes).toBeUndefined();
+        const rebuilt = reconstructNotebook(parsed);
+        expect(rebuilt).not.toContain('params:');
+        expect(rebuilt).not.toContain('includes:');
+    });
 });

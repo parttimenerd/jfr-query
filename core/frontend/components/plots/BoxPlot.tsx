@@ -1,6 +1,6 @@
 import React, { useMemo, useContext } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { PlotRegistration, PlotParameter } from './plotTypes';
+import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
@@ -42,9 +42,8 @@ const Box = (props: any) => {
 
     const { min, q1, median, q3, max } = payload.stats;
 
-    // If q1 and q3 are the same, the box has no height.
-    // The median is also the same. Just draw a line for all three.
-    if (height === 0) {
+    // If q1 and q3 are the same, the box has no height and pixelsPerUnit would be ∞.
+    if (height === 0 || q3 === q1) {
         return (
             <g>
                 <line x1={x + width / 2} y1={y} x2={x + width / 2} y2={y} stroke="#8884d8" />
@@ -167,8 +166,8 @@ const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimati
 
 export const boxPlot: PlotRegistration<BoxPlotConfig> = {
   name: 'BOX_PLOT',
-  description: 'Displays the five-number summary of a set of data (min, Q1, median, Q3, max).',
-  params,
+  description: 'Distribution summary (min, Q1, median, Q3, max) — good for comparing spread across categories like GC pauses per cause or latency per endpoint.',
+  params: withCommonParams(params),
   template: 'BOX_PLOT(value: )',
   examples: [
     { 

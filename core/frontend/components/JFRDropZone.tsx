@@ -8,6 +8,13 @@ interface JFRDropZoneProps {
     errorMessage: string | null;
 }
 
+const FEATURE_HINTS = [
+    { icon: '📊', text: 'SQL queries with charts — bar, line, scatter, flame graph, and more' },
+    { icon: '🔎', text: 'Browse all JFR events as DuckDB tables via the Schema Explorer' },
+    { icon: '⚡', text: 'Interactive zoom and pan on time-series charts' },
+    { icon: '📓', text: 'Shareable notebooks saved as plain Markdown' },
+];
+
 const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, errorMessage }) => {
     const [fileName, setFileName] = useState<string | null>(null);
 
@@ -21,7 +28,7 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
-        accept: { 'application/octet-stream': ['.jfr'] },
+        accept: { 'application/octet-stream': ['.jfr', '.duckdb', '.db'] },
         multiple: false,
         disabled: isImporting,
     });
@@ -33,13 +40,13 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                     <NotebookIcon className="w-12 h-12 text-cyan-400" />
                     <div className="text-left">
                         <h1 className="text-3xl font-bold text-white">JFR SQL Notebook</h1>
-                        <p className="text-gray-400">Running fully in-browser — drop a recording to begin.</p>
+                        <p className="text-gray-400">Query JFR recordings with SQL, visualize results as charts.</p>
                     </div>
                 </div>
 
                 <div
                     {...getRootProps()}
-                    className={`mt-6 border-2 border-dashed rounded-lg p-12 cursor-pointer transition-colors ${
+                    className={`mt-4 border-2 border-dashed rounded-lg p-10 cursor-pointer transition-colors ${
                         isDragActive ? 'border-cyan-400 bg-cyan-900/20' : 'border-gray-600 bg-gray-800/40 hover:border-cyan-500'
                     } ${isImporting ? 'opacity-60 cursor-wait' : ''}`}
                 >
@@ -47,13 +54,13 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                     {isImporting ? (
                         <div className="flex flex-col items-center gap-4 text-gray-300">
                             <div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" role="status" />
-                            <p>Importing {fileName ?? 'JFR'}…</p>
-                            <p className="text-xs text-gray-500">Parsing events and writing them into in-browser DuckDB.</p>
+                            <p>Importing {fileName ?? 'file'}…</p>
+                            <p className="text-xs text-gray-500">Loading into in-browser DuckDB — runs entirely locally, nothing leaves your machine.</p>
                         </div>
                     ) : (
                         <div className="text-gray-300">
-                            <p className="text-lg font-medium">{isDragActive ? 'Drop the .jfr file' : 'Drop a .jfr file here'}</p>
-                            <p className="text-sm text-gray-500 mt-1">or click to choose one</p>
+                            <p className="text-lg font-medium">{isDragActive ? 'Drop the file' : 'Drop a .jfr or .duckdb file here'}</p>
+                            <p className="text-sm text-gray-500 mt-1">or click to choose one · runs entirely in-browser, no server needed</p>
                         </div>
                     )}
                 </div>
@@ -64,6 +71,15 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                         <p className="mt-1">{errorMessage}</p>
                     </div>
                 )}
+
+                <div className="mt-6 grid grid-cols-2 gap-2 text-left">
+                    {FEATURE_HINTS.map((h, i) => (
+                        <div key={i} className="flex items-start gap-2 p-2.5 bg-gray-800/40 rounded-lg text-xs text-gray-400">
+                            <span className="text-base leading-none mt-0.5">{h.icon}</span>
+                            <span>{h.text}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );

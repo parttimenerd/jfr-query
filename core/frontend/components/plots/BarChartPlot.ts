@@ -1,6 +1,6 @@
 import React, { useContext, useMemo } from 'react';
 import { BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { PlotRegistration, PlotParameter } from './plotTypes';
+import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
@@ -153,8 +153,8 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
 
 export const barChartPlot: PlotRegistration<BarChartConfig> = {
   name: 'BAR_CHART',
-  description: 'Displays categorical data with rectangular bars. Supports grouped, stacked, and line overlays.',
-  params,
+  description: 'Bars for comparing values across categories — e.g. GC causes, top methods, pause counts per thread. Supports grouped, stacked, horizontal, and mixed bar+line.',
+  params: withCommonParams(params),
   supportsMultiQuery: true,
   template: 'BAR_CHART(x: , y: [])',
   examples: [

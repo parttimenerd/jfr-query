@@ -1,5 +1,5 @@
 import React from 'react';
-import { PlotRegistration, PlotParameter } from './plotTypes';
+import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import DataTable from '../DataTable';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn } from '../../utils/plotUtils';
@@ -47,8 +47,8 @@ const TablePlotComponent: React.FC<{ config: TablePlotConfig; data: any[], domai
 
 export const tablePlot: PlotRegistration<TablePlotConfig> = {
   name: 'TABLE',
-  description: 'Displays raw data in a sortable, filterable table. This is the default plot type.',
-  params: params,
+  description: 'Sortable, filterable table with CSV export — the default when no other plot is specified. Timestamps, durations, and numbers are auto-formatted.',
+  params: withCommonParams(params),
   supportsMultiQuery: false,
   template: 'TABLE()',
   examples: [

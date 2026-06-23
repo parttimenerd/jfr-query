@@ -259,7 +259,7 @@ public class MacroCollection {
                          WHERE startTime <= ts
                          ORDER BY startTime DESC
                          LIMIT 1),
-                        -1
+                        INTERVAL '-1' SECOND
                       )
                     )
                     """,
@@ -307,6 +307,68 @@ public class MacroCollection {
                         "OldGarbageCollection"),
 
                 // ==========================================
+                // TIME-WINDOW HELPERS
+                // ==========================================
+
+                new Macro(
+                        "time_bucket",
+                        "Floor a timestamp to the nearest width_ms boundary. Useful for bucketing time-series data.",
+                        "SELECT time_bucket(startTime, 1000) AS bucket, COUNT(*) FROM ExecutionSample GROUP BY bucket ORDER BY bucket;",
+                        """
+                    CREATE MACRO time_bucket(ts, width_ms) AS (
+                      epoch_ms(ts) - (epoch_ms(ts) % width_ms)
+                    )
+                    """),
+                new Macro(
+                        "in_range",
+                        "Check whether a timestamp lies within [t_start, t_end] (inclusive).",
+                        "SELECT * FROM ExecutionSample WHERE in_range(startTime, recording_start(), recording_start() + INTERVAL '5' SECOND);",
+                        """
+                    CREATE MACRO in_range(ts, t_start, t_end) AS (
+                      ts >= t_start AND ts <= t_end
+                    )
+                    """),
+                new Macro(
+                        "recording_start",
+                        "Earliest event timestamp across the recording.",
+                        "SELECT recording_start();",
+                        """
+                    CREATE MACRO recording_start() AS (
+                      (SELECT MIN(startTime) FROM ActiveRecording)
+                    )
+                    """,
+                        "ActiveRecording"),
+                new Macro(
+                        "recording_end",
+                        "Latest event timestamp across the recording.",
+                        "SELECT recording_end();",
+                        """
+                    CREATE MACRO recording_end() AS (
+                      (SELECT MAX(startTime) FROM ActiveRecording)
+                    )
+                    """,
+                        "ActiveRecording"),
+                new Macro(
+                        "relative_ms",
+                        "Milliseconds elapsed between recording_start() and ts. Useful for x-axis labels.",
+                        "SELECT relative_ms(startTime), duration FROM GCPhasePause LIMIT 10;",
+                        """
+                    CREATE MACRO relative_ms(ts) AS (
+                      epoch_ms(ts) - epoch_ms(recording_start())
+                    )
+                    """,
+                        "ActiveRecording"),
+                new Macro(
+                        "time_since",
+                        "Milliseconds elapsed between two timestamps (ts - prev_ts). Useful with LAG().",
+                        "SELECT time_since(LAG(startTime) OVER (ORDER BY startTime), startTime) FROM GCPhasePause;",
+                        """
+                    CREATE MACRO time_since(prev_ts, ts) AS (
+                      epoch_ms(ts) - epoch_ms(prev_ts)
+                    )
+                    """),
+
+                // ==========================================
                 // JFR FIELD ACCESSORS
                 // ==========================================
 
@@ -334,7 +396,36 @@ public class MacroCollection {
                         "view_sql",
                         "Get the SQL definition of a view by name.",
                         "SELECT view_sql('SomeView');",
-                        "CREATE MACRO view_sql(name) AS (SELECT sql FROM duckdb_views() WHERE view_name = name LIMIT 1)")
+                        "CREATE MACRO view_sql(name) AS (SELECT sql FROM duckdb_views() WHERE view_name = name LIMIT 1)"),
+
+                // ==========================================
+                // ROLLING WINDOW AGGREGATES
+                // ==========================================
+
+                new Macro(
+                        "rolling_avg",
+                        "Rolling average of a numeric value over a time window (in milliseconds) ordered by timestamp.",
+                        "SELECT startTime, rolling_avg(duration, 1000, startTime) OVER (ORDER BY startTime) FROM GCPhasePause;",
+                        """
+                    CREATE MACRO rolling_avg(value, window_ms, ts) AS (
+                      AVG(value) OVER (
+                        ORDER BY ts
+                        RANGE BETWEEN INTERVAL (window_ms * 1000) MICROSECONDS PRECEDING AND CURRENT ROW
+                      )
+                    )
+                    """),
+                new Macro(
+                        "rolling_sum",
+                        "Rolling sum of a numeric value over a time window (in milliseconds) ordered by timestamp.",
+                        "SELECT startTime, rolling_sum(allocatedBytes, 1000, startTime) OVER (ORDER BY startTime) FROM ObjectAllocationInNewTLAB;",
+                        """
+                    CREATE MACRO rolling_sum(value, window_ms, ts) AS (
+                      SUM(value) OVER (
+                        ORDER BY ts
+                        RANGE BETWEEN INTERVAL (window_ms * 1000) MICROSECONDS PRECEDING AND CURRENT ROW
+                      )
+                    )
+                    """)
             };
 
     public static List<Macro> getMacros() {

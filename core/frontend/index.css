@@ -64,12 +64,12 @@
   color: #ffffff !important;
 }
 
-.CodeMirror-hint-table::before { content: 'T'; font-weight: bold; color: #82aaff; margin-right: 8px; }
-.CodeMirror-hint-view::before { content: 'V'; font-weight: bold; color: #4dd0e1; margin-right: 8px; }
-.CodeMirror-hint-macro::before { content: 'M'; font-weight: bold; color: #c3e88d; margin-right: 8px; }
-.CodeMirror-hint-column::before { content: 'C'; font-style: italic; color: #f78c6c; margin-right: 8px; }
-.CodeMirror-hint-plot-function::before { content: 'ƒ'; font-weight: bold; color: #82aaff; margin-right: 8px; }
-.CodeMirror-hint-plot-param::before { content: 'P'; font-style: italic; color: #c792ea; margin-right: 8px; }
+.cm-hint-table::before { content: 'T'; font-weight: bold; color: #82aaff; margin-right: 8px; }
+.cm-hint-view::before { content: 'V'; font-weight: bold; color: #4dd0e1; margin-right: 8px; }
+.cm-hint-macro::before { content: 'M'; font-weight: bold; color: #c3e88d; margin-right: 8px; }
+.cm-hint-column::before { content: 'C'; font-style: italic; color: #f78c6c; margin-right: 8px; }
+.cm-hint-plot-function::before { content: 'ƒ'; font-weight: bold; color: #82aaff; margin-right: 8px; }
+.cm-hint-plot-param::before { content: 'P'; font-style: italic; color: #c792ea; margin-right: 8px; }
 
 /* === Custom Syntax Highlighting === */
 .cm-s-material-darker .cm-plot-function { color: #82aaff; font-weight: bold; }

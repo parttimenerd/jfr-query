@@ -1,12 +1,11 @@
 import React, { createContext, useState, useCallback, useMemo, ReactNode, useEffect, useRef } from 'react';
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
 import { TableSchema, ViewSchema, MacroSchema } from '../types';
-import { initDuckDBWasm } from '../utils/duckdbWasmLoader';
+import { initDuckDBWasm, loadDuckDbFileIntoWasm } from '../utils/duckdbWasmLoader';
 import { loadJfrIntoWasm } from '../utils/jfrToWasmLoader';
 
 const QUERY_ENDPOINT = `/api/query`;
 
-// Simple async lock to prevent concurrent database access.
 class AsyncLock {
   private isLocked = false;
   private queue: (() => void)[] = [];
@@ -36,73 +35,74 @@ class AsyncLock {
 
 const dbLock = new AsyncLock();
 
-
 export type DBMode = 'server' | 'wasm';
+export type SourceType = 'jfr' | 'duckdb';
 export enum DBState { SCHEMA_LOADING, NEEDS_FILE, IMPORTING, READY, ERROR }
 interface Schema { tables: TableSchema[]; views: ViewSchema[]; macros: MacroSchema[]; }
 
 interface DataContextType {
   dbState: DBState;
   mode: DBMode | null;
+  sourceType: SourceType | null;
   schema: Schema | null;
   errorMessage: string | null;
+  serverProbeError: string | null;
+  serverCurrentFile: string | null;
   recordingStart: number | null;
   recordingEnd: number | null;
   query: (sql: string) => Promise<any[]>;
   refreshSchema: () => Promise<void>;
-  loadJfrFile: (bytes: Uint8Array) => Promise<void>;
+  loadFile: (bytes: Uint8Array, fileName: string) => Promise<void>;
+  loadServerFile: (path: string) => Promise<void>;
 }
 
 export const DataContext = createContext<DataContextType>({
   dbState: DBState.SCHEMA_LOADING,
   mode: null,
+  sourceType: null,
   schema: null,
   errorMessage: null,
+  serverProbeError: null,
+  serverCurrentFile: null,
   recordingStart: null,
   recordingEnd: null,
   query: async () => { throw new Error('DataContext not initialized'); },
   refreshSchema: async () => { throw new Error('DataContext not initialized'); },
-  loadJfrFile: async () => { throw new Error('DataContext not initialized'); },
+  loadFile: async () => { throw new Error('DataContext not initialized'); },
+  loadServerFile: async () => { throw new Error('DataContext not initialized'); },
 });
 
 const executeRemoteQuery = async (sql: string): Promise<any> => {
     await dbLock.acquire();
     try {
         const r = await fetch(QUERY_ENDPOINT, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({sql}) });
-        let body; try { body = await r.json(); } catch(e) { throw new Error(`Server returned non-JSON response: ${await r.text()}`); }
+        const text = await r.text();
+        let body: any;
+        try { body = JSON.parse(text); } catch { throw new Error(`Server returned non-JSON response: ${text}`); }
         if (!r.ok || body.error) throw new Error(body.error || `Request failed with status ${r.status}`);
-        if (typeof body === 'string') try { return JSON.parse(body); } catch(e) { throw new Error(`Could not parse string response: ${body}`);}
+        if (typeof body === 'string') try { return JSON.parse(body); } catch { throw new Error(`Could not parse string response: ${body}`); }
         return body;
     } finally {
         dbLock.release();
     }
 };
 
-/**
- * Probe `/api/query` with a trivial SELECT. If we get a usable JSON response,
- * we're talking to a real jfr-query server; otherwise the page is being served
- * statically (e.g. from `npm run dev` with no backend, or from the
- * frontend-only deployment) and we must fall back to in-browser WASM mode.
- */
-const probeServer = async (): Promise<boolean> => {
+const probeServer = async (): Promise<{ ok: boolean; reason?: string }> => {
     try {
         const r = await fetch(QUERY_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sql: 'SELECT 1' }),
         });
-        if (!r.ok) return false;
+        if (!r.ok) return { ok: false, reason: `server probe returned HTTP ${r.status}` };
         const body = await r.json().catch(() => null);
-        return Array.isArray(body) || (body && !body.error);
-    } catch {
-        return false;
+        if (Array.isArray(body) || (body && !body.error)) return { ok: true };
+        return { ok: false, reason: body?.error || 'unexpected probe response' };
+    } catch (err: any) {
+        return { ok: false, reason: err.message || 'network error' };
     }
 };
 
-/**
- * Run a query against a DuckDB-WASM connection and convert the Arrow result
- * to plain JS objects matching the server response shape.
- */
 const runWasmQuery = async (conn: AsyncDuckDBConnection, sql: string): Promise<any[]> => {
     await dbLock.acquire();
     try {
@@ -111,7 +111,6 @@ const runWasmQuery = async (conn: AsyncDuckDBConnection, sql: string): Promise<a
             const obj = row.toJSON();
             for (const k of Object.keys(obj)) {
                 const v = obj[k];
-                // BigInt isn't JSON-serializable and downstream code uses Number().
                 if (typeof v === 'bigint') {
                     obj[k] = Number(v);
                 }
@@ -123,33 +122,32 @@ const runWasmQuery = async (conn: AsyncDuckDBConnection, sql: string): Promise<a
     }
 };
 
-/**
- * Safely parses the 'parameters' field for a macro, which might be a string,
- * an array, or null from the database.
- * @param params The raw parameters value.
- * @returns A string array of parameter names.
- */
 const parseMacroParameters = (params: any): string[] => {
-    if (Array.isArray(params)) {
-        return params.map(String); // Ensure all elements are strings
-    }
+    if (Array.isArray(params)) return params.map(String);
     if (typeof params === 'string') {
-        if (params.trim() === '') {
-            return [];
-        }
-        // Assuming comma-separated string if not an array
+        if (params.trim() === '') return [];
         return params.split(',').map(p => p.trim());
     }
-    // Return empty array for null, undefined, or other types
     return [];
 };
 
+async function detectSourceType(runQuery: (sql: string) => Promise<any[]>): Promise<SourceType> {
+    try {
+        const r = await runQuery(`SELECT COUNT(*) AS c FROM duckdb_tables() WHERE table_name='RecordingInfo'`);
+        return Number(r[0]?.c) > 0 ? 'jfr' : 'duckdb';
+    } catch {
+        return 'duckdb';
+    }
+}
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [dbState, setDbState] = useState<DBState>(DBState.SCHEMA_LOADING);
   const [mode, setMode] = useState<DBMode | null>(null);
+  const [sourceType, setSourceType] = useState<SourceType | null>(null);
   const [schema, setSchema] = useState<Schema | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [serverProbeError, setServerProbeError] = useState<string | null>(null);
+  const [serverCurrentFile, setServerCurrentFile] = useState<string | null>(null);
   const [recordingStart, setRecordingStart] = useState<number | null>(null);
   const [recordingEnd, setRecordingEnd] = useState<number | null>(null);
 
@@ -206,14 +204,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             counts.forEach((row: any) => {
                 if (row && typeof row.name === 'string' && row.count !== null && row.count !== undefined) {
                     const numCount = Number(row.count);
-                    if (!isNaN(numCount)) {
-                        countsMap.set(row.name, numCount);
-                    }
+                    if (!isNaN(numCount)) countsMap.set(row.name, numCount);
                 }
             });
-            tables.forEach(t => {
-                t.rowCount = countsMap.get(t.name);
-            });
+            tables.forEach(t => { t.rowCount = countsMap.get(t.name); });
         }
       } catch (e) {
           console.warn('Could not fetch row counts', e);
@@ -222,16 +216,23 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setSchema({ tables, views: Array.from(viewsMap.values()), macros });
   }, []);
 
-  // Initial mode selection: probe the server, otherwise enter wasm mode and
-  // wait for the user to drop a JFR file.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const hasServer = await probeServer();
+      const probe = await probeServer();
       if (cancelled) return;
-      if (hasServer) {
+      if (probe.ok) {
         setMode('server');
         try {
+          const type = await detectSourceType(executeRemoteQuery);
+          if (!cancelled) setSourceType(type);
+          try {
+            const statusRes = await fetch('/api/status');
+            if (statusRes.ok) {
+              const status = await statusRes.json();
+              if (!cancelled && status.currentFile) setServerCurrentFile(status.currentFile);
+            }
+          } catch { /* server may not have /api/status yet */ }
           await fetchSchemaFor(executeRemoteQuery, true);
           if (!cancelled) setDbState(DBState.READY);
         } catch (err: any) {
@@ -242,13 +243,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       } else {
         setMode('wasm');
+        setServerProbeError(probe.reason || 'server probe failed');
         setDbState(DBState.NEEDS_FILE);
       }
     })();
     return () => { cancelled = true; };
   }, [fetchSchemaFor]);
 
-  const loadJfrFile = useCallback(async (bytes: Uint8Array) => {
+  const loadFile = useCallback(async (bytes: Uint8Array, fileName: string) => {
     setDbState(DBState.IMPORTING);
     setErrorMessage(null);
     try {
@@ -257,12 +259,44 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         wasmConnRef.current = await wasmDbRef.current.connect();
       }
       const conn = wasmConnRef.current!;
-      await loadJfrIntoWasm(bytes, conn);
+      const isJfr = fileName.toLowerCase().endsWith('.jfr');
+      if (isJfr) {
+        await loadJfrIntoWasm(bytes, conn);
+      } else {
+        await loadDuckDbFileIntoWasm(wasmDbRef.current!, conn, bytes);
+      }
+      const type = await detectSourceType((sql) => runWasmQuery(conn, sql));
+      setSourceType(type);
       setDbState(DBState.SCHEMA_LOADING);
       await fetchSchemaFor((sql) => runWasmQuery(conn, sql), true);
       setDbState(DBState.READY);
     } catch (err: any) {
-      console.error('JFR import failed', err);
+      console.error('File import failed', err);
+      setErrorMessage(err.message || String(err));
+      setDbState(DBState.ERROR);
+    }
+  }, [fetchSchemaFor]);
+
+  const loadServerFile = useCallback(async (path: string) => {
+    setDbState(DBState.IMPORTING);
+    setErrorMessage(null);
+    try {
+      const r = await fetch('/api/load-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      });
+      const body = await r.json();
+      if (!r.ok || body.error) throw new Error(body.error || 'load failed');
+      setServerCurrentFile(path);
+      setRecordingStart(null);
+      setRecordingEnd(null);
+      const type = await detectSourceType(executeRemoteQuery);
+      setSourceType(type);
+      setDbState(DBState.SCHEMA_LOADING);
+      await fetchSchemaFor(executeRemoteQuery, true);
+      setDbState(DBState.READY);
+    } catch (err: any) {
       setErrorMessage(err.message || String(err));
       setDbState(DBState.ERROR);
     }
@@ -286,8 +320,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [mode, fetchSchemaFor]);
 
   const contextValue = useMemo(() => ({
-    dbState, mode, schema, query, errorMessage, recordingStart, recordingEnd, refreshSchema, loadJfrFile,
-  }), [dbState, mode, schema, query, errorMessage, recordingStart, recordingEnd, refreshSchema, loadJfrFile]);
+    dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
+    recordingStart, recordingEnd, refreshSchema, loadFile, loadServerFile,
+  }), [dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
+    recordingStart, recordingEnd, refreshSchema, loadFile, loadServerFile]);
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;
 };

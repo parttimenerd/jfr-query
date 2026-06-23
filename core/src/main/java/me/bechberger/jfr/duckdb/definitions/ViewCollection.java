@@ -1298,11 +1298,336 @@ public class ViewCollection {
                                 """
                     Summarizes the CPU time consumed by garbage collection.
                     """),
-                /**
-                 * [jvm.heap-configuration] label = "Heap Configuration" form = "SELECT
-                 * LAST(initialSize), LAST(minSize), LAST(maxSize), LAST(usesCompressedOops),
-                 * LAST(compressedOopsMode) FROM GCHeapConfiguration"
-                 */
+
+                // ==========================================
+                // GC ANALYSIS VIEWS
+                // ==========================================
+
+                new View(
+                                "gc-pause-distribution",
+                                "gc-analysis",
+                                "GC Pause Distribution",
+                                null,
+                                """
+                                 CREATE VIEW "gc-pause-distribution" AS
+                                 SELECT
+                                     name AS "Phase",
+                                     COUNT(*) AS "Count",
+                                     format_duration(MIN(duration)) AS "Min",
+                                     format_duration(MEDIAN(duration)) AS "Median",
+                                     format_duration(P90(duration)) AS "P90",
+                                     format_duration(P99(duration)) AS "P99",
+                                     format_duration(MAX(duration)) AS "Max",
+                                     format_duration(SUM(duration)) AS "Total"
+                                 FROM GCPhasePause
+                                 GROUP BY name
+                                 ORDER BY MAX(duration) DESC
+                            """,
+                                "GCPhasePause")
+                        .description(
+                                """
+                    Pause-time distribution per GC phase: p50/p90/p99/max by phase name.
+                    Useful for pinpointing which GC sub-phase contributes most to latency.
+                    """),
+
+                new View(
+                                "gc-top-pauses",
+                                "gc-analysis",
+                                "Top GC Pauses",
+                                null,
+                                """
+                                 CREATE VIEW "gc-top-pauses" AS
+                                 SELECT
+                                     startTime AS "Start Time",
+                                     name AS "Phase",
+                                     gcId AS "GC ID",
+                                     format_duration(duration) AS "Duration"
+                                 FROM GCPhasePause
+                                 ORDER BY duration DESC
+                                 LIMIT 20
+                            """,
+                                "GCPhasePause")
+                        .description(
+                                """
+                    The 20 longest individual GC pause events, with start time, phase name and GC ID.
+                    """),
+
+                new View(
+                                "gc-phase-breakdown",
+                                "gc-analysis",
+                                "GC Phase Breakdown",
+                                null,
+                                """
+                                 CREATE VIEW "gc-phase-breakdown" AS
+                                 SELECT
+                                     gcId AS "GC ID",
+                                     name AS "Phase",
+                                     format_duration(duration) AS "Duration",
+                                     startTime AS "Start"
+                                 FROM GCPhasePause
+                                 ORDER BY gcId, startTime
+                            """,
+                                "GCPhasePause")
+                        .description(
+                                """
+                    All pause-phase records ordered by GC ID and start time.
+                    Use to drill into which sub-phases make up each collection.
+                    """),
+
+                new View(
+                                "gc-young-vs-old",
+                                "gc-analysis",
+                                "GC Young vs Old Collector",
+                                null,
+                                """
+                                 CREATE VIEW "gc-young-vs-old" AS
+                                 SELECT
+                                     cause AS "Cause",
+                                     COUNT(*) AS "Collections",
+                                     format_duration(SUM(sumOfPauses)) AS "Total Pause",
+                                     format_duration(AVG(sumOfPauses)) AS "Avg Pause",
+                                     format_duration(MAX(longestPause)) AS "Max Single Pause"
+                                 FROM GarbageCollection
+                                 GROUP BY cause
+                                 ORDER BY SUM(sumOfPauses) DESC
+                            """,
+                                "GarbageCollection")
+                        .description(
+                                """
+                    Collection counts and total pause time grouped by GC cause,
+                    distinguishing young-gen vs old-gen collections.
+                    """),
+
+                new View(
+                                "gc-efficiency",
+                                "gc-analysis",
+                                "GC Efficiency",
+                                null,
+                                """
+                                 CREATE VIEW "gc-efficiency" AS
+                                 SELECT
+                                     g.gcId AS "GC ID",
+                                     g.cause AS "Cause",
+                                     format_duration(g.sumOfPauses) AS "Pause",
+                                     format_memory(before.heapUsed - after.heapUsed) AS "Reclaimed",
+                                     CASE WHEN g.sumOfPauses > 0 THEN
+                                         round((before.heapUsed - after.heapUsed) / (1024.0 * 1024.0)
+                                             / g.sumOfPauses, 1)
+                                     ELSE 0 END AS "MB/s reclaimed"
+                                 FROM GarbageCollection g
+                                 JOIN GCHeapSummary before ON g.gcId = before.gcId AND before."when" = 'Before GC'
+                                 JOIN GCHeapSummary after  ON g.gcId = after.gcId  AND after."when"  = 'After GC'
+                                 ORDER BY g.gcId
+                            """,
+                                "GarbageCollection",
+                                "GCHeapSummary")
+                        .description(
+                                """
+                    Bytes reclaimed per millisecond of pause for each collection.
+                    Low efficiency values indicate collections that paused long but freed little.
+                    """),
+
+                new View(
+                                "heap-summary-over-time",
+                                "gc-analysis",
+                                "Heap Summary Over Time",
+                                null,
+                                """
+                                 CREATE VIEW "heap-summary-over-time" AS
+                                 SELECT
+                                     startTime AS "Time",
+                                     gcId AS "GC ID",
+                                     "when" AS "When",
+                                     format_memory(heapUsed) AS "Heap Used"
+                                 FROM GCHeapSummary
+                                 ORDER BY startTime
+                            """,
+                                "GCHeapSummary")
+                        .description(
+                                """
+                    Heap used and committed size before and after each GC, ordered by time.
+                    Pair with LINE_CHART LINK_X for an interactive heap timeline.
+                    """),
+
+                new View(
+                                "heap-committed-vs-used",
+                                "gc-analysis",
+                                "Heap Committed vs Used",
+                                null,
+                                """
+                                 CREATE VIEW "heap-committed-vs-used" AS
+                                 SELECT
+                                     startTime AS "Time",
+                                     "when" AS "Phase",
+                                     heapUsed / (1024.0 * 1024.0) AS "Used MB"
+                                 FROM GCHeapSummary
+                                 ORDER BY startTime
+                            """,
+                                "GCHeapSummary")
+                        .description(
+                                """
+                    Raw heap used vs committed in MB, suitable for LINE_CHART rendering.
+                    """),
+
+                new View(
+                                "allocation-rate",
+                                "gc-analysis",
+                                "Allocation Rate",
+                                null,
+                                """
+                                 CREATE VIEW "allocation-rate" AS
+                                 SELECT
+                                     time_bucket(startTime, 1000) AS "Bucket",
+                                     SUM(weight) / (1024.0 * 1024.0) AS "Sample MB/s",
+                                     COUNT(*) AS "Samples"
+                                 FROM ObjectAllocationSample
+                                 GROUP BY time_bucket(startTime, 1000)
+                                 ORDER BY 1
+                            """,
+                                "ObjectAllocationSample")
+                        .description(
+                                """
+                    Per-second allocation rate in MB/s (from ObjectAllocationSample events).
+                    Bucketed into 1-second windows. 'Sample MB/s' represents sampled allocation weight.
+                    """),
+
+                new View(
+                                "allocation-by-class-detail",
+                                "gc-analysis",
+                                "Allocation by Class (Detail)",
+                                null,
+                                """
+                                 CREATE VIEW "allocation-by-class-detail" AS
+                                 SELECT
+                                     objectClass AS "Class",
+                                     COUNT(*) AS "Sample Events",
+                                     format_memory(SUM(weight)) AS "Sampled Bytes",
+                                     format_memory(AVG(weight)) AS "Avg Sample Weight"
+                                 FROM ObjectAllocationSample
+                                 GROUP BY objectClass
+                                 ORDER BY SUM(weight) DESC
+                                 LIMIT 30
+                            """,
+                                "ObjectAllocationSample")
+                        .description(
+                                """
+                    Top 30 classes by sampled allocation weight (ObjectAllocationSample events).
+                    """),
+
+                new View(
+                                "gc-concurrent-phases-detail",
+                                "gc-analysis",
+                                "GC Concurrent Phases",
+                                null,
+                                """
+                                 CREATE VIEW "gc-concurrent-phases-detail" AS
+                                 SELECT
+                                     startTime AS "Start",
+                                     name AS "Phase",
+                                     gcId AS "GC ID",
+                                     format_duration(duration) AS "Duration"
+                                 FROM GCPhaseConcurrent
+                                 ORDER BY startTime
+                            """,
+                                "GCPhaseConcurrent")
+                        .description(
+                                """
+                    All concurrent (non-stop-the-world) GC phase events ordered by start time.
+                    """),
+
+                new View(
+                                "safepoint-overhead",
+                                "gc-analysis",
+                                "Safepoint Overhead",
+                                null,
+                                """
+                                 CREATE VIEW "safepoint-overhead" AS
+                                 SELECT
+                                     sb.startTime AS "Start",
+                                     sb.safepointId AS "Safepoint ID",
+                                     format_duration(ss.duration) AS "Sync Duration",
+                                     sb.initialThreadCount AS "Initial Threads",
+                                     sb.runningThreadCount AS "Running Threads"
+                                 FROM SafepointBegin sb
+                                 LEFT JOIN SafepointStateSynchronization ss ON sb.safepointId = ss.safepointId
+                                 ORDER BY sb.startTime
+                            """,
+                                "SafepointBegin")
+                        .description(
+                                """
+                    Per-safepoint overhead: total duration, synchronization time, and thread counts.
+                    Includes both GC and non-GC safepoints (deopt, class redefinition, etc.).
+                    """),
+
+                new View(
+                                "tlab-efficiency",
+                                "gc-analysis",
+                                "TLAB Efficiency",
+                                null,
+                                """
+                                 CREATE VIEW "tlab-efficiency" AS
+                                 SELECT
+                                     time_bucket(startTime, 5000) AS "Bucket (5s)",
+                                     SUM(allocationSize) / NULLIF(SUM(tlabSize), 0) AS "Fill Ratio",
+                                     COUNT(*) AS "Allocations",
+                                     format_memory(SUM(tlabSize)) AS "Total TLAB",
+                                     format_memory(SUM(allocationSize)) AS "Total Allocated"
+                                 FROM ObjectAllocationInNewTLAB
+                                 GROUP BY time_bucket(startTime, 5000)
+                                 ORDER BY 1
+                            """,
+                                "ObjectAllocationInNewTLAB")
+                        .description(
+                                """
+                    TLAB fill ratio per 5-second window. A fill ratio close to 1.0 means TLABs
+                    are well-sized; a low ratio means many half-empty TLABs are retired early.
+                    """),
+
+                new View(
+                                "gc-throughput",
+                                "gc-analysis",
+                                "GC Throughput (10s windows)",
+                                null,
+                                """
+                                 CREATE VIEW "gc-throughput" AS
+                                 SELECT
+                                     time_bucket(startTime, 10000) AS "Window",
+                                     SUM(sumOfPauses) * 1000 AS "GC Time (ms)",
+                                     10000 - (SUM(sumOfPauses) * 1000) AS "Mutator Time (ms)",
+                                     ROUND(100.0 - (SUM(sumOfPauses) * 1000 / 10000.0 * 100), 1) AS "Throughput %"
+                                 FROM GarbageCollection
+                                 GROUP BY time_bucket(startTime, 10000)
+                                 ORDER BY 1
+                            """,
+                                "GarbageCollection")
+                        .description(
+                                """
+                    GC vs mutator time ratio in 10-second windows.
+                    'Throughput %' is the fraction of time the application was NOT paused by GC.
+                    """),
+
+                new View(
+                                "gc-overhead",
+                                "gc-analysis",
+                                "GC Overhead % (10s windows)",
+                                null,
+                                """
+                                 CREATE VIEW "gc-overhead" AS
+                                 SELECT
+                                     time_bucket(startTime, 10000) AS "Window",
+                                     ROUND(SUM(sumOfPauses) * 1000 / 10000.0 * 100, 2) AS "GC Overhead %",
+                                     SUM(sumOfPauses) * 1000 AS "Pause ms",
+                                     COUNT(*) AS "Collections"
+                                 FROM GarbageCollection
+                                 GROUP BY time_bucket(startTime, 10000)
+                                 ORDER BY 1
+                            """,
+                                "GarbageCollection")
+                        .description(
+                                """
+                    Rolling GC overhead percentage in 10-second windows.
+                    High values (>5%) indicate the application is spending significant time in GC.
+                    """),
                 new View(
                                 "heap-configuration",
                                 "jvm",

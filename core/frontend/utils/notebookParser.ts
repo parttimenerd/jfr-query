@@ -9,9 +9,12 @@ export interface ParsedContent {
     title: string | null;
     introduction: MarkdownSection | null;
     variables: Record<string, string>;
+    variableWarnings: string[];
     sqlBlocks: string[];
     queryAliases: (string | null)[];
     plotBlocks: string[];
+    /** All plot blocks in document order with their associated SQL block index. */
+    plotBlocksWithSqlIndex: Array<{ config: string; sqlIndex: number }>;
     conclusion: MarkdownSection | null;
 }
 
@@ -28,7 +31,7 @@ const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 const parseFrontMatter = (fmString: string): NotebookMetadata => {
     const lines = fmString.split('\n');
     const result: NotebookMetadata = { views: [], macros: [] };
-    let currentSection: 'views' | 'macros' | null = null;
+    let currentSection: 'views' | 'macros' | 'variables' | null = null;
     let currentObject: any = null;
     let multilineKey: string | null = null;
 
@@ -47,6 +50,9 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
 
             if (keyTrimmed === 'views' || keyTrimmed === 'macros') {
                 currentSection = keyTrimmed as 'views' | 'macros';
+            } else if (keyTrimmed === 'variables') {
+                currentSection = 'variables';
+                if (!result.variables) result.variables = {};
             } else if (keyTrimmed === 'decimalPlaces') {
                 const num = parseInt(value, 10);
                 if (!isNaN(num)) result.decimalPlaces = num;
@@ -58,6 +64,13 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
             }
         } else if (multilineKey && !currentSection) { // Top-level multiline (customSystemPrompt)
              result.customSystemPrompt += (result.customSystemPrompt ? '\n' : '') + line.substring(indent);
+        } else if (currentSection === 'variables') {
+            // Map of name -> value, written as "  $name: value" (no leading "- ").
+            const [k, ...vParts] = trimmedLine.split(':');
+            const kTrim = k.trim();
+            if (kTrim) {
+                result.variables![kTrim] = vParts.join(':').trim().replace(/^['"]|['"]$/g, '');
+            }
         } else if (currentSection) {
             if (multilineKey && indent > 2) {
                 currentObject[multilineKey] += '\n' + line.substring(indent);
@@ -67,16 +80,28 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
                 (result[currentSection] as any[]).push(currentObject);
                 const [key, ...valParts] = trimmedLine.substring(2).split(':');
                 currentObject[key.trim()] = valParts.join(':').trim().replace(/^['"]|['"]$/g, '');
-                currentObject.id = `fm-${Date.now()}-${Math.random()}`;
+                currentObject.id = `fm-${currentSection}-${(result[currentSection] as any[]).length - 1}`;
             } else if (currentObject) {
                 multilineKey = null;
                 const [key, ...valParts] = trimmedLine.split(':');
                 const value = valParts.join(':').trim();
+                const keyName = key.trim();
                 if (value === '|') {
-                    multilineKey = key.trim();
+                    multilineKey = keyName;
                     currentObject[multilineKey] = '';
+                } else if (value.startsWith('[')) {
+                    // Inline YAML-style array: [a, b, c] or [{name: x, type: y}]
+                    try {
+                        // Convert YAML-style {k: v} to JSON {k: "v"} by quoting unquoted values
+                        const jsonLike = value
+                            .replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":')
+                            .replace(/:\s*([^"{\[\],}][^\],}]*?)([,\]}])/g, ':"$1"$2');
+                        currentObject[keyName] = JSON.parse(jsonLike);
+                    } catch {
+                        currentObject[keyName] = value.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
+                    }
                 } else {
-                    currentObject[key.trim()] = value.replace(/^['"]|['"]$/g, '');
+                    currentObject[keyName] = value.replace(/^['"]|['"]$/g, '');
                 }
             }
         }
@@ -84,7 +109,7 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
     (result.views || []).forEach(v => { if (v.sql?.startsWith('\n')) v.sql = v.sql.substring(1); });
     (result.macros || []).forEach(m => { if (m.sql?.startsWith('\n')) m.sql = m.sql.substring(1); });
     if(result.customSystemPrompt?.startsWith('\n')) result.customSystemPrompt = result.customSystemPrompt.substring(1);
-    
+
     return result;
 }
 
@@ -110,6 +135,13 @@ const stringifyFrontMatter = (metadata: NotebookMetadata): string => {
         parts.push('views:');
         for (const view of metadata.views) {
             parts.push(`  - name: '${view.name.replace(/'/g, "''")}'`);
+            if (view.includes && view.includes.length > 0) {
+                parts.push(`    includes: [${view.includes.join(', ')}]`);
+            }
+            if (view.params && view.params.length > 0) {
+                const ps = view.params.map(p => `{name: ${p.name}, type: ${p.type}${p.default !== undefined ? `, default: ${p.default}` : ''}}`).join(', ');
+                parts.push(`    params: [${ps}]`);
+            }
             parts.push(`    sql: |\n${view.sql.split('\n').map(line => `      ${line}`).join('\n')}`);
         }
     }
@@ -118,12 +150,27 @@ const stringifyFrontMatter = (metadata: NotebookMetadata): string => {
         parts.push('macros:');
         for (const macro of metadata.macros) {
             parts.push(`  - name: '${macro.name.replace(/'/g, "''")}'`);
+            if (macro.includes && macro.includes.length > 0) {
+                parts.push(`    includes: [${macro.includes.join(', ')}]`);
+            }
+            if (macro.params && macro.params.length > 0) {
+                const ps = macro.params.map(p => `{name: ${p.name}, type: ${p.type}${p.default !== undefined ? `, default: ${p.default}` : ''}}`).join(', ');
+                parts.push(`    params: [${ps}]`);
+            }
             parts.push(`    sql: |\n${macro.sql.split('\n').map(line => `      ${line}`).join('\n')}`);
         }
     }
 
+    if (metadata.variables && Object.keys(metadata.variables).length > 0) {
+        if (parts.length > 0) parts.push(''); // Add separator
+        parts.push('variables:');
+        for (const [k, v] of Object.entries(metadata.variables)) {
+            parts.push(`  ${k}: '${String(v).replace(/'/g, "''")}'`);
+        }
+    }
+
     // Serialize unknown string/number fields
-    const knownKeys = new Set(['customSystemPrompt', 'timeFormat', 'decimalPlaces', 'views', 'macros']);
+    const knownKeys = new Set(['customSystemPrompt', 'timeFormat', 'decimalPlaces', 'views', 'macros', 'variables']);
     for (const [key, val] of Object.entries(metadata)) {
         if (!knownKeys.has(key) && val !== undefined && val !== null && typeof val !== 'object') {
             parts.push(`${key}: ${val}`);
@@ -239,9 +286,11 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
         title: null,
         introduction: null,
         variables: {},
+        variableWarnings: [],
         sqlBlocks: [],
         queryAliases: [],
         plotBlocks: [],
+        plotBlocksWithSqlIndex: [],
         conclusion: null,
     };
     
@@ -281,9 +330,13 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
     for (const seg of segments) {
         if (seg.type === 'variables') {
             seg.content.split('\n').forEach(line => {
-                const match = line.trim().match(/^(\$(?!\$)\w+)\s*=\s*(.*)$/);
+                const trimmed = line.trim();
+                if (trimmed === '' || trimmed.startsWith('#')) return;
+                const match = trimmed.match(/^(\$(?!\$)\w+)\s*=\s*(.*)$/);
                 if (match) {
                     result.variables[match[1]] = match[2].trim();
+                } else {
+                    result.variableWarnings.push(`Unrecognized line: ${trimmed}`);
                 }
             });
         } else if (seg.type === 'sql') {
@@ -313,7 +366,9 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
             const plotLines = seg.content.split('\n');
             if (plotLines.length > 0 && plotLines[0].trim() === '') plotLines.shift();
             if (plotLines.length > 0 && plotLines[plotLines.length - 1].trim() === '') plotLines.pop();
-            result.plotBlocks[currentSqlIndex] = plotLines.join('\n');
+            const plotConfig = plotLines.join('\n');
+            result.plotBlocks[currentSqlIndex] = plotConfig;
+            result.plotBlocksWithSqlIndex.push({ config: plotConfig, sqlIndex: currentSqlIndex });
         }
     }
 

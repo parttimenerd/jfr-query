@@ -21,17 +21,18 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 @CommandLine.Command(
         name = "serve",
         mixinStandardHelpOptions = true,
-        description = "Import a JFR recording and serve the notebook UI")
+        description = "Import a JFR recording or open a DuckDB file and serve the notebook UI")
 public class ServeCommand implements Runnable {
 
     @CommandLine.Mixin
     private Options options;
 
-    @CommandLine.Parameters(index = "0", description = "The input JFR recording file")
+    @CommandLine.Parameters(index = "0", description = "JFR recording or DuckDB database file")
     private String inputFile;
 
     @CommandLine.Option(
@@ -47,37 +48,40 @@ public class ServeCommand implements Runnable {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    private static DuckDBConnection openFile(String path, Options options) throws Exception {
+        if (path.toLowerCase().endsWith(".jfr")) {
+            System.out.println("Importing " + path + " ...");
+            DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+            BasicParallelImporter.importIntoConnection(Path.of(path), conn, options);
+            return conn;
+        } else {
+            System.out.println("Opening " + path + " ...");
+            return (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:" + path);
+        }
+    }
+
     @Override
     public void run() {
-        System.out.println("Importing " + inputFile + " ...");
-        // conn is kept open for the lifetime of the server; closed in the shutdown hook.
-        DuckDBConnection conn;
+        DuckDBConnection initialConn;
         try {
-            conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
-            // importIntoConnection already calls addMacrosAndViews internally – no duplicate call needed.
-            BasicParallelImporter.importIntoConnection(Path.of(inputFile), conn, options);
+            initialConn = openFile(inputFile, options);
         } catch (Exception e) {
-            System.err.println("Failed to import JFR file: " + e.getMessage());
+            System.err.println("Failed to open file: " + e.getMessage());
             e.printStackTrace();
-            // Best-effort close before exit so the DB is not left in a dirty state.
-            try { ((DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:")).close(); } catch (Exception ignored) {}
             System.exit(1);
             return;
         }
 
-        DuckDBConnection finalConn = conn;
+        AtomicReference<DuckDBConnection> connRef = new AtomicReference<>(initialConn);
+        AtomicReference<String> currentFile = new AtomicReference<>(inputFile);
+
         var app = Javalin.create(config -> {
-            // Serve the built frontend assets from the classpath
             var devDist = Path.of("frontend/dist");
             if (devDist.toFile().exists()) {
                 config.staticFiles.add(devDist.toAbsolutePath().toString(), Location.EXTERNAL);
             } else {
                 config.staticFiles.add("/frontend-dist", Location.CLASSPATH);
             }
-            // SPA fallback: any unmatched path (no extension, not /api/) serves index.html so
-            // client-side routing works. Configured here in Javalin's static-files block so it
-            // runs as a fallthrough — registering it as `app.get("/*")` would shadow the static
-            // asset handler and serve empty 200s for /assets/*.js.
             if (devDist.toFile().exists()) {
                 config.spaRoot.addFile("/", devDist.resolve("index.html").toAbsolutePath().toString(), Location.EXTERNAL);
             } else {
@@ -85,11 +89,6 @@ public class ServeCommand implements Runnable {
             }
         });
 
-        // DuckDB-WASM uses SharedArrayBuffer (multi-threaded mode); browsers only
-        // expose it when the page is "cross-origin isolated", which requires both
-        // headers below. Server mode doesn't strictly need them — the page won't
-        // touch the wasm bundle — but setting them unconditionally lets the same
-        // build serve users who later switch to drop-a-file mode.
         app.before(ctx -> {
             ctx.header("Cross-Origin-Embedder-Policy", "require-corp");
             ctx.header("Cross-Origin-Opener-Policy", "same-origin");
@@ -109,8 +108,7 @@ public class ServeCommand implements Runnable {
                 ctx.status(400).json(Map.of("error", "Missing 'sql' field"));
                 return;
             }
-            // Use a per-request duplicate connection so concurrent requests are thread-safe.
-            try (DuckDBConnection reqConn = (DuckDBConnection) finalConn.duplicate()) {
+            try (DuckDBConnection reqConn = (DuckDBConnection) connRef.get().duplicate()) {
                 var results = executeQuery(reqConn, sql);
                 ctx.json(results);
             } catch (SQLException e) {
@@ -118,7 +116,37 @@ public class ServeCommand implements Runnable {
             }
         });
 
-        // SPA fallback for unmatched routes is configured via Javalin's spaRoot above.
+        app.post("/api/load-file", ctx -> {
+            String path;
+            try {
+                Map<?, ?> req = MAPPER.readValue(ctx.body(), Map.class);
+                path = (String) req.get("path");
+            } catch (JsonProcessingException e) {
+                ctx.status(400).json(Map.of("error", "Invalid JSON: " + e.getMessage()));
+                return;
+            }
+            if (path == null || path.isBlank()) {
+                ctx.status(400).json(Map.of("error", "missing 'path' field"));
+                return;
+            }
+            if (!Path.of(path).toFile().exists()) {
+                ctx.status(400).json(Map.of("error", "file not found: " + path));
+                return;
+            }
+            try {
+                DuckDBConnection newConn = openFile(path, options);
+                DuckDBConnection old = connRef.getAndSet(newConn);
+                currentFile.set(path);
+                try { old.close(); } catch (SQLException ignored) {}
+                ctx.json(Map.of("ok", true, "path", path));
+            } catch (Exception e) {
+                ctx.status(500).json(Map.of("error", e.getMessage()));
+            }
+        });
+
+        app.get("/api/status", ctx -> {
+            ctx.json(Map.of("currentFile", currentFile.get()));
+        });
 
         app.start(port);
         String url = "http://localhost:" + port;
@@ -130,39 +158,36 @@ public class ServeCommand implements Runnable {
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             app.stop();
-            try { finalConn.close(); } catch (SQLException ignored) {}
+            try { connRef.get().close(); } catch (SQLException ignored) {}
         }));
 
-        // Keep alive
         try {
             Thread.currentThread().join();
         } catch (InterruptedException ignored) {}
     }
 
     private static List<Map<String, Object>> executeQuery(DuckDBConnection conn, String sql) throws SQLException {
-        try (var stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            ResultSetMetaData meta = rs.getMetaData();
-            int cols = meta.getColumnCount();
-            var rows = new ArrayList<Map<String, Object>>();
-            while (rs.next()) {
-                var row = new LinkedHashMap<String, Object>();
-                for (int i = 1; i <= cols; i++) {
-                    row.put(meta.getColumnName(i), unwrapForJson(rs.getObject(i)));
-                }
-                rows.add(row);
+        try (var stmt = conn.createStatement()) {
+            boolean hasRs = stmt.execute(sql);
+            if (!hasRs) {
+                return List.of();
             }
-            return rows;
+            try (ResultSet rs = stmt.getResultSet()) {
+                ResultSetMetaData meta = rs.getMetaData();
+                int cols = meta.getColumnCount();
+                var rows = new ArrayList<Map<String, Object>>();
+                while (rs.next()) {
+                    var row = new LinkedHashMap<String, Object>();
+                    for (int i = 1; i <= cols; i++) {
+                        row.put(meta.getColumnName(i), unwrapForJson(rs.getObject(i)));
+                    }
+                    rows.add(row);
+                }
+                return rows;
+            }
         }
     }
 
-    /**
-     * Convert DuckDB-specific result types into JSON-friendly equivalents. Jackson's default
-     * bean serializer tries to serialize {@link java.sql.Array}, {@link java.sql.Struct} etc.
-     * by reflection, which triggers {@code getCursorName()} on DuckDB's array-backed
-     * ResultSet — DuckDB throws {@link java.sql.SQLFeatureNotSupportedException} from there.
-     * Unwrap to plain Java collections instead.
-     */
     private static Object unwrapForJson(Object v) throws SQLException {
         if (v == null) return null;
         if (v instanceof java.sql.Array a) {

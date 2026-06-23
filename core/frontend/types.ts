@@ -49,16 +49,26 @@ export interface ChatMessage {
   isActionable?: boolean;
 }
 
+export interface ViewParam {
+    name: string;
+    type: string;
+    default?: string;
+}
+
 export interface CustomView {
     id: string;
     name: string;
     sql: string;
+    params?: ViewParam[];
+    includes?: string[];
 }
 
 export interface CustomMacro {
     id: string;
     name: string;
     sql: string;
+    params?: ViewParam[];
+    includes?: string[];
 }
 
 export interface NotebookMetadata {

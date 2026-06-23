@@ -52,21 +52,38 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [showInternalViews, setShowInternalViews] = useState(false);
-  const [isPreviewEditorVisible, setIsPreviewEditorVisible] = useState(false);
+  const [isPreviewEditorVisible, setIsPreviewEditorVisible] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('jfr-sidebar-editor-visible') || 'false'); } catch { return false; }
+  });
   const [isPreviewSearchVisible, setIsPreviewSearchVisible] = useState(false);
   const [tableSort, setTableSort] = useState<'alpha' | 'count'>('alpha');
+  const [previewFocusTrigger, setPreviewFocusTrigger] = useState(0);
 
   const [tooltip, setTooltip] = useState<{ visible: boolean; content: React.ReactNode; top: number; left: number } | null>(null);
   const hideTimeout = useRef<number | null>(null);
-  
+
+  useEffect(() => { try { localStorage.setItem('jfr-sidebar-editor-visible', JSON.stringify(isPreviewEditorVisible)); } catch {} }, [isPreviewEditorVisible]);
+
   const [collapsedStates, setCollapsedStates] = useState(INITIAL_COLLAPSED_STATES);
   const [panelBasis, setPanelBasis] = useState<number[]>([]);
+  const [copiedName, setCopiedName] = useState<string | null>(null);
+  const copyTimeoutRef = useRef<number | null>(null);
+
+  const handleCopyName = useCallback((name: string) => {
+    navigator.clipboard.writeText(name).then(() => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      setCopiedName(name);
+      copyTimeoutRef.current = window.setTimeout(() => setCopiedName(null), 1200);
+    }).catch(() => {});
+  }, []);
   const activeResizerIndex = useRef<number | null>(null);
   const initialDragState = useRef({ y: 0, basis: [0, 0] });
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const autoSelectedRef = useRef(false);
   useEffect(() => {
-    if (schema?.tables && schema.tables.length > 0 && !selectedItem) {
+    if (!autoSelectedRef.current && schema?.tables && schema.tables.length > 0 && !selectedItem) {
+        autoSelectedRef.current = true;
         handleItemSelect(schema.tables[0].name, 'table');
     }
   }, [schema, selectedItem]);
@@ -162,17 +179,34 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
     macro.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleItemSelect = (name: string, type: 'table' | 'view' | 'macro') => {
+  const handleItemSelect = (name: string, type: 'table' | 'view' | 'macro', userInitiated: boolean = false) => {
     setSelectedItem({ name, type });
     let defaultQuery;
     if (type === 'macro') {
         const macro = schema?.macros.find(m => m.name === name);
-        const params = macro?.parameters.map(p => '...').join(', ') || '';
-        defaultQuery = `SELECT ${name}(${params});`;
+        const paramList = macro?.parameters || [];
+        // Use the macro's own parameter names (or numbered placeholders) so the
+        // user has a real template to edit. Don't auto-run because the args
+        // are placeholders and will always fail.
+        const paramNames = paramList.length > 0
+            ? paramList.join(', ')
+            : '';
+        defaultQuery = `SELECT ${name}(${paramNames});`;
+        setPreviewQuery(defaultQuery);
+        if (userInitiated) {
+            setIsPreviewEditorVisible(true);
+            setPreviewFocusTrigger(t => t + 1);
+        }
+        // Skip running — caller has to fill in real arguments first.
+        return;
     } else {
         defaultQuery = `SELECT * FROM "${name}" LIMIT 20;`;
     }
     setPreviewQuery(defaultQuery);
+    if (userInitiated) {
+        setIsPreviewEditorVisible(true);
+        setPreviewFocusTrigger(t => t + 1);
+    }
     runPreviewQuery(defaultQuery);
   };
   
@@ -259,8 +293,10 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
             onMouseLeave={handleHideTooltip}
         >
             <button
-            onClick={() => handleItemSelect(table.name, 'table')}
-            className={`w-full text-left py-1 px-2 rounded-md transition-colors text-sm flex items-center gap-2 ${selectedItem?.name === table.name && selectedItem.type === 'table' ? 'bg-cyan-600/30 text-cyan-300' : 'hover:bg-gray-700/50 text-gray-400'}`}
+            onClick={() => handleItemSelect(table.name, 'table', true)}
+            onDoubleClick={() => handleCopyName(table.name)}
+            title={`Click to preview · Double-click to copy name`}
+            className={`w-full text-left py-1 px-2 rounded-md transition-colors text-sm flex items-center gap-2 ${copiedName === table.name ? 'bg-green-600/30 text-green-300' : selectedItem?.name === table.name && selectedItem.type === 'table' ? 'bg-cyan-600/30 text-cyan-300' : 'hover:bg-gray-700/50 text-gray-400'}`}
             >
             <TableIcon className="w-4 h-4 flex-shrink-0" />
             <span className="truncate">{table.name}</span>
@@ -278,9 +314,11 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
             onMouseEnter={(e) => handleShowTooltip(e, <SchemaTooltipContent item={view} type="view" />)}
             onMouseLeave={handleHideTooltip}
         >
-            <button 
-                onClick={() => handleItemSelect(view.name, 'view')}
-                className={`w-full text-left py-1 px-2 rounded-md transition-colors text-sm flex items-center gap-2 ${selectedItem?.name === view.name && selectedItem.type === 'view' ? 'bg-cyan-600/30 text-cyan-300' : 'hover:bg-gray-700/50 text-gray-400'}`}
+            <button
+                onClick={() => handleItemSelect(view.name, 'view', true)}
+                onDoubleClick={() => handleCopyName(view.name)}
+                title={`Click to preview · Double-click to copy name`}
+                className={`w-full text-left py-1 px-2 rounded-md transition-colors text-sm flex items-center gap-2 ${copiedName === view.name ? 'bg-green-600/30 text-green-300' : selectedItem?.name === view.name && selectedItem.type === 'view' ? 'bg-cyan-600/30 text-cyan-300' : 'hover:bg-gray-700/50 text-gray-400'}`}
             >
             <ViewIcon className="w-4 h-4 flex-shrink-0" />
             <span className="truncate">{view.name}</span>
@@ -297,9 +335,11 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
             onMouseEnter={(e) => handleShowTooltip(e, <SchemaTooltipContent item={macro} type="macro" />)}
             onMouseLeave={handleHideTooltip}
         >
-            <button 
-                onClick={() => handleItemSelect(macro.name, 'macro')}
-                className={`w-full text-left py-1 px-2 rounded-md transition-colors text-sm flex items-center gap-2 ${selectedItem?.name === macro.name && selectedItem.type === 'macro' ? 'bg-cyan-600/30 text-cyan-300' : 'hover:bg-gray-700/50 text-gray-400'}`}
+            <button
+                onClick={() => handleItemSelect(macro.name, 'macro', true)}
+                onDoubleClick={() => handleCopyName(macro.name)}
+                title={`Click to preview · Double-click to copy name`}
+                className={`w-full text-left py-1 px-2 rounded-md transition-colors text-sm flex items-center gap-2 ${copiedName === macro.name ? 'bg-green-600/30 text-green-300' : selectedItem?.name === macro.name && selectedItem.type === 'macro' ? 'bg-cyan-600/30 text-cyan-300' : 'hover:bg-gray-700/50 text-gray-400'}`}
             >
             <CodeBracketIcon className="w-4 h-4 flex-shrink-0" />
             <span className="truncate">{macro.name}</span>
@@ -313,7 +353,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
         {isPreviewEditorVisible && (
             <div className="flex-shrink-0 p-1 animate-fade-in-down">
                 <div className="relative border border-gray-700 rounded-md overflow-hidden">
-                    <SQLEditor value={previewQuery} onChange={handlePreviewQueryChange} metadata={metadata} />
+                    <SQLEditor value={previewQuery} onChange={handlePreviewQueryChange} metadata={metadata} focusTrigger={previewFocusTrigger} />
                 </div>
             </div>
         )}
@@ -460,8 +500,8 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
       </div>
        {tooltip?.visible && ReactDOM.createPortal(
             <div
-                style={{ top: tooltip.top, left: tooltip.left }}
-                className="absolute z-[100] p-2 bg-gray-700 border border-gray-600 rounded shadow-lg w-auto max-w-xs animate-fade-in"
+                style={{ top: tooltip.top, left: tooltip.left, maxHeight: '250px' }}
+                className="absolute z-[100] p-2 bg-gray-700 border border-gray-600 rounded shadow-lg w-auto max-w-xs animate-fade-in overflow-y-auto"
                 onMouseEnter={() => { if (hideTimeout.current) clearTimeout(hideTimeout.current); }}
                 onMouseLeave={handleHideTooltip}
             >

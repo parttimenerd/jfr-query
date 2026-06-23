@@ -1,4 +1,5 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
+import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL } from '../data/builtinSql';
 
 /**
  * Bridge to the GraalVM Web Image module that wraps `BasicParallelImporter`.
@@ -69,4 +70,13 @@ export async function loadJfrIntoWasm(jfrBytes: Uint8Array, conn: AsyncDuckDBCon
       }
     }, 0);
   });
+
+  // Register built-in macros and views — the Java WASM path skips these because
+  // they require a JDBC connection. Run them client-side instead.
+  for (const sql of BUILTIN_MACROS_SQL) {
+    try { await conn.query(sql); } catch (e) { console.warn('builtin macro failed:', e); }
+  }
+  for (const sql of BUILTIN_VIEWS_SQL) {
+    try { await conn.query(sql); } catch (e) { console.warn('builtin view failed:', sql.slice(0, 80), e); }
+  }
 }

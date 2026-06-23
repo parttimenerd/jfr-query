@@ -58,7 +58,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     }
     
     return (
-        <div className="p-4 md:p-6 lg:p-8 space-y-6">
+        <div className="p-4 md:p-6 space-y-4">
             <SettingsPanel 
                 ref={settingsPanelRef}
                 metadata={metadata}

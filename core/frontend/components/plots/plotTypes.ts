@@ -9,6 +9,17 @@ export interface PlotParameter {
     defaultValue?: any;
 }
 
+// Parameters accepted by every plot type.
+export const COMMON_PLOT_PARAMS: PlotParameter[] = [
+    { name: 'title', type: 'string', required: false, description: 'Optional title displayed above the chart. Equivalent to the TITLE "..." outer clause.' },
+];
+
+/** Returns params with COMMON_PLOT_PARAMS appended, deduplicating by name. */
+export const withCommonParams = (params: PlotParameter[]): PlotParameter[] => {
+    const existing = new Set(params.map(p => p.name));
+    return [...params, ...COMMON_PLOT_PARAMS.filter(p => !existing.has(p.name))];
+};
+
 export interface PlotExample {
     description: string;
     code: string;
