@@ -20,11 +20,23 @@ Approach: **greenfield**. v1 stays at `core/frontend/` (tag `v1-archive`); v2 li
 
 Each milestone (`M-Xx`) is a **self-contained agent prompt**. An implementing agent reads one milestone, reads the files the prompt names, writes the files the prompt names, runs the tests the prompt names, and verifies the gate the prompt names. No re-reading the full plan is required. Milestones chain (later milestones may depend on earlier ones — noted in `Blocked by:`). The coverage matrix at end-of-file tracks completion against showcase sections.
 
+### Execution model — Opus plans, Sonnet implements
+
+**Per-milestone workflow** (mandatory, no exceptions):
+
+1. **Opus writes the per-milestone TDD plan.** Before any milestone is executed, an Opus-class agent decomposes it into bite-sized TDD steps (per `superpowers:writing-plans`) and saves the result to `docs/superpowers/plans/YYYY-MM-DD-<milestone-id>.md`. The per-milestone plan contains: exact file paths, complete code in every step, exact test commands with expected output, no placeholders.
+2. **Opus makes architectural / disambiguating decisions.** When the per-milestone plan would require a judgment call not pre-decided in `IMPLEMENTATION_PLAN.md`, Opus decides and writes the decision into the per-milestone plan as `**DECISION (Opus-resolved):** <branch chosen> — <one-line justification>.`
+3. **Sonnet executes the per-milestone plan task-by-task.** Sonnet does NOT make new architectural decisions. If Sonnet encounters a decision point not resolved in the per-milestone plan (or the parent `IMPLEMENTATION_PLAN.md`), Sonnet pauses, surfaces the question, and an Opus pass updates the plan before Sonnet resumes. Sonnet's job is raw implementation + plan-following + running tests + committing.
+4. **Sonnet surfaces blockers immediately.** If a test fails for an unexpected reason, or a file the plan referenced doesn't exist, or a dependency mismatches its documented version, Sonnet stops and reports. No silent fixes, no workarounds.
+
+This split is load-bearing: the parent plan (`IMPLEMENTATION_PLAN.md`) carries the architectural decisions; per-milestone plans carry the step-by-step implementation; Sonnet stays inside the lines of the per-milestone plan; Opus answers escalations.
+
 A milestone is **not complete** until:
 1. All files listed under `Files:` exist.
 2. All tests listed under `Tests:` exist and pass under `npm run test` (and `npm run test:e2e` / `npm run test:visual` / `npm run test:a11y` as applicable).
 3. The verifiable `Gate:` criterion holds.
 4. `npm run typecheck` and `npm run lint` are clean.
+5. Each step in the per-milestone plan is checked off (`- [x]`) by Sonnet.
 
 ---
 
