@@ -44,3 +44,24 @@ wasm/web/
 # Maven local extensions
 .mvn/
 
+# DuckDB / scratch databases at repo root (not the curated core/jfr_files/*.db)
+/*.db
+/a
+/a.db
+/duckdb.db
+/metal.db
+/out.db
+
+# Generated data + ML artifacts
+/data/
+/jfr/
+/onnx/
+/checkpoints/
+/node_modules/
+
+# Local scratch / bench / training scripts
+/scripts/
+core/frontend/bench_run*.mjs
+core/frontend/scripts/bench/
+core/frontend/test-complex*.md
+
