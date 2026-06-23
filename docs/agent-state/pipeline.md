@@ -4,13 +4,13 @@
 6ab8dfd
 
 ## Last implemented milestone
-M-B6 (command palette ⌘P, glyph legend ?, welcome carousel + SettingsContext)
+M-C1 (plot renderer base + 5-state machine) at commit TBD_AFTER_COMMIT
 
 ## Last reviewed commit (implementation)
-f09db69
+cff689e
 
 ## Next milestone to plan
-M-B7 (three-grain undo + activity feed — plan needed)
+M-C2 (line + bar + scatter renderers, adapted from v1, Recharts-based)
 
 ## Plans written
 - M-A0 through M-A7
@@ -18,6 +18,10 @@ M-B7 (three-grain undo + activity feed — plan needed)
 - M-B4 (dep graph overlay, cytoscape.js, ⌘G modal)
 - M-B5 (issues panel, diagnostic registry, quickfix menu ⌥↵)
 - M-B6 (welcome cell, glyph legend, command palette ⌘P with 14 result kinds)
+- M-B7 (three-grain undo + activity feed)
+- M-B9 (file ingest UI — FileDropZone, LoadingOverlay, useFileIngest hook, topbar Open button, WASM copy)
+- M-B10 (right-rail layout — RightRail with ISSUES/CHAT tabs, ⌥H toggle, WAI-ARIA Tabs pattern, ChatStub)
+- M-C1 (plot renderer base — PlotStateMachine 5-state reducer, PlotRenderer wrapper, PlotLegend, PlotTooltip, PlotAnnotations, PlotControls, PlotShareModal, PlotContext)
 
 ## Commits pending review
 (none — reviewer last reviewed through 6ab8dfd)
