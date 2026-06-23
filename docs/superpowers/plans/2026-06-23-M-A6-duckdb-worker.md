@@ -896,6 +896,91 @@ export type WorkerResponse =
 
 ---
 
+## Step 12 — Playwright smoke suite (testing standard Layer 2)
+
+The DuckDB worker lives in the browser context. The smoke suite in
+`tests/e2e/00-smoke.spec.ts` verifies that COOP/COEP headers are present
+(without them DuckDB's SharedArrayBuffer fails silently at runtime).
+
+- [ ] **12.1** Build the app so the preview server can serve it:
+  ```bash
+  cd /Users/i560383_1/code/experiments/jfr-query/frontend-v2
+  npm run build
+  ```
+  Expected: exits 0, `dist/` populated.
+
+- [ ] **12.2** Install Playwright browsers if not already installed:
+  ```bash
+  npx playwright install chromium --with-deps 2>&1 | tail -5
+  ```
+  Expected: `chromium` ready (may already be cached — no error either way).
+
+- [ ] **12.3** Run the smoke E2E suite:
+  ```bash
+  npx playwright test tests/e2e/00-smoke.spec.ts --project=dark
+  ```
+  Expected output (9 tests, all pass):
+  ```
+  ✓  smoke — app boots › root page responds 200
+  ✓  smoke — app boots › page title is set
+  ✓  smoke — app boots › root mount point exists
+  ✓  smoke — app boots › app renders without JS errors
+  ✓  smoke — COOP/COEP headers › Cross-Origin-Opener-Policy: same-origin
+  ✓  smoke — COOP/COEP headers › Cross-Origin-Embedder-Policy: require-corp
+  ✓  smoke — COOP/COEP headers › crossOriginIsolated is true in page context
+  ✓  smoke — theme › dark project: root has dark data-theme attribute
+  ✓  smoke — theme › page has non-zero viewport content
+  9 passed
+  ```
+  **If COOP/COEP tests fail:** the DuckDB worker will not function in browsers.
+  Open `vite.config.ts`, confirm `server.headers` and `preview.headers` both set:
+  ```typescript
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+  ```
+  Do NOT proceed to Step 13 (commit) until COOP/COEP smoke passes.
+
+- [ ] **12.4** Run both projects (dark + light):
+  ```bash
+  npx playwright test tests/e2e/00-smoke.spec.ts
+  ```
+  Expected: 18 tests pass (9 per project).
+
+- [ ] **12.5** Confirm no regressions across all E2E specs:
+  ```bash
+  npx playwright test --project=dark 2>&1 | tail -5
+  ```
+  Expected: all non-`test.fixme` tests pass; `test.fixme` tests show as skipped.
+
+---
+
+## Step 13 — Performance bench (testing standard Layer 5)
+
+- [ ] **13.1** Create `src/__tests__/duckdb/duckdb.bench.ts`:
+  ```typescript
+  import { bench, describe } from 'vitest';
+  import { handleMessage } from '../../services/duckdb/worker';
+
+  // Baseline timings for DuckDB operations.
+  // Warm query must stay under 50ms; init under 3000ms.
+
+  describe('DuckDB perf', () => {
+    bench('SELECT 42 (warm, mocked)', async () => {
+      await handleMessage({ type: 'Query', id: crypto.randomUUID(), sql: 'SELECT 42 AS x' });
+    });
+  });
+  ```
+  Note: this bench runs against the mocked worker (same mock from worker.test.ts).
+  Real DuckDB bench requires `DUCKDB_INTEGRATION=1`.
+
+- [ ] **13.2** Run bench:
+  ```bash
+  npm run test:perf -- duckdb/duckdb.bench
+  ```
+  Expected: bench output with `ops/sec` printed; no failures.
+
+---
+
 ## Known environment constraints
 
 - **jsdom + DuckDB WASM**: `URL.createObjectURL` is not available in jsdom. Worker unit tests mock `initDuckDBWasm`. Integration tests may need `DUCKDB_INTEGRATION=1` in a Node environment that supports the DuckDB EH bundle.
