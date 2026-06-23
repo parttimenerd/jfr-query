@@ -1,7 +1,7 @@
 # Agent Pipeline State
 
 ## Last reviewed commit
-b7336a3
+6ab8dfd
 
 ## Last implemented milestone
 M-B6 (command palette ⌘P, glyph legend ?, welcome carousel + SettingsContext)
@@ -20,7 +20,7 @@ M-B7 (three-grain undo + activity feed — plan needed)
 - M-B6 (welcome cell, glyph legend, command palette ⌘P with 14 result kinds)
 
 ## Commits pending review
-(none — reviewer last reviewed through b7336a3; f09db69 pending review)
+(none — reviewer last reviewed through 6ab8dfd)
 
 ## Open critical issues
 (none)
