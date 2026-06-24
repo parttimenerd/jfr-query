@@ -4,39 +4,123 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>me.bechberger</groupId>
-    <artifactId>jfr-query-parent</artifactId>
+    <artifactId>jfr-query-experiments</artifactId>
     <version>1.0-SNAPSHOT</version>
-    <packaging>pom</packaging>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
-        <jooq.version>3.20.6</jooq.version>
-        <duckdb.version>1.3.2.1</duckdb.version>
     </properties>
 
-    <modules>
-        <module>core</module>
-    </modules>
+    <build>
+        <finalName>query</finalName>
+        <plugins>
+            <!-- Add your plugins here -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.1</version>
+                <!-- Configure the compiler plugin, add exports -->
+                <configuration>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                    <compilerArgs>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.misc=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.org.objectweb.asm.commons=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.org.objectweb.asm.util=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.event=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.vm.annotation=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.org.xml.sax=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.util.xml=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.util.xml.impl=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.org.xml.sax.helpers=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>jdk.jfr/jdk.jfr.internal=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>jdk.jfr/jdk.jfr.events=ALL-UNNAMED</arg>
+                        <arg>--add-exports</arg>
+                        <arg>java.base/jdk.internal.module=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.misc=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.org.objectweb.asm.commons=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.org.objectweb.asm.util=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.event=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.vm.annotation=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.org.xml.sax=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.util.xml=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.util.xml.impl=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.org.xml.sax.helpers=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>jdk.jfr/jdk.jfr.internal=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>java.base/jdk.internal.module=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>jdk.jfr/jdk.jfr.events=ALL-UNNAMED</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+            <plugin>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <configuration>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
+                    <appendAssemblyId>false</appendAssemblyId>
+                    <archive>
+                        <manifestEntries>
+                            <Main-Class>me.bechberger.Main</Main-Class>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>all-assembly</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 
-    <profiles>
-        <profile>
-            <id>wasm</id>
-            <modules>
-                <module>wasm</module>
-            </modules>
-        </profile>
-    </profiles>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.junit</groupId>
-                <artifactId>junit-bom</artifactId>
-                <version>5.13.4</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli</artifactId>
+            <version>4.7.7</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.8.1</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>
