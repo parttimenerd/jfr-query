@@ -22,14 +22,18 @@ describe('plotRegistry — showcase 12-plot coverage', () => {
         'RANGE',
     ];
 
+    // Aliases that point at one of the canonical plots; allowed in the registry
+    // but not counted as a distinct plot.
+    const aliasKeys = ['FLAME_GRAPH'];
+
     it.each(expectedKeys)('registers %s', (name) => {
         expect(plotRegistry[name]).toBeDefined();
         expect(plotRegistry[name].component).toBeDefined();
         expect(plotRegistry[name].parseConfig).toBeDefined();
     });
 
-    it('has exactly 12 registered plots (no more, no less)', () => {
-        // Lock the count so unintentional additions force a conscious update.
-        expect(Object.keys(plotRegistry).sort()).toEqual([...expectedKeys].sort());
+    it('has exactly 12 canonical registered plots (aliases allowed)', () => {
+        const actual = Object.keys(plotRegistry).filter(k => !aliasKeys.includes(k)).sort();
+        expect(actual).toEqual([...expectedKeys].sort());
     });
 });
