@@ -1,0 +1,808 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e48]:
+    - banner [ref=e49]:
+      - generic [ref=e50]:
+        - heading "JFR Query Notebook" [level=1] [ref=e51]
+        - generic "Running in-browser via DuckDB-WASM" [ref=e52]: WASM
+        - generic "JFR recording" [ref=e53]: JFR
+        - generic [ref=e55]:
+          - button "Undo (⌘Z)" [disabled] [ref=e56]:
+            - img [ref=e57]
+          - button "Redo (⇧⌘Z)" [disabled] [ref=e59]:
+            - img [ref=e60]
+        - generic [ref=e63]:
+          - button "Disable Auto-Run" [ref=e64]:
+            - img [ref=e65]
+          - button "Run All Queries" [ref=e67]:
+            - img [ref=e68]
+      - generic [ref=e70]:
+        - button "Collapse All" [ref=e71]:
+          - img [ref=e72]
+        - button "Expand All" [ref=e74]:
+          - img [ref=e75]
+        - button "Clear All Results" [ref=e77]:
+          - img [ref=e78]
+        - button "Load Notebook" [ref=e81]:
+          - img [ref=e82]
+        - button "New GC Analysis Notebook" [ref=e84]:
+          - img [ref=e85]
+        - button "Save Notebook (⌘S)" [ref=e87]:
+          - img [ref=e88]
+        - button "Edit Raw Markdown" [ref=e90]:
+          - img [ref=e91]
+        - button "Presenter Mode (hide editors)" [ref=e94]:
+          - img [ref=e95]
+        - button "Settings" [ref=e99]:
+          - img [ref=e100]
+    - generic [ref=e103]:
+      - generic [ref=e104]:
+        - generic [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - heading "Schema Explorer" [level=2] [ref=e109]:
+                - img [ref=e110]
+                - text: Schema Explorer
+              - button "Reset Layout" [ref=e112]:
+                - img [ref=e113]
+              - button "Refresh Schema" [ref=e115]:
+                - img [ref=e116]
+            - generic [ref=e118]:
+              - img [ref=e119]
+              - textbox "Search schema..." [ref=e121]
+          - generic [ref=e122]:
+            - generic [ref=e123]:
+              - generic [ref=e124] [cursor=pointer]:
+                - generic [ref=e125]:
+                  - img [ref=e126]
+                  - heading "Tables" [level=3] [ref=e128]
+                  - generic [ref=e129]: (5)
+                - generic [ref=e130]:
+                  - button "Sort alphabetically" [ref=e131]:
+                    - img [ref=e132]
+                  - button "Sort by row count" [ref=e134]:
+                    - img [ref=e135]
+                  - img [ref=e137]
+              - list [ref=e140]:
+                - listitem [ref=e141]:
+                  - button "GarbageCollection 20" [ref=e142]:
+                    - img [ref=e143]
+                    - generic [ref=e145]: GarbageCollection
+                    - generic [ref=e146]: "20"
+                - listitem [ref=e147]:
+                  - button "GCHeapSummary 40" [ref=e148]:
+                    - img [ref=e149]
+                    - generic [ref=e151]: GCHeapSummary
+                    - generic [ref=e152]: "40"
+                - listitem [ref=e153]:
+                  - button "GCPhasePause 40" [ref=e154]:
+                    - img [ref=e155]
+                    - generic [ref=e157]: GCPhasePause
+                    - generic [ref=e158]: "40"
+                - listitem [ref=e159]:
+                  - button "HeapSnapshot 150" [ref=e160]:
+                    - img [ref=e161]
+                    - generic [ref=e163]: HeapSnapshot
+                    - generic [ref=e164]: "150"
+                - listitem [ref=e165]:
+                  - button "ObjectAllocationSample 25" [ref=e166]:
+                    - img [ref=e167]
+                    - generic [ref=e169]: ObjectAllocationSample
+                    - generic [ref=e170]: "25"
+            - generic [ref=e172]:
+              - generic [ref=e173] [cursor=pointer]:
+                - generic [ref=e174]:
+                  - img [ref=e175]
+                  - heading "Views" [level=3] [ref=e177]
+                  - generic [ref=e178]: (5)
+                - generic [ref=e179]:
+                  - button "Show Internal Views" [ref=e180]:
+                    - img [ref=e181]
+                  - img [ref=e184]
+              - list [ref=e187]:
+                - listitem [ref=e188]:
+                  - button "allocation-rate" [ref=e189]:
+                    - img [ref=e190]
+                    - generic [ref=e192]: allocation-rate
+                - listitem [ref=e193]:
+                  - button "gc-concurrent-phases-detail" [ref=e194]:
+                    - img [ref=e195]
+                    - generic [ref=e197]: gc-concurrent-phases-detail
+                - listitem [ref=e198]:
+                  - button "gc-phase-breakdown" [ref=e199]:
+                    - img [ref=e200]
+                    - generic [ref=e202]: gc-phase-breakdown
+                - listitem [ref=e203]:
+                  - button "gc-top-pauses" [ref=e204]:
+                    - img [ref=e205]
+                    - generic [ref=e207]: gc-top-pauses
+                - listitem [ref=e208]:
+                  - button "heap-committed-vs-used" [ref=e209]:
+                    - img [ref=e210]
+                    - generic [ref=e212]: heap-committed-vs-used
+            - generic [ref=e214]:
+              - generic [ref=e215] [cursor=pointer]:
+                - generic [ref=e216]:
+                  - img [ref=e217]
+                  - heading "Macros" [level=3] [ref=e219]
+                  - generic [ref=e220]: (2)
+                - img [ref=e222]
+              - list [ref=e225]:
+                - listitem [ref=e226]:
+                  - button "recording_start" [ref=e227]:
+                    - img [ref=e228]
+                    - generic [ref=e230]: recording_start
+                - listitem [ref=e231]:
+                  - button "recording_end" [ref=e232]:
+                    - img [ref=e233]
+                    - generic [ref=e235]: recording_end
+            - generic [ref=e237]:
+              - generic [ref=e238] [cursor=pointer]:
+                - generic [ref=e239]:
+                  - img [ref=e240]
+                  - heading "Preview" [level=3] [ref=e242]
+                - generic [ref=e243]:
+                  - button "Show Search" [ref=e244]:
+                    - img [ref=e245]
+                  - button "Show Query Editor" [ref=e247]:
+                    - img [ref=e248]
+                  - img [ref=e250]
+              - table [ref=e257]:
+                - rowgroup [ref=e258]:
+                  - row "gcId name startTime duration ⏱ sumOfPauses ⏱ longestPause ⏱ cause" [ref=e259]:
+                    - columnheader "gcId" [ref=e260]:
+                      - button "gcId" [ref=e261]
+                    - columnheader "name" [ref=e263]:
+                      - button "name" [ref=e264]
+                    - columnheader "startTime" [ref=e266]:
+                      - button "startTime" [ref=e267]
+                    - columnheader "duration ⏱" [ref=e269]:
+                      - button "duration ⏱" [ref=e270]:
+                        - text: duration
+                        - generic [ref=e271]: ⏱
+                    - columnheader "sumOfPauses ⏱" [ref=e273]:
+                      - button "sumOfPauses ⏱" [ref=e274]:
+                        - text: sumOfPauses
+                        - generic [ref=e275]: ⏱
+                    - columnheader "longestPause ⏱" [ref=e277]:
+                      - button "longestPause ⏱" [ref=e278]:
+                        - text: longestPause
+                        - generic [ref=e279]: ⏱
+                    - columnheader "cause" [ref=e281]:
+                      - button "cause" [ref=e282]
+                - rowgroup [ref=e284]:
+                  - row "1 G1GC 11:00:01.20 120.0 µs 120.0 µs 118.0 µs G1 Evacuation Pause" [ref=e285]:
+                    - cell "1" [ref=e286]
+                    - cell "G1GC" [ref=e287]
+                    - cell "11:00:01.20" [ref=e288]
+                    - cell "120.0 µs" [ref=e289]
+                    - cell "120.0 µs" [ref=e290]
+                    - cell "118.0 µs" [ref=e291]
+                    - cell "G1 Evacuation Pause" [ref=e292]
+                  - row "2 G1GC 11:00:03.45 85.0 µs 85.0 µs 83.0 µs G1 Evacuation Pause" [ref=e293]:
+                    - cell "2" [ref=e294]
+                    - cell "G1GC" [ref=e295]
+                    - cell "11:00:03.45" [ref=e296]
+                    - cell "85.0 µs" [ref=e297]
+                    - cell "85.0 µs" [ref=e298]
+                    - cell "83.0 µs" [ref=e299]
+                    - cell "G1 Evacuation Pause" [ref=e300]
+                  - row "3 G1GC 11:00:05.80 214.0 µs 214.0 µs 211.0 µs G1 Humongous Allocation" [ref=e301]:
+                    - cell "3" [ref=e302]
+                    - cell "G1GC" [ref=e303]
+                    - cell "11:00:05.80" [ref=e304]
+                    - cell "214.0 µs" [ref=e305]
+                    - cell "214.0 µs" [ref=e306]
+                    - cell "211.0 µs" [ref=e307]
+                    - cell "G1 Humongous Allocation" [ref=e308]
+                  - row "4 G1GC 11:00:08.10 92.0 µs 92.0 µs 90.0 µs G1 Evacuation Pause" [ref=e309]:
+                    - cell "4" [ref=e310]
+                    - cell "G1GC" [ref=e311]
+                    - cell "11:00:08.10" [ref=e312]
+                    - cell "92.0 µs" [ref=e313]
+                    - cell "92.0 µs" [ref=e314]
+                    - cell "90.0 µs" [ref=e315]
+                    - cell "G1 Evacuation Pause" [ref=e316]
+                  - row "5 G1GC 11:00:12.60 156.0 µs 156.0 µs 154.0 µs G1 Evacuation Pause" [ref=e317]:
+                    - cell "5" [ref=e318]
+                    - cell "G1GC" [ref=e319]
+                    - cell "11:00:12.60" [ref=e320]
+                    - cell "156.0 µs" [ref=e321]
+                    - cell "156.0 µs" [ref=e322]
+                    - cell "154.0 µs" [ref=e323]
+                    - cell "G1 Evacuation Pause" [ref=e324]
+                  - row "6 G1GC 11:00:16.30 1.42 ms 1.42 ms 1.42 ms G1 Concurrent GC" [ref=e325]:
+                    - cell "6" [ref=e326]
+                    - cell "G1GC" [ref=e327]
+                    - cell "11:00:16.30" [ref=e328]
+                    - cell "1.42 ms" [ref=e329]
+                    - cell "1.42 ms" [ref=e330]
+                    - cell "1.42 ms" [ref=e331]
+                    - cell "G1 Concurrent GC" [ref=e332]
+                  - row "7 G1GC 11:00:19.70 75.0 µs 75.0 µs 73.0 µs G1 Evacuation Pause" [ref=e333]:
+                    - cell "7" [ref=e334]
+                    - cell "G1GC" [ref=e335]
+                    - cell "11:00:19.70" [ref=e336]
+                    - cell "75.0 µs" [ref=e337]
+                    - cell "75.0 µs" [ref=e338]
+                    - cell "73.0 µs" [ref=e339]
+                    - cell "G1 Evacuation Pause" [ref=e340]
+                  - row "8 G1GC 11:00:23.40 98.0 µs 98.0 µs 96.0 µs G1 Evacuation Pause" [ref=e341]:
+                    - cell "8" [ref=e342]
+                    - cell "G1GC" [ref=e343]
+                    - cell "11:00:23.40" [ref=e344]
+                    - cell "98.0 µs" [ref=e345]
+                    - cell "98.0 µs" [ref=e346]
+                    - cell "96.0 µs" [ref=e347]
+                    - cell "G1 Evacuation Pause" [ref=e348]
+                  - row "9 G1GC 11:00:27.80 183.0 µs 183.0 µs 180.0 µs G1 Evacuation Pause" [ref=e349]:
+                    - cell "9" [ref=e350]
+                    - cell "G1GC" [ref=e351]
+                    - cell "11:00:27.80" [ref=e352]
+                    - cell "183.0 µs" [ref=e353]
+                    - cell "183.0 µs" [ref=e354]
+                    - cell "180.0 µs" [ref=e355]
+                    - cell "G1 Evacuation Pause" [ref=e356]
+                  - row "10 G1GC 11:00:30.10 67.0 µs 67.0 µs 65.0 µs G1 Evacuation Pause" [ref=e357]:
+                    - cell "10" [ref=e358]
+                    - cell "G1GC" [ref=e359]
+                    - cell "11:00:30.10" [ref=e360]
+                    - cell "67.0 µs" [ref=e361]
+                    - cell "67.0 µs" [ref=e362]
+                    - cell "65.0 µs" [ref=e363]
+                    - cell "G1 Evacuation Pause" [ref=e364]
+                  - row "11 G1GC 11:00:34.50 243.0 µs 243.0 µs 239.0 µs G1 Humongous Allocation" [ref=e365]:
+                    - cell "11" [ref=e366]
+                    - cell "G1GC" [ref=e367]
+                    - cell "11:00:34.50" [ref=e368]
+                    - cell "243.0 µs" [ref=e369]
+                    - cell "243.0 µs" [ref=e370]
+                    - cell "239.0 µs" [ref=e371]
+                    - cell "G1 Humongous Allocation" [ref=e372]
+                  - row "12 G1GC 11:00:39.20 89.0 µs 89.0 µs 87.0 µs G1 Evacuation Pause" [ref=e373]:
+                    - cell "12" [ref=e374]
+                    - cell "G1GC" [ref=e375]
+                    - cell "11:00:39.20" [ref=e376]
+                    - cell "89.0 µs" [ref=e377]
+                    - cell "89.0 µs" [ref=e378]
+                    - cell "87.0 µs" [ref=e379]
+                    - cell "G1 Evacuation Pause" [ref=e380]
+                  - row "13 G1GC 11:00:43.70 1.89 ms 1.89 ms 1.89 ms G1 Concurrent GC" [ref=e381]:
+                    - cell "13" [ref=e382]
+                    - cell "G1GC" [ref=e383]
+                    - cell "11:00:43.70" [ref=e384]
+                    - cell "1.89 ms" [ref=e385]
+                    - cell "1.89 ms" [ref=e386]
+                    - cell "1.89 ms" [ref=e387]
+                    - cell "G1 Concurrent GC" [ref=e388]
+                  - row "14 G1GC 11:00:47.10 115.0 µs 115.0 µs 113.0 µs G1 Evacuation Pause" [ref=e389]:
+                    - cell "14" [ref=e390]
+                    - cell "G1GC" [ref=e391]
+                    - cell "11:00:47.10" [ref=e392]
+                    - cell "115.0 µs" [ref=e393]
+                    - cell "115.0 µs" [ref=e394]
+                    - cell "113.0 µs" [ref=e395]
+                    - cell "G1 Evacuation Pause" [ref=e396]
+                  - row "15 G1GC 11:00:51.60 77.0 µs 77.0 µs 75.0 µs G1 Evacuation Pause" [ref=e397]:
+                    - cell "15" [ref=e398]
+                    - cell "G1GC" [ref=e399]
+                    - cell "11:00:51.60" [ref=e400]
+                    - cell "77.0 µs" [ref=e401]
+                    - cell "77.0 µs" [ref=e402]
+                    - cell "75.0 µs" [ref=e403]
+                    - cell "G1 Evacuation Pause" [ref=e404]
+                  - row "16 G1GC 11:00:54.30 201.0 µs 201.0 µs 198.0 µs G1 Evacuation Pause" [ref=e405]:
+                    - cell "16" [ref=e406]
+                    - cell "G1GC" [ref=e407]
+                    - cell "11:00:54.30" [ref=e408]
+                    - cell "201.0 µs" [ref=e409]
+                    - cell "201.0 µs" [ref=e410]
+                    - cell "198.0 µs" [ref=e411]
+                    - cell "G1 Evacuation Pause" [ref=e412]
+                  - row "17 G1GC 11:00:58.80 134.0 µs 134.0 µs 132.0 µs G1 Evacuation Pause" [ref=e413]:
+                    - cell "17" [ref=e414]
+                    - cell "G1GC" [ref=e415]
+                    - cell "11:00:58.80" [ref=e416]
+                    - cell "134.0 µs" [ref=e417]
+                    - cell "134.0 µs" [ref=e418]
+                    - cell "132.0 µs" [ref=e419]
+                    - cell "G1 Evacuation Pause" [ref=e420]
+                  - row "18 G1GC 11:01:02.40 88.0 µs 88.0 µs 86.0 µs G1 Evacuation Pause" [ref=e421]:
+                    - cell "18" [ref=e422]
+                    - cell "G1GC" [ref=e423]
+                    - cell "11:01:02.40" [ref=e424]
+                    - cell "88.0 µs" [ref=e425]
+                    - cell "88.0 µs" [ref=e426]
+                    - cell "86.0 µs" [ref=e427]
+                    - cell "G1 Evacuation Pause" [ref=e428]
+                  - row "19 G1GC 11:01:06.90 311.0 µs 311.0 µs 307.0 µs G1 Humongous Allocation" [ref=e429]:
+                    - cell "19" [ref=e430]
+                    - cell "G1GC" [ref=e431]
+                    - cell "11:01:06.90" [ref=e432]
+                    - cell "311.0 µs" [ref=e433]
+                    - cell "311.0 µs" [ref=e434]
+                    - cell "307.0 µs" [ref=e435]
+                    - cell "G1 Humongous Allocation" [ref=e436]
+                  - row "20 G1GC 11:01:11.20 2.25 ms 2.25 ms 2.24 ms G1 Concurrent GC" [ref=e437]:
+                    - cell "20" [ref=e438]
+                    - cell "G1GC" [ref=e439]
+                    - cell "11:01:11.20" [ref=e440]
+                    - cell "2.25 ms" [ref=e441]
+                    - cell "2.25 ms" [ref=e442]
+                    - cell "2.24 ms" [ref=e443]
+                    - cell "G1 Concurrent GC" [ref=e444]
+        - button "Collapse sidebar" [ref=e447]:
+          - img [ref=e448]
+      - main [ref=e450]:
+        - generic [ref=e451]:
+          - generic [ref=e453] [cursor=pointer]:
+            - heading "Notebook Settings" [level=3] [ref=e454]:
+              - img [ref=e455]
+              - text: Notebook Settings
+            - img [ref=e457]
+          - generic [ref=e459]:
+            - generic [ref=e460]:
+              - generic [ref=e461]:
+                - img [ref=e463]
+                - heading [level=2]
+              - generic [ref=e465]:
+                - button "Raw Markdown" [ref=e466]:
+                  - img [ref=e467]
+                - button "Delete Cell" [ref=e469]:
+                  - img [ref=e470]
+            - generic [ref=e472]:
+              - generic [ref=e475] [cursor=pointer]:
+                - heading "JFR SQL Notebook" [level=1] [ref=e476]
+                - paragraph [ref=e477]: "Welcome! This notebook lets you query a loaded JFR recording (or any DuckDB database) using SQL, then visualize results as charts. Here's how it works:"
+                - list [ref=e478]:
+                  - listitem [ref=e479]:
+                    - strong [ref=e480]: Left sidebar
+                    - text: "— Schema Explorer: browse tables, views, and macros in the database. Click any item to insert a query."
+                  - listitem [ref=e481]:
+                    - strong [ref=e482]: Each cell
+                    - text: has one or more SQL queries followed by a plot config that visualizes the results.
+                  - listitem [ref=e483]:
+                    - strong [ref=e484]: Run
+                    - text: a query with the ▶ button (or Cmd+Enter). The plot updates automatically.
+                  - listitem [ref=e485]:
+                    - strong [ref=e486]: Edit this cell
+                    - text: by clicking the
+                    - strong [ref=e487]: </>
+                    - text: icon to switch to raw Markdown mode.
+                  - listitem [ref=e488]:
+                    - strong [ref=e489]: Switch chart type
+                    - text: using the "switch to:" row below the plot editor — it auto-fills columns from your query results.
+                  - listitem [ref=e490]:
+                    - strong [ref=e491]: Column chips
+                    - text: appear above the plot editor — click any chip to copy the column name into your plot config.
+              - generic [ref=e493]:
+                - button "Add variable" [ref=e494]:
+                  - img [ref=e495]
+                  - text: Add variable
+                - button "Add SQL" [ref=e497]:
+                  - img [ref=e498]
+                  - text: Add SQL
+              - button "Add Conclusion" [ref=e501]:
+                - img [ref=e502]
+                - text: Add Conclusion
+          - generic [ref=e504]:
+            - generic [ref=e505]:
+              - generic [ref=e506]:
+                - img [ref=e508]
+                - heading "Step 1 — Your first query" [level=2] [ref=e510] [cursor=pointer]
+              - generic [ref=e511]:
+                - button "Raw Markdown" [ref=e512]:
+                  - img [ref=e513]
+                - button "Delete Cell" [ref=e515]:
+                  - img [ref=e516]
+            - generic [ref=e518]:
+              - paragraph [ref=e522] [cursor=pointer]:
+                - text: Click
+                - strong [ref=e523]: ▶
+                - text: below to run this query. It returns the 10 longest GC pauses. The result appears in the table.
+              - generic [ref=e524]:
+                - generic [ref=e525]:
+                  - generic [ref=e526]:
+                    - generic [ref=e527] [cursor=pointer]:
+                      - img [ref=e528]
+                      - generic [ref=e530]: Query 1
+                      - generic [ref=e531]: SELECT "startTime", round(duration * 1000, 3) AS "duration_m
+                    - generic [ref=e532]:
+                      - button [ref=e534]:
+                        - img [ref=e535]
+                      - button "Format SQL" [ref=e537]:
+                        - img [ref=e538]
+                      - button "Copy SQL" [ref=e541]:
+                        - img [ref=e542]
+                      - button [ref=e544]:
+                        - img [ref=e545]
+                  - textbox [ref=e551]:
+                    - generic [ref=e552]: SELECT
+                    - generic [ref=e553]: "\"startTime\","
+                    - generic [ref=e554]: round(duration * 1000, 3) AS "duration_ms",
+                    - generic [ref=e555]: "\"cause\""
+                    - generic [ref=e556]: FROM "GarbageCollection"
+                    - generic [ref=e557]: ORDER BY duration DESC
+                    - generic [ref=e558]: LIMIT 10;
+                - generic [ref=e559]:
+                  - paragraph [ref=e560] [cursor=pointer]: Empty prose block — click to edit
+                  - button "Delete prose block" [ref=e561]:
+                    - img [ref=e562]
+                - generic [ref=e566]:
+                  - button "+ SQL" [ref=e567]
+                  - button "+ Plot" [ref=e568]
+                  - button "+ Prose" [ref=e569]
+                - generic [ref=e570]:
+                  - generic [ref=e571]:
+                    - generic [ref=e572] [cursor=pointer]:
+                      - img [ref=e573]
+                      - generic [ref=e575]: Plot 1
+                      - generic [ref=e576]: TABLE()
+                    - generic [ref=e577]:
+                      - button "Format plot" [ref=e578]:
+                        - img [ref=e579]
+                      - button "Plot syntax reference" [ref=e582]:
+                        - img [ref=e583]
+                      - button "Delete plot block" [ref=e585]:
+                        - img [ref=e586]
+                  - generic [ref=e588]:
+                    - generic [ref=e883]:
+                      - generic [ref=e884]: "columns:"
+                      - button "startTime" [ref=e885]
+                      - button "duration_ms" [ref=e886]
+                      - button "cause" [ref=e887]
+                      - generic [ref=e888]: — click to copy
+                    - textbox [ref=e592]:
+                      - generic [ref=e593]: TABLE()
+                - generic [ref=e889]:
+                  - button "Download as PNG" [ref=e890]:
+                    - img [ref=e891]
+                  - generic [ref=e901]:
+                    - generic [ref=e902]:
+                      - generic [ref=e903]:
+                        - img [ref=e904]
+                        - textbox "Search..." [ref=e906]
+                      - generic [ref=e907]: 10 rows
+                      - button "CSV ↓" [ref=e908]
+                    - table [ref=e910]:
+                      - rowgroup [ref=e911]:
+                        - row "startTime duration_ms ⏱ cause" [ref=e912]:
+                          - columnheader "startTime" [ref=e913]:
+                            - button "startTime" [ref=e914]
+                          - columnheader "duration_ms ⏱" [ref=e916]:
+                            - button "duration_ms ⏱" [ref=e917]:
+                              - text: duration_ms
+                              - generic [ref=e918]: ⏱
+                          - columnheader "cause" [ref=e920]:
+                            - button "cause" [ref=e921]
+                      - rowgroup [ref=e923]:
+                        - row "11:01:11.20 225 ms G1 Concurrent GC" [ref=e924]:
+                          - cell "11:01:11.20" [ref=e925]
+                          - cell "225 ms" [ref=e926]
+                          - cell "G1 Concurrent GC" [ref=e927]
+                        - row "11:00:43.70 189 ms G1 Concurrent GC" [ref=e928]:
+                          - cell "11:00:43.70" [ref=e929]
+                          - cell "189 ms" [ref=e930]
+                          - cell "G1 Concurrent GC" [ref=e931]
+                        - row "11:00:16.30 142 ms G1 Concurrent GC" [ref=e932]:
+                          - cell "11:00:16.30" [ref=e933]
+                          - cell "142 ms" [ref=e934]
+                          - cell "G1 Concurrent GC" [ref=e935]
+                        - row "11:01:06.90 31.1 ms G1 Humongous Allocation" [ref=e936]:
+                          - cell "11:01:06.90" [ref=e937]
+                          - cell "31.1 ms" [ref=e938]
+                          - cell "G1 Humongous Allocation" [ref=e939]
+                        - row "11:00:34.50 24.3 ms G1 Humongous Allocation" [ref=e940]:
+                          - cell "11:00:34.50" [ref=e941]
+                          - cell "24.3 ms" [ref=e942]
+                          - cell "G1 Humongous Allocation" [ref=e943]
+                        - row "11:00:05.80 21.4 ms G1 Humongous Allocation" [ref=e944]:
+                          - cell "11:00:05.80" [ref=e945]
+                          - cell "21.4 ms" [ref=e946]
+                          - cell "G1 Humongous Allocation" [ref=e947]
+                        - row "11:00:54.30 20.1 ms G1 Evacuation Pause" [ref=e948]:
+                          - cell "11:00:54.30" [ref=e949]
+                          - cell "20.1 ms" [ref=e950]
+                          - cell "G1 Evacuation Pause" [ref=e951]
+                        - row "11:00:27.80 18.3 ms G1 Evacuation Pause" [ref=e952]:
+                          - cell "11:00:27.80" [ref=e953]
+                          - cell "18.3 ms" [ref=e954]
+                          - cell "G1 Evacuation Pause" [ref=e955]
+                        - row "11:00:12.60 15.6 ms G1 Evacuation Pause" [ref=e956]:
+                          - cell "11:00:12.60" [ref=e957]
+                          - cell "15.6 ms" [ref=e958]
+                          - cell "G1 Evacuation Pause" [ref=e959]
+                        - row "11:00:58.80 13.4 ms G1 Evacuation Pause" [ref=e960]:
+                          - cell "11:00:58.80" [ref=e961]
+                          - cell "13.4 ms" [ref=e962]
+                          - cell "G1 Evacuation Pause" [ref=e963]
+                - generic [ref=e594]:
+                  - button "Add variable" [ref=e595]:
+                    - img [ref=e596]
+                    - text: Add variable
+                  - button "Add SQL" [ref=e598]:
+                    - img [ref=e599]
+                    - text: Add SQL
+                - generic "Drag to resize results" [ref=e964]
+              - button "Add Conclusion" [ref=e602]:
+                - img [ref=e603]
+                - text: Add Conclusion
+          - generic [ref=e605]:
+            - generic [ref=e606]:
+              - generic [ref=e607]:
+                - img [ref=e609]
+                - heading "Step 2 — Visualize as a chart" [level=2] [ref=e611] [cursor=pointer]
+              - generic [ref=e612]:
+                - button "Raw Markdown" [ref=e613]:
+                  - img [ref=e614]
+                - button "Delete Cell" [ref=e616]:
+                  - img [ref=e617]
+            - generic [ref=e619]:
+              - paragraph [ref=e623] [cursor=pointer]:
+                - text: Now change the plot config from
+                - code [ref=e624]: TABLE()
+                - text: to a
+                - code [ref=e625]: BAR_CHART
+                - text: to compare pause durations by GC cause. The x-axis is the category, y is the numeric value.
+              - generic [ref=e626]:
+                - generic [ref=e627]:
+                  - generic [ref=e628]:
+                    - generic [ref=e629] [cursor=pointer]:
+                      - img [ref=e630]
+                      - generic [ref=e632]: Query 1
+                      - generic [ref=e633]: SELECT "cause", COUNT(*) AS "count", round(AVG(duration * 10
+                    - generic [ref=e634]:
+                      - button [ref=e636]:
+                        - img [ref=e637]
+                      - button "Format SQL" [ref=e639]:
+                        - img [ref=e640]
+                      - button "Copy SQL" [ref=e643]:
+                        - img [ref=e644]
+                      - button [ref=e646]:
+                        - img [ref=e647]
+                  - textbox [ref=e653]:
+                    - generic [ref=e654]: SELECT
+                    - generic [ref=e655]: "\"cause\","
+                    - generic [ref=e656]: COUNT(*) AS "count",
+                    - generic [ref=e657]: round(AVG(duration * 1000), 3) AS "avg_ms"
+                    - generic [ref=e658]: FROM "GarbageCollection"
+                    - generic [ref=e659]: GROUP BY "cause"
+                    - generic [ref=e660]: ORDER BY "count" DESC;
+                - generic [ref=e661]:
+                  - paragraph [ref=e662] [cursor=pointer]: Empty prose block — click to edit
+                  - button "Delete prose block" [ref=e663]:
+                    - img [ref=e664]
+                - generic [ref=e668]:
+                  - button "+ SQL" [ref=e669]
+                  - button "+ Plot" [ref=e670]
+                  - button "+ Prose" [ref=e671]
+                - generic [ref=e672]:
+                  - generic [ref=e673]:
+                    - generic [ref=e674] [cursor=pointer]:
+                      - img [ref=e675]
+                      - generic [ref=e677]: Plot 1
+                      - generic [ref=e678]: "BAR_CHART(x: \"cause\", y: [\"count\", \"avg_ms\"], layout: \"group"
+                    - generic [ref=e679]:
+                      - button "Format plot" [ref=e680]:
+                        - img [ref=e681]
+                      - button "Plot syntax reference" [ref=e684]:
+                        - img [ref=e685]
+                      - button "Delete plot block" [ref=e687]:
+                        - img [ref=e688]
+                  - generic [ref=e690]:
+                    - generic [ref=e965]:
+                      - generic [ref=e966]: "columns:"
+                      - button "cause" [ref=e967]
+                      - button "count" [ref=e968]
+                      - button "avg_ms" [ref=e969]
+                      - generic [ref=e970]: — click to copy
+                    - textbox [ref=e694]:
+                      - generic [ref=e695]: "BAR_CHART(x: \"cause\", y: [\"count\", \"avg_ms\"], layout: \"grouped\") TITLE \"GC Causes\""
+                - generic [ref=e971]:
+                  - button "Download as PNG" [ref=e972]:
+                    - img [ref=e973]
+                  - generic [ref=e979]:
+                    - heading "GC Causes" [level=4] [ref=e980]
+                    - generic [ref=e986]:
+                      - list [ref=e988]:
+                        - listitem [ref=e989]:
+                          - img "avg ms legend icon" [ref=e990]
+                          - text: avg ms
+                        - listitem [ref=e992]:
+                          - img "count legend icon" [ref=e993]
+                          - text: count
+                      - application [ref=e995]:
+                        - generic [ref=e1026]:
+                          - generic [ref=e1027]:
+                            - generic [ref=e1029]: G1 Evacuation Pause
+                            - generic [ref=e1031]: G1 Humongous Allocation
+                            - generic [ref=e1033]: G1 Concurrent GC
+                          - generic [ref=e1034]:
+                            - generic [ref=e1036]: "0"
+                            - generic [ref=e1038]: "100"
+                            - generic [ref=e1040]: "185.333"
+                - generic [ref=e696]:
+                  - button "Add variable" [ref=e697]:
+                    - img [ref=e698]
+                    - text: Add variable
+                  - button "Add SQL" [ref=e700]:
+                    - img [ref=e701]
+                    - text: Add SQL
+                - generic "Drag to resize results" [ref=e1041]
+              - button "Add Conclusion" [ref=e704]:
+                - img [ref=e705]
+                - text: Add Conclusion
+          - generic [ref=e707]:
+            - generic [ref=e708]:
+              - generic [ref=e709]:
+                - img [ref=e711]
+                - heading "Step 3 — Time series with zoom" [level=2] [ref=e713] [cursor=pointer]
+              - generic [ref=e714]:
+                - button "Raw Markdown" [ref=e715]:
+                  - img [ref=e716]
+                - button "Delete Cell" [ref=e718]:
+                  - img [ref=e719]
+            - generic [ref=e721]:
+              - paragraph [ref=e725] [cursor=pointer]:
+                - text: Use
+                - code [ref=e726]: LINE_CHART
+                - text: for metrics over time. Add
+                - code [ref=e727]: LINK_X($start, $end)
+                - text: to enable interactive
+                - strong [ref=e728]: drag-to-pan
+                - text: and
+                - strong [ref=e729]: Shift+scroll to zoom
+                - text: .
+              - generic [ref=e730]:
+                - generic [ref=e731]:
+                  - generic [ref=e732] [cursor=pointer]:
+                    - img [ref=e733]
+                    - generic [ref=e735]: Variables (1)
+                  - button "Add" [ref=e737]:
+                    - img [ref=e738]
+                    - text: Add
+                - generic [ref=e744]:
+                  - 'textbox "Cell-local variable: must start with $ (use $$ prefix in Notebook Settings for global scope)" [ref=e745]': $limit
+                  - generic [ref=e746]: =
+                  - textbox [ref=e747]: "200"
+                  - button [ref=e748]:
+                    - img [ref=e749]
+              - generic [ref=e751]:
+                - generic [ref=e752]:
+                  - generic [ref=e753]:
+                    - generic [ref=e754] [cursor=pointer]:
+                      - img [ref=e755]
+                      - generic [ref=e757]: Query 1
+                      - generic [ref=e758]: SELECT "startTime", round(duration * 1000, 3) AS "duration_m
+                    - generic [ref=e759]:
+                      - button [ref=e761]:
+                        - img [ref=e762]
+                      - button "Format SQL" [ref=e764]:
+                        - img [ref=e765]
+                      - button "Copy SQL" [ref=e768]:
+                        - img [ref=e769]
+                      - button [ref=e771]:
+                        - img [ref=e772]
+                  - textbox [ref=e778]:
+                    - generic [ref=e779]: SELECT
+                    - generic [ref=e780]: "\"startTime\","
+                    - generic [ref=e781]: round(duration * 1000, 3) AS "duration_ms"
+                    - generic [ref=e782]: FROM "GarbageCollection"
+                    - generic [ref=e783]: ORDER BY "startTime"
+                    - generic [ref=e784]:
+                      - text: LIMIT
+                      - generic "$limit = 200" [ref=e785] [cursor=pointer]: $limit
+                      - text: ": 200;"
+                - generic [ref=e786]:
+                  - paragraph [ref=e787] [cursor=pointer]: Empty prose block — click to edit
+                  - button "Delete prose block" [ref=e788]:
+                    - img [ref=e789]
+                - generic [ref=e793]:
+                  - button "+ SQL" [ref=e794]
+                  - button "+ Plot" [ref=e795]
+                  - button "+ Prose" [ref=e796]
+                - generic [ref=e797]:
+                  - generic [ref=e798]:
+                    - generic [ref=e799] [cursor=pointer]:
+                      - img [ref=e800]
+                      - generic [ref=e802]: Plot 1
+                      - generic [ref=e803]: "LINE_CHART(x: \"startTime\", y: [\"duration_ms\"]) LINK_X($start"
+                    - generic [ref=e804]:
+                      - button "Format plot" [ref=e805]:
+                        - img [ref=e806]
+                      - button "Plot syntax reference" [ref=e809]:
+                        - img [ref=e810]
+                      - button "Delete plot block" [ref=e812]:
+                        - img [ref=e813]
+                  - generic [ref=e815]:
+                    - generic [ref=e1042]:
+                      - generic [ref=e1043]: "columns:"
+                      - button "startTime" [ref=e1044]
+                      - button "duration_ms" [ref=e1045]
+                      - generic [ref=e1046]: — click to copy
+                    - textbox [ref=e819]:
+                      - generic [ref=e820]: "LINE_CHART(x: \"startTime\", y: [\"duration_ms\"]) LINK_X($start, $end) TITLE \"GC Pause Duration Over Time\""
+                - generic [ref=e1047]:
+                  - button "Download as PNG" [ref=e1048]:
+                    - img [ref=e1049]
+                  - generic [ref=e1055]:
+                    - heading "GC Pause Duration Over Time" [level=4] [ref=e1056]
+                    - generic [ref=e1060]:
+                      - generic [ref=e1061]:
+                        - generic "Drag to pan · Hold Shift while scrolling to zoom this plot": drag = pan · ⇧ scroll = zoom
+                        - button "Lock Plot" [ref=e1062]:
+                          - img [ref=e1063]
+                      - generic [ref=e1067]:
+                        - list [ref=e1069]:
+                          - listitem [ref=e1070]:
+                            - img "duration ms legend icon" [ref=e1071]
+                            - text: duration ms
+                        - application [ref=e1073]:
+                          - generic [ref=e1085]:
+                            - generic [ref=e1086]:
+                              - generic [ref=e1088]: 11:00:01.20
+                              - generic [ref=e1090]: 11:00:21.20
+                              - generic [ref=e1092]: 11:00:41.20
+                              - generic [ref=e1094]: 11:01:01.20
+                              - generic [ref=e1096]: 11:01:11.20
+                            - generic [ref=e1097]:
+                              - generic [ref=e1099]: "0"
+                              - generic [ref=e1101]: "2000"
+                              - generic [ref=e1103]: "4000"
+                              - generic [ref=e1105]: "6000"
+                              - generic [ref=e1107]: "8000"
+                - generic [ref=e821]:
+                  - button "Add variable" [ref=e822]:
+                    - img [ref=e823]
+                    - text: Add variable
+                  - button "Add SQL" [ref=e825]:
+                    - img [ref=e826]
+                    - text: Add SQL
+                - generic "Drag to resize results" [ref=e1108]
+              - button "Add Conclusion" [ref=e829]:
+                - img [ref=e830]
+                - text: Add Conclusion
+          - generic [ref=e832]:
+            - generic [ref=e833]:
+              - generic [ref=e834]:
+                - img [ref=e836]
+                - heading "Step 4 — Add your own analysis" [level=2] [ref=e838] [cursor=pointer]
+              - generic [ref=e839]:
+                - button "Raw Markdown" [ref=e840]:
+                  - img [ref=e841]
+                - button "Delete Cell" [ref=e843]:
+                  - img [ref=e844]
+            - generic [ref=e846]:
+              - generic [ref=e849] [cursor=pointer]:
+                - paragraph [ref=e850]:
+                  - text: Use
+                  - strong [ref=e851]: + Add SQL
+                  - text: below a cell to add more queries, or click
+                  - strong [ref=e852]: + New Cell
+                  - text: at the bottom of the notebook to start fresh. Click
+                  - strong [ref=e853]: Plot syntax
+                  - text: beneath any plot block for the full reference guide.
+                - paragraph [ref=e854]:
+                  - text: "Tip: open the"
+                  - strong [ref=e855]: Schema Explorer
+                  - text: on the left and click any table or view to preview its columns and auto-insert a SELECT query.
+              - generic [ref=e857]:
+                - button "Add variable" [ref=e858]:
+                  - img [ref=e859]
+                  - text: Add variable
+                - button "Add SQL" [ref=e861]:
+                  - img [ref=e862]
+                  - text: Add SQL
+              - button "Add Conclusion" [ref=e865]:
+                - img [ref=e866]
+                - text: Add Conclusion
+          - button "Add Cell" [ref=e869]:
+            - img [ref=e870]
+            - text: Add Cell
+  - generic [ref=e873]:
+    - img [ref=e875]
+    - generic [ref=e877]:
+      - paragraph [ref=e878]: Running in WASM mode
+      - paragraph [ref=e879]: "Server probe failed: server probe returned HTTP 500. Drop a .jfr or .duckdb file to get started."
+    - button [ref=e880]:
+      - img [ref=e881]
+  - generic [ref=e1109]: "2000"

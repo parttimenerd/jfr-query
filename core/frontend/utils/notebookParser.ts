@@ -392,15 +392,15 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
 
             // Accept both `-- alias <name>[ materialized]` (preferred) and
             // legacy `-- <name>` as the first SQL line.
-            const aliasMatchExplicit = content.match(/^\s*--\s*alias\s+([a-zA-Z_][\w]*)\s*(materialized)?\s*\n/i);
+            const aliasMatchExplicit = content.match(/^\s*--\s*alias\s+([a-zA-Z_][\w\s-]*?)\s*(materialized)?\s*\n/i);
             if (aliasMatchExplicit) {
-                alias = aliasMatchExplicit[1];
+                alias = aliasMatchExplicit[1].trim();
                 materialized = !!aliasMatchExplicit[2];
                 content = content.substring(aliasMatchExplicit[0].length);
             } else {
-                const aliasMatch = content.match(/^\s*--\s*([a-zA-Z_][\w]*)\s*\n/);
+                const aliasMatch = content.match(/^\s*--\s*([a-zA-Z_][\w\s-]*?)\s*\n/);
                 if (aliasMatch) {
-                    alias = aliasMatch[1];
+                    alias = aliasMatch[1].trim();
                     content = content.substring(aliasMatch[0].length);
                 }
             }
@@ -423,7 +423,7 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
             let plotContent = seg.content;
             let plotAlias: string | null = null;
 
-            const plotAliasMatch = plotContent.match(/^\s*--\s*([a-zA-Z_][\w\s]*?)\s*\n/);
+            const plotAliasMatch = plotContent.match(/^\s*--\s*([a-zA-Z_][\w\s-]*?)\s*\n/);
             if (plotAliasMatch) {
                 plotAlias = plotAliasMatch[1].trim();
                 plotContent = plotContent.substring(plotAliasMatch[0].length);

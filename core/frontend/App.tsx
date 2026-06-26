@@ -12,6 +12,7 @@ import { DataContext, DBState } from './context/DuckDBContext';
 import type { SourceType } from './context/DuckDBContext';
 import { SettingsContext } from './context/SettingsContext';
 import { DisplaySettingsProvider } from './context/DisplaySettingsContext';
+import { ExecutorProvider } from './context/ExecutorContext';
 import { useHistoryState } from './hooks/useHistoryState';
 import { aiService } from './services/AiService';
 import type { NotebookCellData, NotebookMetadata } from './types';
@@ -731,6 +732,7 @@ const App: React.FC = () => {
     
     return (
       <DisplaySettingsProvider value={displaySettings}>
+       <ExecutorProvider cells={cells}>
         <div className="flex flex-col h-screen bg-gray-800 text-gray-200 font-sans">
             {isMdDragOver && (
                 <div className="fixed inset-0 z-50 bg-cyan-900/30 border-4 border-dashed border-cyan-500/60 flex items-center justify-center pointer-events-none">
@@ -887,6 +889,7 @@ const App: React.FC = () => {
                 )}
             </div>
         </div>
+       </ExecutorProvider>
       </DisplaySettingsProvider>
     );
 };

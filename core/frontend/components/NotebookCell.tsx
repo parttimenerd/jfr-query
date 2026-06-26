@@ -5,6 +5,7 @@ import type { NotebookCellData, NotebookMetadata } from '../types';
 import { tokenizeCellContent, reconstructCellContent, parseCellContent, CellSegment, MarkdownSection } from '../utils/notebookParser';
 import { cellHandle as computeCellHandle } from '../utils/cellHandle';
 import { useCellAliases } from '../context/CellAliasContext';
+import { useExecutor } from '../context/ExecutorContext';
 import { collectPrecedingCellVariables } from '../utils/crossCellVariables';
 import { substituteVariables } from '../utils/variableSubstitution';
 import { parsePlotCall } from '../utils/plotParser';
@@ -395,6 +396,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     }, []);
 
     const { registerAlias, unregisterCell } = useCellAliases();
+    const { awaitUpstream } = useExecutor();
     const cellIndex = useMemo(() => allCells.findIndex(c => c.id === cell.id), [allCells, cell.id]);
     const handleStr = useMemo(() => computeCellHandle(cell, Math.max(0, cellIndex)), [cell, cellIndex]);
 
@@ -403,6 +405,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         setPendingRunStates(s => ({ ...s, [index]: false }));
         setRunningStates(s => ({ ...s, [index]: true }));
         try {
+            // Wait for any upstream cells (cells producing aliases referenced
+            // by this SQL) to finish first. Forward references are resolved
+            // here: this is what makes topo-order possible regardless of
+            // document position.
+            await awaitUpstream(cell.id);
             await onRunQuery(cell.id, sql, index, allVariables);
             // After a successful run, register the alias as a TEMP VIEW so
             // other cells (and templating expressions) can reference it. We
@@ -425,7 +432,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         } finally {
             setRunningStates(s => ({ ...s, [index]: false }));
         }
-    }, [onRunQuery, cell.id, allVariables, parsed.queryAliases, parsed.queryAliasMaterialized, registerAlias, handleStr, cellIndex]);
+    }, [onRunQuery, cell.id, allVariables, parsed.queryAliases, parsed.queryAliasMaterialized, registerAlias, handleStr, cellIndex, awaitUpstream]);
 
     useEffect(() => () => { unregisterCell(cell.id).catch(() => {}); }, [cell.id, unregisterCell]);
 
