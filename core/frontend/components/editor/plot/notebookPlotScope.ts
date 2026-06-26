@@ -19,7 +19,7 @@ import { parse } from './parser';
 import { walk, type PlotNode, type ColumnSchema } from './ast';
 import type { NotebookCellData } from '../../../types';
 import { tokenizeCellContent, parseCellContent } from '../../../utils/notebookParser';
-import { parsePlotCall } from '../../../utils/plotParser';
+import { parsePlotCall, parseComposite } from '../../../utils/plotParser';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -35,6 +35,7 @@ export interface PlotScopeView {
         sqlBlockIndex?: number;                 // links back to the SQL block that drives it
         linkedXVars?: [string, string];         // ($start, $end) names without leading $
         linkedYVars?: string;                   // $brushVarName for LINK-Y / LINK-XY (single variable)
+        brushVarName?: string;                  // variable declared via BRUSH "$var" on this plot
         hasBrush: boolean;                      // true if the user has interacted (live brush state)
         declaredColumns?: ColumnSchema[];       // from P2's discovery cache if available
     }>;
@@ -240,6 +241,7 @@ function buildScopeView(args: BuildArgs): PlotScopeView {
                     sqlBlockIndex: pb.sqlIndex,
                     linkedXVars: linkedVars,
                     linkedYVars,
+                    brushVarName: meta.brushVarName,
                     hasBrush,
                     declaredColumns,
                 });
@@ -288,6 +290,7 @@ interface PlotMetadata {
     shape?: string;
     linkedXVars?: string[];
     linkedYVars?: string[];
+    brushVarName?: string;
     xColumn?: string;
     yColumn?: string;
 }
@@ -342,12 +345,32 @@ export function extractPlotMetadata(plotSrc: string): PlotMetadata {
 
     // Fallback: the AST parser does not handle `LINK-Y $var` / `LINK-XY $var`
     // (uppercase hyphenated bare form without parens). Use the regex-based
-    // parsePlotCall to fill in what the walk missed.
-    if (!meta.linkedYVars) {
+    // parseComposite to fill in what the walk missed. B-160: use parseComposite
+    // so composite plots (`A + B + C`) have their inner linkY/brush refs collected.
+    if (!meta.linkedYVars || !meta.brushVarName) {
         try {
-            const p = parsePlotCall(plotSrc);
-            if (p.linkY) meta.linkedYVars = [p.linkY.replace(/^\$/, '')];
-            else if (p.linkXY) meta.linkedYVars = [p.linkXY.replace(/^\$/, '')];
+            const composite = parseComposite(plotSrc);
+            // Collect all leaf parsed calls from the composite tree.
+            const leaves: ReturnType<typeof parsePlotCall>[] = [];
+            const collectLeaves = (node: typeof composite) => {
+                if (node.composite) {
+                    node.composite.children.forEach(collectLeaves);
+                } else {
+                    leaves.push(node);
+                }
+            };
+            collectLeaves(composite);
+            if (!meta.linkedYVars) {
+                for (const p of leaves) {
+                    if (p.linkY) { meta.linkedYVars = [p.linkY.replace(/^\$/, '')]; break; }
+                    if (p.linkXY) { meta.linkedYVars = [p.linkXY.replace(/^\$/, '')]; break; }
+                }
+            }
+            if (!meta.brushVarName) {
+                for (const p of leaves) {
+                    if (p.brush?.name) { meta.brushVarName = p.brush.name.replace(/^\$/, ''); break; }
+                }
+            }
         } catch { /* ignore */ }
     }
 

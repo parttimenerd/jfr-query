@@ -263,7 +263,7 @@ export function dispatchCompletion(
     return {
         from: bestFrom,
         options: ordered,
-        validFor: bestValidFor ?? /^"?[\w-]*$/,
+        validFor: bestValidFor ?? /^"?\w*$/,
     };
 }
 
