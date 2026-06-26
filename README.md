@@ -98,6 +98,65 @@ Limitations
 - Only basic support for JFR specific datatypes, as we have to map them to DuckDB types
 
 
+Notebook templates
+------------------
+
+The web UI ships with a small catalog of built-in notebook templates (GC analysis, heap allocation,
+threading, exceptions). Open them via the "New from template" button in the topbar; pick **Replace**,
+**Append**, or **Insert at top** when applying.
+
+To make additional templates available, pass `--templates-dir` to the `serve` command:
+
+```shell
+java -jar target/query.jar serve --templates-dir ~/jfr-templates --port 4244
+```
+
+Any `.md` file at the top level of that directory is exposed under a "user" badge in the gallery.
+
+A template is a markdown notebook with optional YAML front-matter:
+
+```markdown
+---
+title: My Analysis
+description: One-line summary shown in the gallery
+tags: [gc, performance]
+license: MIT
+variables:
+  $$threshold_ms: '100'
+cellConditions:
+  long-pauses: 'SELECT max(duration_ms) > $$threshold_ms FROM gc_pauses'
+---
+
+<!-- @cell name=long-pauses -->
+
+You had ${SELECT count(*) FROM gc_pauses WHERE duration_ms > $$threshold_ms} long pauses.
+
+```{if SELECT max(duration_ms) > $$threshold_ms FROM gc_pauses}
+### Long pauses detected
+```
+
+<!-- @cell name=pauses-query -->
+
+```sql
+-- alias gc_pauses
+SELECT * FROM GarbageCollection
+```
+```
+
+Syntax cheat-sheet:
+
+- `<!-- @cell name=… -->` — stable cell handle; required for `cellConditions` keys and for
+  cell-qualified references (`<cell_name>.<alias>`).
+- `${SELECT … }` — inline scalar expression rendered in prose. Optional `| format` suffix
+  (e.g. `${SELECT max(duration_ms) FROM gc_pauses | duration_ms}`).
+- `` ```{if SELECT … } `` … `` ``` `` — block conditional; body is shown only when the query's first
+  cell is truthy.
+- `-- alias <name>` as the first SQL line registers the cell's result as a DuckDB temp view,
+  reusable from any other cell (bare `<name>` or qualified `<cell_handle>.<name>`).
+
+Built-in templates must declare `license: MIT`; user-folder templates are accepted as-is.
+
+
 License
 -------
 GPL-2.0, Copyright 2017 - 2025 SAP SE or an SAP affiliate company and contributors.
