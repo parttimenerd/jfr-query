@@ -7,6 +7,7 @@ import io.javalin.http.staticfiles.Location;
 import me.bechberger.jfr.duckdb.BasicParallelImporter;
 import me.bechberger.jfr.duckdb.Options;
 import me.bechberger.jfr.duckdb.RuntimeSQLException;
+import me.bechberger.jfr.duckdb.templates.TemplateService;
 import org.duckdb.DuckDBConnection;
 import picocli.CommandLine;
 
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 @CommandLine.Command(
@@ -45,6 +47,12 @@ public class ServeCommand implements Runnable {
             names = {"--no-open"},
             description = "Do not open the browser automatically")
     private boolean noOpen;
+
+    @CommandLine.Option(
+            names = {"--templates-dir"},
+            description = "Directory containing user notebook templates (.md files)",
+            defaultValue = "")
+    private String templatesDir;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -74,6 +82,18 @@ public class ServeCommand implements Runnable {
 
         AtomicReference<DuckDBConnection> connRef = new AtomicReference<>(initialConn);
         AtomicReference<String> currentFile = new AtomicReference<>(inputFile);
+
+        Optional<Path> userTemplatesDir = (templatesDir == null || templatesDir.isBlank())
+                ? Optional.empty()
+                : Optional.of(Path.of(templatesDir));
+        TemplateService templateService;
+        try {
+            templateService = new TemplateService(userTemplatesDir);
+        } catch (IllegalStateException e) {
+            System.err.println("Failed to initialize template service: " + e.getMessage());
+            System.exit(1);
+            return;
+        }
 
         var app = Javalin.create(config -> {
             var devDist = Path.of("frontend/dist");
@@ -146,6 +166,21 @@ public class ServeCommand implements Runnable {
 
         app.get("/api/status", ctx -> {
             ctx.json(Map.of("currentFile", currentFile.get()));
+        });
+
+        app.get("/api/templates", ctx -> {
+            ctx.json(templateService.list());
+        });
+
+        app.get("/api/templates/{name}", ctx -> {
+            String name = ctx.pathParam("name");
+            Optional<String> body = templateService.load(name);
+            if (body.isEmpty()) {
+                ctx.status(404).json(Map.of("error", "template not found: " + name));
+                return;
+            }
+            ctx.contentType("text/markdown; charset=utf-8");
+            ctx.result(body.get());
         });
 
         app.start(port);
