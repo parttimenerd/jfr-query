@@ -153,9 +153,14 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
     if (durationColumns.has(header)) {
         const secs = parseIntervalToSeconds(value);
         if (secs !== null) return formatDuration(secs);
-        // Numeric duration (microseconds heuristic) — convert µs → seconds.
+        // Numeric duration — infer unit from column name suffix; default to µs.
         if (typeof value === 'number' || typeof value === 'bigint') {
-            return formatDuration(Number(value) / 1_000_000);
+            const lc = header.toLowerCase();
+            let divisor = 1_000_000; // default: microseconds
+            if (lc.endsWith('_ns') || lc.endsWith('ns')) divisor = 1_000_000_000;
+            else if (lc.endsWith('_ms') || lc.endsWith('ms')) divisor = 1_000;
+            else if (lc.endsWith('_s') || lc.endsWith('_sec') || lc.endsWith('secs') || lc.endsWith('_seconds')) divisor = 1;
+            return formatDuration(Number(value) / divisor);
         }
     }
     if (numericColumns.has(header))   return formatNumber(value, displaySettings.decimalPlaces);

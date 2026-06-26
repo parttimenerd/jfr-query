@@ -45,7 +45,7 @@ export const isDurationLike = (key: string, sample: any): boolean => {
     if (!DURATION_KEYWORDS.some(kw => lc.includes(kw))) return false;
     if (typeof value !== 'number' && typeof value !== 'bigint') return false;
     const num = Number(value);
-    if (num < 0 || num > 1e12) return false;
+    if (num < 1 || num > 1e12) return false;
     return true;
 };
 
