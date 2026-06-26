@@ -63,3 +63,45 @@ describe('validatePlotConfig — LET constant expansion', () => {
         expect(typeof result === 'string' || result === null).toBe(true);
     });
 });
+
+describe('validatePlotConfig — composite layouts (B-178)', () => {
+    it('returns null for ROW(...) composite with valid children', () => {
+        const config = 'ROW(TABLE(), TABLE())';
+        expect(validatePlotConfig(config, sampleData)).toBeNull();
+    });
+
+    it('returns null for COL(...) composite with valid children', () => {
+        const config = 'COL(TABLE(), TABLE())';
+        expect(validatePlotConfig(config, sampleData)).toBeNull();
+    });
+
+    it('returns null for overlay A + B composite', () => {
+        const config = 'LINE_CHART(x: "ts", y: ["cpu"]) + LINE_CHART(x: "ts", y: ["heap"])';
+        expect(validatePlotConfig(config, sampleData)).toBeNull();
+    });
+
+    it('returns error for ROW with unknown child plot type', () => {
+        const config = 'ROW(TABLE(), UNKNOWN_PLOT(x: "ts"))';
+        const result = validatePlotConfig(config, sampleData);
+        expect(result).toBeTruthy();
+        expect(result).toContain('UNKNOWN_PLOT');
+    });
+
+    it('does NOT error for multi-query ON clause when supportsMultiQuery is undefined (B-177)', () => {
+        // SCATTER_PLOT has supportsMultiQuery undefined, not false — should not error
+        const config = 'SCATTER_PLOT(x: "ts", y: "cpu") ON #1, #2';
+        const result = validatePlotConfig(config, sampleData);
+        // Should not return the "does not support multiple queries" error
+        if (result !== null) {
+            expect(result).not.toContain('does not support multiple queries');
+        }
+    });
+
+    it('returns error for multi-query ON clause when supportsMultiQuery is explicitly false', () => {
+        // TABLE has supportsMultiQuery: false
+        const config = 'TABLE() ON #1, #2';
+        const result = validatePlotConfig(config, sampleData);
+        expect(result).toBeTruthy();
+        expect(result).toContain('does not support multiple queries');
+    });
+});

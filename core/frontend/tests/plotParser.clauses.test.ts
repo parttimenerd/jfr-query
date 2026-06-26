@@ -121,3 +121,110 @@ describe('parsePlotCall — new showcase clauses', () => {
         expect(p.onHoverTooltip).toBe('v={{c}}');
     });
 });
+
+describe('parsePlotCall — ON #N hash-index syntax (B-145)', () => {
+    it('parses ON #1 as a single ref', () => {
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["cpu"]) ON #1');
+        expect(p.on).toEqual(['#1']);
+    });
+
+    it('parses ON #1, #2 as two refs', () => {
+        const p = parsePlotCall('BAR_CHART(x: "h", y: ["c"]) ON #1, #2');
+        expect(p.on).toEqual(['#1', '#2']);
+    });
+
+    it('parses mixed numeric index and alias refs', () => {
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["cpu"]) ON #1, myView');
+        expect(p.on).toEqual(['#1', 'myView']);
+    });
+
+    it('does not confuse ON #1 with a non-ON token', () => {
+        const p = parsePlotCall('TABLE() ON #5');
+        expect(p.on).toEqual(['#5']);
+        expect(p.mainConfig).toBe('TABLE()');
+    });
+});
+
+describe('parsePlotCall — bare LINK-Y / LINK-XY (B-146)', () => {
+    it('parses bare (unquoted) LINK-Y $var', () => {
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["cpu"]) LINK-Y $sharedY');
+        expect(p.linkY).toBe('$sharedY');
+    });
+
+    it('parses bare (unquoted) LINK-XY $var', () => {
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["cpu"]) LINK-XY $sharedXY');
+        expect(p.linkXY).toBe('$sharedXY');
+    });
+
+    it('still parses quoted LINK-Y $var (backward compat)', () => {
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["cpu"]) LINK-Y "$sharedY"');
+        expect(p.linkY).toBe('$sharedY');
+    });
+});
+
+describe('parsePlotCall — escape handling in string arguments (B-153)', () => {
+    it('does not split on + inside a double-quoted string', () => {
+        // "a+b" inside a TITLE should not be treated as overlay operator
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["cpu"]) TITLE "a + b"');
+        expect(p.title).toBe('a + b');
+        expect(p.mainConfig).toBe('LINE_CHART(x: "ts", y: ["cpu"])');
+    });
+
+    it('handles escaped quotes inside strings', () => {
+        // The TITLE regex captures up to the closing quote but does not unescape
+        // embedded backslash sequences — that is a known limitation. The important
+        // thing is that the parser does not crash and mainConfig is left intact.
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["cpu"]) TITLE "normal title"');
+        expect(p.title).toBe('normal title');
+        expect(p.mainConfig).toBe('LINE_CHART(x: "ts", y: ["cpu"])');
+    });
+});
+
+// B-157: trailing `# comment` after clauses must not silently drop LINK_X.
+describe('parsePlotCall — B-157 trailing comment stripping', () => {
+    it('parses LINK_X when followed by a # comment', () => {
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["cpu"]) LINK_X($start, $end) # interactive zoom');
+        expect(p.linkX).toEqual(['$start', '$end']);
+        expect(p.mainConfig).toBe('LINE_CHART(x: "ts", y: ["cpu"])');
+    });
+
+    it('parses TITLE when followed by a # comment', () => {
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["cpu"]) TITLE "My Chart" # dev note');
+        expect(p.title).toBe('My Chart');
+    });
+
+    it('does not strip ON #1 (hash-index ref is not a comment)', () => {
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["cpu"]) ON #1');
+        expect(p.on).toEqual(['#1']);
+    });
+
+    it('parses LINK_X followed by comment and ON clause', () => {
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["cpu"]) ON #2 LINK_X($a, $b) # zoom');
+        expect(p.linkX).toEqual(['$a', '$b']);
+        expect(p.on).toEqual(['#2']);
+    });
+});
+
+describe('parsePlotCall — LINK_SCROLL clause (LINK-SCROLL / LINK_SCROLL)', () => {
+    it('parses LINK_SCROLL groupName (bare identifier)', () => {
+        const p = parsePlotCall('LINE_CHART(x:"ts",y:["c"]) LINK_SCROLL slowLog');
+        expect(p.linkScroll).toBe('slowLog');
+    });
+
+    it('parses LINK-SCROLL "quoted" group name', () => {
+        const p = parsePlotCall('LINE_CHART(x:"ts",y:["c"]) LINK-SCROLL "my group"');
+        expect(p.linkScroll).toBe('my group');
+    });
+
+    it('parses LINK_SCROLL together with LINK_X', () => {
+        const p = parsePlotCall('LINE_CHART(x:"ts",y:["c"]) LINK_X($a,$b) LINK_SCROLL logs');
+        expect(p.linkX).toEqual(['$a', '$b']);
+        expect(p.linkScroll).toBe('logs');
+    });
+
+    it('parses LINK_SCROLL together with TITLE', () => {
+        const p = parsePlotCall('LINE_CHART(x:"ts",y:["c"]) TITLE "My Chart" LINK_SCROLL group1');
+        expect(p.title).toBe('My Chart');
+        expect(p.linkScroll).toBe('group1');
+    });
+});

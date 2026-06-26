@@ -43,3 +43,33 @@ describe('validateComposite', () => {
         expect(err).toBeDefined();
     });
 });
+
+describe('validateComposite — LINK_X variable pair mismatch (B-154)', () => {
+    it('warns when overlay children have different LINK_X variable pairs', () => {
+        const p = parseComposite(
+            'LINE_CHART(x: "ts", y: ["a"]) LINK_X($a, $b) + LINE_CHART(x: "ts", y: ["c"]) LINK_X($c, $d)',
+        );
+        const issues = validateComposite(p);
+        const warn = issues.find(i => i.severity === 'warn' && i.message.includes('LINK_X'));
+        expect(warn).toBeDefined();
+        expect(warn!.message).toMatch(/independently/);
+    });
+
+    it('does not warn when LINK_X pairs match', () => {
+        const p = parseComposite(
+            'LINE_CHART(x: "ts", y: ["a"]) LINK_X($a, $b) + LINE_CHART(x: "ts", y: ["c"]) LINK_X($a, $b)',
+        );
+        const issues = validateComposite(p);
+        const linkWarn = issues.filter(i => i.message.includes('LINK_X'));
+        expect(linkWarn).toHaveLength(0);
+    });
+
+    it('does not warn when only one child has LINK_X', () => {
+        const p = parseComposite(
+            'LINE_CHART(x: "ts", y: ["a"]) LINK_X($a, $b) + LINE_CHART(x: "ts", y: ["c"])',
+        );
+        const issues = validateComposite(p);
+        const linkWarn = issues.filter(i => i.message.includes('LINK_X'));
+        expect(linkWarn).toHaveLength(0);
+    });
+});

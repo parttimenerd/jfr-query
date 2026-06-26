@@ -15,9 +15,10 @@ import { describe, it, expect } from 'vitest';
 import { resolveVisibility, buildRecentResultFromRows } from '../components/inlineChatHelpers';
 
 describe('resolveVisibility (legacy useFullContext mapping)', () => {
-    it('returns "full" when useFullContext is true, regardless of dropdown value', () => {
-        expect(resolveVisibility(true, 'no-data')).toBe('full');
-        expect(resolveVisibility(true, 'sanitized')).toBe('full');
+    it('returns the dropdown value when useFullContext is true (override removed)', () => {
+        // B-137: The useFullContext override is deprecated. chatVisibility always wins.
+        expect(resolveVisibility(true, 'no-data')).toBe('no-data');
+        expect(resolveVisibility(true, 'sanitized')).toBe('sanitized');
         expect(resolveVisibility(true, 'full')).toBe('full');
     });
 
@@ -27,11 +28,9 @@ describe('resolveVisibility (legacy useFullContext mapping)', () => {
         expect(resolveVisibility(false, 'full')).toBe('full');
     });
 
-    it('treats the toggle as a one-way override (true wins over dropdown=no-data)', () => {
-        // Legacy semantics: a user who explicitly toggled the legacy switch
-        // expects to see the full notebook context; we must not silently
-        // downgrade them based on the (initialized-from-settings) dropdown.
-        expect(resolveVisibility(true, 'no-data')).toBe('full');
+    it('chatVisibility dropdown wins regardless of toggle value (B-137)', () => {
+        // The deprecated toggle no longer silently upgrades visibility.
+        expect(resolveVisibility(true, 'no-data')).toBe('no-data');
     });
 });
 

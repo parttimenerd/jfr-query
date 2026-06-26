@@ -117,6 +117,21 @@ describe('NotebookPlotScope.build', () => {
         expect(view.namedPlots[0]?.linkedXVars).toEqual(['start', 'end']);
     });
 
+    it('3b. captures LINK-Y variable on a named plot (single var, not a pair)', () => {
+        const cells = [cell('a'), cell('b')];
+        const view = buildView({
+            cells,
+            currentCellId: 'b',
+            parsed: {
+                a: {
+                    sqlBlocks: ['SELECT ts, mem FROM gc'],
+                    plotBlocks: [{ config: 'AREA_CHART(x: ts, y: mem) NAME "memChart" LINK-Y $memDomain', sqlIndex: 0 }],
+                },
+            },
+        });
+        expect(view.namedPlots[0]?.linkedYVars).toBe('memDomain');
+    });
+
     it('4. parses `CREATE VIEW <alias> AS …` from SQL blocks', () => {
         const cells = [cell('a'), cell('b')];
         const view = buildView({
@@ -196,6 +211,12 @@ describe('extractPlotMetadata', () => {
         const meta = extractPlotMetadata('LINE_CHART(x: ts, y: pause) NAME "p"');
         expect(meta.xColumn).toBe('ts');
         expect(meta.yColumn).toBe('pause');
+    });
+
+    it('extracts LINK-Y variable from plot DSL', () => {
+        const meta = extractPlotMetadata('AREA_CHART(x: ts, y: mem) NAME "memChart" LINK-Y $memDomain');
+        expect(meta.plotName).toBe('memChart');
+        expect(meta.linkedYVars).toEqual(['memDomain']);
     });
 });
 
@@ -322,5 +343,212 @@ describe('crossPlotAnnotator + brushAnnotator', () => {
         const qref = findFirst(root, n => n.kind === 'queryRef');
         expect(qref?.annotations.resolves).toBeUndefined();
         expect(qref?.annotations.structuredDiagnostics ?? []).toEqual([]);
+    });
+
+    // B-187 — crossPlotAnnotator must compare plot names case-insensitively
+    it('B-187: resolves crossPlot with case-insensitive plot name comparison', () => {
+        const ctx = buildContextForAnnotator({
+            namedPlots: [
+                { plotName: 'GC_Plot', cellId: 'a', plotIndexInCell: 0, shape: 'line', hasBrush: false },
+            ],
+        });
+        // LINK_X reference uses lowercase; named plot stored with mixed case.
+        const { root } = parseAndAnnotate({
+            src: 'LINE_CHART(x: ts) | link-x: [gc_plot]',
+            notebookContext: ctx,
+        });
+        const ref = findFirst(root, n => n.kind === 'ident' && n.name?.toLowerCase() === 'gc_plot');
+        // Must resolve, not emit unknown-plot.
+        expect(ref?.annotations.resolves).toMatchObject({
+            kind: 'crossPlot',
+            plotName: 'GC_Plot',
+        });
+        expect(ref?.annotations.structuredDiagnostics ?? []).toEqual([]);
+    });
+});
+
+// B-152 — VIEW_ALIAS_RE must match double-quoted view names
+describe('NotebookPlotScope.build — VIEW_ALIAS_RE quoted names (B-152)', () => {
+    it('extracts alias from `CREATE VIEW "My View" AS …`', () => {
+        const cells = [cell('a'), cell('b')];
+        const view = buildView({
+            cells,
+            currentCellId: 'b',
+            parsed: {
+                a: {
+                    sqlBlocks: ['CREATE VIEW "gc pauses" AS SELECT * FROM events'],
+                },
+            },
+        });
+        expect(view.queryRefs).toHaveLength(1);
+        expect(view.queryRefs[0].alias).toBe('gc pauses');
+    });
+
+    it('extracts alias from unquoted `CREATE VIEW gc_plain AS …`', () => {
+        const cells = [cell('a'), cell('b')];
+        const view = buildView({
+            cells,
+            currentCellId: 'b',
+            parsed: {
+                a: {
+                    sqlBlocks: ['CREATE VIEW gc_plain AS SELECT * FROM events'],
+                },
+            },
+        });
+        expect(view.queryRefs[0].alias).toBe('gc_plain');
+    });
+});
+
+// B-151 — queryIndexCounter must stay in sync with queryRefs
+// Current-cell SQL blocks must not increment the counter (they produce no refs),
+// otherwise the index assigned to prior-cell refs would be inflated.
+describe('NotebookPlotScope.build — queryIndexCounter sync (B-151)', () => {
+    it('assigns correct 1-based indices when current cell has SQL blocks', () => {
+        // Cell A has 2 SQL blocks → refs at index 1 and 2.
+        // Cell B (current) has 3 SQL blocks — they must NOT shift cell A's indices.
+        const cells = [cell('a'), cell('b')];
+        const view = buildView({
+            cells,
+            currentCellId: 'b',
+            parsed: {
+                a: {
+                    sqlBlocks: ['SELECT 1', 'SELECT 2'],
+                },
+                b: {
+                    sqlBlocks: ['SELECT x', 'SELECT y', 'SELECT z'],
+                },
+            },
+        });
+        expect(view.queryRefs).toHaveLength(2);
+        expect(view.queryRefs[0].index).toBe(1);
+        expect(view.queryRefs[1].index).toBe(2);
+    });
+
+    it('queryRefs count equals the number of non-empty SQL blocks in prior cells', () => {
+        const cells = [cell('a'), cell('b'), cell('c')];
+        const view = buildView({
+            cells,
+            currentCellId: 'c',
+            parsed: {
+                a: { sqlBlocks: ['SELECT 1', 'SELECT 2'] },
+                b: { sqlBlocks: ['SELECT 3'] },
+                c: { sqlBlocks: ['SELECT 4', 'SELECT 5'] },
+            },
+        });
+        // Only cells a and b contribute (c is current).
+        expect(view.queryRefs).toHaveLength(3);
+        expect(view.queryRefs.map(r => r.index)).toEqual([1, 2, 3]);
+    });
+
+    it('empty SQL blocks in prior cells occupy an index slot but produce no ref', () => {
+        // Cell A has: one real block (index 1), one empty block (index 2).
+        // Cell B (current). Cell A's ref should be at index 1.
+        const cells = [cell('a'), cell('b')];
+        const view = buildView({
+            cells,
+            currentCellId: 'b',
+            parsed: {
+                a: { sqlBlocks: ['SELECT 1', ''] },
+                b: { sqlBlocks: [] },
+            },
+        });
+        // The real block from cell A should be at index 1.
+        expect(view.queryRefs).toHaveLength(1);
+        expect(view.queryRefs[0].index).toBe(1);
+    });
+});
+
+// Cross-cell multi-query scenarios: ON alias routing + LINK_X discovery
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('NotebookPlotScope.build — cross-cell ON alias routing', () => {
+    it('exposes a prior-cell SQL alias in queryRefs so ON clause can reference it', () => {
+        const cells = [cell('a'), cell('b')];
+        const view = buildView({
+            cells,
+            currentCellId: 'b',
+            parsed: {
+                a: {
+                    sqlBlocks: ['CREATE VIEW gc_pauses AS SELECT ts, pause FROM gc'],
+                    queryAliases: ['gc_pauses'],
+                },
+            },
+        });
+        // The alias from cell A must be visible as a queryRef with the correct alias.
+        expect(view.queryRefs).toHaveLength(1);
+        expect(view.queryRefs[0].alias).toBe('gc_pauses');
+        expect(view.queryRefs[0].cellId).toBe('a');
+    });
+
+    it('current-cell SQL aliases are NOT included in queryRefs (they are in scope locally)', () => {
+        const cells = [cell('a'), cell('b')];
+        const view = buildView({
+            cells,
+            currentCellId: 'b',
+            parsed: {
+                a: { sqlBlocks: ['SELECT 1'], queryAliases: ['a_view'] },
+                b: { sqlBlocks: ['CREATE VIEW b_view AS SELECT 2'], queryAliases: ['b_view'] },
+            },
+        });
+        // Only a_view from cell A — b_view (current cell) is not in queryRefs.
+        const aliases = view.queryRefs.map(r => r.alias).filter(Boolean);
+        expect(aliases).toContain('a_view');
+        expect(aliases).not.toContain('b_view');
+    });
+
+    it('multiple prior cells with aliases produce multiple queryRefs', () => {
+        const cells = [cell('a'), cell('b'), cell('c')];
+        const view = buildView({
+            cells,
+            currentCellId: 'c',
+            parsed: {
+                a: { sqlBlocks: ['SELECT 1'], queryAliases: ['view_a'] },
+                b: { sqlBlocks: ['SELECT 2'], queryAliases: ['view_b'] },
+            },
+        });
+        const aliases = view.queryRefs.map(r => r.alias).filter(Boolean);
+        expect(aliases).toContain('view_a');
+        expect(aliases).toContain('view_b');
+        expect(view.queryRefs).toHaveLength(2);
+    });
+});
+
+describe('NotebookPlotScope.build — cross-cell LINK_X discovery', () => {
+    it('discovers linkedXVars from a prior-cell plot with LINK_X', () => {
+        const cells = [cell('a'), cell('b')];
+        const view = buildView({
+            cells,
+            currentCellId: 'b',
+            parsed: {
+                a: {
+                    sqlBlocks: ['SELECT ts, cpu FROM perf'],
+                    plotBlocks: [{ config: 'LINE_CHART(x: ts, y: cpu) LINK_X($start, $end) NAME "perf_plot"', sqlIndex: 0 }],
+                },
+            },
+        });
+        const plot = view.namedPlots.find(p => p.plotName === 'perf_plot');
+        expect(plot).toBeDefined();
+        expect(plot!.linkedXVars).toEqual(['start', 'end']);
+    });
+
+    it('multiple plots in different cells each appear in namedPlots', () => {
+        const cells = [cell('a'), cell('b'), cell('c')];
+        const view = buildView({
+            cells,
+            currentCellId: 'c',
+            parsed: {
+                a: {
+                    plotBlocks: [{ config: 'LINE_CHART(x: ts, y: v) NAME "plot_a"', sqlIndex: 0 }],
+                    sqlBlocks: ['SELECT 1'],
+                },
+                b: {
+                    plotBlocks: [{ config: 'BAR_CHART(x: category, y: count) NAME "plot_b"', sqlIndex: 0 }],
+                    sqlBlocks: ['SELECT 2'],
+                },
+            },
+        });
+        const names = view.namedPlots.map(p => p.plotName);
+        expect(names).toContain('plot_a');
+        expect(names).toContain('plot_b');
     });
 });

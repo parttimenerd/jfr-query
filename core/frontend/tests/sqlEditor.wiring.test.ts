@@ -5,27 +5,96 @@
 //   1) Cell-parsed variables (keys with `$`) don't get re-prefixed to `$$`.
 //   2) Preceding-cell variables (`$cellName.varName`) appear in completion.
 //   3) Workspace variables (keys without `$`, the existing convention) still work.
+//   4) B-096: cross-cell CREATE VIEW aliases appear as completions in SQL editors.
 
 import { describe, it, expect } from 'vitest';
 import type { CompletionContext } from '@codemirror/autocomplete';
 import { dispatchCompletion } from '../components/editor/sql/completion/dispatcher';
 import type { SchemaForCompletion, SqlCompletionDeps } from '../components/editor/completions';
 import { collectPrecedingCellVariables } from '../utils/crossCellVariables';
-import type { NotebookCellData, TableSchema } from '../types';
+import type { NotebookCellData, TableSchema, ViewSchema } from '../types';
 
 const TABLES: TableSchema[] = [
     { name: 'events', columns: [{ name: 'ts', type: 'TIMESTAMP' }, { name: 'cpu', type: 'DOUBLE' }] },
 ];
 
 function schema(): SchemaForCompletion {
+    return schemaWithViews([]);
+}
+
+function schemaWithViews(views: ViewSchema[]): SchemaForCompletion {
     return {
         tables: TABLES,
-        views: [],
+        views,
         macros: [],
         tableMap: new Map(TABLES.map(t => [t.name.toLowerCase(), t])),
-        viewMap: new Map(),
+        viewMap: new Map(views.map(v => [v.name.toLowerCase(), v])),
     };
 }
+
+function completeWithSchema(text: string, variables: Record<string, string>, s: SchemaForCompletion): string[] {
+    const pos = text.indexOf('|');
+    const stripped = text.slice(0, pos) + text.slice(pos + 1);
+    const deps: SqlCompletionDeps = {
+        getSchema: () => s,
+        getVariables: () => variables,
+    };
+    const result = dispatchCompletion(makeCx(stripped, pos), deps);
+    return result?.options.map(o => o.label) ?? [];
+}
+
+// B-096: cross-cell CREATE VIEW aliases must appear in SQL completions.
+// The fix is in SQLEditor.tsx: it injects notebookPlotScope.queryRefs (those with
+// an alias) as virtual ViewSchema entries into schemaForCompletion.
+// We test the completion layer directly by constructing the same schema shape
+// that SQLEditor.tsx would build after the fix.
+describe('SQL editor — cross-cell view alias completions (B-096)', () => {
+    it('completes a cross-cell CREATE VIEW alias when typing in FROM', () => {
+        const views: ViewSchema[] = [
+            { name: 'gc_pauses', query: 'SELECT ts, pause FROM gc', columns: [], internal: false },
+        ];
+        const labels = completeWithSchema('SELECT * FROM gc_|', {}, schemaWithViews(views));
+        expect(labels).toContain('gc_pauses');
+    });
+
+    it('completes multiple cross-cell aliases', () => {
+        const views: ViewSchema[] = [
+            { name: 'slow_queries', query: 'SELECT * FROM q WHERE ms > 100', columns: [], internal: false },
+            { name: 'gc_events', query: 'SELECT ts FROM gc', columns: [], internal: false },
+        ];
+        const labels = completeWithSchema('SELECT * FROM |', {}, schemaWithViews(views));
+        expect(labels).toContain('slow_queries');
+        expect(labels).toContain('gc_events');
+    });
+
+    it('cross-cell view is offered with detail "view"', () => {
+        const views: ViewSchema[] = [
+            { name: 'thread_cpu', query: 'SELECT thread, cpu FROM jfr', columns: [], internal: false },
+        ];
+        const deps: SqlCompletionDeps = {
+            getSchema: () => schemaWithViews(views),
+            getVariables: () => ({}),
+        };
+        const text = 'SELECT * FROM thread|';
+        const pos = text.length;
+        const result = dispatchCompletion(makeCx(text, pos), deps);
+        const opt = result?.options.find(o => o.label === 'thread_cpu');
+        expect(opt).toBeDefined();
+        expect(opt?.detail).toMatch(/view/i);
+    });
+
+    it('cross-cell view does not appear as a duplicate when it is also in dbSchema.views', () => {
+        // Views are deduplicated by the viewMap (last-writer wins on same lowercase key).
+        const views: ViewSchema[] = [
+            { name: 'gc_view', query: 'SELECT 1', columns: [], internal: false },
+            { name: 'gc_view', query: 'SELECT 2', columns: [], internal: false },
+        ];
+        const labels = completeWithSchema('SELECT * FROM gc_|', {}, schemaWithViews(views));
+        const count = labels.filter(l => l === 'gc_view').length;
+        expect(count).toBe(1);
+    });
+});
+
 
 function makeCx(text: string, pos: number): CompletionContext {
     return {

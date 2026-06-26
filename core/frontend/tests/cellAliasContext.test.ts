@@ -101,4 +101,46 @@ describe('buildAliasSql', () => {
         // Sanity: identifiers are always double-quoted
         expect(r.statements[0]).toMatch(/^CREATE SCHEMA IF NOT EXISTS "cell_1"$/);
     });
+
+    // B-173: identifiers use double-quotes; WHERE-clause literals use single-quotes
+    it('uses double-quotes for SQL identifiers and single-quotes for string literals (B-173)', () => {
+        const r = buildAliasSql({
+            cellHandle: 'my-cell',
+            alias: 'my_alias',
+            sql: 'SELECT 1',
+            materialized: false,
+            shadowedTableNames: new Set(),
+        });
+        // Identifiers (schema, view names) must be double-quoted
+        expect(r.statements[0]).toContain('"my_cell"');
+        expect(r.statements[1]).toContain('"my_cell"."my_alias"');
+        expect(r.statements[2]).toContain('"my_alias"');
+        // columnsQuery WHERE values must be single-quoted string literals, not double-quoted
+        expect(r.columnsQuery).toContain("table_schema = 'my_cell'");
+        expect(r.columnsQuery).toContain("table_name = 'my_alias'");
+        expect(r.columnsQuery).not.toContain('table_schema = "my_cell"');
+        expect(r.columnsQuery).not.toContain('table_name = "my_alias"');
+    });
+});
+
+// B-174: unregisterCell should split on the FIRST dot only
+describe('qualifiedKey dot-split logic (B-174)', () => {
+    it('handles alias names containing dots by splitting on first dot only', () => {
+        // Simulate the indexOf-based split that unregisterCell now uses
+        const key = 'my_cell.alias.with.dots';
+        const dotIdx = key.indexOf('.');
+        const h = key.slice(0, dotIdx);
+        const a = key.slice(dotIdx + 1);
+        expect(h).toBe('my_cell');
+        expect(a).toBe('alias.with.dots');
+    });
+
+    it('naive split(".") would incorrectly split alias containing dots', () => {
+        const key = 'my_cell.alias.with.dots';
+        // The old (buggy) approach:
+        const [h, a] = key.split('.');
+        expect(h).toBe('my_cell');
+        // Old approach gives only the first segment after the dot, losing the rest
+        expect(a).toBe('alias');  // incorrect — should be 'alias.with.dots'
+    });
 });

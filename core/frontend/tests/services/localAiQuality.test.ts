@@ -343,7 +343,7 @@ describe('contract: heuristicPlot output is accepted by the real plot registry',
 
 // W6 — New emission branches: AREA / GANTT / RANGE.
 describe('heuristicPlot — AREA_CHART (time + 3+ numerics → stacked)', () => {
-    it('emits stacked AREA_CHART when there are 3+ numerics alongside time', () => {
+    it('emits LINE_CHART for independent metrics like cpu/mem/disk (B-089)', () => {
         const cols = [
             { name: 'ts', type: 'TIMESTAMP' },
             { name: 'cpu', type: 'DOUBLE' },
@@ -351,6 +351,21 @@ describe('heuristicPlot — AREA_CHART (time + 3+ numerics → stacked)', () => 
             { name: 'disk', type: 'DOUBLE' },
         ];
         const cfg = heuristicPlot(cols, [{ ts: 1, cpu: 1, mem: 1, disk: 1 }]);
+        // Independent metrics should use LINE_CHART, not stacked AREA_CHART
+        expect(cfg).toContain('LINE_CHART');
+        expect(cfg).not.toContain('AREA_CHART');
+        expect(cfg).toContain('x: "ts"');
+        expect(isParseablePlotConfig(cfg)).toBe(true);
+    });
+
+    it('emits stacked AREA_CHART when 3+ numerics look like heap regions (B-089)', () => {
+        const cols = [
+            { name: 'ts', type: 'TIMESTAMP' },
+            { name: 'heapUsed', type: 'BIGINT' },
+            { name: 'heapFree', type: 'BIGINT' },
+            { name: 'heapReserved', type: 'BIGINT' },
+        ];
+        const cfg = heuristicPlot(cols, [{ ts: 1, heapUsed: 1, heapFree: 1, heapReserved: 1 }]);
         expect(cfg).toContain('AREA_CHART');
         expect(cfg).toContain('layout: "stacked"');
         expect(cfg).toContain('x: "ts"');

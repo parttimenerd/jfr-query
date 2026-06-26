@@ -160,3 +160,77 @@ describe('buildPlotAiContext — result schema', () => {
         expect(built.user).not.toContain('# Current cell\'s SQL result columns');
     });
 });
+
+describe('buildPlotAiContext — trimmed flag (B-075)', () => {
+    it('trimmed is false when all prior cells fit within budget', () => {
+        const built = buildPlotAiContext({
+            priorPlotCellsContent: ['LINE_CHART(x: "ts", y: ["cpu"])'],
+            currentCellUpToCursor: 'BAR(',
+            currentCellAfterCursor: '',
+        });
+        expect(built.trimmed).toBe(false);
+        expect(built.includedPriorCells).toBe(1);
+    });
+
+    it('trimmed is true when prior cells exceed token budget', () => {
+        // 100 large prior cells should blow the budget
+        const largeCells = Array.from({ length: 100 }, (_, i) => `LINE_CHART(x: "ts", y: ["cpu"]) TITLE "cell-${i}" ${'A'.repeat(200)}`);
+        const built = buildPlotAiContext({
+            priorPlotCellsContent: largeCells,
+            budgetTokens: 512, // very tight budget
+            currentCellUpToCursor: 'T',
+            currentCellAfterCursor: '',
+        });
+        expect(built.trimmed).toBe(true);
+        expect(built.includedPriorCells).toBeLessThan(largeCells.length);
+    });
+
+    it('trimmed is false when no prior cells', () => {
+        const built = buildPlotAiContext({
+            priorPlotCellsContent: [],
+            currentCellUpToCursor: 'LINE(',
+            currentCellAfterCursor: '',
+        });
+        expect(built.trimmed).toBe(false);
+    });
+});
+
+// B-186: O(n) truncation — newest-first greedy selection.
+// The algorithm stops at the first prior that doesn't fit, so a large middle
+// cell cannot block smaller newer cells from being included.
+describe('buildPlotAiContext — B-186 O(n) truncation correctness', () => {
+    it('retains newest priors when an older cell is too large to fit', () => {
+        // cell0: tiny, cell1: huge, cell2: tiny, cell3: tiny
+        // With a tight budget the huge cell1 shouldn't prevent cell2 and cell3
+        // from being included (newest-first greedy).
+        const huge = 'X'.repeat(3000); // ~750 tokens
+        const built = buildPlotAiContext({
+            priorPlotCellsContent: [
+                'cell0-small',
+                `cell1-huge-${huge}`,
+                'cell2-small',
+                'cell3-small',
+            ],
+            budgetTokens: 400, // enough for base + small cells but not the huge one
+            currentCellUpToCursor: 'LINE(',
+            currentCellAfterCursor: '',
+            maxPriorCellChars: 4000,
+        });
+        // Newest cells should be retained
+        expect(built.user).toContain('cell3-small');
+        expect(built.user).toContain('cell2-small');
+        // Huge cell caused trimming
+        expect(built.trimmed).toBe(true);
+    });
+
+    it('total estimated tokens does not exceed budget after truncation', () => {
+        const big = 'Z'.repeat(2000);
+        const built = buildPlotAiContext({
+            priorPlotCellsContent: Array.from({ length: 20 }, (_, i) => `cell${i}-${big}`),
+            budgetTokens: 700,
+            currentCellUpToCursor: 'T(',
+            currentCellAfterCursor: '',
+        });
+        expect(built.estimatedTokens).toBeLessThanOrEqual(700);
+    });
+});

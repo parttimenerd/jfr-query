@@ -82,4 +82,27 @@ describe('Executor', () => {
         expect(ex.cellStatus('b')).toBe('done');
         expect(ex.cellStatus('a')).toBe('failed');
     });
+
+    // B-163: upstream failure must be logged (not silently swallowed)
+    it('logs a console.warn when an upstream cell fails (B-163)', async () => {
+        const cells = [
+            mkCell('a', 'cell_1', 'SELECT 1', ['x']),
+            mkCell('b', 'cell_2', 'SELECT * FROM x'),
+        ];
+        const graph = buildExecutionGraph(cells);
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const ex = new Executor(graph, {
+            runFn: async (id) => {
+                if (id === 'a') throw new Error('upstream boom');
+            },
+        });
+        const pA = ex.scheduleRun('a').catch(() => {});
+        const pB = ex.scheduleRun('b');
+        await Promise.all([pA, pB]);
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining('upstream'),
+            expect.any(Error),
+        );
+        warnSpy.mockRestore();
+    });
 });

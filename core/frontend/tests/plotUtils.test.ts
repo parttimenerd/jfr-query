@@ -157,6 +157,62 @@ describe('findColumns', () => {
 });
 
 // ---------------------------------------------------------------------------
+// findColumn — B-073: case-insensitive matching
+// ---------------------------------------------------------------------------
+describe('findColumn — B-073 case-insensitive', () => {
+    it('matches when column is uppercase but query is lowercase', () => {
+        expect(findColumn('cpu', ['CPU', 'heap'])).toBe('CPU');
+    });
+
+    it('matches when column is mixed-case but query is lowercase', () => {
+        expect(findColumn('starttime', ['StartTime', 'EndTime'])).toBe('StartTime');
+    });
+
+    it('matches when query is uppercase but column is lowercase', () => {
+        expect(findColumn('DURATION', ['duration', 'cpu'])).toBe('duration');
+    });
+
+    it('prefers exact-case direct match over case-insensitive match', () => {
+        // Both 'cpu' and 'CPU' are present; exact match should win
+        expect(findColumn('cpu', ['CPU', 'cpu'])).toBe('cpu');
+    });
+
+    it('falls back to case-insensitive before trying prefix pattern', () => {
+        // 'Heap' (mixed) exists — should match before trying numeric prefix
+        expect(findColumn('heap', ['1_Heap', 'Heap'])).toBe('Heap');
+    });
+
+    it('matches prefixed column case-insensitively', () => {
+        // '1_CPU' exists but query is 'cpu' with no direct match
+        expect(findColumn('cpu', ['1_CPU'])).toBe('1_CPU');
+    });
+
+    it('returns baseName unchanged when no case-insensitive or prefixed match', () => {
+        expect(findColumn('missing', ['CPU', 'heap'])).toBe('missing');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// findColumns — B-073: case-insensitive matching
+// ---------------------------------------------------------------------------
+describe('findColumns — B-073 case-insensitive', () => {
+    it('matches direct column case-insensitively when no prefixed exist', () => {
+        expect(findColumns('heap', ['HEAP', 'cpu'])).toEqual(['HEAP']);
+    });
+
+    it('matches mixed-case direct column', () => {
+        expect(findColumns('starttime', ['StartTime', 'EndTime'])).toEqual(['StartTime']);
+    });
+
+    it('prefers prefixed columns even when casing differs', () => {
+        const result = findColumns('duration', ['1_Duration', '2_DURATION', 'duration']);
+        expect(result).toContain('1_Duration');
+        expect(result).toContain('2_DURATION');
+        expect(result).not.toContain('duration');
+    });
+});
+
+// ---------------------------------------------------------------------------
 // getTimeValue
 // ---------------------------------------------------------------------------
 describe('getTimeValue', () => {
@@ -280,10 +336,10 @@ describe('buildSmartTemplate', () => {
         expect(result).toMatch(/x: "(?:event|phase)"/);
     });
 
-    it('PIE_CHART returns name + value', () => {
+    it('PIE_CHART returns category + value', () => {
         const result = buildSmartTemplate('PIE_CHART', cols, sampleRow);
         expect(result).toContain('PIE_CHART');
-        expect(result).toContain('name:');
+        expect(result).toContain('category:');
         expect(result).toContain('value:');
     });
 

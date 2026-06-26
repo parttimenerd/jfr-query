@@ -368,3 +368,28 @@ describe('completion dispatcher — cross-cell variables + full schema', () => {
         expect(labels.filter(l => l === '$foo').length).toBe(1);
     });
 });
+
+// B-095 — SQL completion fallback missing
+describe('completion dispatcher — schema-absent fallback (B-095)', () => {
+    beforeEach(() => { _clearRankCacheForTests(); });
+
+    it('returns SQL keyword fallback when schema is null and token is a plain word', () => {
+        const r = runDispatch('SEL|', { schema: null });
+        // Should not return null — fallback keywords must be offered.
+        expect(r).not.toBeNull();
+        const labels = topLabels(r, 20);
+        expect(labels.some(l => /SELECT/i.test(l))).toBe(true);
+    });
+
+    it('returns null for $var token when schema is null and no variables defined', () => {
+        const r = runDispatch('SELECT $und|', { schema: null, variables: {} });
+        expect(r).toBeNull();
+    });
+
+    it('returns keyword fallback even with empty token (explicit trigger)', () => {
+        const r = runDispatch('|', { schema: null, explicit: true });
+        expect(r).not.toBeNull();
+        const labels = topLabels(r, 30);
+        expect(labels.some(l => /SELECT/i.test(l))).toBe(true);
+    });
+});

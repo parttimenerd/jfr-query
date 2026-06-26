@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { expandBrushOperator } from '../services/variableExpander';
+import { substituteVariables } from '../utils/variableSubstitution';
+
+// PlotRenderer.makeBrushVarHandler writes flat string keys:
+//   { '$gc.brush.lo': String(lo), '$gc.brush.hi': String(hi) }
+// expandBrushOperator checks for the presence of the .lo key to decide
+// whether to expand, and expandBrushOperator produces $gc.brush.lo / $gc.brush.hi
+// tokens that substituteVariables then resolves.
 
 describe('expandBrushOperator — basic expansion', () => {
-    it('expands IN $x.brush to BETWEEN when brush is set', () => {
-        const vars = { '$gc.brush': '{"lo":100,"hi":200}' };
+    it('expands IN $x.brush to BETWEEN when brush lo/hi are present', () => {
+        const vars = { '$gc.brush.lo': '100', '$gc.brush.hi': '200' };
         expect(expandBrushOperator('WHERE ts IN $gc.brush', vars))
             .toBe('WHERE ts BETWEEN $gc.brush.lo AND $gc.brush.hi');
     });
@@ -21,8 +28,10 @@ describe('expandBrushOperator — basic expansion', () => {
 
     it('expands multiple brush references when both are set', () => {
         const vars = {
-            '$a.brush': '{"lo":0,"hi":10}',
-            '$b.brush': '{"lo":5,"hi":15}',
+            '$a.brush.lo': '0',
+            '$a.brush.hi': '10',
+            '$b.brush.lo': '5',
+            '$b.brush.hi': '15',
         };
         const sql = 'WHERE x IN $a.brush AND y IN $b.brush';
         expect(expandBrushOperator(sql, vars))
@@ -48,11 +57,21 @@ describe('expandBrushOperator — basic expansion', () => {
 
 describe('expandBrushOperator — mixed brush presence', () => {
     it('only expands brushes that are set when variables dict is provided', () => {
-        const vars = { '$a.brush': '{"lo":0,"hi":10}' };
+        const vars = { '$a.brush.lo': '0', '$a.brush.hi': '10' };
         // $a.brush is set, $b.brush is not
         const sql = 'WHERE x IN $a.brush AND y IN $b.brush';
         const result = expandBrushOperator(sql, vars);
         expect(result).toContain('BETWEEN $a.brush.lo AND $a.brush.hi');
         expect(result).toContain('IN $b.brush');
+    });
+});
+
+describe('expandBrushOperator + substituteVariables — end-to-end', () => {
+    it('resolves brush range fully when lo/hi are in variables', () => {
+        const vars = { '$gc.brush.lo': '1000', '$gc.brush.hi': '2000' };
+        const sql = 'SELECT * FROM events WHERE ts IN $gc.brush';
+        const expanded = expandBrushOperator(sql, vars);
+        const substituted = substituteVariables(expanded, vars);
+        expect(substituted).toBe('SELECT * FROM events WHERE ts BETWEEN 1000 AND 2000');
     });
 });

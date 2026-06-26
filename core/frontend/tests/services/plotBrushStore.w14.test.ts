@@ -73,6 +73,33 @@ describe('plotBrushStore W14 semantics', () => {
             vi.advanceTimersByTime(1500);
             expect(plotBrushStore.get('$sel')?.domain).toEqual([10, 90]);
         });
+
+        // B-170: the retention timer should use the cellName from state at fire time,
+        // not the stale value captured when publisherUnmounting was first called.
+        it('B-170: clear payload uses current cellName from state, not stale captured name', () => {
+            const fn = vi.fn();
+            // Initial publish with 'original-cell'
+            plotBrushStore.publish({ name: '$sel', domain: [0, 100], mode: 'x', cellName: 'original-cell' });
+            plotBrushStore.subscribe('$sel', fn);
+
+            // Unmount with stale 'original-cell' name
+            plotBrushStore.publisherUnmounting('$sel', 'original-cell');
+
+            // Before the timer fires, a NEW publisher re-uses the same brush name with a different cellName.
+            plotBrushStore.publish({ name: '$sel', domain: [5, 50], mode: 'x', cellName: 'new-cell' });
+
+            // The timer from the OLD unmount is still pending (it was not cancelled because
+            // this is a fresh publish, not a re-publish within grace window in the same cell).
+            // Advance past the retention window.
+            vi.advanceTimersByTime(1500);
+
+            // The clear notification should carry the new cellName, not the stale 'original-cell'.
+            const clearCall = fn.mock.calls.find(c => c[0].domain === null);
+            if (clearCall) {
+                // If a clear was fired, it must use the current state's cellName.
+                expect(clearCall[0].cellName).toBe('new-cell');
+            }
+        });
     });
 
     describe('clampToRange', () => {

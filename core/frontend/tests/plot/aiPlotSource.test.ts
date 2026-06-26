@@ -92,3 +92,22 @@ describe('validatePlotStream — prefix continuation', () => {
         expect(['ok', 'incomplete', 'truncate']).toContain(r.status);
     });
 });
+
+describe('validatePlotStream — CR/CRLF handling (B-185)', () => {
+    it('does not discard acc that starts with \\r\\n before a valid char', () => {
+        // Some model responses start with CRLF before the actual plot DSL.
+        const r = validatePlotStream('LINE_CHART(', '\r\nx: "ts")');
+        expect(r.status).not.toBe('discard');
+    });
+
+    it('discards acc that starts with \\r before actual garbage', () => {
+        const r = validatePlotStream('', '\r<<narration>>');
+        // After stripping \\r, the first char is '<' which is not valid DSL start.
+        expect(r.status).toBe('discard');
+    });
+
+    it('accepts plain \\n prefix as before (regression)', () => {
+        const r = validatePlotStream('LINE_CHART(', '\nx: "ts")');
+        expect(r.status).not.toBe('discard');
+    });
+});

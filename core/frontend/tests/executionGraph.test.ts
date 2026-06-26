@@ -117,4 +117,72 @@ describe('buildExecutionGraph', () => {
         expect(g.deps.get('a')!.size).toBe(0);
         expect(g.cycles.size).toBe(0);
     });
+
+    // B-111: index-pointer Kahn's — verify correctness on a longer chain
+    it('correctly topo-sorts a long linear chain without shift() (B-111)', () => {
+        // Build a chain: c0 <- c1 <- c2 <- ... <- c19
+        // Each cell i depends on cell i-1's alias
+        const N = 20;
+        const cells: GraphCell[] = [];
+        for (let i = 0; i < N; i++) {
+            cells.push(mkCell(
+                `c${i}`,
+                `cell_${i}`,
+                i === 0 ? 'SELECT 1' : `SELECT * FROM alias_${i - 1}`,
+                [`alias_${i}`],
+            ));
+        }
+        const g = buildExecutionGraph(cells);
+        expect(g.cycles.size).toBe(0);
+        expect(g.order).toHaveLength(N);
+        // Each cell must appear before all its dependents
+        for (let i = 1; i < N; i++) {
+            expect(g.order.indexOf(`c${i - 1}`)).toBeLessThan(g.order.indexOf(`c${i}`));
+        }
+    });
+});
+
+// B-161: plot ON clause named refs must be tracked as cross-cell DAG edges.
+describe('buildExecutionGraph — B-161 plot ON alias refs', () => {
+    const mkCell = (id: string, handle: string, sql: string, aliases: string[] = [], plotOnRefs: string[] = []): GraphCell => ({
+        id, handle, producedBareAliases: aliases, referencedSql: sql, plotOnRefs,
+    });
+
+    it('enforces execution order when a plot ON clause references a cross-cell alias', () => {
+        const cells = [
+            mkCell('b', 'cell_2', '', [], ['gc_pauses']),
+            mkCell('a', 'cell_1', 'SELECT 1', ['gc_pauses']),
+        ];
+        const g = buildExecutionGraph(cells);
+        expect(g.order.indexOf('a')).toBeLessThan(g.order.indexOf('b'));
+        expect(g.deps.get('b')!.has('a')).toBe(true);
+    });
+
+    it('ignores numeric ON refs (#1, 1) — those are cell-local', () => {
+        const cells = [
+            mkCell('a', 'cell_1', 'SELECT 1', ['x']),
+            mkCell('b', 'cell_2', '', [], ['1', '#1']),
+        ];
+        const g = buildExecutionGraph(cells);
+        expect(g.deps.get('b')!.size).toBe(0);
+    });
+
+    it('does not add a self-dependency when the plot ON ref names an alias in the same cell', () => {
+        const cells = [
+            mkCell('a', 'cell_1', 'SELECT 1', ['my_view'], ['my_view']),
+        ];
+        const g = buildExecutionGraph(cells);
+        expect(g.deps.get('a')!.size).toBe(0);
+        expect(g.cycles.size).toBe(0);
+    });
+
+    it('correctly detects cycle when cells ON-ref each other', () => {
+        const cells = [
+            mkCell('a', 'cell_1', 'SELECT 1', ['a_view'], ['b_view']),
+            mkCell('b', 'cell_2', 'SELECT 1', ['b_view'], ['a_view']),
+        ];
+        const g = buildExecutionGraph(cells);
+        expect(g.cycles.has('a')).toBe(true);
+        expect(g.cycles.has('b')).toBe(true);
+    });
 });
