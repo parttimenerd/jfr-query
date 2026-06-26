@@ -85,6 +85,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const cancelledRef = useRef(false);
     // Legacy toggle preserved for backwards-compat. `useFullContext=true` is
     // now interpreted as `visibility='full'`; otherwise the dropdown wins.
     const [useFullContext, setUseFullContext] = useState(false);
@@ -229,6 +230,15 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         setApproveAllReads(false);
         approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
         approvalResolvers.current.clear();
+        cancelledRef.current = true;
+        setIsLoading(false);
+    };
+
+    // B-105: cancel in-flight AI request from inline chat.
+    const handleCancel = () => {
+        cancelledRef.current = true;
+        approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
+        approvalResolvers.current.clear();
         setIsLoading(false);
     };
 
@@ -267,6 +277,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         const inputText = input;
         setInput('');
         setIsLoading(true);
+        cancelledRef.current = false;
         setProposals([]);
         proposalsRef.current = [];
         setApproveAllReads(false);
@@ -498,7 +509,10 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                 </button>
                 <div className="relative">
                     <input type="text" value={input} onChange={e=>setInput(e.target.value)} onKeyPress={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();handleSend();}}} placeholder={`Ask AI to change ${targetType}...`} className="w-full bg-gray-800/50 border border-gray-600 rounded-lg py-2 pl-3 pr-10 focus:outline-none focus:ring-1 focus:ring-cyan-500 text-sm" disabled={isLoading} autoFocus/>
-                    <button onClick={handleSend} className="absolute top-1/2 right-2 -translate-y-1/2 p-1.5 bg-cyan-600 hover:bg-cyan-700 rounded-md disabled:bg-gray-600" disabled={isLoading||input.trim()===''}><SendIcon className="w-4 h-4 text-white"/></button>
+                    {isLoading
+                        ? <button onClick={handleCancel} className="absolute top-1/2 right-2 -translate-y-1/2 p-1.5 bg-red-700 hover:bg-red-600 rounded-md" title="Cancel request"><XMarkIcon className="w-4 h-4 text-white"/></button>
+                        : <button onClick={handleSend} className="absolute top-1/2 right-2 -translate-y-1/2 p-1.5 bg-cyan-600 hover:bg-cyan-700 rounded-md disabled:bg-gray-600" disabled={isLoading||input.trim()===''}><SendIcon className="w-4 h-4 text-white"/></button>
+                    }
                 </div>
             </div>
         </div>
