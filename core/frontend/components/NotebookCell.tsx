@@ -415,7 +415,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
     const { registerAlias, unregisterCell } = useCellAliases();
     const { aliases } = useCellAliases();
-    const { query: dbQuery } = useContext(DataContext);
+    const { query: dbQuery, refreshSchema } = useContext(DataContext);
     // Phase 5 — DATASET clause results, keyed by `<plotIndex>:<datasetName>`.
     const [datasetResults, setDatasetResults] = useState<Record<string, any[]>>({});
     const { awaitUpstream } = useExecutor();
@@ -477,6 +477,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             // Fire-and-forget: don't block the UI, and don't surface alias
             // registration errors into the cell's result panel (the result
             // panel still shows the actual query output via onRunQuery).
+            // B-096: refresh schema after alias registration so the new temp
+            // view shows up in SQL completions on the next keystroke.
             registerAlias({
                 cellId: cell.id,
                 cellHandle: handleStr,
@@ -485,11 +487,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 alias: aliasName,
                 sql: substitutedSql,
                 materialized,
-            }).catch(() => { /* swallow */ });
+            }).then(() => refreshSchema()).catch(() => { /* swallow */ });
         } finally {
             setRunningStates(s => ({ ...s, [index]: false }));
         }
-    }, [onRunQuery, cell.id, allVariables, parsed.queryAliases, parsed.queryAliasMaterialized, registerAlias, handleStr, cellIndex, awaitUpstream]);
+    }, [onRunQuery, cell.id, allVariables, parsed.queryAliases, parsed.queryAliasMaterialized, registerAlias, refreshSchema, handleStr, cellIndex, awaitUpstream]);
 
     useEffect(() => () => { unregisterCell(cell.id).catch(() => {}); }, [cell.id, unregisterCell]);
 
