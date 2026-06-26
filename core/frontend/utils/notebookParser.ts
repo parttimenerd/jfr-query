@@ -251,7 +251,8 @@ export type CellSegment =
   | { type: 'markdown'; content: string }
   | { type: 'variables'; content: string }
   | { type: 'sql'; content: string }
-  | { type: 'plot'; content: string };
+  | { type: 'plot'; content: string }
+  | { type: 'if'; condition: string; body: string };
 
 const SQL_FENCE_START = '```sql';
 const PLOT_FENCE_START = '```plot';
@@ -263,7 +264,10 @@ const END_FENCE = '```';
  */
 export const tokenizeCellContent = (content: string): CellSegment[] => {
     const segments: CellSegment[] = [];
-    const blockRegex = /(```(?:sql|plot|variables))([\s\S]*?)(```)/g;
+    // Match either a typed fence (```sql / ```plot / ```variables) or a
+    // conditional fence (```{if <SQL>}). The conditional regex is anchored
+    // separately so the SQL can contain anything except the closing brace.
+    const blockRegex = /(```(?:sql|plot|variables)|```\{if\s+([^}]*)\})([\s\S]*?)(```)/g;
     let lastIndex = 0;
     let match;
 
@@ -272,9 +276,10 @@ export const tokenizeCellContent = (content: string): CellSegment[] => {
         if (match.index > lastIndex) {
             segments.push({ type: 'markdown', content: content.substring(lastIndex, match.index) });
         }
-        
+
         const fence = match[1];
-        const blockContent = match[2];
+        const ifCondition = match[2];     // only set for ```{if ...} fences
+        const blockContent = match[3];
 
         if (fence === SQL_FENCE_START) {
             segments.push({ type: 'sql', content: blockContent });
@@ -282,6 +287,8 @@ export const tokenizeCellContent = (content: string): CellSegment[] => {
             segments.push({ type: 'plot', content: blockContent });
         } else if (fence === VARIABLES_FENCE_START) {
             segments.push({ type: 'variables', content: blockContent });
+        } else if (ifCondition !== undefined) {
+            segments.push({ type: 'if', condition: ifCondition.trim(), body: blockContent });
         }
 
         lastIndex = blockRegex.lastIndex;
@@ -317,6 +324,8 @@ export const reconstructCellContent = (segments: CellSegment[]): string => {
                 const trimmedPlot = plotLines.join('\n');
                 if (trimmedPlot === '') return `${PLOT_FENCE_START}${seg.content}${END_FENCE}`;
                 return `${PLOT_FENCE_START}\n${trimmedPlot}\n${END_FENCE}`;
+            case 'if':
+                return `\`\`\`{if ${seg.condition}}${seg.body}${END_FENCE}`;
         }
     }).join('');
 };

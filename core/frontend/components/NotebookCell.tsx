@@ -6,6 +6,7 @@ import { tokenizeCellContent, reconstructCellContent, parseCellContent, CellSegm
 import { cellHandle as computeCellHandle } from '../utils/cellHandle';
 import { useCellAliases } from '../context/CellAliasContext';
 import { useExecutor } from '../context/ExecutorContext';
+import TemplatedMarkdown from './TemplatedMarkdown';
 import { collectPrecedingCellVariables } from '../utils/crossCellVariables';
 import { substituteVariables } from '../utils/variableSubstitution';
 import { parsePlotCall } from '../utils/plotParser';
@@ -695,7 +696,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                         <div key={`prose-${segIdx}`} className="relative group/prose rounded-md border border-gray-700/40 px-3 py-2 min-h-[2.5rem]">
                                             {seg.content.trim() ? (
                                                 <div className="prose prose-invert max-w-none text-sm">
-                                                    <ReactMarkdown>{seg.content}</ReactMarkdown>
+                                                    <TemplatedMarkdown
+                                                        segments={[seg]}
+                                                        variables={allVariables}
+                                                        formatSettings={{ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }}
+                                                    />
                                                 </div>
                                             ) : (
                                                 <p className="text-gray-600 text-sm italic cursor-pointer hover:text-gray-400" onClick={() => {
@@ -716,6 +721,23 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                             }
 
                             if (seg.type === 'variables') return;
+
+                            if (seg.type === 'if') {
+                                // Conditional block: render via TemplatedMarkdown so the
+                                // condition is evaluated and the body is shown/hidden
+                                // dynamically. Authors edit the source via raw-edit mode.
+                                items.push(
+                                    <div key={`if-${segIdx}`} className="rounded-md border border-cyan-800/40 px-3 py-2 bg-cyan-900/10">
+                                        <div className="text-[10px] text-cyan-500 mb-1 font-mono">{`{if …}`}</div>
+                                        <TemplatedMarkdown
+                                            segments={[seg]}
+                                            variables={allVariables}
+                                            formatSettings={{ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }}
+                                        />
+                                    </div>
+                                );
+                                return;
+                            }
 
                             // Hover insert bar before this segment (between items).
                             if (!presenterMode && items.length > 0) {
