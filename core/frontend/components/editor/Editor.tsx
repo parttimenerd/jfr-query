@@ -20,6 +20,8 @@ import {
 } from './plot/aiPlotSource';
 import type { PlotScopePlot } from './plot/aiPlotContext';
 import type { PlotScopeView } from './plot/notebookPlotScope';
+import { markdownTemplatingExtension } from './markdownTemplating';
+import type { AliasInfo } from '../../context/CellAliasContext';
 
 // Annotation used to mark programmatic value-sync dispatches so the
 // updateListener does not echo them back to React via onChange.
@@ -82,6 +84,11 @@ export interface EditorProps {
   getNotebookPlotScope?: (() => PlotScopeView | null) | null;
   getCurrentCellId?: (() => string | null) | null;
   getSqlBlockCount?: (() => number) | null;
+  /**
+   * Markdown-mode templating support: provides the current cell-alias snapshot
+   * so completion inside `${…}` / `{if …}` regions can offer alias names.
+   */
+  getCellAliases?: (() => Record<string, AliasInfo>) | null;
 }
 
 export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Editor(props, ref) {
@@ -113,6 +120,7 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
   const getNotebookPlotScopeRef = useRef(props.getNotebookPlotScope ?? null);
   const getCurrentCellIdRef = useRef(props.getCurrentCellId ?? null);
   const getSqlBlockCountRef = useRef(props.getSqlBlockCount ?? null);
+  const getCellAliasesRef = useRef(props.getCellAliases ?? null);
 
   onChangeRef.current = props.onChange;
   onBlurRef.current = props.onBlur;
@@ -134,6 +142,7 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
   getNotebookPlotScopeRef.current = props.getNotebookPlotScope ?? null;
   getCurrentCellIdRef.current = props.getCurrentCellId ?? null;
   getSqlBlockCountRef.current = props.getSqlBlockCount ?? null;
+  getCellAliasesRef.current = props.getCellAliases ?? null;
 
   // Language compartment so we can hot-swap when mode changes (we don't expect
   // mode to change for a given editor instance, but this is cheap insurance).
@@ -267,6 +276,14 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
             return fn(system, user, signal, model);
           },
         }),
+      );
+    } else if (props.mode === 'markdown') {
+      exts.push(
+        markdownTemplatingExtension({
+          getVariables: () => variablesRef.current,
+          getAliases: () => getCellAliasesRef.current?.() ?? {},
+        }),
+        diagnosticsExtension,
       );
     }
     return exts;

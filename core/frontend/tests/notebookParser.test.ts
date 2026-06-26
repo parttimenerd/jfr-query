@@ -61,7 +61,8 @@ describe('Notebook Parser', () => {
         const segments = tokenizeCellContent(input);
         expect(segments.length).toBe(1);
         expect(segments[0].type).toBe('plot');
-        expect(segments[0].content).toContain('LINE_CHART');
+        const seg = segments[0];
+        if (seg.type !== 'if') expect(seg.content).toContain('LINE_CHART');
     });
 
     it('handles sql roundtrip with leading/trailing newlines', () => {

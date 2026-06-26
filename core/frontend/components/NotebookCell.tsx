@@ -546,7 +546,10 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
         const newSegments = [...segments];
         if (plotSegmentIndex !== -1) {
-            newSegments[plotSegmentIndex] = { ...newSegments[plotSegmentIndex], content: newConfig };
+            const existing = newSegments[plotSegmentIndex];
+            if (existing.type !== 'if') {
+                newSegments[plotSegmentIndex] = { ...existing, content: newConfig };
+            }
         } else {
              let insertIndex = sqlSegmentIndex + 1;
              while(insertIndex < newSegments.length && newSegments[insertIndex].type === 'markdown') {
@@ -593,11 +596,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const handleInsertAt = useCallback((segmentIndex: number, type: 'sql' | 'plot' | 'markdown') => {
         const content = type === 'sql' ? '\nSELECT 1;\n' : type === 'plot' ? '\nTABLE()\n' : '\n\n';
         const newSegments = [...segments];
-        newSegments.splice(segmentIndex, 0, { type, content });
+        newSegments.splice(segmentIndex, 0, { type, content } as CellSegment);
         handleSegmentsUpdate(newSegments);
     }, [segments, handleSegmentsUpdate]);
     const handleAddPlot = () => { /* No-op, plot change creates plot blocks */ };
-    const handleTitleBlur = (newTitle: string) => { setIsEditingTitle(false); if (newTitle.trim() && newTitle !== title) { const introSegmentIndex = segments.findIndex(s=>s.type==='markdown'); if(introSegmentIndex!==-1){const newSegments=[...segments]; const intro=newSegments[introSegmentIndex]; const newContent=intro.content.replace(/^(?:#|##|###)\s*(.*)/,`## ${newTitle}`); newSegments[introSegmentIndex]={...intro, content:newContent}; handleSegmentsUpdate(newSegments);} }};
+    const handleTitleBlur = (newTitle: string) => { setIsEditingTitle(false); if (newTitle.trim() && newTitle !== title) { const introSegmentIndex = segments.findIndex(s=>s.type==='markdown'); if(introSegmentIndex!==-1){const newSegments=[...segments]; const intro=newSegments[introSegmentIndex]; if(intro.type==='if') return; const newContent=intro.content.replace(/^(?:#|##|###)\s*(.*)/,`## ${newTitle}`); newSegments[introSegmentIndex]={...intro, content:newContent}; handleSegmentsUpdate(newSegments);} }};
     const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { handleTitleBlur(editingTitleValue); } else if (e.key === 'Escape') { setIsEditingTitle(false); } };
     const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', cell.id); e.dataTransfer.effectAllowed = 'move'; setIsBeingDragged(true); };
     const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); setIsDraggingOver(e.clientY < r.top+r.height/2 ? 'top':'bottom'); };

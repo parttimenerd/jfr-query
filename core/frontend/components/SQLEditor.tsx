@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useMemo, useRef } from 'react';
 import { DataContext } from '../context/DuckDBContext';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCellAliases } from '../context/CellAliasContext';
 import { aiService } from '../services/AiService';
 import type { TableSchema, ViewSchema, MacroSchema, NotebookMetadata } from '../types';
 import { Editor, type EditorHandle } from './editor/Editor';
@@ -66,6 +67,9 @@ const SQLEditor: React.FC<EditorProps> = ({
 }) => {
   const { schema: dbSchema, query } = useContext(DataContext);
   const { settings } = useContext(SettingsContext);
+  const { aliases } = useCellAliases();
+  const aliasesRef = useRef(aliases);
+  aliasesRef.current = aliases;
   const plotSchema = usePlotSchemaDiscovery();
   const handleRef = useRef<EditorHandle | null>(null);
 
@@ -223,6 +227,7 @@ const SQLEditor: React.FC<EditorProps> = ({
       plotAiAutocompleteStream={mode === 'plot' ? plotAiAutocompleteStream : null}
       getPlotPriorCellsContent={mode === 'plot' ? () => priorPlotCellsContent ?? [] : null}
       getPlotCellResultSchema={mode === 'plot' ? () => cellResultSchema ?? null : null}
+      getCellAliases={mode === 'markdown' ? () => aliasesRef.current : null}
     />
   );
 };
