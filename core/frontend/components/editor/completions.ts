@@ -435,9 +435,11 @@ export interface PlotCompletionDeps {
 }
 
 const UPPERCASE_TAILS_DEFAULT: ReadonlyArray<string> = [
-  'TITLE', 'SUBTITLE', 'NAME', 'ZOOM',
-  'WIDTH', 'HEIGHT', 'ON', 'DISABLED',
-  'LINK_X', 'LINK_Y', 'LINK_XY', 'LINK_SCROLL',
+  'TITLE', 'NAME', 'ZOOM',
+  'WIDTH', 'HEIGHT', 'ON',
+  'LINK_X', 'LINK-Y', 'LINK-XY', 'LINK-SCROLL',
+  'BRUSH', 'LEGEND', 'PALETTE', 'DATASET',
+  'AXIS-X', 'AXIS-Y', 'LET',
 ];
 
 const LINK_POSITIONAL_KEYWORDS = ['master', 'clamp'];

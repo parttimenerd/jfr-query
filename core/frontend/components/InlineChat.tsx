@@ -17,7 +17,7 @@ import PlotRenderer from './PlotRenderer';
 import type { AiProviderType, ToolChatMessage } from '../services/ai/IAiProvider';
 import { TOOLS, type Tool } from '../services/ai/tools';
 import type { NotebookMutation, ToolDeps } from '../services/ai/tools/runtime';
-import { tokenizeCellContent, reconstructCellContent } from '../utils/notebookParser';
+import { tokenizeCellContent, reconstructCellContent, parseCellContent } from '../utils/notebookParser';
 import {
     listConfiguredProviders,
     defaultModelForProvider,
@@ -239,6 +239,9 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         const otherCells = allCells.filter(c => c.id !== cellContext.id);
         const fullNotebookContext = useFullContext ? otherCells.map(c => `### ${c.title}\n\n${c.content}`).join('\n\n---\n\n') : undefined;
         const recentResult = buildRecentResultFromRows(data);
+        // B-015: pass all in-scope variables so AI knows $var names.
+        const cellVars = parseCellContent(tokenizeCellContent(cellContext.content)).variables;
+        const allVariables: Record<string, string> = { ...metadata.variables, ...cellVars };
         const aiResponse = await aiService.getAiInlineSuggestion(
             inputText,
             targetType,
@@ -249,6 +252,8 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
             metadata.customSystemPrompt,
             effectiveVisibility,
             recentResult,
+            'advanced',
+            allVariables,
         );
         const aiMessage: ChatMessage = { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: aiResponse.text, code: aiResponse.code, isActionable: !!aiResponse.code };
         setMessages(prev => [...prev, aiMessage]);

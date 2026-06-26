@@ -545,8 +545,7 @@ const App: React.FC = () => {
     
     const addCellFromAI = (sql: string, plotConfig: string, title: string, markdownText: string) => {
         const content = reconstructCellContent([
-            { type: 'markdown', content: `# ${title}\n\n${markdownText}` },
-            { type: 'markdown', content: '\n\n' },
+            { type: 'markdown', content: `# ${title}\n\n${markdownText}\n\n` },
             { type: 'sql', content: `\n${sql}\n` },
             { type: 'markdown', content: '\n\n' },
             { type: 'plot', content: `\n${plotConfig}\n` },

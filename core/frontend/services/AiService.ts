@@ -298,7 +298,7 @@ GUIDELINES:
         return this.handleApiCall(() => this.provider!.getAgentResponse(conversationHistory, systemInstruction, model));
     }
     
-    async getAiInlineSuggestion(request: string, targetType: 'sql' | 'plot', targetValue: string, cellContext: string, fullNotebookContext?: string, data?: any[], customPromptOverride?: string, visibility: VisibilityMode = 'no-data', recentResult?: RecentResult | null, tier: AiTier = 'advanced'): Promise<AIInlineResponse> {
+    async getAiInlineSuggestion(request: string, targetType: 'sql' | 'plot', targetValue: string, cellContext: string, fullNotebookContext?: string, data?: any[], customPromptOverride?: string, visibility: VisibilityMode = 'no-data', recentResult?: RecentResult | null, tier: AiTier = 'advanced', variables?: Record<string, string>): Promise<AIInlineResponse> {
         if (!this.settings) throw new Error("AI Service not initialized with settings.");
         this.assertOfflineAllowed('autocomplete');
         const model = this.getModelFor(tier, 'autocomplete');
@@ -326,6 +326,7 @@ CONTEXT:
 - The current cell's content is: \`\`\`\n${cellContext}\n\`\`\`
 ${fullNotebookContext ? `- The rest of the notebook is:\n${fullNotebookContext}` : ''}
 - The user is specifically editing this ${targetType} block: \`\`\`${targetType}\n${targetValue}\n\`\`\`
+${variables && Object.keys(variables).length > 0 ? `- Variables in scope: ${Object.entries(variables).map(([k, v]) => `${k}=${v}`).join(', ')}` : ''}
 ${dataSample}
 GUIDELINES:
 1.  Read the user's request.
