@@ -156,10 +156,13 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
         // Numeric duration — infer unit from column name suffix; default to µs.
         if (typeof value === 'number' || typeof value === 'bigint') {
             const lc = header.toLowerCase();
+            // Match trailing unit: bare suffix (_ms), parenthesised (ms), or bracketed [ms]
+            const unitMatch = lc.match(/[\s_([](ns|µs|us|ms|sec(?:onds?)?|s)\s*[)\]]?\s*$/);
+            const unit = unitMatch ? unitMatch[1] : '';
             let divisor = 1_000_000; // default: microseconds
-            if (lc.endsWith('_ns') || lc.endsWith('ns')) divisor = 1_000_000_000;
-            else if (lc.endsWith('_ms') || lc.endsWith('ms')) divisor = 1_000;
-            else if (lc.endsWith('_s') || lc.endsWith('_sec') || lc.endsWith('secs') || lc.endsWith('_seconds')) divisor = 1;
+            if (unit === 'ns') divisor = 1_000_000_000;
+            else if (unit === 'ms') divisor = 1_000;
+            else if (unit === 's' || unit === 'sec' || unit === 'secs' || unit === 'second' || unit === 'seconds') divisor = 1;
             return formatDuration(Number(value) / divisor);
         }
     }
