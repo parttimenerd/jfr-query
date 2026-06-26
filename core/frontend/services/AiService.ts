@@ -214,7 +214,7 @@ class AiService {
         }
 
         const validProviders: Record<string, true> = {
-            google: true, openai: true, gardener: true, local: true, browser: true,
+            google: true, openai: true, anthropic: true, gardener: true, local: true, browser: true,
         };
         if (!validProviders[aiProvider]) {
             throw new Error(`Unknown AI provider: ${aiProvider}`);

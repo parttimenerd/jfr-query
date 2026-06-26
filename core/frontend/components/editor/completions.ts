@@ -388,7 +388,7 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
     const contextKey = upTo.slice(Math.max(0, upTo.length - 200)).toLowerCase();
     kickRank(deps, contextKey, options);
     const ordered = rerank(options, contextKey);
-    return { from, options: ordered, validFor: /^"?[\w-]*$/ };
+    return { from, options: ordered, validFor: /^"?[\w]*$/ };
   };
 }
 
@@ -1187,6 +1187,8 @@ function getPlotRegistryAsShapes(): import('./plot/annotators/shapeAnnotator').S
     BOX_PLOT: 'boxplot',
     FLAMEGRAPH: 'flamegraph',
     TABLE: 'table',
+    AREA_CHART: 'area',
+    RANGE: 'range',
   };
   for (const [upperName, def] of Object.entries(plotRegistry)) {
     const lower = SHAPE_MAP[upperName] ?? upperName.toLowerCase();

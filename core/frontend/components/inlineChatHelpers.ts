@@ -7,13 +7,15 @@
 import type { VisibilityMode, RecentResult } from '../services/AiService';
 
 /**
- * Map the legacy `useFullContext` boolean to a visibility mode. When the
- * caller has explicitly opted into full notebook context (the old toggle),
- * force `'full'`; otherwise fall back to whatever the visibility dropdown
- * has selected. Documented as a one-way override: `true` always wins.
+ * Map the legacy `useFullContext` boolean to a visibility mode. Previously
+ * `useFullContext=true` forced `'full'`, overriding the dropdown selection.
+ * That override is now removed: the `chatVisibility` dropdown always wins.
+ * The `useFullContext` parameter is kept for backwards-compat but ignored.
+ *
+ * @deprecated Pass `dropdownValue` directly; the toggle no longer has effect.
  */
-export function resolveVisibility(useFullContext: boolean, dropdownValue: VisibilityMode): VisibilityMode {
-    return useFullContext ? 'full' : dropdownValue;
+export function resolveVisibility(_useFullContext: boolean, dropdownValue: VisibilityMode): VisibilityMode {
+    return dropdownValue;
 }
 
 /**

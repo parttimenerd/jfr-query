@@ -57,7 +57,7 @@ export function annotateCrossPlot(root: PlotNode, ctx?: NotebookPlotContext): vo
             if (!LINK_TAIL_KEYS.has(tail.key.toLowerCase())) return;
             const lowered = n.name.toLowerCase();
             if (LINK_POSITIONAL_KEYWORDS.has(lowered)) return; // positional keyword, not a plot
-            const plot = ctx.scope.namedPlots.find(p => p.plotName === n.name);
+            const plot = ctx.scope.namedPlots.find(p => p.plotName?.toLowerCase() === n.name?.toLowerCase());
             if (plot) {
                 n.annotations.resolves = {
                     kind: 'crossPlot',

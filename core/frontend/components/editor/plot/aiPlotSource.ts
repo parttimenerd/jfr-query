@@ -121,9 +121,9 @@ function lastStableBoundary(s: string): number {
 export function validatePlotStream(prefix: string, acc: string): PlotStreamValidation {
     // Fast-path garbage filter: any acc that opens with a non-DSL character is
     // discarded outright. This catches models that hallucinate <<bracketed>>
-    // narration or other obvious non-DSL output. Whitespace at the start is
-    // skipped so leading newlines/spaces stay legal continuations.
-    const firstNonWs = acc.replace(/^\s+/, '');
+    // narration or other obvious non-DSL output. Whitespace (incl. \r) at the
+    // start is stripped so leading newlines/spaces stay legal continuations.
+    const firstNonWs = acc.replace(/^[\s\r]+/, '');
     if (firstNonWs.length === 0) return { status: 'discard' };
     if (!isValidStartChar(firstNonWs[0])) {
         return { status: 'discard' };

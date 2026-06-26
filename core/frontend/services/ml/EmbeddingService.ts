@@ -195,8 +195,8 @@ export async function rankCandidates(
         const qVec = await embedQuery(queryContext, signal);
         throwIfAborted(signal);
         if (!qVec) {
-            // Model not ready yet and we need it for a partial set.
-            if (!allPrecomputed) return candidates;
+            // Model not ready yet — can't score anything, return original order.
+            return candidates;
         }
 
         if (allPrecomputed && qVec) {

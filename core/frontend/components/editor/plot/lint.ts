@@ -38,6 +38,13 @@ export interface PlotLintDeps {
     sqlBlockCount: number;
     /** Variable map (cell + workspace, $-prefixed keys without leading $). */
     variables: Record<string, string>;
+    /**
+     * Current cursor position in the source (byte offset). When provided,
+     * `hasMidTypingHoleAncestor` only suppresses lint for hole ancestors that
+     * actually contain the cursor — preventing stale suppression after the user
+     * moves the cursor away (B-169).
+     */
+    cursorPos?: number;
 }
 
 export function lintPlot(source: string, deps: PlotLintDeps): Diagnostic[] {
@@ -45,6 +52,7 @@ export function lintPlot(source: string, deps: PlotLintDeps): Diagnostic[] {
         src: source,
         resultColumns: deps.cellColumns ?? undefined,
         shapeRegistry: deps.shapeRegistry,
+        cursorPos: deps.cursorPos,
     });
 
     const diagnostics: Diagnostic[] = [];
@@ -65,7 +73,7 @@ export function lintPlot(source: string, deps: PlotLintDeps): Diagnostic[] {
     walk(root, (node) => {
         // Mid-typing guard — never emit if we're inside an active clause-key
         // or clause-value hole (the user is still typing).
-        if (hasMidTypingHoleAncestor(node)) return;
+        if (hasMidTypingHoleAncestor(node, deps.cursorPos)) return;
 
         switch (node.kind) {
             case 'plotCall':
@@ -115,15 +123,27 @@ export function lintPlot(source: string, deps: PlotLintDeps): Diagnostic[] {
  * True if `node` is inside an active clauseKey / clauseValue / letName /
  * letValue / queryRefTarget hole (i.e. the user is mid-typing). Mirrors the
  * SQL `hasHoleAncestor` guard.
+ *
+ * When `cursorPos` is provided, a hole only suppresses lint if the cursor
+ * is currently within the hole's source range — preventing stale suppression
+ * after the user moves the cursor away from a previously-active hole (B-169).
+ * When `cursorPos` is omitted, any hole ancestor suppresses (conservative
+ * fallback for callers that don't track cursor position).
  */
-function hasMidTypingHoleAncestor(node: PlotNode): boolean {
+function hasMidTypingHoleAncestor(node: PlotNode, cursorPos?: number): boolean {
     let cur: PlotNode | undefined = node;
     while (cur) {
         if (cur.kind === 'hole') {
-            const hint = cur.annotations.hint;
-            if (!hint) return true;
-            // Suppress lint at *any* hole — the user is mid-token there.
-            return true;
+            // If a cursor position is available, only suppress when the cursor
+            // is actually inside this hole.  Holes are zero-length tokens
+            // (from === to), so the cursor must equal their position exactly.
+            if (cursorPos !== undefined) {
+                if (cursorPos >= cur.from && cursorPos <= cur.to) return true;
+                // Hole exists but cursor isn't here — keep walking up.
+            } else {
+                // No cursor info — conservative: suppress on any hole ancestor.
+                return true;
+            }
         }
         cur = cur.parent;
     }
@@ -256,6 +276,8 @@ function lintIdent(node: PlotNode, deps: PlotLintDeps, out: Diagnostic[]): void 
     //   2. The ident did not resolve to a column (resolves is missing or non-column),
     //   3. deps.cellColumns is non-null (we know what columns exist).
     if (!node.name) return;
+    // $variable references are runtime substitutions — skip column validation.
+    if (node.name.startsWith('$')) return;
     if (deps.cellColumns === null) {
         // column-without-schema (informational; only emit if we're in a
         // column-typed clause)
@@ -411,7 +433,19 @@ function lintTail(
         if (!list) return;
         const args = list.children;
         const vars = args.filter(a => a.kind === 'varRef');
-        if (vars.length === 1) {
+        if (vars.length === 0) {
+            // Zero $variable arguments — at least two are required.
+            out.push({
+                from: list.from,
+                to: list.to,
+                severity: 'error',
+                message: `${upperKey} requires at least two $variable arguments (e.g. '${upperKey}($a, $b)').`,
+                actions: [{
+                    name: 'Add two variables',
+                    apply: (view, _from, _to) => insertAt(view, list.from + 1, '$a, $b'),
+                }],
+            });
+        } else if (vars.length === 1) {
             // Suggest a second variable.
             const insertPos = vars[0].to;
             out.push({
@@ -506,9 +540,15 @@ function lintVarRef(
         // Variables inside LINK_X/LINK_Y/LINK_XY/LINK_SCROLL are output
         // bindings — the plot *writes* them on interaction, so they don't need
         // to be pre-declared. Skip the undefined check for those.
-        const parentTail = node.parent?.kind === 'list' ? node.parent.parent : node.parent;
-        if (parentTail?.kind === 'tail') {
-            const tailKey = (parentTail.keyRaw ?? parentTail.key ?? '').toUpperCase().replace(/-/g, '_');
+        // Walk up through any intermediate list/expression nodes until we hit a
+        // tail, a plotCall, or the root — a 2-level hard-coded check was fragile
+        // against future grammar nesting (B-168).
+        let cur: PlotNode | undefined = node.parent;
+        while (cur && cur.kind !== 'tail' && cur.kind !== 'plotCall' && cur.kind !== 'script' && cur.kind !== 'composite') {
+            cur = cur.parent;
+        }
+        if (cur?.kind === 'tail') {
+            const tailKey = (cur.keyRaw ?? cur.key ?? '').toUpperCase().replace(/-/g, '_');
             if (tailKey.startsWith('LINK_')) return;
         }
         if (deps.variables[dollar.name] !== undefined) return;

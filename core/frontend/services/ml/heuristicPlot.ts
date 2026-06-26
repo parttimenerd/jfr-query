@@ -13,6 +13,19 @@ function distinctCount(sample: any[], colName: string): number | null {
     return seen.size;
 }
 
+// Names that suggest accumulative / part-of-a-whole data (safe to stack).
+// Matches anywhere in the column name (camelCase-aware via case-insensitive).
+const STACKED_NAMES_RE = /pct|percent|share|portion|fraction|alloc|heap|eden|survivor|metaspace|reserved|committed|used|free|available/i;
+
+/**
+ * Returns true when the numeric columns look like they sum to a meaningful
+ * whole (e.g. memory regions, allocation percentages) and stacking them makes
+ * sense. Returns false for independent metric series (cpu, gc, latency, …).
+ */
+function looksLikeStackedSeries(numerics: ColumnInfo[]): boolean {
+    return numerics.every(n => STACKED_NAMES_RE.test(n.name));
+}
+
 /**
  * Last-resort plot suggester. Produces a plot config string in the syntax that
  * the plot registry actually parses — see components/plots/*.{ts,tsx} for the
@@ -24,7 +37,8 @@ function distinctCount(sample: any[], colName: string): number | null {
  *   2. Single scalar (one numeric, nothing else) → TABLE().
  *   3. Two time-like cols (start*+end*) + 1+ categories → GANTT.
  *   4. 1 category + 2 numerics with min/max-like names → RANGE.
- *   5. Time + 3+ numerics → AREA_CHART (stacked).
+ *   5. Time + 3+ numerics with stacked-looking names → AREA_CHART (stacked).
+ *      Time + 3+ independent numeric series → LINE_CHART.
  *   6. Time + numeric(s) → LINE_CHART(x:time, y:[numerics]).
  *   7. Single category + numeric(s):
  *        cardinality ≤ 32 → BAR_CHART(x:cat, y:[numerics])
@@ -71,9 +85,10 @@ export function heuristicPlot(
         }
     }
 
-    // AREA_CHART — time + 3+ numerics → stacked area (signal is strong enough
-    // that LINE would be too noisy).
-    if (time && numerics.length >= 3) {
+    // AREA_CHART — time + 3+ numerics AND the column names suggest accumulative
+    // or stacked data (e.g., they all sum to a meaningful whole).
+    // For independent metric series (cpu, heap, gc, …) LINE_CHART is safer.
+    if (time && numerics.length >= 3 && looksLikeStackedSeries(numerics)) {
         const yCols = numerics.map(n => `"${n.name}"`).join(', ');
         return `AREA_CHART(x: "${time.name}", y: [${yCols}], layout: "stacked")`;
     }

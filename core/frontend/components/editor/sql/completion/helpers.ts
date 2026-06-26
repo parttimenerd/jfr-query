@@ -69,6 +69,6 @@ export function clauseAtOffset(root: Node, node: Node, offset: number): SqlClaus
 // Convenience for `Completion.validFor`. CodeMirror keeps the dropdown open
 // while typing matches the regex. Pick a generous default that covers
 // identifiers + quoted forms.
-export const VALID_FOR_IDENT = /^"?[\w-]*$/;
+export const VALID_FOR_IDENT = /^"?[\w]*$/;
 export const VALID_FOR_DOLLAR = /^\$\$?[\w.]*$/;
 export const VALID_FOR_AT = /^@[\w-]*$/;

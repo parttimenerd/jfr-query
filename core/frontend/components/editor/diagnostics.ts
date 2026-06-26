@@ -120,6 +120,9 @@ export function plotLinter(deps: PlotLinterDeps): Extension {
   return linter((view) => {
     const source = view.state.doc.toString();
     if (!source.trim()) return [];
+    // Capture the current cursor position so hasMidTypingHoleAncestor can
+    // distinguish active holes (cursor is here) from stale ones (B-169).
+    const cursorPos = view.state.selection.main.head;
     try {
       return lintPlot(source, {
         shapeRegistry: deps.getShapeRegistry(),
@@ -127,6 +130,7 @@ export function plotLinter(deps: PlotLinterDeps): Extension {
         notebookScope: deps.getNotebookScope(),
         sqlBlockCount: deps.getSqlBlockCount(),
         variables: deps.getVariables() ?? {},
+        cursorPos,
       });
     } catch (err) {
       if ((import.meta as any).env?.DEV) console.warn('[plotLinter] failed:', err);

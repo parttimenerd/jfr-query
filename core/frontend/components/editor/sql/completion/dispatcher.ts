@@ -101,7 +101,25 @@ export function dispatchCompletion(
     const tokenFrom = tokenMatch ? tokenMatch.from : cx.pos;
 
     const schema = deps.getSchema();
-    if (!schema && !token.startsWith('$')) return null;
+    // When schema is absent and this is not a $variable token, fall back to a
+    // minimal set of top-level SQL keywords so the editor is still helpful.
+    if (!schema && !token.startsWith('$')) {
+        const fallbackKws = [
+            'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'INNER JOIN',
+            'GROUP BY', 'ORDER BY', 'LIMIT', 'HAVING', 'WITH', 'UNION',
+            'INSERT INTO', 'UPDATE', 'DELETE FROM', 'CREATE TABLE', 'CREATE VIEW',
+        ];
+        const lc = token.toLowerCase();
+        const options = fallbackKws
+            .filter(kw => !lc || kw.toLowerCase().startsWith(lc))
+            .map(kw => ({ label: kw, detail: 'keyword', type: 'keyword' as const, apply: kw + ' ', boost: 0 }));
+        if (options.length === 0 && !cx.explicit) return null;
+        return {
+            from: tokenFrom,
+            options,
+            validFor: /^[A-Za-z ]*$/,
+        };
+    }
 
     const source = cx.state.doc.toString();
     const upTo = source.slice(0, cx.pos);

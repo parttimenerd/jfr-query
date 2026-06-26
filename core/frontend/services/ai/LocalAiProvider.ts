@@ -136,7 +136,12 @@ export class LocalAiProvider implements IAiProvider {
             if (response.status === 429 || response.status === 503) {
                 const backoff = 1000 * Math.pow(2, attempt);
                 lastErr = new Error(`Server returned ${response.status}; retrying in ${backoff}ms`);
-                await new Promise(r => setTimeout(r, backoff));
+                // B-105: honour AbortSignal during backoff wait so cancel requests aren't delayed.
+                await new Promise<void>((resolve, reject) => {
+                    const timer = setTimeout(resolve, backoff);
+                    signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('aborted', 'AbortError')); }, { once: true });
+                });
+                if (signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
                 continue;
             }
 
@@ -252,7 +257,7 @@ export class LocalAiProvider implements IAiProvider {
         if (tools.length > 0) body.tools = toolsToLocal(tools);
 
         const raw = await this.sendWithRetry(body, opts?.signal);
-        const calls = parseLocalToolCalls({ content: raw });
+        const calls = (tools && tools.length > 0) ? parseLocalToolCalls({ content: raw }) : [];
         if (raw && calls.length === 0) {
             yield { kind: 'text', delta: raw };
         } else if (raw) {

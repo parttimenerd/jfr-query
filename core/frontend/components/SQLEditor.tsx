@@ -173,8 +173,24 @@ const SQLEditor: React.FC<EditorProps> = ({
     const customMacros: MacroSchema[] =
       metadata?.macros?.map(m => ({ name: m.name, parameters: [], sql: m.sql, returnType: 'any' })) ?? [];
 
+    // B-096: inject cross-cell CREATE VIEW aliases from the notebook plot scope
+    // so SQL completions offer view names defined in other cells.
+    const crossCellViews: ViewSchema[] = [];
+    if (notebookPlotScope) {
+      for (const q of notebookPlotScope.queryRefs) {
+        if (q.alias) {
+          crossCellViews.push({
+            name: q.alias,
+            query: q.sql,
+            columns: q.columns?.map(c => ({ name: c.name, type: c.dataType ?? 'unknown' })) ?? [],
+            internal: false,
+          });
+        }
+      }
+    }
+
     const tables: TableSchema[] = dbSchema.tables;
-    const views: ViewSchema[] = [...dbSchema.views, ...customViews];
+    const views: ViewSchema[] = [...dbSchema.views, ...customViews, ...crossCellViews];
     const macros: MacroSchema[] = [...dbSchema.macros, ...customMacros];
 
     const tableMap = new Map<string, TableSchema>();
@@ -184,7 +200,7 @@ const SQLEditor: React.FC<EditorProps> = ({
 
     return { tables, views, macros, tableMap, viewMap };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dbSchema, metaViewsKey, metaMacrosKey]);
+  }, [dbSchema, metaViewsKey, metaMacrosKey, notebookPlotScope]);
 
   // Re-focus when focusTrigger increments.
   useEffect(() => {

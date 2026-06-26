@@ -38,7 +38,7 @@ export type ToolResult =
  * tool calls.
  */
 function isForbiddenSql(sql: string): boolean {
-    return /\$ai_providers\b/i.test(sql);
+    return /"?\$ai_providers"?/i.test(sql);
 }
 
 export async function executeTool(name: string, args: any, deps: ToolDeps): Promise<ToolResult> {

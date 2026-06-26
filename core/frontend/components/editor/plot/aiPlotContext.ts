@@ -53,6 +53,8 @@ export interface BuiltContext {
     estimatedTokens: number;
     /** How many prior plot cells survived truncation. */
     includedPriorCells: number;
+    /** True when at least one prior plot cell was dropped to fit the token budget. */
+    trimmed: boolean;
 }
 
 const CHARS_PER_TOKEN = 4;
@@ -62,15 +64,19 @@ const DEFAULT_MAX_PRIOR_CHARS = 1024;
 const AFTER_CURSOR_LIMIT = 200;
 
 const SYSTEM_PROMPT = `You are an inline completion model for a custom plot DSL inside a DuckDB analysis notebook.
-The DSL is a function call: NAME(param: value, ...) optionally followed by SQL-style suffix clauses.
-Clauses (uppercase canonical, lowercase accepted): TITLE "...", LEGEND AT RIGHT|LEFT|TOP|BOTTOM|NONE,
-PALETTE "...", AXIS-X DOMAIN [a,b] / LABEL "..." / TYPE LINEAR|LOG|TIME|BAND / FORMAT "...", AXIS-Y (same),
-TOOLTIP COLUMNS [...], LINK-X "$var", LINK-Y "$var", LINK-XY "$var", BRUSH "$var" MODE X|Y|XY,
-NAME "alias", LET name = expr, ON HOVER TOOLTIP "...", ON CLICK NAVIGATE "...".
-Plot names accept short aliases (line/bar/area/scatter/pie/box/hist/heatmap/flame/gantt/range/table).
-Return ONLY the next 1-80 tokens that would naturally continue at the cursor.
-Stop at the next logical boundary: closing ) or }, end-of-clause ',', end-of-statement (newline), or 80 tokens.
-No code fences, no narration, no leading/trailing whitespace beyond what continues the prefix.`;
+The DSL is: SHAPE(param: value, ...) followed by optional tail clauses.
+
+Supported tail clauses: TITLE "str", SUBTITLE "str", NAME "alias", WIDTH Npx, HEIGHT Npx,
+ON #N | viewName, LINK_X($s,$e), LINK-Y "$v", LINK-XY "$v", LINK-SCROLL "grp",
+BRUSH "$var" MODE X|Y|XY, LET name=val (reference as @name), DISABLED.
+Composites: ROW(a,b) / COL(a,b) / a+b (overlay).
+Shapes: LINE_CHART, BAR_CHART, AREA_CHART, SCATTER_PLOT, PIE_CHART, BOX_PLOT,
+HISTOGRAM, HEATMAP, FLAMEGRAPH, GANTT_CHART, RANGE, TABLE.
+Short aliases: line/bar/area/scatter/pie/box/hist/heatmap/flame/gantt/range/table.
+
+Return ONLY the next 1-80 tokens that naturally continue at the cursor.
+Stop at closing ) or }, end-of-clause ',', end-of-statement (newline), or 80 tokens.
+No code fences, no narration, no extra whitespace.`;
 
 function estimateTokens(s: string): number {
     return Math.ceil(s.length / CHARS_PER_TOKEN);
@@ -172,10 +178,30 @@ export function buildPlotAiContext(input: PlotAiContextInput): BuiltContext {
         return sections.join('\n\n');
     };
 
+    const originalPriorCount = priors.length;
     let user = buildUser();
     let total = estimateTokens(SYSTEM_PROMPT) + estimateTokens(user);
-    while (total > budget && priors.length > 0) {
-        priors.shift();
+    // B-186: O(n) instead of O(n²) — compute per-cell costs once, then drop
+    // oldest priors until the total fits the budget.
+    if (total > budget && priors.length > 0) {
+        const priorsBackup = priors;
+        priors = [];
+        const baseCost = estimateTokens(SYSTEM_PROMPT) + estimateTokens(buildUser());
+        const perPriorCost = priorsBackup.map(p =>
+            estimateTokens(`--- prior plot cell N ---\n${p}\n`)
+        );
+        // Keep as many recent priors as fit, starting from the newest.
+        let kept = 0;
+        let running = baseCost;
+        for (let i = perPriorCost.length - 1; i >= 0; i--) {
+            if (running + perPriorCost[i] <= budget) {
+                running += perPriorCost[i];
+                kept++;
+            } else {
+                break;
+            }
+        }
+        priors = kept > 0 ? priorsBackup.slice(priorsBackup.length - kept) : [];
         user = buildUser();
         total = estimateTokens(SYSTEM_PROMPT) + estimateTokens(user);
     }
@@ -185,5 +211,6 @@ export function buildPlotAiContext(input: PlotAiContextInput): BuiltContext {
         user,
         estimatedTokens: total,
         includedPriorCells: priors.length,
+        trimmed: priors.length < originalPriorCount,
     };
 }

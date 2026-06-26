@@ -17,7 +17,7 @@ import PlotRenderer from './PlotRenderer';
 import type { AiProviderType, ToolChatMessage } from '../services/ai/IAiProvider';
 import { TOOLS, type Tool } from '../services/ai/tools';
 import type { NotebookMutation, ToolDeps } from '../services/ai/tools/runtime';
-import { tokenizeCellContent } from '../utils/notebookParser';
+import { tokenizeCellContent, reconstructCellContent } from '../utils/notebookParser';
 import {
     listConfiguredProviders,
     defaultModelForProvider,
@@ -184,13 +184,22 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     }
                     if (op.kind === 'applyPlot') {
                         if (!onUpdateCell) return { ok: false, error: 'applyPlot not supported in this environment' };
+                        // Replace the plot block content within the cell (or append if absent).
+                        // Use segment-based reconstruction to target the exact Nth plot block
+                        // rather than a regex that may match the wrong one in multi-plot cells.
                         const cell = cellSnapshot.find(c => c.id === op.cellId);
                         if (!cell) return { ok: false, error: `cell not found: ${op.cellId}` };
                         const segs = tokenizeCellContent(cell.content);
-                        const hasPlot = segs.some(s => s.type === 'plot');
-                        const newContent = hasPlot
-                            ? cell.content.replace(/```plot[\s\S]*?```/, '```plot\n' + op.plotConfig + '\n```')
-                            : cell.content + '\n\n```plot\n' + op.plotConfig + '\n```\n';
+                        const plotIdx = segs.findIndex(s => s.type === 'plot');
+                        let newContent: string;
+                        if (plotIdx === -1) {
+                            newContent = cell.content + '\n\n```plot\n' + op.plotConfig + '\n```\n';
+                        } else {
+                            const updatedSegs = segs.map((s, i) =>
+                                i === plotIdx ? { ...s, content: '\n' + op.plotConfig + '\n' } : s
+                            );
+                            newContent = reconstructCellContent(updatedSegs);
+                        }
                         onUpdateCell(op.cellId, newContent);
                         return { ok: true, cellId: op.cellId };
                     }
@@ -217,6 +226,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         setMessages([]);
         setProposals([]);
         setApproveAllReads(false);
+        approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
         approvalResolvers.current.clear();
         setIsLoading(false);
     };
@@ -255,6 +265,8 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         proposalsRef.current = [];
         setApproveAllReads(false);
         approveAllReadsRef.current = false;
+        // Reject any pending resolvers before clearing so they don't leak or hang.
+        approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
         approvalResolvers.current.clear();
 
         const effectiveVisibility = resolveVisibility(useFullContext, chatVisibility);
