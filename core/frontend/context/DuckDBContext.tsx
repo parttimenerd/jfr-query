@@ -110,6 +110,21 @@ const runWasmQuery = async (conn: AsyncDuckDBConnection, sql: string): Promise<a
     await dbLock.acquire();
     try {
         const result = await conn.query(sql);
+
+        // Build a map of column name → decimal scale from the Arrow schema so
+        // that Decimal128 columns (e.g. the result of round()) are divided by
+        // 10^scale to restore the true floating-point value. Without this,
+        // round(x, 3) returns values 1000× too large because Arrow encodes the
+        // unscaled integer (e.g. 225000 for 225.000) and we were just reading
+        // arr[0] directly.
+        const decimalScales = new Map<string, number>();
+        for (const field of (result.schema?.fields ?? [])) {
+            const t = (field as any).type;
+            if (t && typeof t.scale === 'number' && typeof t.precision === 'number') {
+                decimalScales.set(field.name as string, t.scale);
+            }
+        }
+
         return result.toArray().map((row: any) => {
             const obj = row.toJSON();
             for (const k of Object.keys(obj)) {
@@ -128,10 +143,15 @@ const runWasmQuery = async (conn: AsyncDuckDBConnection, sql: string): Promise<a
                     // downstream formatters see a real number rather than
                     // "1234,0,0,0". Genuine LIST columns are left as plain
                     // arrays for Recharts.
+                    //
+                    // For Decimal columns we also apply the scale divisor so
+                    // that round(x, 3) returns 225.0 instead of 225000.
                     const arr = Array.from(v as unknown as ArrayLike<unknown>) as number[];
                     if (arr.length === 4 && arr[1] === 0 && arr[2] === 0 && arr[3] === 0
                         && typeof arr[0] === 'number') {
-                        obj[k] = arr[0];
+                        const raw = arr[0];
+                        const scale = decimalScales.get(k);
+                        obj[k] = (scale !== undefined && scale > 0) ? raw / Math.pow(10, scale) : raw;
                     } else {
                         obj[k] = arr;
                     }
