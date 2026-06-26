@@ -242,23 +242,28 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // separate (B-134): identEsc uses ISO double-quote doubling for the FROM
       // clause identifier; litEsc uses single-quote doubling for the SELECT
       // string literal that carries the table name back to JS.
-      const countsQuery = tables.map(t => {
-        const identEsc = t.name.replace(/"/g, '""');
-        const litEsc   = t.name.replace(/'/g, "''");
-        return `SELECT '${litEsc}' as name, COUNT(*) as count FROM "${identEsc}"`;
-      }).join(' UNION ALL ');
+      // B-052: batch into chunks of 20 so the UNION ALL stays manageable.
+      const CHUNK = 20;
       try {
-        const counts = tables.length > 0 ? await runQuery(countsQuery) : [];
-        if (Array.isArray(counts)) {
-            const countsMap = new Map<string, number>();
-            counts.forEach((row: any) => {
-                if (row && typeof row.name === 'string' && row.count !== null && row.count !== undefined) {
-                    const numCount = Number(row.count);
-                    if (!isNaN(numCount)) countsMap.set(row.name, numCount);
-                }
-            });
-            tables.forEach(t => { t.rowCount = countsMap.get(t.name); });
+        const countsMap = new Map<string, number>();
+        for (let i = 0; i < tables.length; i += CHUNK) {
+            const chunk = tables.slice(i, i + CHUNK);
+            const countsQuery = chunk.map(t => {
+                const identEsc = t.name.replace(/"/g, '""');
+                const litEsc   = t.name.replace(/'/g, "''");
+                return `SELECT '${litEsc}' as name, COUNT(*) as count FROM "${identEsc}"`;
+            }).join(' UNION ALL ');
+            const counts = await runQuery(countsQuery);
+            if (Array.isArray(counts)) {
+                counts.forEach((row: any) => {
+                    if (row && typeof row.name === 'string' && row.count !== null && row.count !== undefined) {
+                        const numCount = Number(row.count);
+                        if (!isNaN(numCount)) countsMap.set(row.name, numCount);
+                    }
+                });
+            }
         }
+        tables.forEach(t => { t.rowCount = countsMap.get(t.name); });
       } catch (e) {
           console.warn('Could not fetch row counts', e);
       }
