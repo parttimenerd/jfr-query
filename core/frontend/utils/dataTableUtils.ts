@@ -58,6 +58,8 @@ export const compareValues = (a: any, b: any, ascending: boolean): number => {
     if (a == null && b == null) return 0;
     if (a == null) return 1;
     if (b == null) return -1;
+    // B-114: use BigInt comparison to avoid precision loss for nanosecond timestamps.
+    if (typeof a === 'bigint' && typeof b === 'bigint') return (a < b ? -1 : a > b ? 1 : 0) * asc;
     if ((typeof a === 'number' || typeof a === 'bigint') &&
         (typeof b === 'number' || typeof b === 'bigint')) return (Number(a) - Number(b)) * asc;
     return String(a).localeCompare(String(b)) * asc;
