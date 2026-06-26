@@ -5,6 +5,7 @@ import type { NotebookCellData, NotebookMetadata } from '../types';
 import { tokenizeCellContent, reconstructCellContent, parseCellContent, CellSegment, MarkdownSection } from '../utils/notebookParser';
 import { cellHandle as computeCellHandle } from '../utils/cellHandle';
 import { useCellAliases } from '../context/CellAliasContext';
+import { DataContext } from '../context/DuckDBContext';
 import { useExecutor } from '../context/ExecutorContext';
 import TemplatedMarkdown from './TemplatedMarkdown';
 import { collectPrecedingCellVariables } from '../utils/crossCellVariables';
@@ -397,9 +398,47 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     }, []);
 
     const { registerAlias, unregisterCell } = useCellAliases();
+    const { aliases } = useCellAliases();
+    const { query: dbQuery } = useContext(DataContext);
+    // Phase 5 — DATASET clause results, keyed by `<plotIndex>:<datasetName>`.
+    const [datasetResults, setDatasetResults] = useState<Record<string, any[]>>({});
     const { awaitUpstream } = useExecutor();
     const cellIndex = useMemo(() => allCells.findIndex(c => c.id === cell.id), [allCells, cell.id]);
     const handleStr = useMemo(() => computeCellHandle(cell, Math.max(0, cellIndex)), [cell, cellIndex]);
+
+    // Phase 5 — fetch data for plots that declare a `DATASET <name>` clause.
+    // Re-runs whenever the parsed plot blocks change or any alias bumps version.
+    // Empty / unknown / non-identifier dataset names produce no entry; the
+    // renderer falls back to its existing query-result lookup.
+    const aliasVersionSum = useMemo(
+        () => Object.values(aliases).reduce((s, a) => s + a.version, 0),
+        [aliases],
+    );
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            const next: Record<string, any[]> = {};
+            for (let pi = 0; pi < parsed.plotBlocks.length; pi++) {
+                const config = parsed.plotBlocks[pi];
+                if (!config || !config.trim()) continue;
+                try {
+                    const expanded = expandPlotConstants(config);
+                    const firstConfig = expanded.expanded.split(/\n\s*\n/)[0].trim();
+                    const parsed2 = parsePlotCall(firstConfig);
+                    if (!parsed2.dataset) continue;
+                    const name = parsed2.dataset;
+                    if (!/^[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)?$/.test(name)) continue;
+                    const parts = name.split('.');
+                    const ident = parts.map(p => `"${p.replace(/"/g, '""')}"`).join('.');
+                    const rows = await dbQuery(`SELECT * FROM ${ident}`);
+                    if (cancelled) return;
+                    next[`${pi}:${name}`] = rows ?? [];
+                } catch { /* renderer falls back to query-result data */ }
+            }
+            if (!cancelled) setDatasetResults(next);
+        })();
+        return () => { cancelled = true; };
+    }, [parsed.plotBlocks, aliasVersionSum, dbQuery]);
 
     const handleRun = useCallback(async (sql: string, index: number) => {
         if (runTimersRef.current[index]) clearTimeout(runTimersRef.current[index]);
@@ -842,6 +881,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
                                 // Resolve ON clause for data lookup.
                                 let dataIndex = defaultSqlIndex;
+                                let datasetData: any[] | null = null;
                                 try {
                                     const configToCheck = (config && config.trim()) ? config : 'TABLE()';
                                     const expanded = expandPlotConstants(configToCheck);
@@ -853,9 +893,12 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                         if (!isNaN(asNum)) { dataIndex = asNum - 1; }
                                         else { const aliasIdx = parsed.queryAliases.indexOf(ref); if (aliasIdx >= 0) dataIndex = aliasIdx; }
                                     }
+                                    if (parsed2.dataset) {
+                                        datasetData = datasetResults[`${pi}:${parsed2.dataset}`] ?? null;
+                                    }
                                 } catch { /* fall back to defaultSqlIndex */ }
 
-                                const resolvedData = results[dataIndex];
+                                const resolvedData = datasetData ?? results[dataIndex];
                                 const resolvedSql = parsed.sqlBlocks[dataIndex] ?? parsed.sqlBlocks[defaultSqlIndex] ?? '';
                                 const plotDataCols = (resolvedData && resolvedData.length > 0) ? Object.keys(resolvedData[0]) : [];
                                 const plotAlias = parsed.plotAliases[pi] ?? null;

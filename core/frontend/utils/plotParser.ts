@@ -37,6 +37,12 @@ export interface ParsedPlotCall {
     brush?: BrushSpec;
     cellName?: string;
     let?: Record<string, string>;
+    /**
+     * Optional `DATASET <name>` clause: resolves `<name>` against the cell-alias
+     * registry. When set and no SQL block backs the plot, the renderer fetches
+     * `SELECT * FROM <name>` and uses the result as its data source.
+     */
+    dataset?: string;
     composite?: {
         direction: 'row' | 'col' | 'overlay';
         children: ParsedPlotCall[];
@@ -137,6 +143,8 @@ const CLAUSES: ClauseSpec[] = [
     { key: 'onClickNavigate', regex: /(?<!\w)ON\s+CLICK\s+NAVIGATE\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     { key: 'brush', regex: /(?<!\w)BRUSH\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)')\s+MODE\s+(X|Y|XY)\s*$/i, processor: (m): BrushSpec => ({ name: m[1] ?? m[2], mode: m[3].toLowerCase() as BrushSpec['mode'] }) },
     { key: 'cellName', regex: /(?<!\w)NAME\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
+    // DATASET <name> — references a cell alias view by name (bare or qualified).
+    { key: 'dataset', regex: /(?<!\w)DATASET\s+([A-Za-z_][\w.-]*)\s*$/i, processor: (m) => m[1] },
     // AXIS-X / AXIS-Y — sub-clauses (DOMAIN, LABEL, TYPE, FORMAT) merge into the same axisX/axisY object.
     { key: 'axisX', regex: new RegExp(`(?<!\\w)AXIS-X\\s+${AXIS_SUB.source}\\s*$`, 'i'), processor: buildAxisProcessor('axisX'), merge: true },
     { key: 'axisY', regex: new RegExp(`(?<!\\w)AXIS-Y\\s+${AXIS_SUB.source}\\s*$`, 'i'), processor: buildAxisProcessor('axisY'), merge: true },
