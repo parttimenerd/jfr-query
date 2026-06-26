@@ -38,7 +38,9 @@ export type ToolResult =
  * tool calls.
  */
 function isForbiddenSql(sql: string): boolean {
-    return /"?\$ai_providers"?/i.test(sql);
+    // Match $ai_providers whether bare or wrapped in any of SQL's identifier
+    // quoting flavors: "x" (ANSI), [x] (T-SQL), `x` (MySQL). Case-insensitive.
+    return /[\["`']?\$ai_providers[\]"`']?/i.test(sql);
 }
 
 export async function executeTool(name: string, args: any, deps: ToolDeps): Promise<ToolResult> {

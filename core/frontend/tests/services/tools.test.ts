@@ -93,6 +93,22 @@ describe('executeTool', () => {
         expect(deps.duckdbQuery).not.toHaveBeenCalled();
     });
 
+    it('runQuery rejects SQL with bracket-quoted [$ai_providers] (T-SQL) before executing', async () => {
+        const deps = makeDeps();
+        const res = await executeTool('runQuery', { sql: 'SELECT * FROM [$ai_providers]' }, deps);
+        expect(res.ok).toBe(false);
+        expect((res as { ok: false; error: string }).error).toBe('forbidden token');
+        expect(deps.duckdbQuery).not.toHaveBeenCalled();
+    });
+
+    it('runQuery rejects SQL with backtick-quoted `$ai_providers` (MySQL) before executing', async () => {
+        const deps = makeDeps();
+        const res = await executeTool('runQuery', { sql: 'SELECT * FROM `$ai_providers`' }, deps);
+        expect(res.ok).toBe(false);
+        expect((res as { ok: false; error: string }).error).toBe('forbidden token');
+        expect(deps.duckdbQuery).not.toHaveBeenCalled();
+    });
+
     it('mutate tools call requireApproval BEFORE executing the mutation', async () => {
         const order: string[] = [];
         const deps = makeDeps({
