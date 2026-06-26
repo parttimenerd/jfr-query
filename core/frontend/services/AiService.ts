@@ -424,6 +424,7 @@ GUIDELINES:
             feature?: AiFeature;
             providerOverride?: AiProviderType;
             modelOverride?: string;
+            customSystemPrompt?: string;
         },
     ): AsyncIterable<ToolStreamChunk> {
         if (!this.provider) throw new Error('AI Service not initialized.');
@@ -448,12 +449,22 @@ GUIDELINES:
         const model = opts.modelOverride && opts.modelOverride.trim().length > 0
             ? opts.modelOverride.trim()
             : this.getModelFor(tier, feature);
-        const systemInstruction = buildContextPayload(
+        // B-102: prepend role + tool-use guidance to the schema/data payload so
+        // the model knows it is operating in a notebook and has tools available.
+        const schemaPayload = buildContextPayload(
             opts.visibility,
             schema,
             opts.recentResult ?? null,
             this.settings?.visibilityFullRowLimit,
         );
+        const customPrompt = (opts.customSystemPrompt ?? this.settings?.customSystemPrompt ?? '').trim();
+        const systemInstruction =
+            `You are an expert DuckDB and data visualization assistant for analyzing Java Flight Recorder (JFR) data inside a notebook.\n` +
+            `You have access to tools: use runQuery / describeTable / sampleRows to explore data, ` +
+            `and addCell / editCell / applyPlot to modify the notebook. ` +
+            `Always explore the data first before suggesting changes. Be concise.\n\n` +
+            `${schemaPayload}` +
+            (customPrompt ? `\n\nADDITIONAL INSTRUCTIONS FROM USER:\n${customPrompt}` : '');
 
         const convo: ToolChatMessage[] = [...messages];
         const MAX_ROUNDS = 10;

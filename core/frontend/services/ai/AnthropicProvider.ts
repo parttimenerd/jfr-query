@@ -198,6 +198,7 @@ export class AnthropicProvider implements IAiProvider {
             model,
             max_tokens: 4096,
             messages: wireMessages,
+            stream: true,
         };
         if (opts?.systemInstruction) body.system = opts.systemInstruction;
         if (tools.length > 0) body.tools = toolsToAnthropic(tools);
@@ -218,12 +219,52 @@ export class AnthropicProvider implements IAiProvider {
             const errorBody = await response.json().catch(() => ({}));
             throw new Error(errorBody?.error?.message || `Anthropic tool call failed with status ${response.status}`);
         }
-        const data = await response.json();
-        const content = data.content;
-        const text = extractAnthropicText(content);
-        if (text) yield { kind: 'text', delta: text };
-        for (const call of parseAnthropicToolCalls(content)) {
-            yield { kind: 'tool_call', id: call.id, name: call.name, args: call.args };
+
+        // B-103: real SSE streaming using Anthropic's event stream format.
+        // Tool use blocks start with content_block_start (type=tool_use, id, name)
+        // and stream argument JSON via content_block_delta (type=input_json_delta).
+        const toolBlocks = new Map<number, { id: string; name: string; args: string }>();
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let leftover = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = leftover + decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+            leftover = lines.pop() ?? '';
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const payload = line.slice(6).trim();
+                let parsed: any;
+                try { parsed = JSON.parse(payload); } catch { continue; }
+                switch (parsed.type) {
+                    case 'content_block_start': {
+                        const blk = parsed.content_block;
+                        if (blk?.type === 'tool_use') {
+                            toolBlocks.set(parsed.index ?? 0, { id: blk.id ?? '', name: blk.name ?? '', args: '' });
+                        }
+                        break;
+                    }
+                    case 'content_block_delta': {
+                        const d = parsed.delta;
+                        if (d?.type === 'text_delta' && d.text) {
+                            yield { kind: 'text', delta: String(d.text) };
+                        } else if (d?.type === 'input_json_delta' && d.partial_json) {
+                            const buf = toolBlocks.get(parsed.index ?? 0);
+                            if (buf) buf.args += d.partial_json;
+                        }
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            }
+        }
+        for (const buf of toolBlocks.values()) {
+            let args: any = {};
+            try { args = JSON.parse(buf.args); } catch { args = { _raw: buf.args }; }
+            yield { kind: 'tool_call', id: buf.id, name: buf.name, args };
         }
     }
 

@@ -174,6 +174,7 @@ export class OpenAiProvider implements IAiProvider {
         const body: any = {
             model,
             messages: wireMessages,
+            stream: true,
         };
         if (tools.length > 0) body.tools = toolsToOpenAi(tools);
 
@@ -192,13 +193,46 @@ export class OpenAiProvider implements IAiProvider {
             const errorBody = await response.json().catch(() => ({}));
             throw new Error(errorBody?.error?.message || `OpenAI tool call failed with status ${response.status}`);
         }
-        const result = await response.json();
-        const message = result.choices?.[0]?.message;
-        if (message?.content) {
-            yield { kind: 'text', delta: String(message.content) };
+
+        // B-103: real SSE streaming — accumulate partial tool-call argument chunks
+        // per tool_call index, then emit complete tool_call chunks at stream end.
+        const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let leftover = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = leftover + decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+            leftover = lines.pop() ?? '';
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const payload = line.slice(6).trim();
+                if (payload === '[DONE]') break;
+                let parsed: any;
+                try { parsed = JSON.parse(payload); } catch { continue; }
+                const delta = parsed.choices?.[0]?.delta;
+                if (!delta) continue;
+                if (delta.content) yield { kind: 'text', delta: String(delta.content) };
+                if (Array.isArray(delta.tool_calls)) {
+                    for (const tc of delta.tool_calls) {
+                        const idx: number = tc.index ?? 0;
+                        if (!toolCallBuffers.has(idx)) {
+                            toolCallBuffers.set(idx, { id: tc.id ?? '', name: tc.function?.name ?? '', args: '' });
+                        }
+                        const buf = toolCallBuffers.get(idx)!;
+                        if (tc.id) buf.id = tc.id;
+                        if (tc.function?.name) buf.name = tc.function.name;
+                        if (tc.function?.arguments) buf.args += tc.function.arguments;
+                    }
+                }
+            }
         }
-        for (const call of parseOpenAiToolCalls(message)) {
-            yield { kind: 'tool_call', id: call.id, name: call.name, args: call.args };
+        for (const buf of toolCallBuffers.values()) {
+            let args: any = {};
+            try { args = JSON.parse(buf.args); } catch { args = { _raw: buf.args }; }
+            yield { kind: 'tool_call', id: buf.id, name: buf.name, args };
         }
     }
 

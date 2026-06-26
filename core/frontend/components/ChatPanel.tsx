@@ -365,6 +365,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     feature: 'chat',
                     providerOverride: chatProvider,
                     modelOverride: chatModel,
+                    customSystemPrompt: metadata?.customSystemPrompt,
                 },
             );
 

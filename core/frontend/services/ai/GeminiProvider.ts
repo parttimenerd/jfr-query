@@ -216,17 +216,29 @@ export class GeminiProvider implements IAiProvider {
         if (opts?.systemInstruction) config.systemInstruction = opts.systemInstruction;
         if (tools.length > 0) config.tools = [toolsToGemini(tools)];
 
-        const response: GenerateContentResponse = await this.handleApiCall(() =>
-            this.ai.models.generateContent({
+        // B-103: use generateContentStream for real token-by-token streaming.
+        // Accumulate tool-call parts across chunks, emit complete tool_calls at end.
+        const toolCallAcc = new Map<string, { id: string; name: string; args: any }>();
+        const stream = await this.handleApiCall(() =>
+            this.ai.models.generateContentStream({
                 model,
                 contents,
                 config,
             })
         );
-        const parts: any[] = (response as any)?.candidates?.[0]?.content?.parts ?? [];
-        const textParts = parts.filter(p => typeof p?.text === 'string').map(p => p.text).join('');
-        if (textParts) yield { kind: 'text', delta: textParts };
-        for (const call of parseGeminiToolCalls(parts)) {
+        for await (const chunk of stream) {
+            const parts: any[] = (chunk as any)?.candidates?.[0]?.content?.parts ?? [];
+            for (const p of parts) {
+                if (typeof p?.text === 'string' && p.text) {
+                    yield { kind: 'text', delta: p.text };
+                }
+                if (p?.functionCall) {
+                    const id = p.functionCall.id ?? `fc_${toolCallAcc.size}`;
+                    toolCallAcc.set(id, { id, name: p.functionCall.name ?? '', args: p.functionCall.args ?? {} });
+                }
+            }
+        }
+        for (const call of toolCallAcc.values()) {
             yield { kind: 'tool_call', id: call.id, name: call.name, args: call.args };
         }
     }
