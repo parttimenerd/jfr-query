@@ -26,7 +26,7 @@ export interface ToolDeps {
 export type NotebookMutation =
     | { kind: 'add'; type: 'sql' | 'plot' | 'markdown'; content: string; afterCellId?: string }
     | { kind: 'edit'; cellId: string; content: string }
-    | { kind: 'applyPlot'; cellId: string; plotConfig: string };
+    | { kind: 'applyPlot'; cellId: string; plotConfig: string; plotBlockIndex?: number };
 
 export type ToolResult =
     | { ok: true; data: any }
@@ -106,6 +106,7 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                     kind: 'applyPlot',
                     cellId: args.cellId,
                     plotConfig: args.plotConfig,
+                    plotBlockIndex: typeof args.plotBlockIndex === 'number' ? args.plotBlockIndex : 0,
                 });
                 if (res.ok) return { ok: true, data: { cellId: args.cellId } };
                 return { ok: false, error: (res as { ok: false; error: string }).error };

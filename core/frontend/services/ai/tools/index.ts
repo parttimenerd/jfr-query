@@ -104,12 +104,13 @@ export const TOOLS: Tool[] = [
     {
         name: 'applyPlot',
         kind: 'mutate',
-        description: 'Set a plot configuration on an existing plot cell.',
+        description: 'Set a plot configuration on an existing plot cell. Use plotBlockIndex (0-based) to target a specific plot block when the cell has multiple plot blocks.',
         inputSchema: {
             type: 'object',
             properties: {
                 cellId: { type: 'string' },
                 plotConfig: { type: 'string' },
+                plotBlockIndex: { type: 'number', description: '0-based index of the plot block to replace within the cell. Defaults to 0 (first plot block).' },
             },
             required: ['cellId', 'plotConfig'],
         },

@@ -168,6 +168,28 @@ describe('executeTool', () => {
         if (res.ok) expect(res.data.plots).toHaveLength(1);
     });
 
+    it('applyPlot forwards plotBlockIndex 0 by default when not supplied', async () => {
+        const deps = makeDeps();
+        await executeTool('applyPlot', { cellId: 'c1', plotConfig: 'LINE_CHART(x: t, y: v)' }, deps);
+        expect(deps.mutateCells).toHaveBeenCalledWith({
+            kind: 'applyPlot',
+            cellId: 'c1',
+            plotConfig: 'LINE_CHART(x: t, y: v)',
+            plotBlockIndex: 0,
+        });
+    });
+
+    it('applyPlot forwards explicit plotBlockIndex to mutateCells', async () => {
+        const deps = makeDeps();
+        await executeTool('applyPlot', { cellId: 'c1', plotConfig: 'BAR_CHART(x: cat, y: [])', plotBlockIndex: 2 }, deps);
+        expect(deps.mutateCells).toHaveBeenCalledWith({
+            kind: 'applyPlot',
+            cellId: 'c1',
+            plotConfig: 'BAR_CHART(x: cat, y: [])',
+            plotBlockIndex: 2,
+        });
+    });
+
     it('unknown tool returns a structured error', async () => {
         const deps = makeDeps();
         const res = await executeTool('nonExistent', {}, deps);
