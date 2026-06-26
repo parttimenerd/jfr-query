@@ -1,5 +1,5 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import type { NotebookCellData, NotebookMetadata } from '../types';
 import NotebookCell from './NotebookCell';
 import SettingsPanel from './SettingsPanel';
@@ -22,21 +22,29 @@ interface NotebookProps {
     onDeleteCell: (cellId: string) => void;
     onDeleteQueryBlock: (cellId: string, index: number) => void;
     onAddCell: () => void;
+    /** C7 — tool-runtime addCell forwarded to InlineChat for AI-driven cell creation. */
+    onAddCellFromTool?: (mut: { type: 'sql' | 'plot' | 'markdown'; content: string; afterCellId?: string }) => string | undefined;
     onMoveCell: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
     onSuggestPlot: (sql: string, customPromptOverride?: string) => Promise<string | null>;
     onFormatCode: (code: string, type: 'sql' | 'plot') => Promise<string | null>;
     onRunPreviewQuery: (queryToRun: string) => Promise<any[]>;
     onMetadataChange: (newMetadata: NotebookMetadata) => Promise<void>;
+    presenterMode?: boolean;
 }
 
 const Notebook: React.FC<NotebookProps> = (props) => {
     const {
         notebookMarkdown, setNotebookMarkdown, isMarkdownMode, isAutoRunEnabled, cells, metadata, results,
-        collapseTrigger, allCollapsed, isAiFeatureActive, onRunQuery, onUpdateCell, onDeleteCell, onDeleteQueryBlock, 
-        onAddCell, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange
+        collapseTrigger, allCollapsed, isAiFeatureActive, onRunQuery, onUpdateCell, onDeleteCell, onDeleteQueryBlock,
+        onAddCell, onAddCellFromTool, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange,
+        presenterMode = false
     } = props;
 
     const settingsPanelRef = useRef<{ focusVariable: (name: string) => void }>(null);
+
+    // Stable empty array — avoids creating a new reference on every render for
+    // cells that have no results yet, which would cause useEffect deps to fire.
+    const emptyResults = useMemo(() => [], []);
 
     const handleGlobalVariableClick = (variableName: string) => {
         settingsPanelRef.current?.focusVariable(variableName);
@@ -72,13 +80,15 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     cell={cell}
                     allCells={cells}
                     metadata={metadata}
-                    results={results[cell.id] || []}
+                    results={results[cell.id] ?? emptyResults}
                     isAutoRunEnabled={isAutoRunEnabled}
                     collapseTrigger={collapseTrigger}
                     allCollapsed={allCollapsed}
                     isAiFeatureActive={isAiFeatureActive}
                     onRunQuery={onRunQuery}
                     onUpdate={(updatedContent) => onUpdateCell(cell.id, updatedContent)}
+                    onUpdateCell={onUpdateCell}
+                    onAddCellFromTool={onAddCellFromTool}
                     onDelete={() => onDeleteCell(cell.id)}
                     onDeleteQueryBlock={(index) => onDeleteQueryBlock(cell.id, index)}
                     onMoveCell={onMoveCell}
@@ -87,6 +97,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     onRunPreviewQuery={onRunPreviewQuery}
                     onGlobalVariableClick={handleGlobalVariableClick}
                     onMetadataChange={onMetadataChange}
+                    presenterMode={presenterMode}
                 />
             ))}
             <div className="flex justify-center py-4">

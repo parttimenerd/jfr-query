@@ -1,13 +1,20 @@
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect, useContext } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { NotebookCellData, NotebookMetadata } from '../types';
 import { tokenizeCellContent, reconstructCellContent, parseCellContent, CellSegment, MarkdownSection } from '../utils/notebookParser';
+import { cellHandle as computeCellHandle } from '../utils/cellHandle';
+import { useCellAliases } from '../context/CellAliasContext';
+import { collectPrecedingCellVariables } from '../utils/crossCellVariables';
 import { substituteVariables } from '../utils/variableSubstitution';
-import { buildSmartTemplate } from '../utils/plotUtils';
 import { parsePlotCall } from '../utils/plotParser';
 import { expandPlotConstants } from '../utils/plotConstants';
-import { plotRegistry } from './plots/plotRegistry';
+import { cleanDuckDBError, heuristicTip, parseCandidateBindings } from '../utils/sqlErrorMessage';
+import { aiService } from '../services/AiService';
+import { NotebookPlotScope } from './editor/plot/notebookPlotScope';
+import { SettingsContext } from '../context/SettingsContext';
+import PlotSuggestionChip from './PlotSuggestionChip';
+import { suggestPlot as runSuggestPlot, cancel as cancelSuggestPlot, type PlotSuggestionResult } from '../services/plotSuggestion';
 
 import SQLEditor from './SQLEditor';
 import PlotConfigEditor from './PlotConfigEditor';
@@ -16,7 +23,6 @@ import InlineChat from './InlineChat';
 import PlotHelpModal from './PlotHelpModal';
 import StaticCodeHighlighter from './StaticCodeHighlighter';
 import { TrashIcon } from './icons/TrashIcon';
-import { AiFormatIcon } from './icons/AiFormatIcon';
 import { ChevronUpIcon } from './icons/ChevronUpIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { CodeBracketIcon } from './icons/CodeBracketIcon';
@@ -43,6 +49,11 @@ interface NotebookCellProps {
     isAiFeatureActive: boolean;
     onRunQuery: (cellId: string, sql: string, queryIndex: number, allVariables: Record<string, string>) => void;
     onUpdate: (updatedContent: string) => void;
+    /** C7 — tool-runtime callbacks forwarded into InlineChat so AI tool calls
+     * can mutate other notebook cells. Optional — InlineChat falls back to
+     * legacy single-turn behavior when omitted. */
+    onUpdateCell?: (cellId: string, content: string) => void;
+    onAddCellFromTool?: (mut: { type: 'sql' | 'plot' | 'markdown'; content: string; afterCellId?: string }) => string | undefined;
     onDelete: () => void;
     onDeleteQueryBlock: (index: number) => void;
     onMoveCell: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
@@ -51,6 +62,7 @@ interface NotebookCellProps {
     onRunPreviewQuery: (queryToRun: string) => Promise<any[]>;
     onGlobalVariableClick: (variableName: string) => void;
     onMetadataChange: (newMetadata: NotebookMetadata) => Promise<void>;
+    presenterMode?: boolean;
 }
 
 function debounce<T extends (...args: any[]) => any>(func: T, delay: number): (...args: Parameters<T>) => void {
@@ -108,7 +120,7 @@ const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: stri
 };
 
 
-const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, onRunQuery, onUpdate, onDelete, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick }) => {
+const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, onRunQuery, onUpdate, onUpdateCell, onAddCellFromTool, onDelete, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false }) => {
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [editingTitleValue, setEditingTitleValue] = useState('');
     const [isRawEditing, setIsRawEditing] = useState(false);
@@ -125,6 +137,12 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const [copiedSql, setCopiedSql] = useState<number | null>(null);
     const variableInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
     const [focusVarName, setFocusVarName] = useState<string | null>(null);
+    const { settings } = useContext(SettingsContext);
+    const [plotSuggestions, setPlotSuggestions] = useState<Record<number, PlotSuggestionResult | null>>({});
+    const [dismissedSuggestions, setDismissedSuggestions] = useState<Record<number, boolean>>({});
+    const [aiErrorSuggestions, setAiErrorSuggestions] = useState<Record<number, { text: string; code: string | null } | null>>({});
+    const [sparkleLoading, setSparkleLoading] = useState<Record<number, boolean>>({});
+    const [editingBlockName, setEditingBlockName] = useState<{ type: 'sql' | 'plot'; idx: number; value: string } | null>(null);
     
     const [segments, setSegments] = useState(() => tokenizeCellContent(cell.content));
     const parsed = useMemo(() => parseCellContent(segments), [segments]);
@@ -176,8 +194,41 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     }, [segments, handleSegmentsUpdate]);
 
     const title = parsed.title || cell.title;
-    
-    const allVariables = useMemo(() => ({ ...metadata.variables, ...parsed.variables }), [metadata.variables, parsed.variables]);
+
+    const precedingCellVariables = useMemo(
+        () => collectPrecedingCellVariables(allCells, cell.id),
+        [allCells, cell.id],
+    );
+
+    const allVariables = useMemo(
+        () => ({ ...metadata.variables, ...precedingCellVariables, ...parsed.variables }),
+        [metadata.variables, precedingCellVariables, parsed.variables],
+    );
+
+    // P7 — Notebook-wide plot scope (named plots, query refs, variables, brushes).
+    // The scope is rebuilt only when the cells array reference changes or the
+    // current cell id changes; the internal `NotebookPlotScope` cache short-
+    // circuits identical inputs.
+    const plotScopeRef = useRef(new NotebookPlotScope());
+    const plotScopeView = useMemo(
+        () => plotScopeRef.current.build({
+            cells: allCells,
+            currentCellId: cell.id,
+            workspaceVariables: allVariables,
+        }),
+        [allCells, cell.id, allVariables],
+    );
+    // Aggregate SQL block count across all cells (fallback used by `#N` hints
+    // when the rich scope is unavailable).
+    const totalSqlBlockCount = useMemo(() => {
+        // Cheap pass: count fenced ```sql blocks per cell content.
+        let n = 0;
+        for (const c of allCells) {
+            const m = c.content.match(/```sql\b/gi);
+            if (m) n += m.length;
+        }
+        return n;
+    }, [allCells]);
 
     // Stable per-block error specs keyed on the error string. Without memoization,
     // building these inline at render time creates a fresh object every parent
@@ -204,14 +255,79 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             // so DuckDB's LINE N is offset by 1 from what the editor shows.
             const aliasOffset = parsed.queryAliases[i] ? 1 : 0;
             return {
-                message: msg,
+                message: cleanDuckDBError(msg),
                 line: lineM ? Number(lineM[1]) + aliasOffset : undefined,
                 column,
             };
         });
-        // Depend on the raw error strings, not the results array identity.
+        // Depend on a stable serialization of the error strings to avoid
+        // variable-length spread in the deps array (rules-of-hooks violation).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [parsed.sqlBlocks.length, parsed.queryAliases, ...parsed.sqlBlocks.map((_, i) => results[i]?.[0]?.error)]);
+    }, [parsed.sqlBlocks.length, parsed.queryAliases, results]);
+
+    // Auto-plot suggestion: when an SQL block completes with non-empty rows AND
+    // doesn't yet have a plot block, ask the configured plot model to suggest one.
+    useEffect(() => {
+        if (!settings.autoPlotSuggestionEnabled) return;
+        parsed.sqlBlocks.forEach((sql, i) => {
+            const rows = results[i];
+            if (!rows || rows.length === 0) return;
+            if (rows[0]?.error) return;
+            if (parsed.plotBlocks[i] && parsed.plotBlocks[i].trim()) return;
+            if (dismissedSuggestions[i]) return;
+            if (plotSuggestions[i] !== undefined) return;
+            const columns = Object.keys(rows[0] ?? {});
+            if (columns.length === 0) return;
+            // Mark inflight to avoid re-firing every render.
+            setPlotSuggestions(prev => ({ ...prev, [i]: null }));
+            runSuggestPlot({ sql, columns, rowCount: rows.length }, { settings })
+                .then(result => setPlotSuggestions(prev => ({ ...prev, [i]: result })))
+                .catch(() => setPlotSuggestions(prev => ({ ...prev, [i]: null })));
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [settings.autoPlotSuggestionEnabled, parsed.sqlBlocks.length, parsed.plotBlocks.join(' '), results]);
+
+    useEffect(() => () => cancelSuggestPlot(), []);
+
+    // Fetch AI-generated fix suggestions for SQL errors when AI is active.
+    // Resets on results change (new run) or AI feature toggle.
+    useEffect(() => {
+        if (!isAiFeatureActive || !aiService.isInitialized()) {
+            setAiErrorSuggestions({});
+            return;
+        }
+        errSpecs.forEach((spec, i) => {
+            if (!spec) {
+                setAiErrorSuggestions(prev => { if (prev[i] !== undefined) { const n = { ...prev }; delete n[i]; return n; } return prev; });
+                return;
+            }
+            // Skip if we already have a suggestion for this error text.
+            if (aiErrorSuggestions[i] !== undefined) return;
+            const sql = parsed.sqlBlocks[i] ?? '';
+            const errorText = spec.message;
+            // Mark inflight.
+            setAiErrorSuggestions(prev => ({ ...prev, [i]: null }));
+            aiService.getAiInlineSuggestion(
+                `Fix this SQL error: ${errorText}`,
+                'sql',
+                sql,
+                '',
+                undefined,
+                undefined,
+                undefined,
+                'no-data',
+                null,
+                'basic',
+            ).then(res => {
+                // Store the explanation text and the fixed code (if any) for "Apply" button.
+                const text = res.text ?? '';
+                setAiErrorSuggestions(prev => ({ ...prev, [i]: text.trim() ? { text: text.trim(), code: res.code ?? null } : null }));
+            }).catch(() => {
+                setAiErrorSuggestions(prev => ({ ...prev, [i]: null }));
+            });
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAiFeatureActive, errSpecs]);
 
     // For each cell-local variable, compute which SQL/plot blocks reference it.
     const variableUsage = useMemo<Record<string, string[]>>(() => {
@@ -278,16 +394,40 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         });
     }, []);
 
+    const { registerAlias, unregisterCell } = useCellAliases();
+    const cellIndex = useMemo(() => allCells.findIndex(c => c.id === cell.id), [allCells, cell.id]);
+    const handleStr = useMemo(() => computeCellHandle(cell, Math.max(0, cellIndex)), [cell, cellIndex]);
+
     const handleRun = useCallback(async (sql: string, index: number) => {
         if (runTimersRef.current[index]) clearTimeout(runTimersRef.current[index]);
         setPendingRunStates(s => ({ ...s, [index]: false }));
         setRunningStates(s => ({ ...s, [index]: true }));
         try {
             await onRunQuery(cell.id, sql, index, allVariables);
+            // After a successful run, register the alias as a TEMP VIEW so
+            // other cells (and templating expressions) can reference it. We
+            // need the post-substitution SQL because aliases bind variables.
+            const substitutedSql = substituteVariables(sql, allVariables);
+            const aliasName = parsed.queryAliases[index] ?? null;
+            const materialized = !!parsed.queryAliasMaterialized?.[index];
+            // Fire-and-forget: don't block the UI, and don't surface alias
+            // registration errors into the cell's result panel (the result
+            // panel still shows the actual query output via onRunQuery).
+            registerAlias({
+                cellId: cell.id,
+                cellHandle: handleStr,
+                cellIndex: Math.max(0, cellIndex),
+                sqlIndex: index,
+                alias: aliasName,
+                sql: substitutedSql,
+                materialized,
+            }).catch(() => { /* swallow */ });
         } finally {
             setRunningStates(s => ({ ...s, [index]: false }));
         }
-    }, [onRunQuery, cell.id, allVariables]);
+    }, [onRunQuery, cell.id, allVariables, parsed.queryAliases, parsed.queryAliasMaterialized, registerAlias, handleStr, cellIndex]);
+
+    useEffect(() => () => { unregisterCell(cell.id).catch(() => {}); }, [cell.id, unregisterCell]);
 
     useEffect(() => {
         const prevSqls = prevSqlBlocksRef.current;
@@ -417,8 +557,37 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     }, [debouncedOnUpdate]);
 
     const handleSuggest = async (sql: string, index: number) => { const s = await onSuggestPlot(sql, metadata.customSystemPrompt); if (s) handlePlotChange(s, index); };
+    const handleSparkle = async (plotIdx: number, sqlIdx: number) => {
+        const sqlContent = parsed.sqlBlocks[sqlIdx] ?? '';
+        if (!sqlContent.trim() || sparkleLoading[plotIdx]) return;
+        setSparkleLoading(p => ({ ...p, [plotIdx]: true }));
+        try {
+            const suggestion = await onSuggestPlot(sqlContent, metadata.customSystemPrompt);
+            if (suggestion) handlePlotChange(suggestion, sqlIdx);
+        } finally {
+            setSparkleLoading(p => ({ ...p, [plotIdx]: false }));
+        }
+    };
+
+    const handleDeletePlot = useCallback((segmentIndex: number) => {
+        const newSegments = [...segments];
+        newSegments.splice(segmentIndex, 1);
+        handleSegmentsUpdate(newSegments);
+    }, [segments, handleSegmentsUpdate]);
+
+    const handleDeleteMarkdown = useCallback((segmentIndex: number) => {
+        const newSegments = [...segments];
+        newSegments.splice(segmentIndex, 1);
+        handleSegmentsUpdate(newSegments);
+    }, [segments, handleSegmentsUpdate]);
     const handleFormat = async (code: string, type: 'sql' | 'plot', index: number) => { const f = await onFormatCode(code, type); if (f) { if(type==='sql') handleSqlChange(f, index); else handlePlotChange(f, index); } };
-    const handleAddSql = () => handleSegmentsUpdate([...segments, {type: 'markdown', content: '\n\n'}, {type: 'sql', content: '\nSELECT * FROM ... LIMIT 10;\n'}, {type: 'markdown', content: '\n\n'}, {type: 'plot', content: '\nTABLE()\n'}]);
+    const handleAddSql = () => handleSegmentsUpdate([...segments, {type: 'markdown', content: '\n\n'}, {type: 'sql', content: '\nSELECT 1;\n'}]);
+    const handleInsertAt = useCallback((segmentIndex: number, type: 'sql' | 'plot' | 'markdown') => {
+        const content = type === 'sql' ? '\nSELECT 1;\n' : type === 'plot' ? '\nTABLE()\n' : '\n\n';
+        const newSegments = [...segments];
+        newSegments.splice(segmentIndex, 0, { type, content });
+        handleSegmentsUpdate(newSegments);
+    }, [segments, handleSegmentsUpdate]);
     const handleAddPlot = () => { /* No-op, plot change creates plot blocks */ };
     const handleTitleBlur = (newTitle: string) => { setIsEditingTitle(false); if (newTitle.trim() && newTitle !== title) { const introSegmentIndex = segments.findIndex(s=>s.type==='markdown'); if(introSegmentIndex!==-1){const newSegments=[...segments]; const intro=newSegments[introSegmentIndex]; const newContent=intro.content.replace(/^(?:#|##|###)\s*(.*)/,`## ${newTitle}`); newSegments[introSegmentIndex]={...intro, content:newContent}; handleSegmentsUpdate(newSegments);} }};
     const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { handleTitleBlur(editingTitleValue); } else if (e.key === 'Escape') { setIsEditingTitle(false); } };
@@ -428,6 +597,22 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const handleApplyCode = (newCode: string, type: 'sql' | 'plot', index: number) => { if(type==='sql') handleSqlChange(newCode, index); else handlePlotChange(newCode, index); setActiveChat(null); };
     const handleApplyPlotFix = (newConfig: string, index: number) => handlePlotChange(newConfig, index);
     const handleAddVariable = () => { let newVarName = '$newVar'; const currentVars = parsed.variables || {}; let i=1; while(currentVars[newVarName]) newVarName = `$newVar${i++}`; handleCellVariableChange({ ...currentVars, [newVarName]:''}); setFocusVarName(newVarName); };
+
+    const handleCommitBlockName = useCallback((type: 'sql' | 'plot', idx: number, newName: string) => {
+        setEditingBlockName(null);
+        const name = newName.trim().replace(/\n/g, ' ');
+        let blockIdx = -1;
+        const newSegments = segments.map(seg => {
+            if (seg.type !== type) return seg;
+            blockIdx++;
+            if (blockIdx !== idx) return seg;
+            // Remove existing alias comment line at the top, then prepend new one.
+            const withoutAlias = seg.content.replace(/^\s*--\s*[^\n]*\n/, '');
+            const newContent = name ? `-- ${name}\n${withoutAlias}` : withoutAlias;
+            return { ...seg, content: newContent };
+        });
+        handleSegmentsUpdate(newSegments);
+    }, [segments, handleSegmentsUpdate]);
     const handleDeleteVariable = (k:string) => { const v = {...(parsed.variables||{})}; delete v[k]; handleCellVariableChange(v);};
     const handleVariableChange = (o:string,n:string,v:string) => {
         const vars:Record<string,string>={};
@@ -484,183 +669,234 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     : null
                 }
                 
+                {/* Unified segment rendering: SQL editors, plot editors, inline markdown, and inline plot results */}
                 <div className="space-y-2">
-                    {parsed.sqlBlocks.map((sql, i) => {
-                        const errSpec = errSpecs[i] ?? null;
-                        const alias = parsed.queryAliases[i];
-                        const sqlTitle = alias ? `Query ${i+1} · ${alias}` : `Query ${i+1}`;
-                        return (
-                        <CollapsibleBlock key={`sql-${i}`} title={sqlTitle} preview={sql.replace(/\s+/g,' ').substring(0,60)} isCollapsed={!!collapsedStates[`sql-${i}`]} onToggle={()=>toggleCollapse(`sql-${i}`)} statusIndicator={runningStates[i]?(<div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"/>):pendingRunStates[i]?(<div className="w-4 h-4 text-gray-500 animate-pulse">...</div>):null} controls={<><button onClick={()=>handleRun(sql,i)} disabled={runningStates[i]||pendingRunStates[i]} className="p-1.5 rounded-md disabled:opacity-50"><PlayIcon className="w-4 h-4 text-green-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSuggest(sql,i)} className="p-1.5 rounded-md"><SparklesIcon className="w-4 h-4 text-yellow-400"/></button><button onClick={()=>handleFormat(sql,'sql',i)} className="p-1.5 rounded-md"><AiFormatIcon className="w-4 h-4 text-cyan-400"/></button><button onClick={()=>setActiveChat(p=>p===`sql-${i}`?null:`sql-${i}`)} className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>handleCopySql(sql,i)} title="Copy SQL" className="p-1.5 rounded-md">{copiedSql===i ? <CheckCircleIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>onDeleteQueryBlock(i)} className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
-                            <SQLEditor value={sql} onChange={handleSqlChange} index={i} variables={allVariables} onVariableClick={handleVariableClick} metadata={metadata} onRun={() => handleRun(sql, i)} error={errSpec} />
-                            {errSpec && (
-                                <div className="mt-1 px-2 py-1.5 text-xs text-red-300 bg-red-900/25 border-l-2 border-red-500/60 font-mono whitespace-pre-wrap rounded-r animate-fade-in" title={errSpec.line ? `LINE ${errSpec.line}${errSpec.column ? `:${errSpec.column}` : ''}` : undefined}>
-                                    {errSpec.message}
-                                </div>
-                            )}
-                            {isAiFeatureActive && activeChat===`sql-${i}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="sql" targetValue={sql} cellContext={cell} allCells={allCells} onApplyCode={c=>handleApplyCode(c,'sql',i)} onClose={()=>setActiveChat(null)}/>}
-                        </CollapsibleBlock>
-                        );
-                    })}
-                    <div className="flex justify-end gap-3">
-                        <button onClick={handleAddVariable} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add variable</button>
-                        <button onClick={handleAddSql} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add SQL</button>
-                    </div>
-                </div>
-                {parsed.sqlBlocks.length > 0 && <div className="space-y-2">
-                    {parsed.plotBlocks.map((config,i)=>{
-                        const plotDataCols = (results[i] && results[i].length > 0) ? Object.keys(results[i][0]) : [];
-                        const sourceAlias = parsed.queryAliases[i];
-                        const plotTitle = sourceAlias ? `Plot ${i+1} · ${sourceAlias}` : `Plot ${i+1}`;
-                        return (<CollapsibleBlock key={`plot-${i}`} title={plotTitle} preview={config.replace(/\s+/g,' ').substring(0,60)} isCollapsed={collapsedStates[`plot-${i}`] !== undefined ? !!collapsedStates[`plot-${i}`] : !config.trim()} onToggle={()=>toggleCollapse(`plot-${i}`)} controls={<><button onClick={()=>handleFormat(config,'plot',i)} className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <button onClick={()=>setActiveChat(p=>p===`plot-${i}`?null:`plot-${i}`)} className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button>}</>}>
-                        {plotDataCols.length > 0 && (
-                            <div className="px-2 pt-1.5 pb-0.5 flex flex-wrap gap-1 items-center border-b border-gray-700/50">
-                                <span className="text-[10px] text-gray-600 mr-0.5">columns:</span>
-                                {plotDataCols.slice(0, 12).map(col => (
-                                    <button
-                                        key={col}
-                                        onClick={() => navigator.clipboard.writeText(`"${col}"`).catch(() => {})}
-                                        title={`Copy "${col}" to clipboard`}
-                                        className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/60 hover:bg-cyan-800/50 text-gray-400 hover:text-cyan-300 font-mono transition-colors"
-                                    >{col}</button>
-                                ))}
-                                {plotDataCols.length > 12 && <span className="text-[10px] text-gray-600">+{plotDataCols.length - 12} more</span>}
-                                <span className="text-[10px] text-gray-600 ml-1">— click to copy</span>
-                            </div>
-                        )}
-                        <PlotConfigEditor value={config} onChange={handlePlotChange} index={i} data={results[i]} variables={allVariables} onVariableClick={handleVariableClick}/>
-                    <div id={`plot-error-portal-${cell.id}-${i}`} />
-                    {isAiFeatureActive && activeChat===`plot-${i}`&&<InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="plot" targetValue={config} cellContext={cell} allCells={allCells} sql={parsed.sqlBlocks[i]} data={results[i]} onApplyCode={c=>handleApplyCode(c,'plot',i)} onClose={()=>setActiveChat(null)} onMetadataChange={onMetadataChange} />}</CollapsibleBlock>);
-                    })}
-                    <div className="flex flex-wrap justify-end items-center gap-x-3 gap-y-1">
-                        <span className="text-[10px] text-gray-600 mr-auto">switch to:</span>
-                        {Object.values(plotRegistry).map(p => (
-                            <button key={p.name} onClick={() => {
-                                const idx = Math.max(0, parsed.plotBlocks.length - 1);
-                                const data = results?.[idx] ?? [];
-                                const cols = data.length > 0 ? Object.keys(data[0]) : [];
-                                const sample = data[0] ?? null;
-                                const tpl = buildSmartTemplate(p.name, cols, sample) ?? p.template;
-                                handlePlotChange(tpl, idx);
-                            }} title={p.description} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/40 hover:bg-gray-600/60 text-gray-500 hover:text-gray-300 font-mono transition-colors">{p.name}</button>
-                        ))}
-                        <button onClick={()=>setIsPlotHelpModalOpen(true)} className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded ml-1" title="Plot syntax reference"><InformationCircleIcon className="w-3 h-3"/> help</button>
-                    </div>
-                </div>}
-                {results && results.some(r => r) && <div>
-                    <div className="rounded-md border border-gray-700/60 overflow-hidden">
-                        {(() => {
-                                // Build one panel per plot block. Each plot resolves its data
-                                // via its ON clause (1-based index or alias), falling back to
-                                // the plot's own position index.
-                                const panels: React.ReactNode[] = [];
-                                // Use plotBlocksWithSqlIndex so cells with more plots than SQL blocks
-                                // (ON clause cross-references) render all plot panels correctly.
-                                const plotsToRender: Array<{ config: string | undefined; defaultIndex: number }> =
-                                    parsed.plotBlocksWithSqlIndex.length > 0
-                                        ? parsed.plotBlocksWithSqlIndex.map(p => ({ config: p.config, defaultIndex: p.sqlIndex }))
-                                        : results.map((_, i) => ({ config: undefined, defaultIndex: i }));
-                                plotsToRender.forEach(({ config: plotConfig, defaultIndex }, i) => {
-                                    // undefined means "no PLOT block at all" — skip.
-                                    // Empty string ("") is a PLOT block that is blank — render TABLE() by default.
-                                    if (plotConfig === undefined) return;
-                                    const configToRender = (plotConfig && plotConfig.trim()) ? plotConfig : 'TABLE()';
+                    {(() => {
+                        const items: React.ReactNode[] = [];
+                        let sqlIdx = -1;
+                        let plotIdx = -1;
 
-                                    // Resolve ON clause
-                                    let dataIndex = defaultIndex;
-                                    try {
-                                        const expanded = expandPlotConstants(configToRender);
-                                        const firstConfig = expanded.expanded.split(/\n\s*\n/)[0].trim();
-                                        const parsed2 = parsePlotCall(firstConfig);
-                                        if (parsed2.on && parsed2.on.length > 0) {
-                                            const ref = parsed2.on[0];
-                                            const asNum = parseInt(ref, 10);
-                                            if (!isNaN(asNum)) {
-                                                dataIndex = asNum - 1; // 1-based → 0-based
-                                            } else {
-                                                const aliasIdx = parsed.queryAliases.indexOf(ref);
-                                                if (aliasIdx >= 0) dataIndex = aliasIdx;
-                                            }
-                                        }
-                                    } catch { /* ignore, fall back to defaultIndex */ }
+                        segments.forEach((seg, segIdx) => {
+                            // Render inline markdown segments (prose inserted between code blocks).
+                            // Skip the leading intro markdown (handled by MarkdownSectionEditor above)
+                            // and trailing conclusion markdown, but render middle prose blocks.
+                            if (seg.type === 'markdown') {
+                                const isLeadingMarkdown = segments.slice(0, segIdx).every(s => s.type === 'markdown' || s.type === 'variables');
+                                const isTrailingMarkdown = segments.slice(segIdx + 1).every(s => s.type === 'markdown');
+                            if (!isLeadingMarkdown && !isTrailingMarkdown) {
+                                    items.push(
+                                        <div key={`prose-${segIdx}`} className="relative group/prose rounded-md border border-gray-700/40 px-3 py-2 min-h-[2.5rem]">
+                                            {seg.content.trim() ? (
+                                                <div className="prose prose-invert max-w-none text-sm">
+                                                    <ReactMarkdown>{seg.content}</ReactMarkdown>
+                                                </div>
+                                            ) : (
+                                                <p className="text-gray-600 text-sm italic cursor-pointer hover:text-gray-400" onClick={() => {
+                                                    const newSegments = [...segments];
+                                                    newSegments[segIdx] = { ...seg, content: '\n' };
+                                                    handleSegmentsUpdate(newSegments);
+                                                }}>Empty prose block — click to edit</p>
+                                            )}
+                                            {!presenterMode && (
+                                                <button onClick={() => handleDeleteMarkdown(segIdx)} className="absolute top-1 right-1 opacity-0 group-hover/prose:opacity-100 p-1 rounded hover:bg-red-600/30 transition-all" title="Delete prose block">
+                                                    <TrashIcon className="w-3.5 h-3.5 text-gray-500 hover:text-red-400"/>
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                }
+                                return;
+                            }
 
-                                    const resolvedData = results[dataIndex];
-                                    const resolvedSql = parsed.sqlBlocks[dataIndex] ?? parsed.sqlBlocks[i] ?? '';
-                                    if (!resolvedData) return; // query not yet run
+                            if (seg.type === 'variables') return;
 
-                                    panels.push(
-                                        <div key={`r-${i}`} className="group/result border-t border-gray-700/60 first:border-t-0 flex flex-col relative" style={{ height: `${resultHeight}px` }}>
-                                            <button
-                                                title="Download as PNG"
-                                                className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10"
-                                                onClick={() => {
-                                                    const container = document.getElementById(`result-container-${cell.id}-${i}`);
-                                                    if (!container) return;
-                                                    const svg = container.querySelector('svg');
-                                                    if (svg) {
-                                                        const serializer = new XMLSerializer();
-                                                        const svgStr = serializer.serializeToString(svg);
-                                                        const canvas = document.createElement('canvas');
-                                                        const rect = svg.getBoundingClientRect();
-                                                        const scale = window.devicePixelRatio || 1;
-                                                        canvas.width = rect.width * scale;
-                                                        canvas.height = rect.height * scale;
-                                                        const ctx = canvas.getContext('2d')!;
-                                                        ctx.scale(scale, scale);
-                                                        const img = new Image();
-                                                        const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-                                                        const url = URL.createObjectURL(blob);
-                                                        img.onload = () => {
-                                                            ctx.fillStyle = '#111827';
-                                                            ctx.fillRect(0, 0, rect.width, rect.height);
-                                                            ctx.drawImage(img, 0, 0, rect.width, rect.height);
-                                                            URL.revokeObjectURL(url);
-                                                            canvas.toBlob(b => {
-                                                                if (!b) return;
-                                                                const a = document.createElement('a');
-                                                                a.href = URL.createObjectURL(b);
-                                                                a.download = `plot-${cell.id}-${i + 1}.png`;
-                                                                a.click();
-                                                                URL.revokeObjectURL(a.href);
-                                                            }, 'image/png');
-                                                        };
-                                                        img.src = url;
-                                                    }
-                                                }}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                                </svg>
+                            // Hover insert bar before this segment (between items).
+                            if (!presenterMode && items.length > 0) {
+                                const insertIdx = segIdx;
+                                items.push(
+                                    <div key={`ins-${segIdx}`} className="group/insert relative h-2 flex items-center">
+                                        <div className="absolute inset-x-0 h-px bg-gray-700/40 group-hover/insert:bg-cyan-600/40 transition-colors" />
+                                        <div className="absolute left-1/2 -translate-x-1/2 opacity-0 group-hover/insert:opacity-100 transition-opacity flex gap-1 bg-gray-900 px-1 py-0.5 rounded border border-gray-700/60 z-10">
+                                            <button onClick={() => handleInsertAt(insertIdx, 'sql')} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/80 hover:bg-cyan-800/60 text-gray-400 hover:text-cyan-300 transition-colors">+ SQL</button>
+                                            <button onClick={() => handleInsertAt(insertIdx, 'plot')} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/80 hover:bg-purple-800/60 text-gray-400 hover:text-purple-300 transition-colors">+ Plot</button>
+                                            <button onClick={() => handleInsertAt(insertIdx, 'markdown')} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/80 hover:bg-gray-600/60 text-gray-400 hover:text-gray-200 transition-colors">+ Prose</button>
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            if (seg.type === 'sql') {
+                                sqlIdx++;
+                                const i = sqlIdx;
+                                const sql = parsed.sqlBlocks[i] ?? '';
+                                const errSpec = errSpecs[i] ?? null;
+                                const alias = parsed.queryAliases[i];
+                                const isEditingSqlName = editingBlockName?.type === 'sql' && editingBlockName.idx === i;
+                                const sqlTitleNode = isEditingSqlName ? (
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        value={editingBlockName.value}
+                                        onChange={e => setEditingBlockName({ type: 'sql', idx: i, value: e.target.value })}
+                                        onBlur={() => handleCommitBlockName('sql', i, editingBlockName.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') handleCommitBlockName('sql', i, editingBlockName.value); else if (e.key === 'Escape') setEditingBlockName(null); e.stopPropagation(); }}
+                                        onClick={e => e.stopPropagation()}
+                                        className="bg-gray-800 border border-cyan-500 rounded px-1.5 py-0.5 text-sm font-medium text-gray-100 w-40 focus:outline-none"
+                                        placeholder="Query name…"
+                                    />
+                                ) : (
+                                    <span
+                                        className="cursor-pointer hover:text-cyan-300 transition-colors"
+                                        title="Click to rename"
+                                        onClick={e => { e.stopPropagation(); setEditingBlockName({ type: 'sql', idx: i, value: alias ?? '' }); }}
+                                    >{alias ? `Query ${i+1} · ${alias}` : `Query ${i+1}`}</span>
+                                );
+                                if (!presenterMode) {
+                                    items.push(
+                                        <CollapsibleBlock key={`sql-${i}`} title={sqlTitleNode} preview={sql.replace(/\s+/g,' ').substring(0,60)} isCollapsed={!!collapsedStates[`sql-${i}`]} onToggle={()=>toggleCollapse(`sql-${i}`)} statusIndicator={runningStates[i]?(<div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"/>):pendingRunStates[i]?(<div className="w-4 h-4 text-gray-500 animate-pulse">...</div>):null} controls={<><button onClick={()=>handleRun(sql,i)} disabled={runningStates[i]||pendingRunStates[i]} className="p-1.5 rounded-md disabled:opacity-50"><PlayIcon className="w-4 h-4 text-green-400"/></button><button onClick={()=>handleFormat(sql,'sql',i)} title="Format SQL" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSuggest(sql,i)} className="p-1.5 rounded-md"><SparklesIcon className="w-4 h-4 text-yellow-400"/></button><button onClick={()=>setActiveChat(p=>p===`sql-${i}`?null:`sql-${i}`)} className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>handleCopySql(sql,i)} title="Copy SQL" className="p-1.5 rounded-md">{copiedSql===i ? <CheckCircleIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>onDeleteQueryBlock(i)} className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
+                                            <SQLEditor value={sql} onChange={handleSqlChange} index={i} variables={allVariables} onVariableClick={handleVariableClick} metadata={metadata} onRun={() => handleRun(sql, i)} error={errSpec} />
+                                            {errSpec && (
+                                                <div className="mt-1 px-2 py-1.5 text-xs text-red-300 bg-red-900/25 border-l-2 border-red-500/60 font-mono whitespace-pre-wrap rounded-r animate-fade-in" title={errSpec.line ? `LINE ${errSpec.line}${errSpec.column ? `:${errSpec.column}` : ''}` : undefined}>
+                                                    {errSpec.message}
+                                                    {(() => {
+                                                        const tip = heuristicTip(errSpec.message);
+                                                        const candidates = parseCandidateBindings(errSpec.message);
+                                                        const aiSugg = aiErrorSuggestions[i];
+                                                        if (!tip && !candidates.length && aiSugg === undefined) return null;
+                                                        const badTokenM =
+                                                            errSpec.message.match(/[Cc]olumn\s+"([^"]+)"/) ||
+                                                            errSpec.message.match(/[Tt]able with name\s+(\S+)\s+does not exist/i) ||
+                                                            errSpec.message.match(/[Vv]iew with name\s+(\S+)\s+does not exist/i);
+                                                        const badToken = badTokenM ? badTokenM[1] : null;
+                                                        return (
+                                                            <div className="mt-1 pt-1 border-t border-red-500/30 font-sans not-italic space-y-1">
+                                                                {tip && <p className="text-yellow-300/80">{tip}</p>}
+                                                                {candidates.length > 0 && (
+                                                                    <div className="flex flex-wrap items-center gap-1">
+                                                                        <span className="text-gray-500">Did you mean:</span>
+                                                                        {candidates.map(col => (
+                                                                            <button key={col} onClick={() => { if (badToken) { const escaped = badToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); const fixed = sql.replace(new RegExp(`(?<![\\w"])${escaped}(?![\\w"])`, 'g'), `"${col}"`); handleSqlChange(fixed, i); } else { navigator.clipboard.writeText(`"${col}"`).catch(() => {}); } }} className="px-1.5 py-0.5 text-[10px] bg-gray-700/80 hover:bg-cyan-800/60 text-cyan-300 rounded border border-gray-600/60 hover:border-cyan-600/50 font-mono transition-colors" title={badToken ? `Replace "${badToken}" with "${col}"` : `Copy "${col}" to clipboard`}>{col}</button>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                                {isAiFeatureActive && aiErrorSuggestions[i] === null && <p className="text-gray-500 animate-pulse">AI suggestion loading…</p>}
+                                                                {isAiFeatureActive && aiErrorSuggestions[i] && (
+                                                                    <div className="flex items-start gap-2">
+                                                                        <p className="flex-1 text-cyan-300/80"><span className="text-gray-500">AI: </span>{aiErrorSuggestions[i]!.text}</p>
+                                                                        {aiErrorSuggestions[i]!.code && <button onClick={() => handleSqlChange(aiErrorSuggestions[i]!.code!, i)} className="flex-shrink-0 px-2 py-0.5 text-[10px] bg-cyan-800/60 hover:bg-cyan-700/80 text-cyan-200 rounded border border-cyan-600/50 transition-colors" title="Apply AI-suggested fix">Apply</button>}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            )}
+                                            {isAiFeatureActive && activeChat===`sql-${i}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="sql" targetValue={sql} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} onApplyCode={c=>handleApplyCode(c,'sql',i)} onClose={()=>setActiveChat(null)}/>}
+                                            {settings.autoPlotSuggestionEnabled && plotSuggestions[i] && !dismissedSuggestions[i] && (!parsed.plotBlocks[i] || !parsed.plotBlocks[i].trim()) && (
+                                                <PlotSuggestionChip suggestion={plotSuggestions[i]!} onApply={config => { handlePlotChange(config, i); setDismissedSuggestions(p => ({ ...p, [i]: true })); }} onTryAnother={() => { const rows = results[i] ?? []; const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : []; setPlotSuggestions(prev => ({ ...prev, [i]: null })); runSuggestPlot({ sql, columns, rowCount: rows.length, signal: undefined }, { settings }).then(result => setPlotSuggestions(prev => ({ ...prev, [i]: result }))).catch(() => setPlotSuggestions(prev => ({ ...prev, [i]: null }))); }} onDismiss={() => setDismissedSuggestions(p => ({ ...p, [i]: true }))}/>
+                                            )}
+                                        </CollapsibleBlock>
+                                    );
+                                }
+                            } else if (seg.type === 'plot') {
+                                plotIdx++;
+                                const plotInfo = parsed.plotBlocksWithSqlIndex[plotIdx];
+                                if (!plotInfo) return;
+                                const pi = plotIdx;
+                                const config = plotInfo.config;
+                                const defaultSqlIndex = plotInfo.sqlIndex;
+                                // Capture segIdx for delete handler closure.
+                                const capturedSegIdx = segIdx;
+
+                                // Resolve ON clause for data lookup.
+                                let dataIndex = defaultSqlIndex;
+                                try {
+                                    const configToCheck = (config && config.trim()) ? config : 'TABLE()';
+                                    const expanded = expandPlotConstants(configToCheck);
+                                    const firstConfig = expanded.expanded.split(/\n\s*\n/)[0].trim();
+                                    const parsed2 = parsePlotCall(firstConfig);
+                                    if (parsed2.on && parsed2.on.length > 0) {
+                                        const ref = parsed2.on[0];
+                                        const asNum = parseInt(ref, 10);
+                                        if (!isNaN(asNum)) { dataIndex = asNum - 1; }
+                                        else { const aliasIdx = parsed.queryAliases.indexOf(ref); if (aliasIdx >= 0) dataIndex = aliasIdx; }
+                                    }
+                                } catch { /* fall back to defaultSqlIndex */ }
+
+                                const resolvedData = results[dataIndex];
+                                const resolvedSql = parsed.sqlBlocks[dataIndex] ?? parsed.sqlBlocks[defaultSqlIndex] ?? '';
+                                const plotDataCols = (resolvedData && resolvedData.length > 0) ? Object.keys(resolvedData[0]) : [];
+                                const plotAlias = parsed.plotAliases[pi] ?? null;
+                                const isEditingPlotName = editingBlockName?.type === 'plot' && editingBlockName.idx === pi;
+                                const plotTitleNode = isEditingPlotName ? (
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        value={editingBlockName.value}
+                                        onChange={e => setEditingBlockName({ type: 'plot', idx: pi, value: e.target.value })}
+                                        onBlur={() => handleCommitBlockName('plot', pi, editingBlockName.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') handleCommitBlockName('plot', pi, editingBlockName.value); else if (e.key === 'Escape') setEditingBlockName(null); e.stopPropagation(); }}
+                                        onClick={e => e.stopPropagation()}
+                                        className="bg-gray-800 border border-cyan-500 rounded px-1.5 py-0.5 text-sm font-medium text-gray-100 w-40 focus:outline-none"
+                                        placeholder="Plot name…"
+                                    />
+                                ) : (
+                                    <span
+                                        className="cursor-pointer hover:text-cyan-300 transition-colors"
+                                        title="Click to rename"
+                                        onClick={e => { e.stopPropagation(); setEditingBlockName({ type: 'plot', idx: pi, value: plotAlias ?? '' }); }}
+                                    >{plotAlias ? `Plot ${pi+1} · ${plotAlias}` : `Plot ${pi+1}`}</span>
+                                );
+                                const configToRender = (config && config.trim()) ? config : 'TABLE()';
+
+                                if (!presenterMode) {
+                                    items.push(
+                                        <CollapsibleBlock key={`plot-${pi}`} title={plotTitleNode} preview={config.replace(/\s+/g,' ').substring(0,60)} isCollapsed={collapsedStates[`plot-${pi}`] !== undefined ? !!collapsedStates[`plot-${pi}`] : !config.trim()} onToggle={()=>toggleCollapse(`plot-${pi}`)} controls={<><button onClick={()=>handleFormat(config,'plot',defaultSqlIndex)} title="Format plot" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSparkle(pi, defaultSqlIndex)} disabled={sparkleLoading[pi]} title="Generate plot config with AI" className="p-1.5 rounded-md disabled:opacity-50">{sparkleLoading[pi] ? <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"/> : <SparklesIcon className="w-4 h-4 text-yellow-400"/>}</button><button onClick={()=>setActiveChat(p=>p===`plot-${pi}`?null:`plot-${pi}`)} className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>setIsPlotHelpModalOpen(true)} title="Plot syntax reference" className="p-1.5 rounded-md"><InformationCircleIcon className="w-4 h-4 text-gray-500"/></button><button onClick={()=>handleDeletePlot(capturedSegIdx)} title="Delete plot block" className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
+                                            {plotDataCols.length > 0 && (
+                                                <div className="px-2 pt-1.5 pb-0.5 flex flex-wrap gap-1 items-center border-b border-gray-700/50">
+                                                    <span className="text-[10px] text-gray-600 mr-0.5">columns:</span>
+                                                    {plotDataCols.slice(0, 12).map(col => (
+                                                        <button key={col} onClick={() => navigator.clipboard.writeText(`"${col}"`).catch(() => {})} title={`Copy "${col}" to clipboard`} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/60 hover:bg-cyan-800/50 text-gray-400 hover:text-cyan-300 font-mono transition-colors">{col}</button>
+                                                    ))}
+                                                    {plotDataCols.length > 12 && <span className="text-[10px] text-gray-600">+{plotDataCols.length - 12} more</span>}
+                                                    <span className="text-[10px] text-gray-600 ml-1">— click to copy</span>
+                                                </div>
+                                            )}
+                                            <PlotConfigEditor value={config} onChange={handlePlotChange} index={defaultSqlIndex} data={results[defaultSqlIndex]} variables={allVariables} onVariableClick={handleVariableClick} cellSql={parsed.sqlBlocks[defaultSqlIndex] ?? null} notebookPlotScope={plotScopeView} currentCellId={cell.id} sqlBlockCount={totalSqlBlockCount}/>
+                                            {isAiFeatureActive && activeChat===`plot-${pi}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="plot" targetValue={config} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} sql={parsed.sqlBlocks[defaultSqlIndex]} data={results[defaultSqlIndex]} onApplyCode={c=>handleApplyCode(c,'plot',defaultSqlIndex)} onClose={()=>setActiveChat(null)} onMetadataChange={onMetadataChange} />}
+                                        </CollapsibleBlock>
+                                    );
+                                }
+
+                                // Inline plot result directly below its editor (or always in presenter mode).
+                                if (resolvedData) {
+                                    items.push(
+                                        <div key={`result-${pi}`} className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative" style={{ height: `${resultHeight}px` }}>
+                                            <button title="Download as PNG" className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-${pi}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-${pi + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                             </button>
-                                            <div id={`result-container-${cell.id}-${i}`} className="flex-grow overflow-auto">
-                                                <PlotRenderer
-                                                    config={configToRender}
-                                                    data={resolvedData}
-                                                    sql={resolvedSql}
-                                                    cellContext={{...cell, content: reconstructCellContent(segments)}}
-                                                    onApplyFix={c => handleApplyPlotFix(c, i)}
-                                                    isAiFeatureActive={isAiFeatureActive}
-                                                    metadata={metadata}
-                                                    onMetadataChange={onMetadataChange}
-                                                    onCellVariableChange={handleCellVariableChange}
-                                                    allVariables={allVariables}
-                                                    errorPortalId={`plot-error-portal-${cell.id}-${i}`}
-                                                />
+                                            <div id={`result-container-${cell.id}-${pi}`} className="flex-grow overflow-auto">
+                                                <PlotRenderer config={configToRender} data={resolvedData} sql={resolvedSql} cellContext={{...cell, content: reconstructCellContent(segments)}} onApplyFix={c => handleApplyPlotFix(c, defaultSqlIndex)} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange} onCellVariableChange={handleCellVariableChange} allVariables={allVariables} />
                                             </div>
                                         </div>
                                     );
-                                });
-                                return panels;
-                            })()}
-                    </div>
+                                }
+                            }
+                        });
+
+                        return items;
+                    })()}
+                    {!presenterMode && (
+                        <div className="flex justify-end gap-3">
+                            <button onClick={handleAddVariable} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add variable</button>
+                            <button onClick={handleAddSql} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add SQL</button>
+                        </div>
+                    )}
                     {/* Drag handle to resize result panels */}
                     {results && results.some(r => r) && (
-                        <div
-                            onMouseDown={handleResultResizeStart}
-                            className="h-1.5 mt-0.5 cursor-row-resize rounded-full bg-gray-700 hover:bg-cyan-600/50 transition-colors"
-                            title="Drag to resize results"
-                        />
+                        <div onMouseDown={handleResultResizeStart} className="h-1.5 mt-0.5 cursor-row-resize rounded-full bg-gray-700 hover:bg-cyan-600/50 transition-colors" title="Drag to resize results" />
                     )}
-                </div>}
+                </div>
                  <MarkdownSectionEditor
                     section={parsed.conclusion} 
                     defaultTitle="Conclusion" 

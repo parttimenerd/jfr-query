@@ -10,6 +10,7 @@ interface ScatterPlotConfig {
   x: string;
   y: string;
   size?: string;
+  color?: string;
   category?: string;
 }
 
@@ -17,7 +18,8 @@ const params: PlotParameter[] = [
     { name: 'x', type: 'column', required: true, description: 'Numeric column for the X-axis.' },
     { name: 'y', type: 'column', required: true, description: 'Numeric column for the Y-axis.' },
     { name: 'size', type: 'column', description: 'Numeric column to determine the size of the points.' },
-    { name: 'category', type: 'column', description: 'Column to categorize and color the points.' },
+    { name: 'color', type: 'column', description: 'Column whose distinct values determine point color (one series per value).' },
+    { name: 'category', type: 'column', aliasFor: 'color', deprecated: true, description: 'Deprecated alias for "color".' },
 ];
 
 const parseConfig = createConfigParser<ScatterPlotConfig>(buildParserSpec(params));
@@ -27,17 +29,18 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
   const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
 
   const series = React.useMemo(() => {
-    if (!config.category) {
+    const groupCol = config.color;
+    if (!groupCol) {
       return [{ name: config.y, data }];
     }
     const groups = data.reduce((acc, row) => {
-      const category = row[config.category];
+      const category = row[groupCol];
       if (!acc[category]) acc[category] = [];
       acc[category].push(row);
       return acc;
     }, {} as Record<string, any[]>);
     return Object.keys(groups).map(name => ({ name, data: groups[name] }));
-  }, [data, config.category, config.y]);
+  }, [data, config.color, config.y]);
   
   const sizeDomain = React.useMemo(() => {
     if (!config.size || data.length === 0) return [10, 100];
@@ -57,7 +60,7 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
           <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={numberFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} />
           {config.size && <ZAxis type="number" dataKey={config.size} name={config.size} range={[10, 200]} domain={sizeDomain} />}
           <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} formatter={numberFormatter} />
-          <Legend wrapperStyle={{ fontSize: "12px" }} />
+          <Legend wrapperStyle={{ fontSize: "12px" }} verticalAlign="bottom" align="center" />
           {series.map((s, i) => (
             <Scatter key={s.name} name={s.name} data={s.data} fill={`hsl(${i * 60}, 70%, 50%)`} isAnimationActive={isAnimationActive} animationDuration={animationDuration} />
           ))}
@@ -91,9 +94,9 @@ export const scatterPlot: PlotRegistration<ScatterPlotConfig> = {
             { reclaimedBytes: 512, pauseDuration: 10 },
         ]
     },
-    { 
-        description: 'A bubble chart where point size represents young generation size and color represents the GC cause.', 
-        code: 'SCATTER_PLOT(x: "reclaimedBytes", y: "pauseDuration", size: "youngGenSize", category: "gcCause")',
+    {
+        description: 'A bubble chart where point size represents young generation size and color represents the GC cause.',
+        code: 'SCATTER_PLOT(x: "reclaimedBytes", y: "pauseDuration", size: "youngGenSize", color: "gcCause")',
         sampleData: [
             { reclaimedBytes: 1024, pauseDuration: 15, youngGenSize: 512, gcCause: 'Allocation Failure' },
             { reclaimedBytes: 2048, pauseDuration: 25, youngGenSize: 1024, gcCause: 'Allocation Failure' },

@@ -1,7 +1,47 @@
 import { GoogleGenAI, Content, Type, GenerateContentResponse } from "@google/genai";
-import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata } from './IAiProvider';
+import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata, ToolChatMessage, ToolStreamChunk, StreamChatWithToolsOpts } from './IAiProvider';
+import type { Tool } from './tools';
+import { toolsToGemini, parseGeminiToolCalls } from './tools/geminiAdapter';
 import { GeminiIcon } from '../../components/icons/GeminiIcon';
 import { Settings } from "../../context/SettingsContext";
+
+/**
+ * Convert ToolChatMessage[] to Gemini Content[] preserving function calls and
+ * function responses. Gemini uses role 'model' for assistant; tool_results
+ * are sent as role 'user' with functionResponse parts.
+ */
+function geminiContentsFromTool(messages: ToolChatMessage[]): Content[] {
+    const out: Content[] = [];
+    for (const m of messages) {
+        if (m.role === 'system') continue; // system goes into config.systemInstruction
+        if (m.role === 'tool') {
+            const parts = (m.toolResults ?? []).map(tr => ({
+                functionResponse: {
+                    name: tr.name,
+                    response: typeof tr.result === 'object' && tr.result !== null
+                        ? tr.result
+                        : { value: tr.result },
+                },
+            }));
+            if (parts.length > 0) out.push({ role: 'user', parts: parts as any });
+            continue;
+        }
+        if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+            const parts: any[] = [];
+            if (m.content) parts.push({ text: m.content });
+            for (const tc of m.toolCalls) {
+                parts.push({ functionCall: { name: tc.name, args: tc.args ?? {} } });
+            }
+            out.push({ role: 'model', parts });
+            continue;
+        }
+        out.push({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content ?? '' }],
+        });
+    }
+    return out;
+}
 
 export class GeminiProvider implements IAiProvider {
     private ai: GoogleGenAI;
@@ -24,8 +64,10 @@ export class GeminiProvider implements IAiProvider {
             isConfigured: (settings: Settings) => !!settings.googleApiKey,
             models: [
                 { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Google\'s fastest and most cost-effective model.' },
+                { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Smallest, cheapest Gemini variant — used for autocomplete / plot suggest.' },
             ],
             defaultModels: {
+                tiny: 'gemini-2.5-flash-lite',
                 basic: 'gemini-2.5-flash',
                 advanced: 'gemini-2.5-flash',
             },
@@ -161,5 +203,31 @@ export class GeminiProvider implements IAiProvider {
             })
         );
         return true;
+    }
+
+    async *streamChatWithTools(
+        messages: ToolChatMessage[],
+        tools: Tool[],
+        opts?: StreamChatWithToolsOpts,
+    ): AsyncIterable<ToolStreamChunk> {
+        const model = opts?.model || 'gemini-2.5-flash';
+        const contents = geminiContentsFromTool(messages);
+        const config: any = {};
+        if (opts?.systemInstruction) config.systemInstruction = opts.systemInstruction;
+        if (tools.length > 0) config.tools = [toolsToGemini(tools)];
+
+        const response: GenerateContentResponse = await this.handleApiCall(() =>
+            this.ai.models.generateContent({
+                model,
+                contents,
+                config,
+            })
+        );
+        const parts: any[] = (response as any)?.candidates?.[0]?.content?.parts ?? [];
+        const textParts = parts.filter(p => typeof p?.text === 'string').map(p => p.text).join('');
+        if (textParts) yield { kind: 'text', delta: textParts };
+        for (const call of parseGeminiToolCalls(parts)) {
+            yield { kind: 'tool_call', id: call.id, name: call.name, args: call.args };
+        }
     }
 }

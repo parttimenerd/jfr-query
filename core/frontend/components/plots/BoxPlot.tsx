@@ -8,12 +8,16 @@ import { buildParserSpec, findColumn } from '../../utils/plotUtils';
 
 interface BoxPlotConfig {
   category?: string;
+  color?: string;
   value: string;
 }
 
 const params: PlotParameter[] = [
     { name: 'value', type: 'column', required: true, description: 'The numeric column for which to calculate the box plot statistics.' },
     { name: 'category', type: 'column', description: 'An optional column to group the data and create multiple box plots.' },
+    { name: 'color', type: 'column', aliasFor: 'category', deprecated: false, description: 'Alias for "category" — column whose distinct values determine box grouping.' },
+    // Showcase canon: single-box mode uses `x: "numericCol"` (no grouping).
+    { name: 'x', type: 'column', aliasFor: 'value', deprecated: false, description: 'Showcase-canon alias for "value" — numeric column for single-box mode.' },
 ];
 
 const parseConfig = createConfigParser<BoxPlotConfig>(buildParserSpec(params));

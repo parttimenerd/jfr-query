@@ -7,6 +7,10 @@ export interface PlotParameter {
     description: string;
     required?: boolean;
     defaultValue?: any;
+    // When set, this param is an alias for `aliasFor` and emits a deprecation
+    // warning when used. Hidden from autocomplete / signature rendering.
+    aliasFor?: string;
+    deprecated?: boolean;
 }
 
 // Parameters accepted by every plot type.
@@ -55,5 +59,8 @@ export interface PlotRegistration<TConfig = any> {
     domainX?: [any, any];
     isAnimationActive?: boolean;
     animationDuration?: number;
+    // W4 — Cross-cutting clause props forwarded by PlotRenderer. Each plot
+    // reads only the fields it cares about; axis-less plots ignore axisX/axisY.
+    clauses?: import('../../utils/plotParser').ParsedPlotCall;
   }>;
 }

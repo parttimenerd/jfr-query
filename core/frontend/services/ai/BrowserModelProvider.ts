@@ -12,6 +12,16 @@ import { heuristicPlot } from '../ml/heuristicPlot';
 import { isParseablePlotConfig } from '../ml/isParseablePlotConfig';
 import * as PlotGenerationService from '../ml/PlotGenerationService';
 import { CANDIDATES, DEFAULT_MODEL_ID } from '../ml/candidates';
+import { suggestNaiveSql, extractPrefix, extractSchema } from './browserSqlRules';
+import { generateSqlCompletion, isSqlModelReady } from '../ml/SqlGenerationService';
+
+const SQL_MODEL_DISABLED_KEY = 'jfr.sql-model.disabled';
+
+function sqlModelDisabled(): boolean {
+    try {
+        return typeof localStorage !== 'undefined' && localStorage.getItem(SQL_MODEL_DISABLED_KEY) === '1';
+    } catch { return false; }
+}
 
 const NOT_SUPPORTED = () =>
     Promise.reject(
@@ -36,6 +46,7 @@ export class BrowserModelProvider implements IAiProvider {
             isConfigured: () => true,
             models: modelLabels,
             defaultModels: {
+                tiny: DEFAULT_MODEL_ID,
                 basic: DEFAULT_MODEL_ID,
                 advanced: DEFAULT_MODEL_ID,
             },
@@ -51,9 +62,12 @@ export class BrowserModelProvider implements IAiProvider {
         if (!ctx || ctx.columns.length === 0) return 'TABLE()';
 
         try {
+            // Pass typed columns (name + type) directly — the v2 plot-suggester
+            // was trained on the typed input format and column types meaningfully
+            // affect plot choice (TIMESTAMP → x-axis, DOUBLE → y, VARCHAR → group).
             const generated = await PlotGenerationService.generate(
                 sql,
-                ctx.columns.map(c => c.name),
+                ctx.columns.map(c => ({ name: c.name, type: c.type })),
                 this.modelId,
             );
             if (isParseablePlotConfig(generated)) return generated;
@@ -65,9 +79,50 @@ export class BrowserModelProvider implements IAiProvider {
     }
 
     getAgentResponse: IAiProvider['getAgentResponse'] = NOT_SUPPORTED as any;
-    getInlineSuggestion: IAiProvider['getInlineSuggestion'] = NOT_SUPPORTED as any;
+
+    async getInlineSuggestion(
+        _systemInstruction: string,
+        request: string,
+        _model?: string,
+    ): Promise<AIInlineResponse> {
+        // Plot mode: the orchestrator routes through `getInlineSuggestion`
+        // for SQL only; plot ghost-text goes through a dedicated path. So
+        // we treat anything here as SQL.
+
+        // Try the trained T5-small SQL model first (offline, in-tree) —
+        // but ONLY when it's already warmed. Calling generateSqlCompletion
+        // when the model isn't loaded would trigger a ~630MB ONNX fetch on
+        // a hot keystroke. Warmup happens out-of-band (settings panel /
+        // explicit preload), and we fall through to the naive rules
+        // until ready. On any error, fall through to the rules too.
+        if (!sqlModelDisabled() && isSqlModelReady()) {
+            const prefix = extractPrefix(request);
+            if (prefix !== null && prefix.trim().length > 0) {
+                try {
+                    const schema = extractSchema(request);
+                    const completion = await generateSqlCompletion(prefix, schema);
+                    if (completion && completion.length > 0 && !completion.includes('<<CURSOR>>')) {
+                        return { text: completion, code: completion };
+                    }
+                } catch (err) {
+                    console.warn('[BrowserModelProvider] SQL T5 generation failed, falling back to rules:', err);
+                }
+            }
+        }
+
+        const completion = suggestNaiveSql(request);
+        if (completion === null) {
+            return { text: '', code: null };
+        }
+        return { text: completion, code: completion };
+    }
+
     getCodeFormat: IAiProvider['getCodeFormat'] = NOT_SUPPORTED as any;
     getPlotFixSuggestion: IAiProvider['getPlotFixSuggestion'] = NOT_SUPPORTED as any;
+
+    // streamChatWithTools intentionally omitted — browser-side models can't
+    // run multi-round tool loops; AiService will throw a clear error if the
+    // user tries to chat against this provider.
 
     async verifyCredentials(): Promise<boolean> {
         // Always "configured" — no credentials needed.

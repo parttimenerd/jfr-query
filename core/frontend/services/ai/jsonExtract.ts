@@ -1,40 +1,148 @@
-// Robust JSON extraction for LLM responses.
+// Robust JSON / text extraction for LLM responses.
 //
-// Local 9B-class models often violate "respond with only JSON" — they wrap the
-// answer in ```json fences, prepend chain-of-thought, or append a short
-// explanation. This helper recovers the JSON body in a few escalating passes:
+// Local 9B-class and smaller models routinely violate "respond with only JSON":
+//   - They wrap the answer in ```json fences.
+//   - They prepend chain-of-thought (Qwen3, DeepSeek-R1) in <think>…</think>
+//     blocks before the actual reply.
+//   - They prepend prose preambles ("Sure! Here's the JSON: …").
+//   - They append trailing prose after the JSON.
+//   - They emit single-quoted JSON, trailing commas, or JS-style comments.
+//   - They render smart quotes when markdown rendering is in the loop.
 //
-//   1. Direct parse (works for well-behaved cloud models).
-//   2. Strip ```json / ``` fences.
-//   3. Slice from the first `{` to the matching `}` (or `[` … `]`), respecting
-//      string literals and escape sequences. This handles a "preamble {…} tail"
-//      response without being fooled by braces inside strings.
-//
-// Throws an Error when no JSON object can be located.
+// This module recovers the JSON body (extractJson) or plain text (extractText)
+// through escalating passes. Both functions are pure and side-effect-free.
+
+/** Strip reasoning blocks emitted by chain-of-thought models. Public so other
+ *  callers (plot-config extractor, agent-response cleaner) can share it.
+ *  Handles `<think>…</think>`, `<thinking>…</thinking>`, and `<|reasoning|>…<|/reasoning|>`. */
+export function stripReasoningBlocks(s: string): string {
+    if (!s) return '';
+    let out = s;
+    out = out.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '');
+    out = out.replace(/<\|reasoning\|>[\s\S]*?<\|\/reasoning\|>/gi, '');
+    // Unclosed <think> at the end — strip from the tag to EOL/EOF.
+    out = out.replace(/<think(?:ing)?>[\s\S]*$/i, '');
+    return out;
+}
+
+/** Normalise typographic quotes the markdown renderer sometimes injects. */
+function normalizeSmartQuotes(s: string): string {
+    return s
+        .replace(/[‘’‚‛]/g, "'")  // ‘ ’ ‚ ‛ → '
+        .replace(/[“”„‟]/g, '"'); // “ ” „ ‟ → "
+}
+
+/** Remove JS-style // line comments and /* block * / comments that some local
+ *  models add inside JSON. Skip when inside a string literal. */
+function stripJsonComments(s: string): string {
+    let out = '';
+    let i = 0;
+    let inStr: string | null = null;
+    let escape = false;
+    while (i < s.length) {
+        const ch = s[i];
+        if (inStr) {
+            out += ch;
+            if (escape) { escape = false; i++; continue; }
+            if (ch === '\\') { escape = true; i++; continue; }
+            if (ch === inStr) inStr = null;
+            i++;
+            continue;
+        }
+        if (ch === '"' || ch === "'") { inStr = ch; out += ch; i++; continue; }
+        if (ch === '/' && s[i + 1] === '/') {
+            // Skip to end of line.
+            i += 2;
+            while (i < s.length && s[i] !== '\n') i++;
+            continue;
+        }
+        if (ch === '/' && s[i + 1] === '*') {
+            i += 2;
+            while (i < s.length && !(s[i] === '*' && s[i + 1] === '/')) i++;
+            i += 2;
+            continue;
+        }
+        out += ch;
+        i++;
+    }
+    return out;
+}
+
+/** Strip trailing commas before `}` or `]`. Aware of string literals. */
+function stripTrailingCommas(s: string): string {
+    let out = '';
+    let inStr: string | null = null;
+    let escape = false;
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (inStr) {
+            out += ch;
+            if (escape) { escape = false; continue; }
+            if (ch === '\\') { escape = true; continue; }
+            if (ch === inStr) inStr = null;
+            continue;
+        }
+        if (ch === '"' || ch === "'") { inStr = ch; out += ch; continue; }
+        if (ch === ',') {
+            // Lookahead: any whitespace, then `}` or `]`?
+            let j = i + 1;
+            while (j < s.length && /\s/.test(s[j])) j++;
+            if (s[j] === '}' || s[j] === ']') continue; // drop the comma
+        }
+        out += ch;
+    }
+    return out;
+}
+
+/** Convert single-quoted JSON to double-quoted. Naïve but effective on small-
+ *  model output; bails out if the result still won't parse. */
+function singleToDoubleQuotes(s: string): string {
+    // Only safe to do this if the input has no double quotes at all (otherwise
+    // we risk corrupting valid JSON containing apostrophes inside strings).
+    if (s.includes('"')) return s;
+    return s.replace(/'/g, '"');
+}
+
+function tryParseRelaxed<T>(candidate: string): T | null {
+    try {
+        return JSON.parse(candidate) as T;
+    } catch { /* fall through */ }
+    // Strip JS comments + trailing commas, retry.
+    try {
+        const relaxed = stripTrailingCommas(stripJsonComments(candidate));
+        return JSON.parse(relaxed) as T;
+    } catch { /* fall through */ }
+    // Single → double quotes, retry.
+    try {
+        const dq = singleToDoubleQuotes(candidate);
+        if (dq !== candidate) return JSON.parse(dq) as T;
+    } catch { /* fall through */ }
+    return null;
+}
 
 export function extractJson<T = unknown>(raw: string): T {
     if (!raw) throw new Error('Empty response from LLM.');
 
-    // Pass 1: direct parse
-    try {
-        return JSON.parse(raw) as T;
-    } catch { /* fall through */ }
+    // Pre-process: strip reasoning blocks and normalise smart quotes.
+    const cleaned = normalizeSmartQuotes(stripReasoningBlocks(raw));
 
-    // Pass 2: strip ```json / ```jsonc / ``` fences
-    const fenceMatch = raw.match(/```(?:json5?|jsonc)?\s*\n?([\s\S]*?)\n?```/i);
+    // Pass 1: direct parse on cleaned input.
+    const direct = tryParseRelaxed<T>(cleaned);
+    if (direct !== null) return direct;
+
+    // Pass 2: strip ```json / ```jsonc / ``` fences.
+    const fenceMatch = cleaned.match(/```(?:json5?|jsonc)?\s*\n?([\s\S]*?)\n?```/i);
     if (fenceMatch) {
         const inner = fenceMatch[1].trim();
-        try {
-            return JSON.parse(inner) as T;
-        } catch { /* fall through */ }
+        const parsed = tryParseRelaxed<T>(inner);
+        if (parsed !== null) return parsed;
     }
 
-    // Pass 3: locate balanced { … } or [ … ] respecting strings
-    const sliced = sliceBalanced(raw);
+    // Pass 3: locate balanced { … } or [ … ] respecting strings.
+    const sliced = sliceBalanced(cleaned);
     if (sliced) {
-        try {
-            return JSON.parse(sliced) as T;
-        } catch { /* fall through */ }
+        const parsed = tryParseRelaxed<T>(sliced);
+        if (parsed !== null) return parsed;
     }
 
     throw new Error(
@@ -43,11 +151,22 @@ export function extractJson<T = unknown>(raw: string): T {
     );
 }
 
-/** Plain-text extraction: strip code fences if the response is wrapped in one. */
+/** Plain-text extraction:
+ *   1. Strip chain-of-thought reasoning blocks.
+ *   2. Unwrap a single ``` fenced block if present.
+ *   3. Drop leading prose like "Sure, here's the answer: …" before a colon
+ *      on the same line, only when nothing recognisable follows otherwise.
+ *   4. Trim whitespace and stray special tokens.
+ */
 export function extractText(raw: string): string {
     if (!raw) return '';
-    const fenceMatch = raw.match(/```[\w-]*\s*\n?([\s\S]*?)\n?```/);
-    return fenceMatch ? fenceMatch[1].trim() : raw.trim();
+    const stripped = stripReasoningBlocks(raw);
+    const fenceMatch = stripped.match(/```[\w-]*\s*\n?([\s\S]*?)\n?```/);
+    let out = fenceMatch ? fenceMatch[1] : stripped;
+    // Strip common HF special tokens that small models occasionally emit.
+    out = out.replace(/<\|?(?:endoftext|im_start|im_end|s|pad|eot_id|begin_of_text|end_of_text)\|?>/gi, '');
+    out = out.replace(/<\/?s>/gi, '');
+    return out.trim();
 }
 
 function sliceBalanced(s: string): string | null {

@@ -1,6 +1,9 @@
-import { Diagnostic, setDiagnostics, diagnosticCount } from '@codemirror/lint';
+import { Diagnostic, linter, setDiagnostics, diagnosticCount } from '@codemirror/lint';
 import { EditorView, Decoration, DecorationSet } from '@codemirror/view';
-import { StateField, StateEffect } from '@codemirror/state';
+import { StateField, StateEffect, type Extension } from '@codemirror/state';
+import { lintPlot, type PlotScopeView } from './plot/lint';
+import type { ShapeRegistry } from './plot/annotators/shapeAnnotator';
+import type { ColumnSchema } from './plot/ast';
 
 export interface RunErrorSpec {
   message: string;
@@ -97,3 +100,37 @@ export function pushRunError(view: EditorView, spec: RunErrorSpec | null) {
 }
 
 export const diagnosticsExtension = [runErrorField, errorDecoField, errorTheme];
+
+// ─── Plot DSL linter wiring ──────────────────────────────────────────────────
+//
+// P4: wraps the pure `lintPlot()` function as a CM6 `linter()` extension. The
+// editor pushes this into the plot-mode extension list. Lookups (registry,
+// columns, scope, sqlBlockCount, variables) are pulled lazily via the getters
+// so the editor doesn't need to rebuild the extension when state changes.
+
+export interface PlotLinterDeps {
+  getShapeRegistry: () => ShapeRegistry;
+  getCellColumns: () => ColumnSchema[] | null;
+  getNotebookScope: () => PlotScopeView | null;
+  getSqlBlockCount: () => number;
+  getVariables: () => Record<string, string> | undefined;
+}
+
+export function plotLinter(deps: PlotLinterDeps): Extension {
+  return linter((view) => {
+    const source = view.state.doc.toString();
+    if (!source.trim()) return [];
+    try {
+      return lintPlot(source, {
+        shapeRegistry: deps.getShapeRegistry(),
+        cellColumns: deps.getCellColumns(),
+        notebookScope: deps.getNotebookScope(),
+        sqlBlockCount: deps.getSqlBlockCount(),
+        variables: deps.getVariables() ?? {},
+      });
+    } catch (err) {
+      if ((import.meta as any).env?.DEV) console.warn('[plotLinter] failed:', err);
+      return [];
+    }
+  }, { delay: 500 });
+}

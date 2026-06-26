@@ -6,16 +6,29 @@ import { formatNumber } from '../../utils/numberFormatter';
 import { formatTimestamp } from '../../utils/timeFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn, findColumns, getTimeValue } from '../../utils/plotUtils';
+import { lttb } from '../../services/plot/decimation';
+
+const LINE_SOFT_CAP_PER_SERIES = 5000;
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
-interface Config { x: string; y: string[]; y2?: string[]; yAxisLabel?: string; y2AxisLabel?: string; connectNulls: boolean; xRefLines?: any[]; yRefLines?: any[]; yScale: 'linear' | 'log'; y2Scale: 'linear' | 'log'; yDomain: any[]; y2Domain: any[]; lineType: 'line' | 'dots'; }
-const params: PlotParameter[] = [ { name: 'x', type: 'column', required: true, description: 'Column for the X-axis.' }, { name: 'y', type: 'column[]', required: true, description: 'Columns for the primary Y-axis.' }, { name: 'y2', type: 'column[]', description: 'Columns for the second Y-axis.' }, { name: 'yAxisLabel', type: 'string', description: 'Label for the primary Y-axis.' }, { name: 'y2AxisLabel', type: 'string', description: 'Label for the secondary Y-axis.' }, { name: 'yScale', type: 'string', defaultValue: 'linear', options: ['linear', 'log'], description: 'Scale for the primary Y-axis.' }, { name: 'y2Scale', type: 'string', defaultValue: 'linear', options: ['linear', 'log'], description: 'Scale for the secondary Y-axis.' }, { name: 'yDomain', type: 'number[]', defaultValue: ['auto', 'auto'], description: 'Domain for primary Y-axis.' }, { name: 'y2Domain', type: 'number[]', defaultValue: ['auto', 'auto'], description: 'Domain for secondary Y-axis.' }, { name: 'lineType', type: 'string', defaultValue: 'line', options: ['line', 'dots'], description: 'Render as a connected "line" or just "dots".' }, { name: 'connectNulls', type: 'boolean', defaultValue: false, description: 'Connect lines over nulls.' }, { name: 'xRefLines', type: 'referenceLine[]', description: 'Vertical reference lines.' }, { name: 'yRefLines', type: 'referenceLine[]', description: 'Horizontal reference lines.' }, ];
+interface Config { x: string; y: string[]; y2?: string[]; color?: string; xDomain?: any[]; yAxisLabel?: string; y2AxisLabel?: string; connectNulls: boolean; xRefLines?: any[]; yRefLines?: any[]; yScale: 'linear' | 'log'; y2Scale: 'linear' | 'log'; yDomain: any[]; y2Domain: any[]; lineType: 'line' | 'dots'; }
+const params: PlotParameter[] = [ { name: 'x', type: 'column', required: true, description: 'Column for the X-axis.' }, { name: 'y', type: 'column[]', required: true, description: 'Columns for the primary Y-axis.' }, { name: 'y2', type: 'column[]', description: 'Columns for the second Y-axis.' }, { name: 'color', type: 'column', description: 'Optional column whose distinct values group lines by color (one series per value).' }, { name: 'xDomain', type: 'number[]', description: 'Domain for the X-axis (overrides auto-fit). For time axes, pass numeric ms or quoted ISO timestamps.' }, { name: 'yAxisLabel', type: 'string', description: 'Label for the primary Y-axis.' }, { name: 'y2AxisLabel', type: 'string', description: 'Label for the secondary Y-axis.' }, { name: 'yScale', type: 'string', defaultValue: 'linear', options: ['linear', 'log'], description: 'Scale for the primary Y-axis.' }, { name: 'y2Scale', type: 'string', defaultValue: 'linear', options: ['linear', 'log'], description: 'Scale for the secondary Y-axis.' }, { name: 'yDomain', type: 'number[]', defaultValue: ['auto', 'auto'], description: 'Domain for primary Y-axis.' }, { name: 'y2Domain', type: 'number[]', defaultValue: ['auto', 'auto'], description: 'Domain for secondary Y-axis.' }, { name: 'lineType', type: 'string', defaultValue: 'line', options: ['line', 'dots'], description: 'Render as a connected "line" or just "dots".' }, { name: 'connectNulls', type: 'boolean', defaultValue: false, description: 'Connect lines over nulls.' }, { name: 'xRefLines', type: 'referenceLine[]', description: 'Vertical reference lines.' }, { name: 'yRefLines', type: 'referenceLine[]', description: 'Horizontal reference lines.' }, ];
 
 const parseConfig = createConfigParser<Config>(buildParserSpec(params));
 
-const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any, any]; isAnimationActive?: boolean; animationDuration?: number; }> = ({ config, data, domainX, isAnimationActive, animationDuration }) => {
+const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any, any]; isAnimationActive?: boolean; animationDuration?: number; clauses?: import('../../utils/plotParser').ParsedPlotCall; }> = ({ config, data, domainX, isAnimationActive, animationDuration, clauses }) => {
   const { settings } = useContext(SettingsContext);
   const numberFormatter = (v: any) => formatNumber(v, settings.decimalPlaces);
+
+  // W4 — cross-cutting clauses override config-level fields where both exist.
+  const legendPos = clauses?.legend; // 'right' | 'left' | 'top' | 'bottom' | 'none'
+  const showLegend = legendPos !== 'none';
+  const axisXClause = clauses?.axisX;
+  const axisYClause = clauses?.axisY;
+  const xLabel = axisXClause?.label;
+  const yLabelFromClause = axisYClause?.label;
+  const yDomainFromClause = axisYClause?.domain as [any, any] | undefined;
+  const xDomainFromClause = axisXClause?.domain as [any, any] | undefined;
 
   const { chartData, isTime, allY, allY2, finalXCol } = useMemo(() => {
     if (!data || !data.length || !data[0] || !config.x) {
@@ -42,8 +55,17 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
           return newRow;
       })
       : data;
-      
-    return { chartData: transformedData, isTime: isTimeAxis, allY: allYCols, allY2: allY2Cols, finalXCol: xCol };
+
+    // W13 — decimate via LTTB when over the soft cap. Picks the first y column
+    // as the area-preserving signal; visual extrema across all series stay
+    // close to faithful because LTTB on the dominant series sweeps the same
+    // x-positions where other series fluctuate.
+    const primaryY = allYCols[0] ?? allY2Cols[0];
+    const decimated = (isTimeAxis && primaryY && transformedData.length > LINE_SOFT_CAP_PER_SERIES)
+      ? lttb(transformedData, xCol, primaryY, LINE_SOFT_CAP_PER_SERIES)
+      : transformedData;
+
+    return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, allY2: allY2Cols, finalXCol: xCol };
   }, [data, config.x, config.y, config.y2]);
 
   return (
@@ -51,11 +73,11 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
       <ResponsiveContainer>
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568"/>
-          <XAxis allowDataOverflow dataKey={finalXCol} type={isTime?'number':'category'} domain={domainX || (isTime?['dataMin','dataMax']:undefined)} tickFormatter={isTime?(t:any)=>formatTimestamp(t,"HH:mm:ss.SS"):undefined} stroke="#9ca3af" tick={{fontSize:12}}/>
-          <YAxis yAxisId="left" stroke="#9ca3af" tick={{fontSize:12}} tickFormatter={numberFormatter} label={config.yAxisLabel?{value:config.yAxisLabel,angle:-90,position:'insideLeft',fill:'#9ca3af',fontSize:12}:undefined} scale={config.yScale === 'log' ? "log" : "auto"} domain={config.yScale === 'log' ? [0.1,'dataMax'] : config.yDomain as any} allowDataOverflow/>
+          <XAxis allowDataOverflow dataKey={finalXCol} type={isTime?'number':'category'} domain={xDomainFromClause || domainX || (isTime?['dataMin','dataMax']:undefined)} tickFormatter={isTime?(t:any)=>formatTimestamp(t,"HH:mm:ss.SS"):undefined} stroke="#9ca3af" tick={{fontSize:12}} label={xLabel?{value:xLabel,position:'insideBottom',fill:'#9ca3af',fontSize:12,offset:-5}:undefined}/>
+          <YAxis yAxisId="left" stroke="#9ca3af" tick={{fontSize:12}} tickFormatter={numberFormatter} label={(yLabelFromClause || config.yAxisLabel)?{value:yLabelFromClause || config.yAxisLabel,angle:-90,position:'insideLeft',fill:'#9ca3af',fontSize:12}:undefined} scale={config.yScale === 'log' ? "log" : "auto"} domain={config.yScale === 'log' ? [0.1,'dataMax'] : (yDomainFromClause || config.yDomain) as any} allowDataOverflow/>
           {allY2.length>0 && <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" tick={{fontSize:12}} tickFormatter={numberFormatter} label={config.y2AxisLabel?{value:config.y2AxisLabel,angle:90,position:'insideRight',fill:'#82ca9d',fontSize:12}:undefined} scale={config.y2Scale === 'log' ? "log" : "auto"} domain={config.y2Scale === 'log' ? [0.1,'dataMax'] : config.y2Domain as any} allowDataOverflow/>}
           <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}} formatter={(v,n)=>[numberFormatter(v),String(n).replace(/_/g,' ')]} labelFormatter={isTime?(l)=>formatTimestamp(l,settings.timeFormat):undefined}/>
-          <Legend wrapperStyle={{fontSize:"12px"}} formatter={v=>String(v).replace(/_/g,' ')}/>
+          {showLegend && <Legend wrapperStyle={{fontSize:"12px"}} formatter={v=>String(v).replace(/_/g,' ')} verticalAlign={legendPos === 'top' ? 'top' : legendPos === 'bottom' ? 'bottom' : 'middle'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'}/>}
           {allY.map((y,i)=><Line yAxisId="left" key={y} type="monotone" dataKey={y} stroke={COLORS[i%COLORS.length]} connectNulls={config.connectNulls} strokeWidth={config.lineType === 'line' ? 1 : 0} dot={config.lineType === 'dots'} activeDot={{r: 4}} isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>)}
           {allY2.map((y,i)=><Line yAxisId="right" key={y} type="monotone" dataKey={y} stroke={COLORS[(allY.length+i)%COLORS.length]} connectNulls={config.connectNulls} strokeWidth={config.lineType === 'line' ? 1 : 0} dot={config.lineType === 'dots'} activeDot={{r: 4}} isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>)}
           {config.xRefLines?.map((l,i)=><ReferenceLine key={`x-${i}`} x={l.value} label={l.label} stroke="#facc15" strokeDasharray="3 3"/>)}

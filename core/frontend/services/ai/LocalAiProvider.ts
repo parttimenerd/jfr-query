@@ -1,8 +1,11 @@
 import { Content } from "@google/genai";
-import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata } from './IAiProvider';
+import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata, ToolChatMessage, ToolStreamChunk, StreamChatWithToolsOpts } from './IAiProvider';
+import type { Tool } from './tools';
+import { toolsToLocal, parseLocalToolCalls, buildLocalToolPromptHint } from './tools/localAdapter';
 import { LocalAiIcon } from '../../components/icons/LocalAiIcon';
 import { Settings } from "../../context/SettingsContext";
 import { extractJson, extractText } from './jsonExtract';
+import { cleanPlotConfig } from '../ml/candidates';
 
 // LocalAi provider: any OpenAI-compatible /v1/chat/completions endpoint.
 //
@@ -64,6 +67,7 @@ export class LocalAiProvider implements IAiProvider {
                 // Users can also type any free-form model id in the settings field.
             ],
             defaultModels: {
+                tiny: DEFAULT_BASIC_MODEL,
                 basic: DEFAULT_BASIC_MODEL,
                 advanced: DEFAULT_GOOD_MODEL,
             },
@@ -89,11 +93,14 @@ export class LocalAiProvider implements IAiProvider {
         };
     }
 
-    private async sendWithRetry(body: object): Promise<string> {
+    private async sendWithRetry(body: object, signal?: AbortSignal): Promise<string> {
         let lastErr: Error | null = null;
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            if (signal?.aborted) throw new Error('Request aborted.');
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
+            const onAbort = () => controller.abort();
+            signal?.addEventListener('abort', onAbort, { once: true });
             let response: Response;
             try {
                 response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
@@ -104,6 +111,8 @@ export class LocalAiProvider implements IAiProvider {
                 });
             } catch (e: any) {
                 clearTimeout(timer);
+                signal?.removeEventListener('abort', onAbort);
+                if (signal?.aborted) throw new Error('Request aborted.');
                 if (e.name === 'AbortError') {
                     throw new Error(`Request to ${this.baseUrl} timed out after ${Math.floor(DEFAULT_REQUEST_TIMEOUT_MS / 60000)} min.`);
                 }
@@ -111,6 +120,7 @@ export class LocalAiProvider implements IAiProvider {
                 throw new Error(`Cannot reach local AI server at ${this.baseUrl}: ${e.message ?? e}`);
             } finally {
                 clearTimeout(timer);
+                signal?.removeEventListener('abort', onAbort);
             }
 
             if (response.ok) {
@@ -180,7 +190,13 @@ export class LocalAiProvider implements IAiProvider {
             { role: 'user', content: sql },
         ];
         const raw = await this.sendWithRetry(this.buildBody(model, messages, { temperature: 0 }));
-        return extractText(raw);
+        const text = extractText(raw);
+        if (!text) return null;
+        // Small local LLMs often add prose, fences, or special tokens despite
+        // the instruction. Route through the same cleaner the local-model
+        // path uses so the output is consistently a parseable plot config.
+        const cleaned = cleanPlotConfig(text);
+        return cleaned || null;
     }
 
     async getPlotFixSuggestion(systemInstruction: string, model: string = DEFAULT_BASIC_MODEL): Promise<AIPlotFixResponse> {
@@ -190,6 +206,63 @@ export class LocalAiProvider implements IAiProvider {
         ];
         const raw = await this.sendWithRetry(this.buildBody(model, messages));
         return extractJson<AIPlotFixResponse>(raw);
+    }
+
+    /**
+     * Tool-calling for local OpenAI-compatible servers. Goes through the
+     * structured `tools` field on the wire AND injects the local prompt hint
+     * (a <tool>{…}</tool> textual fallback) into the system instruction. The
+     * adapter parses both shapes — see `parseLocalToolCalls`.
+     */
+    async *streamChatWithTools(
+        messages: ToolChatMessage[],
+        tools: Tool[],
+        opts?: StreamChatWithToolsOpts,
+    ): AsyncIterable<ToolStreamChunk> {
+        const model = opts?.model || DEFAULT_GOOD_MODEL;
+        const wireMessages: any[] = [];
+        const sysExtras = tools.length > 0 ? `\n\n${buildLocalToolPromptHint(tools)}` : '';
+        if (opts?.systemInstruction || sysExtras) {
+            wireMessages.push({ role: 'system', content: (opts?.systemInstruction ?? '') + sysExtras });
+        }
+        for (const m of messages) {
+            if (m.role === 'tool') {
+                for (const tr of m.toolResults ?? []) {
+                    wireMessages.push({
+                        role: 'tool',
+                        tool_call_id: tr.id,
+                        content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result),
+                    });
+                }
+                continue;
+            }
+            const wire: any = { role: m.role, content: m.content ?? '' };
+            if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+                wire.tool_calls = m.toolCalls.map(tc => ({
+                    id: tc.id,
+                    type: 'function',
+                    function: { name: tc.name, arguments: JSON.stringify(tc.args ?? {}) },
+                }));
+            }
+            wireMessages.push(wire);
+        }
+        const body: any = {
+            ...this.buildBody(model, wireMessages),
+        };
+        if (tools.length > 0) body.tools = toolsToLocal(tools);
+
+        const raw = await this.sendWithRetry(body, opts?.signal);
+        const calls = parseLocalToolCalls({ content: raw });
+        if (raw && calls.length === 0) {
+            yield { kind: 'text', delta: raw };
+        } else if (raw) {
+            // Emit any prose text before the tool block so the UI shows it.
+            const cleaned = raw.replace(/<tool>[\s\S]*?<\/tool>/g, '').trim();
+            if (cleaned) yield { kind: 'text', delta: cleaned };
+        }
+        for (const call of calls) {
+            yield { kind: 'tool_call', id: call.id, name: call.name, args: call.args };
+        }
     }
 
     async verifyCredentials(): Promise<boolean> {

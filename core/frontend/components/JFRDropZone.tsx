@@ -6,6 +6,8 @@ interface JFRDropZoneProps {
     onFileSelected: (bytes: Uint8Array, name: string) => void;
     isImporting: boolean;
     errorMessage: string | null;
+    onLoadDemo?: () => void;
+    onLoadGcNotebook?: () => void;
 }
 
 const FEATURE_HINTS = [
@@ -15,7 +17,7 @@ const FEATURE_HINTS = [
     { icon: '📓', text: 'Shareable notebooks saved as plain Markdown' },
 ];
 
-const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, errorMessage }) => {
+const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, errorMessage, onLoadDemo, onLoadGcNotebook }) => {
     const [fileName, setFileName] = useState<string | null>(null);
 
     const onDrop = useCallback(async (accepted: File[]) => {
@@ -69,6 +71,33 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                     <div className="mt-4 p-3 bg-red-900/40 border border-red-500/40 rounded text-red-300 text-sm text-left" role="alert">
                         <p className="font-semibold">Import failed</p>
                         <p className="mt-1">{errorMessage}</p>
+                    </div>
+                )}
+
+                {(onLoadDemo || onLoadGcNotebook) && !isImporting && (
+                    <div className="mt-4 flex flex-col items-center gap-2">
+                        {onLoadDemo && (
+                            <div className="text-center">
+                                <button
+                                    onClick={onLoadDemo}
+                                    className="text-sm text-cyan-400 hover:text-cyan-300 underline underline-offset-2"
+                                >
+                                    Try the demo — no file needed
+                                </button>
+                                <p className="text-xs text-gray-600 mt-0.5">Loads sample JFR data with a starter notebook</p>
+                            </div>
+                        )}
+                        {onLoadGcNotebook && (
+                            <div className="text-center">
+                                <button
+                                    onClick={onLoadGcNotebook}
+                                    className="text-sm text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
+                                >
+                                    Open GC analysis notebook
+                                </button>
+                                <p className="text-xs text-gray-600 mt-0.5">Full GC analysis notebook with queries, charts, and commentary</p>
+                            </div>
+                        )}
                     </div>
                 )}
 

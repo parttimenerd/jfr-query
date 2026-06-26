@@ -42,14 +42,18 @@ const FlameGraphNode: React.FC<{
     totalValue: number;
     parentValue: number;
     searchTerm: string;
+    minFrameWidth: number;
     onZoom: (node: FlameGraphNodeData) => void;
-}> = ({ node, totalValue, parentValue, searchTerm, onZoom }) => {
+}> = ({ node, totalValue, parentValue, searchTerm, minFrameWidth, onZoom }) => {
     const [isHovered, setIsHovered] = useState(false);
     const widthPercent = (node.value / parentValue) * 100;
     const color = stringToColor(node.name);
-    const isMatch = searchTerm.length >= 2 && node.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const isMatch = searchTerm.length >= 2 && (() => {
+        try { return new RegExp(searchTerm, 'i').test(node.name); }
+        catch { return node.name.toLowerCase().includes(searchTerm.toLowerCase()); }
+    })();
 
-    if (widthPercent < 0.1) return null;
+    if (widthPercent < minFrameWidth) return null;
 
     return (
         <div
@@ -87,6 +91,7 @@ const FlameGraphNode: React.FC<{
                             totalValue={totalValue}
                             parentValue={node.value}
                             searchTerm={searchTerm}
+                            minFrameWidth={minFrameWidth}
                             onZoom={onZoom}
                         />
                     ))}
@@ -99,20 +104,28 @@ const FlameGraphNode: React.FC<{
 // --- Plot Module Implementation ---
 
 interface FlameGraphConfig {
-  label: string;
+  frames: string;
   value: string;
+  direction?: 'up' | 'down';
+  minFrameWidth?: number;
+  search?: string;
 }
 
 const params: PlotParameter[] = [
-    { name: 'label', type: 'column', description: 'A column with semicolon-separated stack frames.', required: true },
+    { name: 'frames', type: 'column', description: 'A column with semicolon-separated stack frames.', required: true },
     { name: 'value', type: 'column', description: 'A numeric column representing the weight of the stack (e.g., sample count).', required: true },
+    { name: 'direction', type: 'string', options: ['up', 'down'], defaultValue: 'down', description: 'Flame direction: "down" = classic root-on-top, "up" = icicle.' },
+    { name: 'minFrameWidth', type: 'number', defaultValue: 0.1, description: 'Skip frames narrower than this many percent of total width.' },
+    { name: 'search', type: 'string', description: 'Initial search regex (highlights matching frames).' },
+    // Deprecated alias: `label` → `frames`.
+    { name: 'label', type: 'column', aliasFor: 'frames', deprecated: true, description: 'Deprecated alias for "frames".' },
 ];
 
 const parseConfig = createConfigParser<FlameGraphConfig>(buildParserSpec(params));
 
 const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; domainX?: [any, any]; }> = ({ config, data }) => {
-  const { label, value: valueCol } = config;
-  const [searchTerm, setSearchTerm] = useState('');
+  const { frames: framesCol, value: valueCol, direction = 'down', minFrameWidth = 0.1, search: initialSearch } = config;
+  const [searchTerm, setSearchTerm] = useState(initialSearch ?? '');
   const [zoomStack, setZoomStack] = useState<FlameGraphNodeData[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -120,7 +133,7 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
   let totalValue = 0;
 
   for (const row of data) {
-    const stack = (row[label] || '').split(';');
+    const stack = (row[framesCol] || '').split(';');
     const valueNum = Number(row[valueCol]);
     if (isNaN(valueNum)) continue;
 
@@ -154,14 +167,19 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
     setZoomStack(prev => prev.slice(0, index));
   };
 
-  // Count search matches
-  const countMatches = (node: FlameGraphNodeData, term: string): number => {
+  // Count search matches (regex if valid, else substring)
+  const countMatches = (node: FlameGraphNodeData, term: string, re: RegExp | null): number => {
     if (!term || term.length < 2) return 0;
-    let count = node.name.toLowerCase().includes(term.toLowerCase()) ? 1 : 0;
-    for (const child of node.children) count += countMatches(child, term);
+    const hit = re ? re.test(node.name) : node.name.toLowerCase().includes(term.toLowerCase());
+    let count = hit ? 1 : 0;
+    for (const child of node.children) count += countMatches(child, term, re);
     return count;
   };
-  const matchCount = searchTerm.length >= 2 ? countMatches(root, searchTerm) : 0;
+  const matchRegex = (() => {
+    try { return searchTerm.length >= 2 ? new RegExp(searchTerm, 'i') : null; }
+    catch { return null; }
+  })();
+  const matchCount = searchTerm.length >= 2 ? countMatches(root, searchTerm, matchRegex) : 0;
 
   // Keyboard shortcut: Ctrl/Cmd+F focuses search, Escape clears zoom
   useEffect(() => {
@@ -231,12 +249,13 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
       </div>
       {/* Flame tree */}
       <div className="overflow-auto flex-grow p-2">
-        <div className="flex flex-col min-w-full">
+        <div className={`flex min-w-full ${direction === 'up' ? 'flex-col-reverse' : 'flex-col'}`}>
           <FlameGraphNode
             node={currentRoot}
             totalValue={root.value}
             parentValue={currentRoot.value}
             searchTerm={searchTerm}
+            minFrameWidth={minFrameWidth}
             onZoom={handleZoom}
           />
         </div>
@@ -249,11 +268,11 @@ export const flameGraphPlot: PlotRegistration<FlameGraphConfig> = {
   name: 'FLAMEGRAPH',
   description: 'Interactive flame graph for stack-trace data — click to zoom into a frame, drag to pan, Ctrl+F to search. Rows with semicolon-separated frame stacks feed directly into this.',
   params: withCommonParams(params),
-  template: 'FLAMEGRAPH(label: , value: )',
+  template: 'FLAMEGRAPH(frames: , value: )',
   examples: [
     {
         description: 'A flame graph for visualizing CPU profiling stack traces from a JFR recording.',
-        code: 'FLAMEGRAPH(label: "stackTrace", value: "count") TITLE "CPU Profiling Stacks"',
+        code: 'FLAMEGRAPH(frames: "stackTrace", value: "count") TITLE "CPU Profiling Stacks"',
         sampleData: [
             { stackTrace: 'java.lang.Thread.run;com.app.Worker.process;com.app.Parser.parse', count: 120 },
             { stackTrace: 'java.lang.Thread.run;com.app.Worker.process;com.app.Network.send', count: 80 },

@@ -1,12 +1,13 @@
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import ReactDOM from 'react-dom';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { plotRegistry } from './plots/plotRegistry';
+import { normalizePlotName } from './plots/plotNames';
 import type { NotebookCellData, NotebookMetadata } from '../types';
 import { aiService } from '../services/AiService';
 import { WandSparklesIcon } from './icons/WandSparklesIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
-import { parsePlotCall } from '../utils/plotParser';
+import { parsePlotCall, parseComposite, validateComposite, type ParsedPlotCall } from '../utils/plotParser';
+import { CompositeRenderer } from './plots/CompositeRenderer';
 import { expandPlotConstants } from '../utils/plotConstants';
 import { getTimeValue } from '../utils/plotUtils';
 import { LockClosedIcon } from './icons/LockClosedIcon';
@@ -247,20 +248,13 @@ interface PlotRendererProps {
     onMetadataChange: (newMetadata: NotebookMetadata) => void;
     onCellVariableChange: (vars: Record<string, string>) => void;
     allVariables: Record<string, string>;
-    errorPortalId?: string;
 }
 
-const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellContext, onApplyFix, isAiFeatureActive = false, metadata, onMetadataChange, onCellVariableChange, allVariables, errorPortalId }) => {
+const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellContext, onApplyFix, isAiFeatureActive = false, metadata, onMetadataChange, onCellVariableChange, allVariables }) => {
 
-    // Using a ref to get the portal container avoids issues with it not being mounted on first render.
-    const portalContainerRef = useRef<HTMLElement | null>(null);
     // Keep the last successfully-rendered plot content so we can show it while the
     // user is in the middle of typing a new (temporarily-broken) config.
     const lastValidContentRef = useRef<React.ReactNode>(null);
-
-    useEffect(() => {
-        portalContainerRef.current = errorPortalId ? document.getElementById(errorPortalId) : null;
-    });
 
     const handleVariableChange = (vars: Record<string, string>) => {
         // LINK_X variable changes always route to notebook-global metadata.variables
@@ -271,7 +265,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
     };
 
     let mainContent: React.ReactNode = null;
-    let errorForPortal: React.ReactNode = null;
+    let inlineError: React.ReactNode = null;
 
     try {
         if (!data) return null;
@@ -292,7 +286,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
         const flatConfigs = rows.flat();
         if (flatConfigs.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">Empty plot config.</div>;
 
-        const isMainConfigFunctionCall = /^\w+\s*\(.*\)\s*$/.test(parsePlotCall(flatConfigs[0]).mainConfig);
+        const isMainConfigFunctionCall = /^\w+\s*\(.*\)\s*$/s.test(parsePlotCall(flatConfigs[0]).mainConfig);
         if (flatConfigs.length === 1 && !isMainConfigFunctionCall && flatConfigs[0].trim() !== '') {
             throw new Error(`Invalid plot configuration. Expected a function call like 'TABLE()', but found extra text.`);
         }
@@ -303,24 +297,82 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
                 {rowConfigs.map((singleConfig, colIndex) => {
                     let outerClauses = ''; let mainConfig = singleConfig;
                     try {
-                        const parsedCall = parsePlotCall(singleConfig);
+                        // Try composite first; falls through to single-call shape when no `+`/ROW/COL is present.
+                        const parsedRoot = parseComposite(singleConfig);
+
+                        // Leaf renderer used by both the single-plot path and CompositeRenderer.
+                        const renderLeaf = (leaf: ParsedPlotCall): React.ReactNode => {
+                            const leafMain = leaf.mainConfig;
+                            const leafTypeName = normalizePlotName(leafMain.match(/^(\w+)/)?.[1] || 'TABLE');
+                            const leafReg = plotRegistry[leafTypeName];
+                            if (!leafReg) throw new Error(`Unknown plot type "${leafTypeName}".`);
+                            const leafCfg = leafReg.parseConfig(leafMain, data);
+                            const LeafComp = leafReg.component;
+                            let leafContent: React.ReactElement = (
+                                <PlotErrorBoundary>
+                                    <LeafComp config={leafCfg} data={data} clauses={leaf} isAnimationActive={true} animationDuration={300} />
+                                </PlotErrorBoundary>
+                            );
+                            if (leaf.linkX) {
+                                leafContent = (
+                                    <InteractivePlotWrapper linkX={leaf.linkX} linkXClamp={!!leaf.linkXClamp} data={data} xCol={(leafCfg as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
+                                        {leafContent}
+                                    </InteractivePlotWrapper>
+                                );
+                            }
+                            const leafTitle = leaf.title || (leafCfg as any).title;
+                            if (leafTitle) {
+                                return (
+                                    <div className="w-full h-full border border-gray-700 rounded-lg overflow-hidden flex flex-col">
+                                        <h4 className="text-xs font-semibold text-gray-400 p-2 border-b border-gray-700 shrink-0 bg-gray-900/50 text-center truncate" title={leafTitle}>
+                                            {leafTitle}
+                                        </h4>
+                                        <div className="flex-grow min-h-0">{leafContent}</div>
+                                    </div>
+                                );
+                            }
+                            return leafContent;
+                        };
+
+                        // Composite path: render via CompositeRenderer; treat outer-cell width/height as the box.
+                        if (parsedRoot.composite) {
+                            const issues = validateComposite(parsedRoot);
+                            const errors = issues.filter(i => i.severity === 'error');
+                            if (errors.length > 0) {
+                                throw new Error(errors.map(e => e.message).join(' '));
+                            }
+                            for (const w of issues) {
+                                if (w.severity === 'warn') console.warn(`[plot composite] ${w.message}`);
+                            }
+                            const cellStyle: React.CSSProperties = { flex: '1 1 0px', minWidth: 0 };
+                            return (
+                                <div key={`${rowIndex}-${colIndex}`} style={cellStyle} className="flex">
+                                    <div className="w-full h-full">
+                                        <CompositeRenderer parsed={parsedRoot} renderLeaf={renderLeaf} />
+                                    </div>
+                                </div>
+                            );
+                        }
+
+                        // Single-plot path (preserves zoom + outer-cell title behavior).
+                        const parsedCall = parsedRoot; // already a single ParsedPlotCall here
                         mainConfig = parsedCall.mainConfig;
                         outerClauses = singleConfig.substring(mainConfig.length);
-                        
+
                         const { width, height, zoom, title, linkX, linkXClamp } = parsedCall;
-                        const plotTypeName = (mainConfig.match(/^(\w+)/)?.[1] || 'TABLE').toUpperCase();
+                        const plotTypeName = normalizePlotName(mainConfig.match(/^(\w+)/)?.[1] || 'TABLE');
                         const reg = plotRegistry[plotTypeName];
                         if (!reg) throw new Error(`Unknown plot type "${plotTypeName}".`);
-                        
+
                         const parsedConfig = reg.parseConfig(mainConfig, data);
                         const PlotComponent = reg.component;
-                        
+
                         let plotContent: React.ReactElement = (
                             <PlotErrorBoundary>
-                                <PlotComponent config={parsedConfig} data={data} isAnimationActive={true} animationDuration={300} />
+                                <PlotComponent config={parsedConfig} data={data} clauses={parsedCall} isAnimationActive={true} animationDuration={300} />
                             </PlotErrorBoundary>
                         );
-                        
+
                         if (linkX) {
                             plotContent = (
                                 <InteractivePlotWrapper linkX={linkX} linkXClamp={!!linkXClamp} data={data} xCol={(parsedConfig as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
@@ -341,7 +393,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
                         );
 
                         const cellStyle: React.CSSProperties = { flex: width ? `0 0 ${width}` : '1 1 0px', width, height, minWidth: 0 };
-                        
+
                         return (
                             <div key={`${rowIndex}-${colIndex}`} style={cellStyle} className="flex">
                                 {showContainer ? (
@@ -381,12 +433,12 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
             ? <AiErrorFixer error={errorInfo.error.message} config={errorInfo.failedConfig} data={data!} sql={sql} cellContext={cellContext} onApplyFix={errorInfo.onFix} metadata={metadata} />
             : <div className="p-3 text-sm text-red-400 bg-red-900/30 font-mono whitespace-pre-wrap">{e.message}</div>;
 
-        // Show the last valid plot in the background so the user doesn't lose
+        // Show the last valid plot below the error banner so the user doesn't lose
         // their chart while they're in the middle of typing a new config.
         mainContent = lastValidContentRef.current;
 
-        errorForPortal = (
-            <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm z-10 flex items-center justify-center p-4 animate-fade-in">
+        inlineError = (
+            <div className="px-2 py-1.5 text-xs text-red-300 bg-red-900/25 border-l-2 border-red-500/60 rounded-r animate-fade-in">
                 {ErrorDisplay}
             </div>
         );
@@ -394,8 +446,8 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
 
     return (
         <>
+            {inlineError}
             {mainContent}
-            {errorForPortal && portalContainerRef.current && ReactDOM.createPortal(errorForPortal, portalContainerRef.current)}
         </>
     );
 };

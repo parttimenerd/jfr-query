@@ -15,6 +15,14 @@
 import viewEmbeddingsRaw from '../../data/viewEmbeddings.json';
 
 const DIM = 384;
+const QUERY_CACHE_SIZE = 16;
+const QUERY_CACHE_TTL_MS = 30_000;
+
+const DEV = typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV === true;
+
+function devWarn(msg: string, err?: unknown): void {
+    if (DEV) console.warn(`[EmbeddingService] ${msg}`, err);
+}
 
 // ─── Static view index ────────────────────────────────────────────────────────
 
@@ -45,30 +53,75 @@ export function isReady(): boolean {
     return _ready;
 }
 
-export async function ensureLoaded(): Promise<void> {
+// Small ad-hoc abort error so call sites can distinguish cancellation from
+// real failures without depending on DOMException.
+class AbortError extends Error {
+    constructor(msg = 'aborted') { super(msg); this.name = 'AbortError'; }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) throw new AbortError();
+}
+
+export async function ensureLoaded(signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
     if (pipelinePromise) {
         await pipelinePromise;
+        throwIfAborted(signal);
         return;
     }
     pipelinePromise = (async () => {
-        const { pipeline, env } = await import('@huggingface/transformers');
-        env.allowLocalModels = false;
-        env.useBrowserCache = true;
-        const ext = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-            dtype: 'q4',
-            device: 'webgpu', // auto-falls-back to WASM
-        });
-        // Warmup — first inference compiles WASM/WebGPU kernel.
-        await ext('warmup', { pooling: 'mean', normalize: true });
-        _ready = true;
-        return ext;
+        try {
+            const { pipeline, env } = await import('@huggingface/transformers');
+            env.allowLocalModels = false;
+            env.useBrowserCache = true;
+            const ext = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+                dtype: 'q4',
+                device: 'webgpu', // auto-falls-back to WASM
+            });
+            // Warmup — first inference compiles WASM/WebGPU kernel.
+            await ext('warmup', { pooling: 'mean', normalize: true });
+            _ready = true;
+            return ext;
+        } catch (err) {
+            // Reset so a later call can retry; otherwise we'd be stuck on a
+            // permanently-rejected promise.
+            pipelinePromise = null;
+            devWarn('failed to load MiniLM pipeline', err);
+            throw err;
+        }
     })();
     await pipelinePromise;
+    throwIfAborted(signal);
 }
 
 async function getPipeline(): Promise<any> {
     await ensureLoaded();
     return pipelinePromise!;
+}
+
+// ─── Query embedding cache (tiny LRU with TTL) ───────────────────────────────
+
+type CacheEntry = { vec: Float32Array; expires: number };
+const queryCache = new Map<string, CacheEntry>();
+
+function cacheGet(key: string): Float32Array | null {
+    const e = queryCache.get(key);
+    if (!e) return null;
+    if (e.expires < Date.now()) { queryCache.delete(key); return null; }
+    // LRU bump.
+    queryCache.delete(key);
+    queryCache.set(key, e);
+    return e.vec;
+}
+
+function cachePut(key: string, vec: Float32Array): void {
+    queryCache.set(key, { vec, expires: Date.now() + QUERY_CACHE_TTL_MS });
+    while (queryCache.size > QUERY_CACHE_SIZE) {
+        const first = queryCache.keys().next().value;
+        if (first === undefined) break;
+        queryCache.delete(first);
+    }
 }
 
 // ─── Math helpers ─────────────────────────────────────────────────────────────
@@ -90,11 +143,24 @@ function sliceRow(flat: Float32Array, i: number): Float32Array {
  * Embed a single query context string and return the L2-normalised vector.
  * Requires the model to be loaded (call ensureLoaded first or check isReady).
  */
-async function embedQuery(queryContext: string): Promise<Float32Array | null> {
-    if (!_ready) return null;
+async function embedQuery(queryContext: string, signal?: AbortSignal): Promise<Float32Array | null> {
+    if (!_ready) {
+        devWarn('embedQuery called before pipeline ready — returning null');
+        return null;
+    }
+    const cached = cacheGet(queryContext);
+    if (cached) return cached;
+    throwIfAborted(signal);
     const ext = await getPipeline();
+    throwIfAborted(signal);
     const out: any = await ext([queryContext], { pooling: 'mean', normalize: true });
-    return sliceRow(out.data as Float32Array, 0);
+    throwIfAborted(signal);
+    // Copy so the cached entry doesn't share memory with the pipeline's buffer
+    // (subarray() points into the original flat tensor, which may be reused).
+    const view = sliceRow(out.data as Float32Array, 0);
+    const vec = new Float32Array(view);
+    cachePut(queryContext, vec);
+    return vec;
 }
 
 /**
@@ -111,6 +177,7 @@ async function embedQuery(queryContext: string): Promise<Float32Array | null> {
 export async function rankCandidates(
     queryContext: string,
     candidates: string[],
+    signal?: AbortSignal,
 ): Promise<string[]> {
     if (candidates.length <= 1) return candidates;
 
@@ -125,7 +192,8 @@ export async function rankCandidates(
 
     if (allPrecomputed || _ready) {
         // Embed only the query context.
-        const qVec = await embedQuery(queryContext);
+        const qVec = await embedQuery(queryContext, signal);
+        throwIfAborted(signal);
         if (!qVec) {
             // Model not ready yet and we need it for a partial set.
             if (!allPrecomputed) return candidates;
@@ -142,10 +210,12 @@ export async function rankCandidates(
         if (_ready) {
             // Mixed: embed everything pairwise for candidates not in the index.
             const ext = await getPipeline();
+            throwIfAborted(signal);
             const inputs = [queryContext, ...candidates.map((_, i) =>
                 precomputed[i] ? names[i] : candidates[i]
             )];
             const out: any = await ext(inputs, { pooling: 'mean', normalize: true });
+            throwIfAborted(signal);
             const flat: Float32Array = out.data;
             const ctxEmb = sliceRow(flat, 0);
 
@@ -162,4 +232,9 @@ export async function rankCandidates(
     }
 
     return candidates;
+}
+
+// Test/diagnostic hook — not part of the production API.
+export function _clearQueryCache(): void {
+    queryCache.clear();
 }

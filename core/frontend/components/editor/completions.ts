@@ -40,6 +40,9 @@ export interface SqlCompletionDeps {
    */
   rankCandidates?: (queryContext: string, candidates: string[]) => Promise<string[]>;
   isRankerReady?: () => boolean;
+  /** Optional: notification hook fired when a fresh reranker result lands so
+   *  the editor can re-query the completion source to apply new boosts. */
+  onRankerUpdated?: () => void;
 }
 
 const rankCache = new Map<string, string[]>();
@@ -390,130 +393,828 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
 }
 
 // ===========================================================================
-// PLOT completion source (unchanged behavior, kept here so the editor module
-// has a single completions entry point).
+// PLOT completion source — hint-driven (P7).
+//
+// Reads the rich annotated plot AST produced by `parseAndAnnotate`: walks down
+// to the deepest `hole` node containing the cursor (or adjacent to it) and
+// dispatches on its `PlotHoleHint.kind`. Every completion list (clause keys,
+// clause values, tail keys, link args, query refs, etc.) is driven by the
+// hint's structured payload — no regex / token fallback. The only legacy
+// behavior preserved verbatim is the `@constRef` early-return so users can
+// reference LET constants from anywhere.
 // ===========================================================================
+
+import { parseAndAnnotate } from './plot';
+import { walk, type PlotNode, type ColumnSchema } from './plot/ast';
+import type { PlotHoleHint } from './plot/holeKinds';
+import type { PlotScopeView } from './plot/notebookPlotScope';
+import { closestMatch } from './plot/lint';
 
 export interface PlotCompletionDeps {
   getData: () => any[] | null;
+  /**
+   * P2 — synchronous read into the schema discovery cache for the cell's
+   * companion SQL. Returns null on cache miss or when the feature flag is off.
+   */
+  getCellResultColumns?: () => ColumnSchema[] | null;
+  /** P2 — fire-and-forget request to populate the schema cache. */
+  requestSchemaDiscovery?: (sql: string) => void;
+  /** P2 — companion SQL text for the current plot cell. */
+  getCellSql?: () => string | null;
+  /**
+   * P3 — notebook-wide plot scope view (named plots, query refs, brush types).
+   * Returns null when there is no notebook context (e.g. standalone editor).
+   */
+  getNotebookPlotScope?: () => PlotScopeView | null;
+  /** P3 — id of the cell currently being edited (used as the scope's `currentCellId`). */
+  getCurrentCellId?: () => string | null;
+  /** Variable map ($-prefixed keys → values). Optional; defaults to {}. */
+  getVariables?: () => Record<string, string> | undefined;
+  /** Number of SQL blocks in the surrounding cell (drives `#N` query-ref completions). */
+  getSqlBlockCount?: () => number;
 }
+
+const UPPERCASE_TAILS_DEFAULT: ReadonlyArray<string> = [
+  'TITLE', 'SUBTITLE', 'NAME', 'ZOOM',
+  'WIDTH', 'HEIGHT', 'ON', 'DISABLED',
+  'LINK_X', 'LINK_Y', 'LINK_XY', 'LINK_SCROLL',
+];
+
+const LINK_POSITIONAL_KEYWORDS = ['master', 'clamp'];
+
+function detailForColumn(name: string, cols: ColumnSchema[] | null): string {
+  if (!cols) return 'column';
+  const c = cols.find(x => x.name === name);
+  return c?.dataType ? `column · ${c.dataType}` : 'column';
+}
+
+/**
+ * Walk the tree to find the most specific `hole` node whose span contains the
+ * cursor (inclusively). When multiple holes share a position (parser emits
+ * e.g. both `clauseValue` and `clauseKey` at the same point when typing
+ * `x: <cursor>)`), we prefer the more specific value-side hint over the
+ * key-side hint, the inner argument hint over the outer tail-key hint, etc.
+ */
+const HINT_PRIORITY: Record<string, number> = {
+  // Higher = more specific.
+  clauseValue: 10,
+  letValue: 9,
+  tailValue: 9,
+  linkArgs: 9,
+  onArg: 9,
+  queryRefTarget: 9,
+  clauseKey: 5,
+  tailKey: 4,
+  letName: 3,
+  topLevel: 1,
+};
+
+function findHoleAtCursor(root: PlotNode, pos: number): PlotNode | null {
+  let best: PlotNode | null = null;
+  let bestPriority = -1;
+
+  // Detect "the cursor is at the end of (or inside) a clauseRef" — that means
+  // the user is typing a clause key, even though the parser may also have
+  // emitted a clauseValue hole for the same position (because the colon is
+  // missing). In that case force priority toward the clauseKey hole.
+  let cursorInsideClauseKey = false;
+  // Detect "the cursor is inside an ident node whose parent is a clause and
+  // sits past the colon" — i.e. the user is typing a value, not a key, even
+  // though the parser may have emitted a clauseKey hole at the terminator.
+  let cursorInsideClauseValue = false;
+  walk(root, n => {
+    if (n.kind === 'clauseRef' && n.from <= pos && pos <= n.to) {
+      cursorInsideClauseKey = true;
+    }
+    if (n.kind === 'ident' && n.from <= pos && pos <= n.to) {
+      const parent = n.parent;
+      if (parent?.kind === 'clause' && parent.colonFrom !== undefined && pos > parent.colonFrom) {
+        cursorInsideClauseValue = true;
+      }
+    }
+    // varRef / literal / constRef inside a clause value also count as "user is
+    // typing a value, not a key" — suppress the clauseKey hole that the parser
+    // may have emitted at the terminator.
+    if (
+      (n.kind === 'varRef' || n.kind === 'literal' || n.kind === 'constRef' || n.kind === 'functionCall') &&
+      n.from <= pos && pos <= n.to
+    ) {
+      const parent = n.parent;
+      if (parent?.kind === 'clause' && parent.colonFrom !== undefined && pos > parent.colonFrom) {
+        cursorInsideClauseValue = true;
+      }
+    }
+  });
+
+  walk(root, n => {
+    if (n.kind !== 'hole') return;
+    if (n.from > pos || pos > n.to) return;
+    const kind = n.annotations.hint?.kind;
+    let pri = kind ? (HINT_PRIORITY[kind] ?? 0) : 0;
+    if (cursorInsideClauseKey && kind === 'clauseKey') pri += 20;
+    if (cursorInsideClauseKey && kind === 'clauseValue') pri = -1;
+    if (cursorInsideClauseValue && kind === 'clauseKey') pri = -1;
+    if (pri < 0) return;
+    if (pri > bestPriority) {
+      best = n;
+      bestPriority = pri;
+    }
+  });
+  return best;
+}
+
+/**
+ * Locate the deepest non-hole node containing the cursor. Used to detect "the
+ * cursor is inside a value ident" cases where the parser successfully
+ * consumed a partial column name (and so didn't emit a value hole) but we
+ * still want column completions for the slot.
+ */
+function findValueAncestorClause(root: PlotNode, pos: number): {
+  shape: string;
+  clauseKey: string;
+  paramType: string;
+  columnTyped: boolean;
+  options?: string[];
+} | null {
+  let bestClause: PlotNode | null = null;
+  walk(root, n => {
+    if (n.kind !== 'clause') return;
+    if (n.from > pos || pos > n.to) return;
+    // Cursor must be after the colon position (i.e. in the value portion).
+    if (n.colonFrom !== undefined && pos <= n.colonFrom) return;
+    if (!bestClause || (n.to - n.from) <= (bestClause.to - bestClause.from)) {
+      bestClause = n;
+    }
+  });
+  if (!bestClause) return null;
+  const clause = bestClause as PlotNode;
+  // Walk up to the enclosing plotCall to know the shape + clauseDef.
+  let p: PlotNode | undefined = clause.parent;
+  while (p && p.kind !== 'plotCall') p = p.parent;
+  if (!p || !p.shape) return null;
+  const cref = clause.children.find(c => c.kind === 'clauseRef');
+  const def = cref?.annotations.resolves;
+  const paramType = def?.kind === 'clauseDef' ? def.paramType : 'value';
+  const options = def?.kind === 'clauseDef' ? def.options : undefined;
+  const columnTyped = paramType === 'column' || paramType.includes('column');
+  return {
+    shape: p.shape,
+    clauseKey: clause.key ?? '',
+    paramType,
+    columnTyped,
+    options,
+  };
+}
+
+/**
+ * Find the partial-identifier the user is currently typing immediately before
+ * `pos`. Returns `{from, text}` where `from` is the index where the partial
+ * starts. Used so we can replace just the partial when a completion is picked
+ * (matching CM6 semantics).
+ */
+function partialBefore(doc: string, pos: number): { from: number; text: string } {
+  let i = pos;
+  while (i > 0 && /[\w@$#-]/.test(doc[i - 1])) i--;
+  return { from: i, text: doc.slice(i, pos) };
+}
+
+/**
+ * Build the `@const` completion options. Reused by the early return and by
+ * `clauseValue` / `letValue` dispatch where `@const` can also appear.
+ */
+function buildConstOptions(
+  fullValue: string,
+  partial: string,
+): Completion[] {
+  const defined = expandPlotConstants(fullValue).constants;
+  const lc = partial.toLowerCase();
+  return defined
+    .filter(c => c.name.toLowerCase().startsWith(lc))
+    .map<Completion>(c => ({
+      label: `@${c.name}`,
+      detail: `= ${truncate(c.value, 30)}`,
+      type: 'variable',
+      apply: `@${c.name}`,
+      boost: 2,
+    }));
+}
+
+// ─── Per-hint dispatchers ────────────────────────────────────────────────────
+
+function completeTopLevel(from: number, _hint: Extract<PlotHoleHint, { kind: 'topLevel' }>): CompletionResult {
+  const options: Completion[] = Object.values(plotRegistry).map(p => ({
+    label: p.name,
+    detail: p.description,
+    type: 'plotFn',
+    apply: p.template,
+    boost: 5,
+  }));
+  options.push({
+    label: 'row',
+    detail: 'horizontal composite of plots',
+    type: 'keyword',
+    apply: 'row { ',
+    boost: 3,
+  });
+  options.push({
+    label: 'col',
+    detail: 'vertical composite of plots',
+    type: 'keyword',
+    apply: 'col { ',
+    boost: 3,
+  });
+  options.push({
+    label: 'LET',
+    detail: 'define a reusable constant',
+    type: 'keyword',
+    apply: 'LET @name = value',
+    boost: 1,
+  });
+  return { from, options };
+}
+
+function completeClauseKey(
+  from: number,
+  hint: Extract<PlotHoleHint, { kind: 'clauseKey' }>,
+  partial: string,
+): CompletionResult | null {
+  const options: Completion[] = [];
+  const used = new Set(hint.usedKeys.map(k => k.toLowerCase()));
+  const required = new Set(hint.requiredMissing.map(k => k.toLowerCase()));
+  const columnSet = new Set(hint.columnKeys.map(k => k.toLowerCase()));
+  const lc = partial.toLowerCase();
+
+  for (const key of hint.availableKeys) {
+    const lck = key.toLowerCase();
+    if (used.has(lck)) continue;
+    if (lc && !lck.startsWith(lc)) continue;
+    const isRequired = required.has(lck);
+    const isColumn = columnSet.has(lck);
+    options.push({
+      label: key,
+      detail: `${isColumn ? 'column · ' : ''}${isRequired ? 'required' : 'clause'}`,
+      type: 'plotParam',
+      apply: `${key}: `,
+      // Required clauses + column clauses bubble to the top.
+      boost: (isRequired ? 5 : 0) + (isColumn ? 1 : 0),
+    });
+  }
+  return options.length > 0 ? { from, options } : null;
+}
+
+function completeClauseValue(
+  from: number,
+  hint: Extract<PlotHoleHint, { kind: 'clauseValue' }>,
+  partial: string,
+  deps: PlotCompletionDeps,
+  scope: PlotScopeView | null,
+  cachedColumns: ColumnSchema[] | null,
+  dataKeys: string[],
+  fullValue: string,
+): CompletionResult | null {
+  const options: Completion[] = [];
+  const lc = partial.toLowerCase();
+  const stripQuote = lc.replace(/^"/, '');
+
+  // 1. Column completions when the slot is column-typed (or the registry
+  //    couldn't tell — we still offer columns since most clause values accept
+  //    them).
+  const wantsColumns = hint.columnTyped || hint.paramType === 'column' ||
+    hint.paramType === 'column[]' || hint.paramType.includes('column');
+  if (wantsColumns) {
+    const cols = cachedColumns?.map(c => c.name) ?? dataKeys;
+    for (const name of cols) {
+      if (stripQuote && !name.toLowerCase().startsWith(stripQuote)) continue;
+      options.push({
+        label: name,
+        detail: detailForColumn(name, cachedColumns),
+        type: 'column',
+        apply: `"${name}"`,
+        boost: 5,
+      });
+    }
+  }
+
+  // 2. Enumerated options (e.g. `linear` / `log` for `yScale`).
+  if (hint.options && hint.options.length > 0) {
+    for (const opt of hint.options) {
+      if (lc && !opt.toLowerCase().startsWith(lc)) continue;
+      options.push({
+        label: opt,
+        detail: 'option',
+        type: 'atom',
+        apply: opt,
+        boost: 3,
+      });
+    }
+  }
+
+  // 3. Constants are always allowed in value slots.
+  options.push(...buildConstOptions(fullValue, partial.startsWith('@') ? partial.slice(1) : ''));
+
+  // 4. Variables are also valid value tokens.
+  options.push(...buildVariableOptions(deps, scope, partial.startsWith('$') ? partial : ''));
+
+  return options.length > 0 ? { from, options } : null;
+}
+
+function completeTailKey(
+  from: number,
+  hint: Extract<PlotHoleHint, { kind: 'tailKey' }>,
+  partial: string,
+): CompletionResult | null {
+  const allowed = hint.allowedTails.length > 0 ? hint.allowedTails : [...UPPERCASE_TAILS_DEFAULT];
+  const lc = partial.toLowerCase();
+  const options: Completion[] = [];
+  for (const kw of allowed) {
+    if (lc && !kw.toLowerCase().startsWith(lc)) continue;
+    const doc = plotClauseDocs[kw.toUpperCase()];
+    options.push({
+      label: kw,
+      detail: doc?.signature ?? 'tail',
+      type: 'keyword',
+      apply: `${kw} `,
+      boost: 2,
+    });
+  }
+  return options.length > 0 ? { from, options } : null;
+}
+
+function completeTailValue(
+  from: number,
+  hint: Extract<PlotHoleHint, { kind: 'tailValue' }>,
+  partial: string,
+  deps: PlotCompletionDeps,
+  scope: PlotScopeView | null,
+  cachedColumns: ColumnSchema[] | null,
+  dataKeys: string[],
+  fullValue: string,
+): CompletionResult | null {
+  const options: Completion[] = [];
+  if (hint.valueType === 'identList' || hint.valueType === 'linkArgs') {
+    // Names of plots / vars
+    options.push(...buildPlotNameOptions(scope, partial));
+    options.push(...buildVariableOptions(deps, scope, partial));
+  }
+  if (hint.valueType === 'number' || hint.valueType === 'dimension') {
+    options.push(...buildConstOptions(fullValue, partial.startsWith('@') ? partial.slice(1) : ''));
+  }
+  if (hint.valueType === 'string') {
+    options.push(...buildConstOptions(fullValue, partial.startsWith('@') ? partial.slice(1) : ''));
+  }
+  // Allow columns in any tail value that accepts identifiers.
+  if (hint.valueType === 'identList') {
+    const cols = cachedColumns?.map(c => c.name) ?? dataKeys;
+    const lc = partial.toLowerCase().replace(/^"/, '');
+    for (const c of cols) {
+      if (lc && !c.toLowerCase().startsWith(lc)) continue;
+      options.push({
+        label: c,
+        detail: detailForColumn(c, cachedColumns),
+        type: 'column',
+        apply: `"${c}"`,
+        boost: 2,
+      });
+    }
+  }
+  return options.length > 0 ? { from, options } : null;
+}
+
+function completeLinkArgs(
+  from: number,
+  hint: Extract<PlotHoleHint, { kind: 'linkArgs' }>,
+  partial: string,
+  deps: PlotCompletionDeps,
+  scope: PlotScopeView | null,
+): CompletionResult | null {
+  const options: Completion[] = [];
+  // First two positions are variables. After that we suggest master/clamp.
+  if (hint.consumed < 2) {
+    options.push(...buildVariableOptions(deps, scope, partial));
+  } else {
+    const lc = partial.toLowerCase();
+    for (const kw of LINK_POSITIONAL_KEYWORDS) {
+      if (lc && !kw.startsWith(lc)) continue;
+      options.push({ label: kw, detail: 'link option', type: 'keyword', apply: kw, boost: 2 });
+    }
+    // Also still accept named plot refs (rare but allowed).
+    options.push(...buildPlotNameOptions(scope, partial));
+  }
+  return options.length > 0 ? { from, options } : null;
+}
+
+function completeOnArg(
+  from: number,
+  _hint: Extract<PlotHoleHint, { kind: 'onArg' }>,
+  partial: string,
+  deps: PlotCompletionDeps,
+  scope: PlotScopeView | null,
+): CompletionResult | null {
+  const options: Completion[] = [];
+  // Query refs (`#N`) and named view aliases (`#viewname`).
+  options.push(...buildQueryRefOptions(deps, scope, partial));
+  // Named plots are also valid.
+  options.push(...buildPlotNameOptions(scope, partial));
+  return options.length > 0 ? { from, options } : null;
+}
+
+function completeQueryRefTarget(
+  from: number,
+  partial: string,
+  deps: PlotCompletionDeps,
+  scope: PlotScopeView | null,
+): CompletionResult | null {
+  return buildQueryRefResult(from, partial, deps, scope);
+}
+
+function completeLetName(from: number, _partial: string): CompletionResult | null {
+  // No completions for new constant names — just suppress the popup.
+  return null;
+}
+
+function completeLetValue(
+  from: number,
+  partial: string,
+  deps: PlotCompletionDeps,
+  scope: PlotScopeView | null,
+  fullValue: string,
+): CompletionResult | null {
+  const options: Completion[] = [
+    ...buildConstOptions(fullValue, partial.startsWith('@') ? partial.slice(1) : ''),
+    ...buildVariableOptions(deps, scope, partial.startsWith('$') ? partial : ''),
+  ];
+  return options.length > 0 ? { from, options } : null;
+}
+
+// ─── Shared builders ─────────────────────────────────────────────────────────
+
+function buildVariableOptions(
+  deps: PlotCompletionDeps,
+  scope: PlotScopeView | null,
+  partial: string,
+): Completion[] {
+  const options: Completion[] = [];
+  const lc = partial.toLowerCase().replace(/^\$+/, '');
+  const seen = new Set<string>();
+  // Scope variables (carries typed metadata).
+  if (scope) {
+    for (const [name, v] of scope.variables) {
+      if (lc && !name.toLowerCase().startsWith(lc)) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const prefix = v.scope === 'workspace' ? '$$' : '$';
+      options.push({
+        label: `${prefix}${name}`,
+        detail: `${v.scope} · ${v.dataType}`,
+        type: 'variable',
+        apply: `${prefix}${name}`,
+        boost: 3,
+      });
+    }
+  }
+  // Bare deps.getVariables() fallback (handles standalone editor / tests).
+  const vars = deps.getVariables?.() ?? {};
+  for (const [name, value] of Object.entries(vars)) {
+    const bare = name.startsWith('$') ? name.replace(/^\$+/, '') : name;
+    if (lc && !bare.toLowerCase().startsWith(lc)) continue;
+    if (seen.has(bare.toLowerCase())) continue;
+    seen.add(bare.toLowerCase());
+    const prefix = name.startsWith('$$') ? '$$' : '$';
+    options.push({
+      label: `${prefix}${bare}`,
+      detail: `= ${truncate(String(value), 30)}`,
+      type: 'variable',
+      apply: `${prefix}${bare}`,
+      boost: 2,
+    });
+  }
+  // Brush refs from prior named plots — wired so LINK_X / LINK_Y can complete.
+  if (scope) {
+    for (const [plotName, b] of scope.brushes) {
+      for (const suffix of ['.lo', '.hi'] as const) {
+        const candidate = `${plotName}.brush${suffix}`;
+        const lcCandidate = candidate.toLowerCase();
+        if (lc && !lcCandidate.startsWith(lc) && !plotName.toLowerCase().startsWith(lc)) continue;
+        if (seen.has(lcCandidate)) continue;
+        seen.add(lcCandidate);
+        options.push({
+          label: `$${candidate}`,
+          detail: `brush · ${b.xType}`,
+          type: 'variable',
+          apply: `$${candidate}`,
+          boost: 4,
+        });
+      }
+    }
+  }
+  return options;
+}
+
+function buildPlotNameOptions(scope: PlotScopeView | null, partial: string): Completion[] {
+  if (!scope) return [];
+  const lc = partial.toLowerCase();
+  const options: Completion[] = [];
+  for (const p of scope.namedPlots) {
+    if (lc && !p.plotName.toLowerCase().startsWith(lc)) continue;
+    options.push({
+      label: p.plotName,
+      detail: `${p.shape} plot`,
+      type: 'variable',
+      apply: p.plotName,
+      boost: 4,
+    });
+  }
+  return options;
+}
+
+function buildQueryRefOptions(
+  deps: PlotCompletionDeps,
+  scope: PlotScopeView | null,
+  partial: string,
+): Completion[] {
+  const options: Completion[] = [];
+  const lc = partial.toLowerCase().replace(/^#/, '');
+  const seen = new Set<string>();
+  if (scope) {
+    for (const q of scope.queryRefs) {
+      const idxLabel = `#${q.index}`;
+      if (lc && !String(q.index).startsWith(lc)) {
+        // continue, but also check alias prefix below
+      } else if (!seen.has(idxLabel)) {
+        seen.add(idxLabel);
+        options.push({
+          label: idxLabel,
+          detail: q.alias ? `query · ${q.alias}` : `query in cell ${q.cellId}`,
+          type: 'variable',
+          apply: idxLabel,
+          boost: 4,
+        });
+      }
+      if (q.alias && (!lc || q.alias.toLowerCase().startsWith(lc))) {
+        const aliasLabel = `#${q.alias}`;
+        if (!seen.has(aliasLabel)) {
+          seen.add(aliasLabel);
+          options.push({
+            label: aliasLabel,
+            detail: `view alias`,
+            type: 'variable',
+            apply: aliasLabel,
+            boost: 4,
+          });
+        }
+      }
+    }
+  }
+  // Fall back to #1..#N from sqlBlockCount when scope is unavailable.
+  if (options.length === 0) {
+    const n = deps.getSqlBlockCount?.() ?? 0;
+    for (let i = 1; i <= n; i++) {
+      const lbl = `#${i}`;
+      if (lc && !String(i).startsWith(lc)) continue;
+      options.push({ label: lbl, detail: `query #${i}`, type: 'variable', apply: lbl, boost: 4 });
+    }
+  }
+  return options;
+}
+
+function buildQueryRefResult(
+  from: number,
+  partial: string,
+  deps: PlotCompletionDeps,
+  scope: PlotScopeView | null,
+): CompletionResult | null {
+  const opts = buildQueryRefOptions(deps, scope, partial);
+  return opts.length > 0 ? { from, options: opts } : null;
+}
+
+// ─── Entry point ─────────────────────────────────────────────────────────────
 
 export function plotCompletionSource(deps: PlotCompletionDeps) {
   return (ctx: CompletionContext): CompletionResult | null => {
-    const data = deps.getData();
-    const dataKeys = data && data.length > 0 ? Object.keys(data[0]) : [];
     const fullValue = ctx.state.doc.toString();
-    const definedConstants = expandPlotConstants(fullValue).constants;
-    const line = ctx.state.doc.lineAt(ctx.pos);
-    const lineText = line.text;
-    const lineCh = ctx.pos - line.from;
-    const before = lineText.slice(0, lineCh);
+    const data = deps.getData();
 
-    const atRefMatch = before.match(/@(\w*)$/);
-    if (atRefMatch) {
-      const from = ctx.pos - atRefMatch[0].length;
-      const partial = atRefMatch[1].toLowerCase();
-      const options = definedConstants
-        .filter(c => c.name.toLowerCase().startsWith(partial))
-        .map<Completion>(c => ({
-          label: `@${c.name}`,
-          detail: `= ${truncate(c.value, 30)}`,
-          type: 'variable',
-          apply: `@${c.name}`,
-        }));
-      return options.length > 0 ? { from, options, validFor: /^@\w*$/ } : null;
+    // P2 — prefer typed columns from the discovery cache; fall back to row
+    // sampling, and kick off discovery on cache miss.
+    const cachedColumns = deps.getCellResultColumns?.() ?? null;
+    if (!cachedColumns && deps.getCellSql && deps.requestSchemaDiscovery) {
+      const cellSql = deps.getCellSql();
+      if (cellSql && cellSql.trim()) deps.requestSchemaDiscovery(cellSql);
+    }
+    const dataKeys = data && data.length > 0 ? Object.keys(data[0]) : [];
+
+    // P3 — pull in the notebook plot scope (may be null in standalone editor).
+    const scope = deps.getNotebookPlotScope?.() ?? null;
+    const cellId = deps.getCurrentCellId?.() ?? null;
+    const notebookContext = scope && cellId
+      ? { currentCellId: cellId, scope }
+      : undefined;
+
+    // ── @const early return ────────────────────────────────────────────────
+    const partial = partialBefore(fullValue, ctx.pos);
+    if (partial.text.startsWith('@')) {
+      const options = buildConstOptions(fullValue, partial.text.slice(1));
+      return options.length > 0
+        ? { from: partial.from, options, validFor: /^@\w*$/ }
+        : null;
     }
 
-    const tokenMatch = ctx.matchBefore(/[\w"]+/);
-    const tokenText = tokenMatch?.text ?? '';
-    const from = tokenMatch ? tokenMatch.from : ctx.pos;
+    // Parse + annotate with cursor info — emits a `hole` at the cursor.
+    let root: PlotNode;
+    try {
+      const result = parseAndAnnotate({
+        src: fullValue,
+        cursorPos: ctx.pos,
+        resultColumns: cachedColumns ?? undefined,
+        shapeRegistry: getPlotRegistryAsShapes(),
+        notebookContext,
+      });
+      root = result.root;
+    } catch (err) {
+      if ((import.meta as any).env?.DEV) console.warn('[plotCompletionSource] parse failed:', err);
+      return null;
+    }
 
-    const funcMatch = before.match(/(\w+)\s*\(([^)]*)$/);
-    if (funcMatch) {
-      const funcName = funcMatch[1].toUpperCase();
-      const argsStr = funcMatch[2];
-      const plotDef = plotRegistry[funcName];
-      if (plotDef) {
-        const isTypingValue = /:\s*[\w"']*\s*$/.test(before);
-        const paramNameMatch = before.match(/(\w+)\s*:\s*[\w"']*\s*$/);
-        const currentParamName = paramNameMatch ? paramNameMatch[1] : null;
-        const paramDef = currentParamName ? plotDef.params.find(p => p.name === currentParamName) : null;
-
-        if (isTypingValue && paramDef) {
-          const options: Completion[] = [];
-          if (paramDef.type.includes('column')) {
-            for (const key of dataKeys) {
-              options.push({ label: key, detail: 'column', type: 'column', apply: `"${key}"` });
-            }
-          }
-          if (paramDef.options) {
-            for (const opt of paramDef.options) {
-              options.push({ label: opt, detail: 'option', type: 'atom', apply: opt });
-            }
-          }
-          for (const c of definedConstants) {
-            options.push({
-              label: `@${c.name}`,
-              detail: `= ${truncate(c.value, 30)}`,
-              type: 'variable',
-              apply: `@${c.name}`,
-            });
-          }
-          return options.length > 0 ? { from, options } : null;
-        }
-        const usedParams = new Set(
-          argsStr.match(/(\w+)\s*:/g)?.map(p => p.slice(0, -1).trim()) || [],
+    const hole = findHoleAtCursor(root, ctx.pos);
+    const hint = hole?.annotations.hint;
+    if (!hint) {
+      // No specific hole hint — try value-ancestor fallback (e.g. user typed
+      // `x: g` and the parser consumed `g` as an ident, so no value hole was
+      // emitted, but the cursor is inside a column-typed clause value).
+      const va = findValueAncestorClause(root, ctx.pos);
+      if (va) {
+        const synthHint: Extract<PlotHoleHint, { kind: 'clauseValue' }> = {
+          kind: 'clauseValue',
+          shape: va.shape,
+          clauseKey: va.clauseKey,
+          paramType: va.paramType,
+          columnTyped: va.columnTyped,
+          options: va.options,
+          inList: false,
+        };
+        return completeClauseValue(
+          partial.from, synthHint, partial.text, deps, scope,
+          cachedColumns, dataKeys, fullValue,
         );
+      }
+      if (partial.text.startsWith('$')) {
+        const options = buildVariableOptions(deps, scope, partial.text);
+        return options.length > 0
+          ? { from: partial.from, options, validFor: /^\$\$?\w*$/ }
+          : null;
+      }
+      // Top-level / composite-body fallback: when the cursor sits at a position
+      // where a fresh statement can start (start-of-doc, after `{`, `}`, `;`,
+      // `+`, `,`, or a newline), offer the registry shapes + row/col. Covers
+      // partial-typed shape names (LINE|, BAR|) and empty composite bodies
+      // (`row { |`) where the parser never managed to emit a hole hint.
+      const before = fullValue.slice(0, partial.from);
+      const trimmed = before.replace(/\s+$/, '');
+      const lastCh = trimmed.length === 0 ? '' : trimmed[trimmed.length - 1];
+      const atTopLevelPos = trimmed.length === 0 ||
+        lastCh === '{' || lastCh === '}' || lastCh === ';' ||
+        lastCh === '+' || lastCh === ',' || /\n\s*$/.test(before);
+      if (atTopLevelPos) {
+        const lcShape = partial.text.toLowerCase();
         const options: Completion[] = [];
-        for (const param of plotDef.params) {
-          if (usedParams.has(param.name)) continue;
+        for (const p of Object.values(plotRegistry)) {
+          if (lcShape && !p.name.toLowerCase().startsWith(lcShape)) continue;
           options.push({
-            label: param.name,
-            detail: `${param.type}${param.required ? ' *' : ''}`,
-            type: 'plotParam',
-            apply: `${param.name}: `,
+            label: p.name,
+            detail: p.description,
+            type: 'plotFn',
+            apply: p.template,
+            boost: 5,
           });
         }
-        return options.length > 0 ? { from, options } : null;
+        if (!lcShape || 'row'.startsWith(lcShape)) {
+          options.push({ label: 'row', detail: 'horizontal composite of plots', type: 'keyword', apply: 'row { ', boost: 3 });
+        }
+        if (!lcShape || 'col'.startsWith(lcShape)) {
+          options.push({ label: 'col', detail: 'vertical composite of plots', type: 'keyword', apply: 'col { ', boost: 3 });
+        }
+        if (!lcShape || 'let'.startsWith(lcShape)) {
+          options.push({ label: 'LET', detail: 'define a reusable constant', type: 'keyword', apply: 'LET @name = value', boost: 1 });
+        }
+        // Typo-recovery: if the user typed 3+ chars that don't prefix any
+        // canonical shape name, surface the single closest match (Levenshtein
+        // ≤2). Require the first two chars to coincide to avoid wildly wrong
+        // suggestions like "XXXX" → "BAR_CHART".
+        if (options.length === 0 && lcShape.length >= 3) {
+          const names = Object.values(plotRegistry).map(p => p.name);
+          const m = closestMatch(lcShape, names);
+          if (m && m.slice(0, 2).toLowerCase() === lcShape.slice(0, 2).toLowerCase()) {
+            const p = plotRegistry[m as keyof typeof plotRegistry];
+            options.push({
+              label: m,
+              detail: `did you mean? · ${p?.description ?? ''}`.trim(),
+              type: 'plotFn',
+              apply: p?.template ?? m,
+              boost: 4,
+            });
+          }
+        }
+        if (options.length > 0) return { from: partial.from, options };
       }
-    }
 
-    if (/\)\s*\w*$/.test(before)) {
-      const options: Completion[] = Object.values(plotClauseDocs).map(c => ({
-        label: c.name,
-        detail: c.signature,
-        type: 'keyword',
-        apply: `${c.name} `,
-      }));
-      return { from, options };
-    }
-
-    const beforeToken = lineText.slice(0, tokenMatch ? tokenMatch.from - line.from : lineCh);
-    if (/^\s*$/.test(beforeToken) || /;\s*$/.test(beforeToken.trim())) {
-      const options: Completion[] = Object.values(plotRegistry).map(p => ({
-        label: p.name,
-        detail: p.description,
-        type: 'plotFn',
-        apply: p.template,
-      }));
-      options.push({
-        label: 'LET',
-        detail: 'define a reusable constant',
-        type: 'keyword',
-        apply: 'LET @name = value',
-      });
-      return options.length > 0 ? { from, options } : null;
-    }
-
-    if (tokenText) {
+      if (partial.text === '') return null;
+      // Generic column suggestions on a bare identifier (best-effort).
+      const cols = cachedColumns?.map(c => c.name) ?? dataKeys;
+      const lc = partial.text.toLowerCase().replace(/^"/, '');
       const options: Completion[] = [];
-      for (const key of dataKeys) {
-        if (!key.toLowerCase().startsWith(tokenText.toLowerCase())) continue;
-        options.push({ label: key, detail: 'column', type: 'column', apply: `"${key}"` });
+      for (const c of cols) {
+        if (!c.toLowerCase().startsWith(lc)) continue;
+        options.push({
+          label: c,
+          detail: detailForColumn(c, cachedColumns),
+          type: 'column',
+          apply: `"${c}"`,
+          boost: 1,
+        });
       }
-      if (options.length > 0) return { from, options };
+      return options.length > 0 ? { from: partial.from, options } : null;
     }
 
+    const from = partial.from;
+
+    switch (hint.kind) {
+      case 'topLevel':
+        return completeTopLevel(from, hint);
+      case 'clauseKey':
+        return completeClauseKey(from, hint, partial.text);
+      case 'clauseValue':
+        return completeClauseValue(
+          from, hint, partial.text, deps, scope, cachedColumns, dataKeys, fullValue,
+        );
+      case 'tailKey':
+        return completeTailKey(from, hint, partial.text);
+      case 'tailValue':
+        return completeTailValue(
+          from, hint, partial.text, deps, scope, cachedColumns, dataKeys, fullValue,
+        );
+      case 'linkArgs':
+        return completeLinkArgs(from, hint, partial.text, deps, scope);
+      case 'onArg':
+        return completeOnArg(from, hint, partial.text, deps, scope);
+      case 'queryRefTarget':
+        return completeQueryRefTarget(from, partial.text, deps, scope);
+      case 'letName':
+        return completeLetName(from, partial.text);
+      case 'letValue':
+        return completeLetValue(from, partial.text, deps, scope, fullValue);
+    }
     return null;
   };
 }
+
+/**
+ * Adapt the runtime `plotRegistry` (uppercase keys, `params: PlotParameter[]`)
+ * to the parser-side `ShapeRegistry` shape (lowercase keys + `validClauses` /
+ * `columnClauses` / `requiredClauses` / `clauseDefs`).
+ */
+function getPlotRegistryAsShapes(): import('./plot/annotators/shapeAnnotator').ShapeRegistry {
+  // Memoize — registry is stable for the editor session.
+  if (cachedShapeRegistry) return cachedShapeRegistry;
+  const reg: import('./plot/annotators/shapeAnnotator').ShapeRegistry = {};
+  const SHAPE_MAP: Record<string, string> = {
+    LINE_CHART: 'line',
+    BAR_CHART: 'bar',
+    PIE_CHART: 'pie',
+    SCATTER_PLOT: 'scatter',
+    HEATMAP: 'heatmap',
+    HISTOGRAM: 'histogram',
+    BOX_PLOT: 'boxplot',
+    FLAMEGRAPH: 'flamegraph',
+    TABLE: 'table',
+  };
+  for (const [upperName, def] of Object.entries(plotRegistry)) {
+    const lower = SHAPE_MAP[upperName] ?? upperName.toLowerCase();
+    const params = (def as any).params ?? [];
+    const validClauses = params.map((p: any) => p.name);
+    const columnClauses = params
+      .filter((p: any) => typeof p.type === 'string' && p.type.includes('column'))
+      .map((p: any) => p.name);
+    const requiredClauses = params
+      .filter((p: any) => p.required)
+      .map((p: any) => p.name);
+    const clauseDefs = params.map((p: any) => ({
+      key: p.name,
+      paramType: p.type,
+      required: !!p.required,
+      options: p.options,
+      description: p.description,
+    }));
+    reg[lower] = {
+      name: lower,
+      validClauses,
+      columnClauses,
+      requiredClauses,
+      clauseDefs,
+      description: (def as any).description,
+    };
+  }
+  cachedShapeRegistry = reg;
+  return reg;
+}
+let cachedShapeRegistry: import('./plot/annotators/shapeAnnotator').ShapeRegistry | null = null;

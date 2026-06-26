@@ -1,5 +1,7 @@
 import { Content } from "@google/genai";
-import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata } from './IAiProvider';
+import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata, ToolChatMessage, ToolStreamChunk, StreamChatWithToolsOpts } from './IAiProvider';
+import type { Tool } from './tools';
+import { toolsToOpenAi, parseOpenAiToolCalls } from './tools/openaiAdapter';
 import { GardenerIcon } from '../../components/icons/GardenerIcon';
 import { Settings } from "../../context/SettingsContext";
 
@@ -37,6 +39,7 @@ export class GardenerProvider implements IAiProvider {
                 { id: 'opus-41', name: 'Opus-41', description: 'Most powerful model', group: 'AWS Bedrock Claude' },
             ],
             defaultModels: {
+                tiny: 'gpt-50-nano',
                 basic: 'gpt-50-nano',
                 advanced: 'gpt-50-mini',
             },
@@ -145,7 +148,71 @@ export class GardenerProvider implements IAiProvider {
             ]
         });
     }
-    
+
+    /**
+     * Gardener's Answering Machine is an OpenAI-compatible aggregator hosting
+     * Azure OpenAI, AWS Bedrock Claude, and GCP VertexAI Gemini behind the same
+     * /chat/completions endpoint. We pick the OpenAI tool wire format because:
+     *  - The Azure-OpenAI-backed models (`gpt-50-*`) speak it natively.
+     *  - Bedrock Claude and Gemini are wrapped by Gardener to also accept it.
+     * Picking one format keeps the orchestrator simple; if a backend rejects
+     * OpenAI-shaped tools we'll surface the error and revisit per-model routing.
+     */
+    async *streamChatWithTools(
+        messages: ToolChatMessage[],
+        tools: Tool[],
+        opts?: StreamChatWithToolsOpts,
+    ): AsyncIterable<ToolStreamChunk> {
+        const model = opts?.model || 'gpt-50-mini';
+        const wireMessages: any[] = [];
+        if (opts?.systemInstruction) wireMessages.push({ role: 'system', content: opts.systemInstruction });
+        for (const m of messages) {
+            if (m.role === 'tool') {
+                for (const tr of m.toolResults ?? []) {
+                    wireMessages.push({
+                        role: 'tool',
+                        tool_call_id: tr.id,
+                        content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result),
+                    });
+                }
+                continue;
+            }
+            const wire: any = { role: m.role, content: m.content ?? '' };
+            if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+                wire.tool_calls = m.toolCalls.map(tc => ({
+                    id: tc.id,
+                    type: 'function',
+                    function: { name: tc.name, arguments: JSON.stringify(tc.args ?? {}) },
+                }));
+            }
+            wireMessages.push(wire);
+        }
+        const body: any = { model, messages: wireMessages };
+        if (tools.length > 0) body.tools = toolsToOpenAi(tools);
+
+        const response = await fetch(this.API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`,
+            },
+            body: JSON.stringify(body),
+            signal: opts?.signal,
+        });
+        if (!response.ok) {
+            if (response.status === 401) throw new Error('Invalid API Key');
+            if (response.status === 429) throw new Error('Quota Exceeded');
+            const errorBody = await response.json().catch(() => ({}));
+            throw new Error(errorBody?.error?.message || `Gardener tool call failed with status ${response.status}`);
+        }
+        const result = await response.json();
+        const message = result.choices?.[0]?.message;
+        if (message?.content) yield { kind: 'text', delta: String(message.content) };
+        for (const call of parseOpenAiToolCalls(message)) {
+            yield { kind: 'tool_call', id: call.id, name: call.name, args: call.args };
+        }
+    }
+
     async verifyCredentials(): Promise<boolean> {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 10000);

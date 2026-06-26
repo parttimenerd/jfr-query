@@ -203,9 +203,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                                 onMetadataChange={async () => {}}
                                                 onCellVariableChange={() => {}}
                                                 allVariables={{}}
-                                                errorPortalId={`plot-help-general-error`}
                                             />
-                                             <div id="plot-help-general-error" />
                                         </div>
                                     </div>
                                 </div>
@@ -245,9 +243,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                             onMetadataChange={async () => {}}
                                             onCellVariableChange={handleInteractiveVariablesChange}
                                             allVariables={interactiveExampleVariables}
-                                            errorPortalId={`plot-help-interactive-error`}
                                         />
-                                        <div id="plot-help-interactive-error" />
                                     </div>
                                 </div>
                             </div>
@@ -286,7 +282,6 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                 {doc.examples.map((example, index) => {
                                     const sampleData = example.sampleData || genericSampleData;
                                     const currentConfig = editableExamples[doc.name]?.[index] || '';
-                                    const errorPortalId = `plot-help-error-${doc.name}-${index}`;
 
                                     return (
                                         <div key={index} className="mt-6 p-4 bg-gray-900/40 rounded-lg border border-gray-700/50">
@@ -324,9 +319,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                                             onMetadataChange={async () => {}}
                                                             onCellVariableChange={() => {}}
                                                             allVariables={{}}
-                                                            errorPortalId={errorPortalId}
                                                         />
-                                                         <div id={errorPortalId} />
                                                     </div>
                                                 </div>
                                             </div>

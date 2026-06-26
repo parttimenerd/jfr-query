@@ -5,6 +5,8 @@ export interface NotebookCellData {
   id: string;
   title: string;
   content: string;
+  /** Optional human-stable handle from `<!-- @cell name=... -->` directive. */
+  name?: string;
 }
 
 export interface ColumnSchema {
@@ -78,4 +80,6 @@ export interface NotebookMetadata {
   timeFormat?: string;
   decimalPlaces?: number;
   variables?: Record<string, string>;
+  /** Keyed by cell `name` or fallback `cell_<1-based-index>`; SQL returning truthy → cell rendered, else collapsed. */
+  cellConditions?: Record<string, string>;
 }

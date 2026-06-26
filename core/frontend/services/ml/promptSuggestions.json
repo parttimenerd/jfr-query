@@ -1,0 +1,4808 @@
+{
+  "version": 1,
+  "dim": 384,
+  "count": 1200,
+  "trainedAt": "2026-06-25T09:45:56.774Z",
+  "prompts": [
+    {
+      "suggestedPrompt": "Show me the different GC causes in this recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many recordings are stored in the database?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the maximum heap size observed in all collections?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "List all unique GC pause phase names in the data",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads are allocating the most objects?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me how frequently each GC cause occurs",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the most common object classes being allocated?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show heap usage progression from first to last collection",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Find the longest-running GC pause phases",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the total duration of all recordings?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What range of allocation sizes do we see?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "When did the first and last GC events occur?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many heap summary events were captured?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me a sample of GC phases and their associated collections",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What different types of objects are allocated?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What different causes trigger GC events?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me heap usage at each collection event",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads are actively allocating memory?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many total garbage collection events occurred?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many times does each pause phase type occur?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show total pause time and maximum duration across all GC events",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average duration for each garbage collection cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find average heap utilization percentage at GC start",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total duration by phase name across all GCs",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total allocation size per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get count and median duration of allocation failure GCs",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum pause time by GC cause ranked by frequency",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate min, max, and average heap sizes observed",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Group allocations by thread and count samples per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate percentage of total pause time per phase",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate total recording duration and event counts",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate heap usage ratio and fragmentation metrics",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocations and count by object class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events per minute and calculate average frequency",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate p50 p95 p99 percentiles of GC pause times",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get peak heap usage and total memory pressure statistics",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find threads with highest allocation frequency",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show phase contribution as percentage of total pause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Rank GC causes by impact and average pause time",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Compute average allocation size and variance by class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show me the distribution of GC causes across all events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the characteristics of the longest recording session",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which pause phases occur most frequently across all GC events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me heap usage patterns before and after GC events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the top object types being allocated by each thread",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC cause appears most frequently in the data",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How much memory is each thread allocating overall",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which recording captured the most GC events during its window",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are there any time periods with unusual GC event clustering",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Does the heap size remain constant or fluctuate during GC",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show all unique GC pause phase names and their typical durations",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What object sizes are most commonly allocated in the system",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC cause triggers the longest total pause time",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "At what heap utilization percentage do most GC events occur",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads allocate the most memory and how does it vary",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Do certain GC causes consistently take longer than others",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC phase pause is the most variable in duration",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which object classes are responsible for the most memory allocation",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many distinct recording sessions exist in this dataset",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the relationship between heap usage and GC cause types",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Why are these GC pauses so long? What's causing them?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Find which GC events had the highest heap utilization spike.",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are Full GC events occurring more often than they should be?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What object types are consuming the most memory allocations?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC phases are taking disproportionately long?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is one thread allocating significantly more memory than others?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are GC events happening too frequently? Check inter-event timing.",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why isn't heap being freed up effectively after garbage collection?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC cause has the worst performance impact on average?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which classes are being allocated repeatedly and might leak?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Did the recording capture the entire problem window correctly?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are there bimodal or unusual pause duration patterns indicating issues?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is high heap utilization causing GC performance degradation?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC phases collectively consume the most time?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Did any thread experience a sudden large allocation event?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are certain GC causes taking longer than expected?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is the maximum heap size changing between GC events?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is one generation being collected much more frequently than the other?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are array allocations growing too large and stressing the heap?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is GC taking up too much of the application's CPU time?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Create a line chart showing GC pause duration over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap used vs heap size over the recording timeline",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show a bar chart of GC causes with event frequency",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a pie chart showing relative time spent in each GC phase",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize total allocation size per thread as a horizontal bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a time-series plot of heap utilization percentage",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a histogram showing GC events per time window",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize top 10 most-allocated object classes as a bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot box plots comparing GC pause durations by cause",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Display a timeline chart of active recordings with duration spans",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a heatmap showing phase duration across different GC IDs",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Make a scatter plot of thread allocation rate vs total allocations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Display total pause time and event count as summary KPI cards",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap capacity and usage over GC event sequence",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a histogram with bins showing GC pause duration distribution",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot average allocation size per object class as columns",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a scatter plot of pause duration vs heap memory recovered",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a stacked bar chart showing phase composition per GC event",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a Gantt chart of recording sessions with timeline coverage",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize top allocation combinations as a treemap or bubble chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Explain why Young Generation GCs are so much more frequent than Full GCs",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what causes heap utilization to gradually increase before each GC",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why the Mark phase takes 9 times longer than the Sweep phase",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why worker-1 thread dominates allocation compared to other threads",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what Metaspace-triggered GCs indicate about class loading patterns",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how GC event frequency correlates with recording duration and app load",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why byte arrays are allocated so much more frequently than strings",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what triggered the extreme pause spike and why it lasted so long",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the sawtooth heap pattern and what it reveals about memory pressure",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why GC frequency spikes dramatically midway through the recording",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why most allocations are tiny and what this means for GC pressure",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the sequential phase timing and why Mark takes 3x longer than Compact",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why some GCs recover so much more free space than others",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the massive allocation imbalance and whether it indicates a bottleneck",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the relationship between heap size and GC pause duration",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why System.gc() triggered collections pause 6x longer on average",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why HashMap allocation is thread-specific while String[] is not",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why Young GCs collectively pause longer despite being faster individually",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why Full GC always recovers heap to similar levels despite varying before-states",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why Mark phase dominates GC pause time and what optimizations help",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Show average duration for each GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total heap used and max heap size across all GC events",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total pause time by phase name across all collections",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total allocation size per thread sorted descending",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average recording duration and total data collection time",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get min, max, and average pause duration for concurrent marks",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocations by object class and rank by total size",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events per cause and show percentage distribution",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Average heap utilization percentage after each GC event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total and average duration by phase name with occurrence count",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show total allocated bytes and average allocation size per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total collection time by cause with count",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get minimum heap size and average heap utilization across records",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total duration for pauses over 10ms grouped by phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total bytes allocated per object class ranked by consumption",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average time between GC events by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show total recording duration and count per recording name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show heap before and after GC with percent change",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Average pause duration and count for each phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Add average allocation size and count of samples per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show me a line chart of GC pause duration over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap used vs heap size as a stacked area chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a pie chart showing GC causes distribution",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a horizontal bar chart of total time per GC phase",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot recording events as a timeline with duration bars",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a bar chart of total allocation per thread",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show GC frequency per minute as a column chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap recovery as a scatter plot before vs after",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Make a top-10 horizontal bar chart of allocating classes",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a histogram showing GC pause duration distribution",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a Gantt chart of all GC phases by ID and name",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap utilization percentage as a line chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize samples vs bytes as a bubble chart by class",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a box plot of pause duration grouped by cause",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show grouped bar chart of phase durations per GC ID",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot recording start and end times as horizontal spans",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a heatmap of allocation intensity across threads",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize average pause and frequency by cause as bubble chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot cumulative GC pause time as a step-function line chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a donut chart of phase time contribution percentages",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Why are these GC pauses so much longer than others?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What's causing heap usage to spike to 90 percent?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which threads and object types are allocating most memory?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why do certain GC causes happen more frequently than expected?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC phase is taking the longest and why?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why did this recording stop prematurely?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What's causing sudden jumps in heap usage between collections?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which object classes are consuming the most memory allocation?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why are full GCs happening so frequently in this recording?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is this thread allocating significantly more than others?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC events are statistical outliers in pause time?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the heap becoming fragmented with less free space available?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC phases have inconsistent pause times across collections?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What triggered these unusually large single allocations?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are GC pauses clustered at specific times indicating a pattern?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why did the maximum heap size change during this recording?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is there a correlation between heap usage and GC pause duration?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why do certain phases behave differently across GC causes?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is heap usage continuously increasing suggesting a memory leak?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What caused the sudden spike in temporary object allocations?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me the distribution of GC causes across all events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the heap usage patterns for each GC cause?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC phases take the longest on average?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads are allocating the most memory?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me how heap usage changes before and after collection",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the total GC pause time across all recordings?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which classes consume the most memory overall?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are there any outlier GC events with unusually long durations?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What phases consistently appear in high-duration GC events?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Did heap size get resized at any point during the recording?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are there any threads allocating unexpected object types?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Do GC events cluster at specific times or are they evenly distributed?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC IDs have multiple heap state snapshots recorded?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Do Young GC events have fewer phases than Full GC events?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the breakdown of small vs large allocation events?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many GC events occurred per second in each recording?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which phases occur in almost every GC event?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "When was the heap most heavily utilized?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are allocation samples concentrated in a few threads or spread widely?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Did the frequency of different GC causes change over time?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Explain what these GC phase pauses represent and why they matter",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does the difference between heapUsed and heapSize tell us about memory pressure?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the difference between G1 Humongous Allocation and G1 Evacuation Pause causes",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why is byte[] consuming so much memory compared to other object types?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does high allocation activity in the 'dispatch-worker' thread indicate?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why some GC events take much longer than others despite similar heap sizes",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What is the difference between Concurrent Mark and Evacuation Pause in G1GC?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how humongous allocations impact G1 garbage collector performance",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does a high average GC duration suggest about application health?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what it means when heap usage remains high even after GC completion",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why are young generation pauses typically much shorter than full GC pauses?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What causes excessive string allocations and how do they affect GC pressure?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why Metadata GC Threshold events are rare compared to G1 Evacuation Pause",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does the variance in heap usage indicate about memory fragmentation?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how to identify if these large allocations are necessary or avoidable",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What is concurrent marking and why doesn't it cause full application pauses?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what JFR is measuring and how it affects application performance",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why would an application allocate many arrays and what performance impact does it have?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the difference between a Full GC and an Evacuation Pause trigger",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does a heap that is consistently 90%+ full tell us about the application?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Show total GC count and average duration by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum up total pause time for each phase type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get average peak heap usage across all GC events",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total allocation size per object class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count the number of active recordings and average their lengths",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate GC duration statistics grouped by cause type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocation sizes by thread name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate min, max, and median pause duration per phase",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get heap efficiency ratio aggregated across all GC events",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Break down GC frequency and total pause time by hour",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Rank object classes by total allocation and count samples",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get average and percentile durations for each phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show total duration and event count per recording name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap utilization percentage across all snapshots",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum and rank total GC time consumed by each cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average allocation size and sample count per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate pause count and total duration by phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total bytes and average size per allocated object class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total pause time and average duration by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get total and average duration for each distinct recording",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Create a timeline chart of GC pause durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show heap used vs heap size as a stacked area chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize GC causes as a pie chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a bar chart of GC phase durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize top 15 allocated object classes as a horizontal bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot GC frequency per minute as a line chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a histogram of GC pause durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap recovery as a scatter plot with time and heap used",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show top allocating threads as a bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize average pause time by GC cause as a bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a timeline of active recordings with duration bars",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a grouped bar chart comparing concurrent vs pause phase durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap size trend as a line chart over GC events",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a donut chart of top 8 most-sampled object classes",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize pause time vs heap used as a scatter plot",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a stacked bar chart of phase durations per GC event",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize allocation hotspots as a heatmap of thread vs class",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show GC event counts and average duration by cause as grouped bars",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a waterfall chart showing phase cumulative timing",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap utilization percentage as a line chart over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show me the different GC causes that occurred",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What recordings are available and how long did each run",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC cause is most frequent in our data",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the range of heap sizes observed during GC",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are all the different GC pause phase names",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads are allocating the most memory",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me GC event frequency by day",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the fastest and slowest GC event",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which object classes have the most allocation samples",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How does heap utilization percentage change across events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me which phases make up the GC cycles",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How long was each recording session in total",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the most common allocation sizes",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "In what order did GC events occur and why",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads are allocating memory most frequently",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the duration range for each GC phase",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many different heap sizes are configured",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "When did each type of GC cause first and last occur",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which object class and size combinations are most common",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the time gaps between consecutive GC events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the root cause of these long pauses",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why isn't heap being reclaimed after garbage collection",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which thread is responsible for excessive memory allocation",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Identify which GC phases are unexpectedly slow",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why are allocation failure GCs happening so frequently",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which object types are allocating the most large heap objects",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is so much heap space unused after collection",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What are these unusual garbage collection causes",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Does GC behavior differ across different recording sessions",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why do some GC phases have such inconsistent execution times",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Investigate why heap is growing after garbage collection",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Debug what worker-thread-5 is allocating so much memory for",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why are multiple GC events overlapping or interfering",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Identify allocation storms and their triggering classes",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Compare GC metrics before and after the recent deployment",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is heap utilization oscillating wildly between GCs",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Debug what caused this exceptionally long GC pause event",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why did several recording sessions terminate early",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Investigate which GC phases are exceeding timeout thresholds",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show correlation between heap pressure and GC pause duration",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What causes these long GC pause phases?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why does heap usage spike before full collections?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What do these different GC causes mean for application performance?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why are these specific classes allocating so much memory?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What's causing this thread to allocate more than others?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why are GC pauses getting progressively longer over time?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does it mean when memory isn't recovered after garbage collection?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What are these GC phase names and why do they take different amounts of time?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why does the heap size change during the recording?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why are some GC causes more frequent than others?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does this recording duration tell us about the application's GC behavior?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why are these gigantic allocations happening and are they normal?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What's the difference between these GC causes in terms of application impact?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why do these GCs happen at high heap utilization levels?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why do these classes get allocated so frequently?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does this pattern of increasing GC pauses indicate about memory management?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "How do minor and major collections differ based on these GC causes?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does this allocation rate tell us about thread behavior?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What could cause these irregular patterns in heap memory recovery?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why do some GC events have more complex phase structures than others?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Show total pause time by GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap utilization percentage across all GCs",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total duration of each pause phase type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total bytes allocated per thread across all samples",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find the longest and shortest recording durations",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show average GC duration grouped by cause type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate max and min duration for each pause phase",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Compute average heap used before and after GC",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count allocation samples and total bytes per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocations grouped by object class, sorted descending",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate cumulative GC pause time over time",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total pause time by phase name and statistics",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate heap utilization percentage and average fragmentation",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Group recordings by name and show count and average duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events and total pause duration per cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Group by object class and show average and max allocation size",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average duration and occurrence count per phase",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total allocated bytes and count per thread name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average and median heap used and heap size",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show average duration per event grouped by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show GC pauses over time as a timeline chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap used vs heap size as a line chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a pie chart showing GC causes distribution",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot average phase durations as a bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize total allocation per thread as horizontal bars",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a scatter plot of GC duration vs start time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap utilization percentage over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Display recording sessions as Gantt chart timeline",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show top 5 allocating classes as a bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize GC event frequency as a histogram",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a box plot showing phase duration distributions",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap size changes as a step chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap pressure at trigger time by GC cause",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create stacked area chart of thread allocation over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show GC pause duration percentiles as a quantile plot",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize phase time contributions as a stacked bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot allocation count by object class as a trend line",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Chart memory freed per GC event as a bar graph",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize intervals between GC events as a histogram",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a violin plot of allocation sizes per thread",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show total heap used and freed per GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average and maximum GC duration by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total pause time grouped by phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count how many times heap used exceeded 80% capacity",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total allocations per thread sorted by volume",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Number of GC events per cause type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Average heap fragmentation ratio by collection event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total and average duration per GC phase across all collections",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count total recording sessions and sum their durations",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate allocation size by object class type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total GC pause time as percentage of recording duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count allocations and calculate median size per class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Maximum heap used and average across all GC events",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Which phase contributes most to total pause time",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Number of unique threads and mean allocation per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Rank GC causes by median pause duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate standard deviation of heap utilization percentage",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Average number of phases and total phase duration per GC",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Top 5 threads by total allocation volume",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Min and max GC duration per cause type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Why is this pause phase taking so long compared to others?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is heap usage approaching max capacity after GC?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC cause is firing most frequently and why?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is this thread allocating so much memory?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What caused these sudden GC duration spikes?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why are GC events clustering at this time interval?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the heap size being resized unexpectedly during GC?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which phase within this GC is consuming most time?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is this object class being allocated so frequently?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What is causing GC to spike during this time period?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is heap usage increasing despite garbage collection?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why are Full GC events occurring and are they avoidable?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why do some phase executions deviate significantly from average?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is this recording still active and not completing?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which threads are causing memory pressure issues?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC cause has the most unpredictable pause duration?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is post-collection heap utilization not dropping as expected?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are long recordings causing performance degradation?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is this class being over-allocated unnecessarily?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why does this GC have an abnormal number of phases?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me the most common GC causes in this recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the total duration of all recordings?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC phases are taking the longest?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What was the peak heap usage observed during GC events?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which object classes consume the most memory allocation?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are there any patterns in GC event timing?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads are allocating the most objects?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the minimum and maximum GC pause times?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Is heap fragmentation increasing over the recording?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What different reasons trigger GC in this application?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the top object classes being allocated?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What phases make up a typical GC pause?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How much heap is recovered by each GC event?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the range of object allocation sizes?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many GC events occurred during the recording?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "When did this recording start and how long did it run?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads are most active in allocations?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC phase typically takes the longest?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Is the maximum heap size constant throughout?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What GC events happened most recently?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the distribution of GC causes in the data",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the total duration of all recordings combined?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the min and max heap sizes recorded?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC phase takes the longest on average?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the top 10 most frequently allocated object classes",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What percentage of GCs are caused by allocation failures?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are GC events more frequent at certain times?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the average heap utilization percentage?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which thread allocates the most memory overall?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many GCs had pauses longer than 100ms?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the total time spent in each GC phase?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the objects with the largest average allocation size",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which recording has the longest duration?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many unique GC causes are there in the data?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Did the heap size change during the recording?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which phase pause took the longest single instance?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many different threads are allocating objects?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the typical time between consecutive GC events?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the distribution of allocation sizes by object class",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Do certain phases always occur together in a GC event?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show total pause time by garbage collection cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average GC duration for each cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate heap usage statistics by GC event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total pause time across all GC phases",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count allocation samples and total bytes per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get maximum and average recording duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find the most common GC cause and its percentage",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap utilization ratio per GC event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get min, max, and average duration for each phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocation sizes by object class name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate percentiles and standard deviation of GC duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count recordings and sum their total durations",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap freed and heap retained metrics",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find which thread allocates the most memory total",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate GC count and average duration by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get total pause time across all phases per GC event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average and peak heap utilization percentage",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocation sizes and count samples per object class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total pause time by cause with percentage of runtime",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events and total recording duration by name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show me a timeline chart of all GC events and their durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a line chart showing heap used versus heap size over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize GC causes as a pie chart or bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot the top GC pause phases sorted by duration as a horizontal bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show object allocation by class as a stacked bar or treemap",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a scatter plot of thread allocation count versus total bytes",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot GC duration over time to see if pauses are trending up or down",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap recovery rate for each GC event",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Display recording sessions as a Gantt-style timeline chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create stacked bars showing phase breakdown for top 5 GC events",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a donut chart of object allocation distribution by class",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Make a scatter plot of heap usage before GC versus GC pause duration",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Chart allocation frequency by thread as a bar graph",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a timeline showing GC events colored by cause",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap utilization percentage over time as a line chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show top 20 allocations as a horizontal bar chart by size",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a histogram of GC event frequency across time windows",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize total duration per phase type as a horizontal bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show cumulative pause time and GC count as summary metrics with gauges",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a histogram of allocation size distribution with log scale",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Why are some GC pauses taking over 100ms?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me GC events where heap usage exceeds 90%",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which Full GC events occurred and how long did they take?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which phase is causing the longest pause in GC 42?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What objects are consuming the most heap allocation?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which thread is allocating the most memory and why?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why are we seeing so many GC events of the same cause?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Debug why allocation failure GCs are taking longer than expected",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show GC events where heap didn't get freed after collection",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are concurrent GC phases running longer than they should?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why are mixed GC pauses occurring more frequently?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the recording capturing the problematic GC period?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Identify GC pauses that are 3x longer than average",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are phase durations accurately summing to total pause time?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Find GC events leaving less than 10MB free heap space",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which object classes have excessive churn causing pressure?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "At what times do most GC pauses occur?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC causes show the most pause time variance?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are we loading too many classes causing metaspace issues?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "When did GC pause duration suddenly double?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Explain why Full GC causes are taking so much longer than Young GC",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what high heap usage before GC means for performance",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain which GC phase is consuming most of the pause time",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why certain threads are allocating much larger objects",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what causes the high frequency of GC events",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why some GC events don't seem to free much memory",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why this particular class is responsible for most allocations",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the high variance in Full GC pause times and what it indicates",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what the correlation between recording length and GC metrics means",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why the Mark phase is taking significantly longer than evacuation",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why worker threads allocate more than the main application thread",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what triggers the most common GC cause in this workload",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what high fragmentation after GC tells us about heap health",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the relationship between application duration and total pause time",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why this object class uses so much total memory despite small average size",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain when and why Full GC events started occurring in this recording",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what makes the Concurrent Mark phase variable in duration",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why some GC events recover so little memory relative to heap used",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what high allocation velocity from one thread means for GC pressure",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why Full GC pauses are disproportionately longer than Young GC",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Show total pause time by GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap utilization percentage",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total duration for each phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count occurrences of each GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total allocation size per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get maximum duration across all recordings",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate median pause duration for long GCs",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find maximum heap used across all samples",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocations grouped by object class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events per minute in recording",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Average duration per phase across all GCs",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find top 5 thread-class pairs by total allocation",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total and average pause time per GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate 95th percentile heap utilization",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get min, max, and stddev of GC durations",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Rank threads by total allocation volume",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Average recording duration and total count",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count and percentage of each GC cause type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Identify slowest and fastest GC phases overall",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count heap events with utilization above 80%",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show a line chart of GC pause duration over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a scatter plot of heap used vs heap size",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize GC causes as a bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a horizontal bar chart of phase durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Make a pie chart showing allocation by thread",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap used over time as a line graph",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize average GC duration per cause",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create bar chart of top 10 allocating classes",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show GC frequency as a time series chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap size distribution with histogram",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create grouped bar chart of phases per GC",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot allocation size distribution as histogram",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show GC event timing intervals on timeline",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a timeline visualization of recordings",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap before and after GC comparison",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show thread allocation breakdown as stacked bar",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot GC duration distribution with box plot",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create scatter plot of heap size vs GC duration",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize top 15 classes as horizontal bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Chart recording durations for comparison",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Why are these specific pauses so much longer than others?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me all heap near-full conditions and their GC causes.",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which thread is allocating unexpectedly large amounts?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Filter for only the last hour and show me the GC causes.",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why did this recording run for so long?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What object classes were being allocated during these outlier pauses?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are we experiencing memory fragmentation or actual memory pressure?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me all phases and heap snapshots for this GC event.",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is this thread allocating so many byte arrays?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC cause correlates with the highest heap usage?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which phase is taking most of the time in long GCs?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are these huge allocations legitimate or a memory leak?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Did we lose any data between recordings?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is there a time-of-day pattern in pause durations?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are there any invalid or impossible heap states recorded?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What triggered this burst of GC activity at this minute?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why are these specific classes dominating the allocation samples?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why does the mark phase sometimes take 10x longer?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are allocations happening on a single thread or many threads?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GCs are failing to free up expected memory?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me the distribution of GC causes",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the longest running recording in the dataset?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC phases take the most time overall?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the trend of heap usage over time",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which object classes are being allocated most frequently?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What percentage of GCs are triggered by allocation failure?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the unique heap states recorded in this trace",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which phase is the longest on average?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which thread allocated the most memory?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many recordings do we have and which is shortest?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are there any particularly long GC pauses?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me all unique heap sizes in the recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the top allocated object classes by count?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me all GC events sorted by duration",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which phase has the most variable duration?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the distribution of allocation sizes",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the maximum heap utilization we've seen?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many unique GC causes exist in this trace?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many unique threads are allocating objects?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the time span covered by this GC trace?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show total pause time by GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap utilization percentage across all GC events",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total duration of all pause phases by phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count number of active recordings and their total duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get total bytes allocated per thread name across all samples",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate median and max GC pause time for each cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show min, max, and average heap used values during recording",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find which GC cause accounts for most events by percentage",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate total pause duration per GC event across all phases",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Rank object classes by total bytes allocated and count",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate quartiles of GC pause durations by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show average and peak heap utilization percentage per minute",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get total allocations and sample count grouped by thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum up total time spent in each pause phase across all GCs",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show distinct heap sizes and their frequency during recording",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate percentage of total allocations for top 10 classes",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get average interval between GC events for each cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "List pause phase names with average and total durations",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show allocation rate in bytes per sample for each thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total GC time as percentage of total recording duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Why does Allocation Failure cause so many more GCs than System.gc()?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why heap utilization keeps increasing across consecutive GCs.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does the Mark phase do and why is it the longest?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why the http-handler thread allocates so much more than others.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What triggers a Metadata GC Threshold and how does it differ from regular GCs?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what happens when freed memory is negative or very small.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why do byte arrays dominate our allocation profile and what does that mean?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what causes these three times longer GC pauses than average.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What is the difference between Concurrent and Serial GC phases?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what an ActiveRecording represents and why duration matters.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why pause duration is trending longer with each successive GC.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why the heap size values change between GC events.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what might cause a single thread to allocate 1.2GB of objects.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why GC frequency spikes during specific minutes of the recording.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain which GC phase contributes most to total pause time and why.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the relationship between object class type and allocation size patterns.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why certain GC causes only trigger at specific heap utilization levels.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what very low free space after GC indicates about heap fragmentation.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain which phase combination makes GCs exceed 100ms pause times.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Show me a line chart of GC pause duration over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap usage across all GC events as a time series",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a pie chart showing GC cause distribution",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Display a bar chart of average phase durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize total allocations per thread as a bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap size evolution as a scatter plot",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show top allocating classes as a horizontal bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a time-series histogram of GC frequency",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap utilization percentage over GC events",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a box plot showing Concurrent Mark duration distribution",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize recording timeline with duration as a Gantt chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a heatmap of thread allocation by object class",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot a violin chart of GC duration grouped by cause",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show heap freed per GC event as a bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize cumulative GC pause time as a step function",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a histogram of allocation sizes with log scale",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a bar chart of phase counts per collection",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize recording windows as a timeline chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Display peak vs. configured heap in a side-by-side visualization",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show allocation rate by thread as a ranked bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Explain what causes these long pause phases and their impact",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why heap usage varies so much before GC events",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what each GC cause means and when they occur",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why certain threads allocate significantly more memory",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how recording duration affects GC data accuracy",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the relationship between GC start time and pause duration",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why these specific object types dominate allocations",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what heap utilization percentages tell us about memory pressure",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what each GC phase does and why some take longer",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why average allocation sizes differ between object classes",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what the recording metadata tells us about collection conditions",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the sequence of GC events and what triggers each transition",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what these pause statistics indicate about GC consistency",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how much memory is reclaimed during each GC cycle",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why allocation sample counts differ dramatically between threads",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain which GC causes typically result in longer pause times",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain which GC phases consume the most total pause time",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what these allocation sizes reveal about application behavior",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how the recording time window affects our GC conclusions",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how GC duration correlates with heap usage and phase complexity",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Show average pause time per GC cause type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap utilization across all collections",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find the longest phase and total time spent in each phase",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocations per thread and identify top allocators",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get count and total duration of all recordings",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show min, max, and average pause duration by garbage collection cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate total bytes allocated per object class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate heap reclaimed per garbage collection event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events by cause and compute average pause time",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum phase durations grouped by garbage collection ID",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show allocations per thread and object class combination",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate heap size variations per GC event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate recording duration statistics across all sessions",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count garbage collections by cause and total pause time",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate total and average time per pause phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find top 10 object classes by total allocated bytes",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap metrics before and after collection",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Compute pause time variance and standard deviation by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate allocation metrics per thread with average alloc size",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get comprehensive garbage collection duration statistics",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show me which GC causes occur most frequently in the dataset",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the first few heap states captured during garbage collection",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads are allocating objects in the system",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me GC events that took longer than 100 milliseconds",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the different GC pause phases observed in the recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "List all active recordings and their durations",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which object classes are being allocated most frequently",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the chronological sequence of GC events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the heap utilization ratio for each GC event",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Find all allocations larger than 1 MB and their classes",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC phases have the longest pause times",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How much memory does each thread allocate in total",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show the complete heap state evolution throughout the recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What different reasons trigger GC in this recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the time range of GC events in this dataset",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me a sample of recent object allocation events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many total garbage collection events occurred",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many distinct phases does each GC event contain",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the range and average size of object allocations",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the names and details of available recordings",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me a line chart of GC pause duration over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap used versus heap size as a stacked area chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a pie chart showing the breakdown of GC causes",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot average pause duration by GC cause as a bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show phase durations sorted as a horizontal bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize top 15 allocated classes as a column chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a donut chart of allocation size by thread name",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot before/after heap usage as grouped bars per GC event",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a histogram showing distribution of GC pause durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize recording duration as a timeline Gantt chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a stacked bar chart of phase durations per GC event",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show top 10 allocated classes as a ranked bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Render GC frequency as a time series scatter plot",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap utilization percentage as a line chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a histogram of allocation sizes using log scale",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a box plot or percentile chart of GC pause durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize phase duration by GC cause as a grouped bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot allocation by thread and class as a bubble chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a vertical timeline showing GC events and their durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show heap recovery amount per GC as a waterfall chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "What GC cause triggered these longest pauses?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which collections had heap pressure above 800MB?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me the object classes allocated by the top thread.",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC cause has the longest average pause time?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are these long pauses correlated with heap size?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me the allocation pattern over time for the top class.",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What phases occur during allocation failure collections?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is heap usage trending upward across collections?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which thread has the largest max allocation size?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Did pause times increase for a specific GC cause?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me which phase takes the most wall-clock time.",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which threads are allocating the most ByteBuffers?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is collection frequency higher at specific times?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Has heap allocation limit been increased recently?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the recording duration long enough to diagnose issues?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC cause correlates with longest phase times?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Does one GC type account for most pause time?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which thread allocates objects larger than 1MB?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which phase has the highest variance in duration?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What is the heap utilization percentage trend?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me all garbage collection events from the first recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the different types of GC causes in our data",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show GC events that took longer than 100 milliseconds",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Find GC events with heap usage above 80 percent",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads are allocating the most memory",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show all unique GC phase names in the data",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the top object classes being allocated",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the chronological order of all GC events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How much heap was freed by each garbage collection",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which recording has the longest duration",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many GC events were caused by each trigger",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the longest GC pause phases",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which single allocations were the largest",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "When did heap usage reach its maximum",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many total garbage collection events occurred",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many times was each object class allocated",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What GC phases are present in this recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads performed the most allocations",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the time span of all GC events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the minimum and maximum heap size recorded",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Why do these GC pauses take so long? What causes them?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does this heap utilization pattern tell us about memory pressure?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what each GC cause means and why it matters for tuning.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What do these young generation phases represent and how are they related?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why are these object types allocating so much memory? What could cause this?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does a long recording duration indicate about the system's GC behavior?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why metadata GC threshold events are problematic for application performance.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does it mean when one thread allocates much more than others?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what each GC phase does and why mark phase takes longest here.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Which GC causes represent stop-the-world events and why should we care?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does low free space after GC suggest about heap fragmentation or pressure?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why large objects allocating frequently can cause GC problems.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does a spike in GC frequency tell us about the application's behavior?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the relationship between GC cause and how much free space is recovered.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why do concurrent GC phases have variable durations and what does this mean?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what promotion failures are and why they trigger full GC events.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What causes the variability in GC pause times for the same GC type?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how Eden and Survivor space collection relates to object tenure and GC strategy.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why does the remark phase sometimes take much longer than expected and what triggers it?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Show total GC pause time and count by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap utilization percentage across all GC events",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate total duration for each GC phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocation sizes by thread and sort descending",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events grouped by cause with percentages",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total duration across all active recordings",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get top 10 object classes by total allocated size",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate min, max, median GC pause duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events where heap usage exceeded 80 percent",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average allocation size per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events per minute across the recording",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate percentage of total pause time per phase",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get average and maximum heap size across all GC events",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum pause time and average duration for each GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count allocation events per object class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find the maximum heap utilization ratio observed",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count total number of recordings and their combined duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Histogram of GC pause durations in millisecond ranges",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Rank threads by total allocation count and size",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total duration per phase across all GC events",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Create a histogram showing GC pause duration distribution by cause",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap used vs heap size over time as a line chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show bar chart of average phase duration for each GC phase type",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a pie chart of memory allocation by thread name",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot GC events as scatter points with time and duration axes",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize before/after heap usage for each GC collection event",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a bar chart showing frequency of each GC cause type",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw stacked bar chart of phase durations for each GC event",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show top allocating classes as a horizontal bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize recording timeline showing start and duration of each session",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap usage percentage as a line graph across GC events",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create line chart showing GC pause duration trend over collection sequence",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show heatmap of average phase duration by GC cause and phase name",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create donut chart showing allocation frequency by thread",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Scatter plot of heap size versus heap used across all samples",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize top 10 allocating classes with proportional bubble sizes",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create box plot showing pause duration distribution for each GC cause",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Bar chart showing number of phases for each garbage collection event",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Stacked area chart showing cumulative allocation by thread and class",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize GC event intervals as a timeline with spacing indicators",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Why is this GC pause so much longer than others?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What's causing these unexpected full GC events?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is heap usage so high before garbage collection?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which thread is allocating most memory and why?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are these GC pause times increasing over time?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which object class is causing excessive allocations?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC phase is taking most time during collection?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why isn't heap being freed after garbage collection?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are overlapping GC events causing performance degradation?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are temporary objects not being garbage collected properly?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why did GC frequency suddenly increase at this time?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What's causing this thread to allocate so much?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are GC pause times inconsistent and unpredictable?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the application running too long before crashing?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the heap consistently running near capacity?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why are young generation collections taking longer than expected?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What's allocating these massive objects continuously?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is too much time spent in stop-the-world GC phases?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which thread is creating thousands of objects per second?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC cause triggers the longest pause durations?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show total GC count and average duration by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total pause time per GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate average heap utilization percentage",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total duration for each GC phase type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find longest and shortest GC pause duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total allocation size by thread name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate median and 95th percentile pause time",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Compute average heap reclaimed per GC event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Group by cause and sum pause durations",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Average phase duration grouped by phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count allocations and sum sizes by class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total GC time and percentage overhead",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Average heap used and heap size by when",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum and average duration per phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total pause time by cause in descending order",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Rank threads by total allocation size",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total active recording time",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Min, max, and average pause by GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total heap freed and utilization percentage",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocation sizes grouped by object class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show me all garbage collection events in this recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What different GC causes occurred and how often",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "List all unique garbage collection pause phases",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me which threads are allocating the most memory",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which object classes are being allocated most frequently",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the heap state before and after each collection",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the full duration of garbage collection events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC cause happened most frequently during recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What GC pause phases were recorded and how many times",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which garbage collection events took longer than 50ms",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me collections that occurred under high heap pressure",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads performed the most memory allocations",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What object classes were most frequently allocated",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the time range covered by heap summary data",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show all recorded pause phase durations",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Correlate GC events with their heap states",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show allocation patterns grouped by thread and object type",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Display all garbage collection events in chronological order",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What were the five longest garbage collection pauses",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show all phases within the longest garbage collection event",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Why do G1 Young Gen pauses vary so much between collections?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does allocation failure mean and why does it trigger GC?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why some threads allocate significantly more memory than others.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What do these GC phases mean and why is Mark taking so long?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why are Full GC events happening and what triggers them?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why some GC causes leave more heap residue than others.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What causes this 250ms GC pause and is it a problem?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the difference between concurrent and stop-the-world GC phases.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why do GC events increase when heap usage exceeds 80 percent?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why byte arrays dominate object allocation in this recording.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does this upward trend in pause times indicate about the application?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why do some GC phases have so much variability in execution time?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what triggers metaspace garbage collection separately from heap GC.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why does the application have so many concurrent mark cycles?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how object promotion from Young to Old gen affects GC patterns.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what determines the frequency of GC events during this recording.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why do certain threads allocate disproportionately more objects?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does the low free space after GC indicate about heap fragmentation?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain when and why G1 switches from Young-only to Mixed collections.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why are large object allocations concentrated in these specific classes?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Create a line chart showing GC pause duration over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap used versus heap size as stacked area chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show GC causes as a pie chart with percentages",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize average phase pause durations as a bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a horizontal bar chart of top allocated object classes",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Display recording timeline as Gantt chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a histogram showing distribution of pause durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show thread allocation totals as a sorted bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap used percentage over time with trend line",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize GC event frequency as time-series column chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create box plots comparing duration distributions by phase",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Scatter plot of heap used over GC event sequence",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw bubble chart with class names and allocation sizes",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create grouped bar chart comparing min and max pauses by cause",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap efficiency percentage as line chart with zones",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize phases as horizontal stack bars per GC event",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create dual-axis chart showing allocation count and total size",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Display percentile lines on duration histogram",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap recovery curves for each GC collection event",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create horizontal timeline visualization of recording windows",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Explain why evacuation pauses are much longer than other phases",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does heap usage going up after GC actually mean here",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what causes G1 Young Generation and Full GC events",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does the recording duration tell us about heap pressure",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why ArrayList and HashMap allocations dominate the heap",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why is there such high variance in pause times for the same GC cause",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does concurrent mark taking so long mean for application performance",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why certain threads allocate far more than others",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What causes heap used to increase steadily despite repeated GC events",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what high young generation GC frequency tells us about application",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why do we see multimodal peaks in the GC pause time distribution",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does minimal heap collection mean if memory barely changes",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how concurrent mark phase affects overall application throughput",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What causes these multi-megabyte allocations and why does GC spike after",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why Full GC triggers at lower heap usage than Young GC",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does the timing of GC events throughout the recording tell us",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why this single GC event caused such extreme total pause time",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does the high sample count of small allocations indicate about GC pressure",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how heap size changes relate to GC tuning and ergonomics",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why are pause times increasing over the course of the recording",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why are some GC pauses lasting over 100ms?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC events had heap utilization above 90%?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is there an unusual spike in one GC cause?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC phases are contributing most to total pause time?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are there any gaps or overlapping recordings?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is this specific object class allocating so much memory?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Did GC frequency increase suddenly during the recording?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is a specific thread allocation-heavy compared to others?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why does heap free memory stay consistently low?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which phase has the most variable execution time?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What triggered these mega-allocations in the application?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are there long idle gaps between GC collections?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is garbage collection actually freeing memory effectively?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What circumstances led to these exceptionally long pauses?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is this thread allocating more frequently than expected?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Do specific GC causes correlate with high heap usage?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why did this GC phase take significantly longer than normal?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the GC event count reasonable for the recording duration?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "How much total time did the application spend in GC?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the heap growing between GC cycles indicating a memory leak?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me the distribution of GC causes across all events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the time span covered by these recordings?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC phase names appear most frequently in the data?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What percentage of heap was used before and after garbage collection?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the unique thread names allocating objects",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the minimum, maximum, and average GC durations?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many events were triggered by each GC cause?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC phase typically takes the longest?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me a time-series view of heap used versus heap size",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which thread allocates the most memory overall?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are there time periods with significantly higher GC activity?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How does heap usage vary across all recorded snapshots?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the average allocation size per object?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC events had the longest pause durations?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Do GC events with more phases take longer overall?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which recording session covers the longest time period?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the total bytes allocated per thread?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC cause is most common in this dataset?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me heap used as a percentage of total heap capacity",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What's the ratio of allocated bytes for the top 5 classes?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show average GC duration per cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate mean heap utilization percentage before GC",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total pause time by phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count total recording duration across all sessions",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate total bytes allocated per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count occurrences of each garbage collection cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap size across all measurements",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find min, max, and average pause durations",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocation size grouped by object class type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get median GC duration for each cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total hours recorded across all sessions",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum durations for each GC phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average allocation size per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count number of GC events and total heap used",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Group GC events by cause and sum total duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Total allocations by thread and object class combined",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Average pause duration per GC event ID",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Compare total heap used before versus after GC",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find cause with highest average duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum all allocated bytes and find peak single allocation",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Create a histogram showing GC pause duration distribution",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap usage as a time-series line chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize GC causes as a pie chart or bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show average duration per GC phase as a horizontal bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a bar chart of top 10 threads by allocation volume",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot GC frequency per minute as a line chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize average heap usage before and after GC",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a stacked or grouped bar chart of top object classes",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot GC duration against heap size as a scatter plot",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize GC phase durations as a multi-line time series",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a timeline visualization of recording sessions",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize top 50 allocations as a bubble chart by size",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show GC events colored by cause on a timeline chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a stacked area chart showing used and free heap",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show thread allocation count vs total size as bubble chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a box plot or percentile visualization of pause times",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw a waterfall chart showing cumulative phase durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize allocation patterns for top object classes by thread",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create a heatmap showing heap utilization intensity over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize GC efficiency by cause with dual-axis chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Why are these GC pauses so long? What's causing the spike?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the heap nearly full during these pauses? Check utilization.",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which phase is taking most time? Why is mark phase slow?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is a specific thread causing excessive allocation pressure?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is Allocation Failure the most common GC cause?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the heap growing unbounded? Check for memory leaks.",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What triggered these statistical outlier pauses?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is a specific object type being over-allocated? Why?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why are GCs happening so close together? GC thrashing?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is the concurrent mark phase taking so long?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the recording window long enough to see the problem?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is the heap recovering properly after each GC?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Did the GC cause pattern change? What triggered the shift?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is worker-thread-1 allocating massive objects repeatedly?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is mark phase slower for Allocation Failure vs Timer?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why did the heap suddenly expand? Allocation spike?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is heap utilization staying above 85% after GC?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is one collection type consistently slower? Investigate why.",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is the app allocating 10MB+ objects? Memory leak?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Is concurrent mark degrading over time? Memory pressure issue?",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me the different garbage collection causes in the data",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What percentage of GCs were caused by Metadata GC Threshold?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which object classes are being allocated most frequently?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are there any GC events where heap usage did not decrease after collection?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the average duration of each GC phase type?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many unique GC causes occurred during each recording?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC causes typically result in the longest pause times?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads are responsible for allocating the most memory?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the average allocation size for each thread?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are there clusters of GC events that suggest a pattern?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the maximum heap utilization observed in the data?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which phase names appear most frequently across all GCs?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are there any extremely large allocations that stand out?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many GC events occurred per second during each recording?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the time interval between consecutive GC events?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Do we see heap fragmentation patterns in the data?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which thread allocates the most instances of String objects?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What does the distribution of GC pause times look like?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Do Full GCs have more phases than Young GCs?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are byte arrays and strings the dominant allocation types?",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show total pause time by GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate max heap size reached during each GC event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total duration for each GC phase across all collections",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get total bytes allocated per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average recording duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show average GC duration grouped by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap utilization percentage",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum allocations per object class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GCs over 100ms duration by cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get average duration for each phase type",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average allocation size per thread",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find min and max heap usage across all events",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events and calculate average time between them",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Show median duration for each GC phase",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count allocation events per object class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average bytes freed per GC event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate percentile statistics for GC pause duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total allocations per thread-class combination",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total and average duration across all recordings",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate what percentage each phase contributes to total pause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Why do some GC causes have much longer pause times?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does the heap utilization percentage tell us about memory pressure?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain which GC phases consume the most time and why.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does the recording duration tell us about the collection period?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why are certain threads allocating so much more memory than others?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain how frequent GC events relate to application performance.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What do these percentile pause times mean for user experience?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what happens when free heap space becomes very small.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What do the GC causes tell us about application behavior?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Why might these specific object classes be dominating memory allocation?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why some phases have high variance in execution time.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the difference in pause impact between these GC types.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does low free heap percentage mean for garbage collection?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "How does allocation rate correlate with GC frequency?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what factors might cause these exceptionally long pauses.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Which GC phases contribute most to overall pause time and why?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "What does the amount of reclaimed memory tell us about garbage collection effectiveness?",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain what these metrics indicate about application memory pressure.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain why optimizing these top object classes would help performance.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Explain the tradeoff between pause time and heap space reclamation.",
+      "category": "explain"
+    },
+    {
+      "suggestedPrompt": "Create a line chart showing GC duration over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap used vs heap size as stacked area chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Make a pie chart of GC causes distribution",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize average duration per GC phase as horizontal bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create bar chart showing total allocation per thread",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw Gantt chart of recording sessions with timeline",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Generate line chart of heap utilization ratio over GC events",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show top 10 allocated classes as column chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot GC event frequency per minute as time series",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create heatmap of GC phase durations by phase and event",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Scatter plot: heap used vs GC duration with trend line",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize allocation volume by thread as multi-series line chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create box plots of duration grouped by GC cause",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Make grouped bar chart comparing before/after heap usage",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Display recording durations as sorted horizontal bar chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Draw donut chart of allocation percentage by class",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Histogram showing distribution of phase counts per GC",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot cumulative sum of allocations as step chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Create cumulative distribution chart of GC durations",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Visualize heap capacity over GC events as area chart",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Show which GC causes are responsible for the longest pauses",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Find GC events where heap utilization exceeded 90 percent",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why are young generation pauses suddenly much longer",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Identify which threads are allocating the most memory",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Why is Full GC being triggered so many times today",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Check if heap is properly cleaning up after each GC",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which object types are consuming megabytes in single allocations",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are concurrent mark phases blocking longer than normal",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "List all GC pauses longer than 500 milliseconds with timing",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show the 5 longest individual GC phases by name",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which threads have the most frequent allocation patterns",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Compare heap usage before and after each garbage collection",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "What are the most frequently allocated object classes",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Compare average pause times across different GC causes",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "When did the GC recording start and how long did it run",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Are GC pauses clustered together or evenly distributed",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show all allocations larger than 10 megabytes",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which GC phase is taking up the most total wall-clock time",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Track heap utilization percentage across all GC events",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Which thread has the highest average allocation size",
+      "category": "debug"
+    },
+    {
+      "suggestedPrompt": "Show me the distribution of GC causes across all events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which recording has the longest duration and most GC events",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the names of the slowest GC phases",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show all unique heap sizes recorded in the data",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "List threads that allocated more than 1MB total",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many GC events occurred for each unique cause",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which object classes are allocated most frequently",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Are GC events clustered at specific times or evenly distributed",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show me the minimum and maximum heap used across all samples",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "How many different GC phase types exist in this recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What time period does each recording session cover",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What is the range of GC durations from fastest to slowest",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show allocation sizes broken down into small medium and large",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "At what points are heap summaries collected during GC",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which GC events have the most phases recorded",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Tell me about each recording session we have available",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Which threads are most active in memory allocation",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What percentage of GCs are triggered by each cause",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Did the total heap size change during this recording",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "What are the top 5 object classes by allocation frequency",
+      "category": "explore"
+    },
+    {
+      "suggestedPrompt": "Show total pause time for each GC cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap usage and maximum heap size",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total duration by phase name across all GC events",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum total allocation size by thread name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total and average recording duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events by cause and average duration per cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Get total allocation bytes per object class",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Aggregate min, max, and average pause time",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate total phase duration per garbage collection event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Find peak heap used and average heap utilization",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count total recordings and sum their durations",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Rank threads by total allocation size and count samples",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count and rank GC causes by frequency and average pause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap utilization percentage by GC event",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Summarize min, max, average duration per phase name",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Sum and rank object classes by total allocation bytes",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Count GC events, sum pause time, and calculate average per cause",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Group by thread and compute total allocations and sample count",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Calculate average heap used and heap size by GC phase",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Compute total GC time, event count, and average pause duration",
+      "category": "aggregate"
+    },
+    {
+      "suggestedPrompt": "Create a line chart of GC duration over time",
+      "category": "visualize"
+    },
+    {
+      "suggestedPrompt": "Plot heap used vs heap size as a stacked area chart",
+      "category": "visualize"
+    }
+  ]
+}

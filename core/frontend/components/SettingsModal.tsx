@@ -11,6 +11,7 @@ import { ModelDefinition, AiProviderType } from '../services/ai/IAiProvider';
 import { CANDIDATES } from '../services/ml/candidates';
 import * as EmbeddingService from '../services/ml/EmbeddingService';
 import * as PlotGenerationService from '../services/ml/PlotGenerationService';
+import * as SqlGenerationService from '../services/ml/SqlGenerationService';
 import { DataContext, DBState } from '../context/DuckDBContext';
 
 interface SettingsModalProps {
@@ -83,11 +84,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   
   const handleProviderSelect = (provider: AiProviderType) => {
       const metadata = providerMetadataRegistry[provider];
-      setLocalSettings(prev => ({ 
-          ...prev, 
+      setLocalSettings(prev => ({
+          ...prev,
           aiProvider: provider,
           [`${provider}BasicModel`]: metadata.defaultModels.basic,
           [`${provider}GoodModel`]: metadata.defaultModels.advanced,
+          [`${provider}TinyModel`]: metadata.defaultModels.tiny,
       }));
   };
 
@@ -141,6 +143,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const envVarNames: Record<AiProviderType, string> = {
       google: 'GEMINI_API_KEY',
       openai: 'OPENAI_API_KEY',
+      anthropic: 'ANTHROPIC_API_KEY',
       gardener: 'GARDENER_API_KEY',
       local: 'LOCAL_AI_API_KEY',
       browser: '',
@@ -148,6 +151,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const envVarValues: Record<AiProviderType, string | undefined> = {
       google: process.env.GEMINI_API_KEY || process.env.API_KEY,
       openai: process.env.OPENAI_API_KEY,
+      anthropic: process.env.ANTHROPIC_API_KEY,
       gardener: process.env.GARDENER_API_KEY,
       local: process.env.LOCAL_AI_API_KEY,
       browser: undefined,
@@ -333,6 +337,104 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 </section>
             )}
 
+            {/* AI Data Visibility (C2) */}
+            <section>
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">AI Data Visibility</h3>
+                <p className="text-xs text-gray-500 mb-3">
+                    Controls what slice of recent query results the AI can see. Per-chat dropdowns initialize from this default and can be overridden per conversation.
+                </p>
+                <div className="space-y-2">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="aiDefaultVisibility"
+                            value="no-data"
+                            checked={localSettings.aiDefaultVisibility === 'no-data'}
+                            onChange={() => setLocalSettings(prev => ({ ...prev, aiDefaultVisibility: 'no-data' }))}
+                            className="mt-1"
+                        />
+                        <div>
+                            <div className="text-sm text-gray-200">No data</div>
+                            <div className="text-xs text-gray-500">Schema only. The AI does not see any rows or column statistics.</div>
+                        </div>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="aiDefaultVisibility"
+                            value="sanitized"
+                            checked={localSettings.aiDefaultVisibility === 'sanitized'}
+                            onChange={() => setLocalSettings(prev => ({ ...prev, aiDefaultVisibility: 'sanitized' }))}
+                            className="mt-1"
+                        />
+                        <div>
+                            <div className="text-sm text-gray-200">Sanitized</div>
+                            <div className="text-xs text-gray-500">Schema + per-column aggregates (min/median/max for numbers, up to 3 sample values for strings). No raw rows.</div>
+                        </div>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="aiDefaultVisibility"
+                            value="full"
+                            checked={localSettings.aiDefaultVisibility === 'full'}
+                            onChange={() => setLocalSettings(prev => ({ ...prev, aiDefaultVisibility: 'full' }))}
+                            className="mt-1"
+                        />
+                        <div>
+                            <div className="text-sm text-gray-200">Full</div>
+                            <div className="text-xs text-gray-500">Schema + first N rows of the most recent query result, verbatim.</div>
+                        </div>
+                    </label>
+                </div>
+                <div className="mt-4 max-w-xs">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Full mode row limit</label>
+                    <p className="text-xs text-gray-500 mb-2">Number of rows sent in full mode (max 500).</p>
+                    <input
+                        type="number"
+                        name="visibilityFullRowLimit"
+                        min={1}
+                        max={500}
+                        value={localSettings.visibilityFullRowLimit}
+                        onChange={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            const clamped = Math.max(1, Math.min(500, Number.isFinite(v) ? v : 50));
+                            setLocalSettings(prev => ({ ...prev, visibilityFullRowLimit: clamped }));
+                        }}
+                        disabled={localSettings.aiDefaultVisibility !== 'full'}
+                        className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:opacity-50"
+                    />
+                </div>
+                <div className="mt-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            name="autoPlotSuggestionEnabled"
+                            checked={localSettings.autoPlotSuggestionEnabled}
+                            onChange={(e) => setLocalSettings(prev => ({ ...prev, autoPlotSuggestionEnabled: e.target.checked }))}
+                        />
+                        <div>
+                            <div className="text-sm text-gray-200">Auto-plot suggestion chip</div>
+                            <div className="text-xs text-gray-500">After a SQL cell returns rows, show an inline chip suggesting a plot. Apply with one click.</div>
+                        </div>
+                    </label>
+                </div>
+                <div className="mt-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            name="suppressDeprecationWarnings"
+                            checked={localSettings.suppressDeprecationWarnings}
+                            onChange={(e) => setLocalSettings(prev => ({ ...prev, suppressDeprecationWarnings: e.target.checked }))}
+                        />
+                        <div>
+                            <div className="text-sm text-gray-200">Suppress plot DSL deprecation warnings</div>
+                            <div className="text-xs text-gray-500">Silence console warnings when notebooks use legacy plot param names (e.g. PIE_CHART(name:) instead of category:).</div>
+                        </div>
+                    </label>
+                </div>
+            </section>
+
             {/* Display */}
             <section>
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Display</h3>
@@ -447,6 +549,100 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     />
                 )}
             </section>
+
+            {/* C1 — Per-Feature Models */}
+            <section>
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Per-Feature Models</h3>
+                <p className="text-xs text-gray-500 mb-3">
+                    Pick a tier per feature, or override with a custom model id. Tier maps to a provider-specific model:
+                    autocomplete and plot suggestion default to <code className="font-mono">tiny</code> (fast / cheap), chat to <code className="font-mono">advanced</code>.
+                    The "Disable external models" checkbox forces the feature onto the local/browser provider — no cloud calls.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-gray-900/30 p-3 rounded border border-gray-700 space-y-2">
+                        <label className="block text-sm font-medium text-gray-200">Autocomplete</label>
+                        <select
+                            name="autocompleteModelOverride"
+                            value={localSettings.autocompleteModelOverride}
+                            onChange={handleInputChange}
+                            className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        >
+                            <option value="tiny">Tiny (default)</option>
+                            <option value="basic">Basic</option>
+                            <option value="custom">Custom model id…</option>
+                        </select>
+                        {localSettings.autocompleteModelOverride === 'custom' && (
+                            <input
+                                type="text"
+                                name="autocompleteCustomModel"
+                                value={localSettings.autocompleteCustomModel}
+                                onChange={handleInputChange}
+                                placeholder="e.g. gpt-4o-mini"
+                                className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            />
+                        )}
+                        <label className="flex items-center gap-2 mt-2">
+                            <input
+                                type="checkbox"
+                                name="autocompleteOfflineOnly"
+                                checked={localSettings.autocompleteOfflineOnly}
+                                onChange={(e) => setLocalSettings(prev => ({ ...prev, autocompleteOfflineOnly: e.target.checked }))}
+                            />
+                            <span className="text-xs text-gray-300">Disable external models for autocomplete (local/browser only)</span>
+                        </label>
+                        {localSettings.autocompleteOfflineOnly && localSettings.aiProvider !== 'local' && localSettings.aiProvider !== 'browser' && (
+                            <p className="text-xs text-amber-400">Autocomplete disabled: offline-only is on and active provider is cloud.</p>
+                        )}
+                    </div>
+                    <div className="bg-gray-900/30 p-3 rounded border border-gray-700 space-y-2">
+                        <label className="block text-sm font-medium text-gray-200">Plot suggestion</label>
+                        <select
+                            name="plotSuggestModelOverride"
+                            value={localSettings.plotSuggestModelOverride}
+                            onChange={handleInputChange}
+                            className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        >
+                            <option value="tiny">Tiny (default)</option>
+                            <option value="basic">Basic</option>
+                            <option value="custom">Custom model id…</option>
+                        </select>
+                        {localSettings.plotSuggestModelOverride === 'custom' && (
+                            <input
+                                type="text"
+                                name="plotSuggestCustomModel"
+                                value={localSettings.plotSuggestCustomModel}
+                                onChange={handleInputChange}
+                                placeholder="e.g. claude-haiku-4-5"
+                                className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            />
+                        )}
+                        <label className="block text-xs text-gray-400 mt-2">Source</label>
+                        <select
+                            name="plotSuggestSource"
+                            value={localSettings.plotSuggestSource}
+                            onChange={handleInputChange}
+                            className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        >
+                            <option value="auto">Auto (local if available, else cloud tiny)</option>
+                            <option value="local-trained">Local trained model</option>
+                            <option value="cloud-tiny">Cloud tiny</option>
+                            <option value="cloud-basic">Cloud basic</option>
+                        </select>
+                        <label className="flex items-center gap-2 mt-2">
+                            <input
+                                type="checkbox"
+                                name="plotSuggestOfflineOnly"
+                                checked={localSettings.plotSuggestOfflineOnly}
+                                onChange={(e) => setLocalSettings(prev => ({ ...prev, plotSuggestOfflineOnly: e.target.checked }))}
+                            />
+                            <span className="text-xs text-gray-300">Disable external models for plot suggestion (local/browser only)</span>
+                        </label>
+                        {localSettings.plotSuggestOfflineOnly && localSettings.aiProvider !== 'local' && localSettings.aiProvider !== 'browser' && (
+                            <p className="text-xs text-amber-400">Plot suggestion disabled: offline-only is on and active provider is cloud.</p>
+                        )}
+                    </div>
+                </div>
+            </section>
         </div>
 
         <footer className="flex-shrink-0 p-4 border-t border-gray-700 flex justify-end items-center">
@@ -467,6 +663,7 @@ const BrowserModelPicker: React.FC<{ modelId: string; onChange: (id: string) => 
 }) => {
     const [embReady, setEmbReady] = useState(EmbeddingService.isReady());
     const [genReady, setGenReady] = useState(PlotGenerationService.isModelReady(modelId));
+    const [sqlReady, setSqlReady] = useState(SqlGenerationService.isSqlModelReady());
     const [downloading, setDownloading] = useState(false);
     const [progress, setProgress] = useState(0);
 
@@ -480,6 +677,16 @@ const BrowserModelPicker: React.FC<{ modelId: string; onChange: (id: string) => 
                 setProgress(total > 0 ? Math.round((loaded / total) * 100) : 0);
             });
             setGenReady(true);
+            // SQL completion model (T5-small, ~77MB). Failure here is non-fatal —
+            // the browser provider falls back to naive rules.
+            try {
+                await SqlGenerationService.ensureSqlModelLoaded(undefined, (loaded, total) => {
+                    setProgress(total > 0 ? Math.round((loaded / total) * 100) : 0);
+                });
+                setSqlReady(true);
+            } catch (sqlErr) {
+                console.warn('SQL model warmup failed (continuing with rules):', sqlErr);
+            }
         } catch (err) {
             console.error('Browser model download failed:', err);
         } finally {
@@ -505,10 +712,10 @@ const BrowserModelPicker: React.FC<{ modelId: string; onChange: (id: string) => 
             <div className="flex items-center gap-4">
                 <button
                     onClick={handleDownload}
-                    disabled={downloading || (embReady && genReady)}
+                    disabled={downloading || (embReady && genReady && sqlReady)}
                     className="px-3 py-2 text-sm rounded-md bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-200 transition-colors"
                 >
-                    {downloading ? `Downloading… ${progress}%` : embReady && genReady ? 'Ready' : 'Download models'}
+                    {downloading ? `Downloading… ${progress}%` : embReady && genReady && sqlReady ? 'Ready' : 'Download models'}
                 </button>
                 <div className="text-xs text-gray-500 flex gap-3">
                     <span className={embReady ? 'text-green-400' : 'text-gray-500'}>
@@ -516,6 +723,9 @@ const BrowserModelPicker: React.FC<{ modelId: string; onChange: (id: string) => 
                     </span>
                     <span className={genReady ? 'text-green-400' : 'text-gray-500'}>
                         {genReady ? '✓' : '○'} Plot model ({CANDIDATES[modelId]?.approxSizeMb ?? '?'}MB)
+                    </span>
+                    <span className={sqlReady ? 'text-green-400' : 'text-gray-500'}>
+                        {sqlReady ? '✓' : '○'} SQL model (~77MB)
                     </span>
                 </div>
             </div>

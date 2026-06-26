@@ -4,6 +4,8 @@ import './index.css';
 import App from './App';
 import { DataProvider } from './context/DuckDBContext';
 import { SettingsProvider } from './context/SettingsContext';
+import { CellAliasProvider } from './context/CellAliasContext';
+import { PlotSchemaProvider } from './components/editor/plot/schemaProvider';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -15,7 +17,11 @@ root.render(
   <React.StrictMode>
     <SettingsProvider>
         <DataProvider>
-            <App />
+            <CellAliasProvider>
+                <PlotSchemaProvider>
+                    <App />
+                </PlotSchemaProvider>
+            </CellAliasProvider>
         </DataProvider>
     </SettingsProvider>
   </React.StrictMode>

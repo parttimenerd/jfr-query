@@ -1,0 +1,189 @@
+import React, { useContext, useMemo } from 'react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush } from 'recharts';
+import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
+import { SettingsContext } from '../../context/SettingsContext';
+import { formatNumber } from '../../utils/numberFormatter';
+import { formatTimestamp } from '../../utils/timeFormatter';
+import { createConfigParser } from '../../utils/plotConfigParser';
+import { buildParserSpec, findColumn, findColumns, getTimeValue } from '../../utils/plotUtils';
+import { usePlotGestures } from '../../hooks/usePlotGestures';
+import { warnDeprecated } from './deprecation';
+import { lttb } from '../../services/plot/decimation';
+
+const AREA_SOFT_CAP_PER_SERIES = 5000;
+
+const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+
+interface Config {
+  x: string;
+  y: string[];
+  color?: string;
+  layout?: 'stacked' | 'overlay';
+  stack?: boolean;
+  opacity: number;
+  yAxisLabel?: string;
+  yScale: 'linear' | 'log';
+  connectNulls: boolean;
+  xRefLines?: any[];
+}
+
+const params: PlotParameter[] = [
+  { name: 'x', type: 'column', required: true, description: 'Column for the X-axis.' },
+  { name: 'y', type: 'column[]', required: true, description: 'One or more numeric columns for the area series.' },
+  { name: 'color', type: 'column', description: 'Optional column whose distinct values group areas by color (one series per value).' },
+  { name: 'layout', type: 'string', options: ['stacked', 'overlay'], defaultValue: 'overlay', description: 'Layout for multiple `y` series: "stacked" (areas stacked) or "overlay" (areas drawn over each other).' },
+  { name: 'stack', type: 'boolean', deprecated: true, description: 'Deprecated. Use layout: "stacked" or layout: "overlay".' },
+  { name: 'opacity', type: 'number', defaultValue: 0.6, description: 'Fill opacity for the area (0–1).' },
+  { name: 'yAxisLabel', type: 'string', description: 'Label for the Y-axis.' },
+  { name: 'yScale', type: 'string', defaultValue: 'linear', options: ['linear', 'log'], description: 'Scale for the Y-axis: "linear" or "log".' },
+  { name: 'connectNulls', type: 'boolean', defaultValue: false, description: 'Connect lines over null/missing values.' },
+  { name: 'xRefLines', type: 'referenceLine[]', description: 'Vertical reference lines.' },
+];
+
+const parseConfig = createConfigParser<Config>(buildParserSpec(params));
+
+const AreaChartComponent: React.FC<{
+  config: Config;
+  data: any[];
+  domainX?: [any, any];
+  domainY?: [number, number];
+  isAnimationActive?: boolean;
+  animationDuration?: number;
+  gestureName?: string;
+  onVariableChange?: (vars: Record<string, unknown>) => void;
+}> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration, gestureName, onVariableChange }) => {
+  const { settings } = useContext(SettingsContext);
+  const numberFormatter = (v: any) => formatNumber(v, settings.decimalPlaces);
+  const gestures = usePlotGestures({ name: gestureName, onVariableChange });
+
+  const { chartData, isTime, allY, finalXCol } = useMemo(() => {
+    if (!data || !data.length || !data[0] || !config.x) {
+      return { chartData: data, isTime: false, allY: [], finalXCol: config.x };
+    }
+
+    const allColumns = Object.keys(data[0]);
+    const xCol = findColumn(config.x, allColumns);
+
+    const firstXValue = data.find(d => d[xCol] != null)?.[xCol];
+    const timeValue = getTimeValue(firstXValue);
+    const isTimeAxis = !isNaN(timeValue);
+
+    const allYCols = config.y
+      ? Array.from(new Set(config.y.flatMap(col => findColumns(col, allColumns))))
+      : [];
+
+    const transformedData = isTimeAxis
+      ? data.map(row => {
+          const newRow = { ...row };
+          const timeCols = findColumns(config.x, Object.keys(newRow));
+          for (const col of timeCols) {
+            newRow[col] = getTimeValue(newRow[col]);
+          }
+          return newRow;
+        })
+      : data;
+
+    // W13 — LTTB decimation when over the soft cap (time-axis only).
+    const primaryY = allYCols[0];
+    const decimated = (isTimeAxis && primaryY && transformedData.length > AREA_SOFT_CAP_PER_SERIES)
+      ? lttb(transformedData, xCol, primaryY, AREA_SOFT_CAP_PER_SERIES)
+      : transformedData;
+
+    return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, finalXCol: xCol };
+  }, [data, config.x, config.y]);
+
+  return (
+    <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
+      <ResponsiveContainer width="100%" height={320}>
+        <AreaChart
+          data={chartData}
+          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+          onMouseMove={gestures.onMouseMove}
+          onMouseLeave={gestures.onMouseLeave}
+          onClick={gestures.onClick}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
+          <XAxis
+            allowDataOverflow
+            dataKey={finalXCol}
+            type={isTime ? 'number' : 'category'}
+            domain={domainX || (isTime ? ['dataMin', 'dataMax'] : undefined)}
+            tickFormatter={isTime ? (t: any) => formatTimestamp(t, 'HH:mm:ss.SS') : undefined}
+            stroke="#9ca3af"
+            tick={{ fontSize: 12 }}
+          />
+          <YAxis
+            stroke="#9ca3af"
+            tick={{ fontSize: 12 }}
+            tickFormatter={numberFormatter}
+            label={
+              config.yAxisLabel
+                ? { value: config.yAxisLabel, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 }
+                : undefined
+            }
+            scale={config.yScale === 'log' ? 'log' : 'auto'}
+            domain={domainY ?? (config.yScale === 'log' ? [0.1, 'dataMax'] : undefined)}
+            allowDataOverflow
+          />
+          <Tooltip
+            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
+            formatter={(v, n) => [numberFormatter(v), String(n).replace(/_/g, ' ')]}
+            labelFormatter={isTime ? (l) => formatTimestamp(l, settings.timeFormat) : undefined}
+          />
+          <Legend wrapperStyle={{ fontSize: '12px' }} formatter={v => String(v).replace(/_/g, ' ')} verticalAlign="bottom" align="center" />
+          {allY.map((y, i) => {
+            const isStacked = config.layout === 'stacked' || config.stack === true;
+            if (config.stack !== undefined) warnDeprecated('AREA_CHART', 'stack', 'layout');
+            return (
+            <Area
+              key={y}
+              type="monotone"
+              dataKey={y}
+              stackId={isStacked ? 'stack' : undefined}
+              stroke={COLORS[i % COLORS.length]}
+              fill={COLORS[i % COLORS.length]}
+              fillOpacity={config.opacity}
+              connectNulls={config.connectNulls}
+              isAnimationActive={isAnimationActive}
+              animationDuration={animationDuration}
+            />
+            );
+          })}
+          {gestureName && <Brush dataKey={finalXCol} height={20} stroke="#4b5563" fill="#1f2937" onChange={(range) => gestures.onBrushChange(range as any, chartData, finalXCol)}/>}
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
+export const areaChartPlot: PlotRegistration<Config> = {
+  name: 'AREA_CHART',
+  description: 'Filled area chart — ideal for visualizing cumulative or proportional data over time, such as heap usage breakdown or allocation rates. Supports stacked or overlapping areas.',
+  params: withCommonParams(params),
+  supportsMultiQuery: true,
+  template: 'AREA_CHART(x: , y: [])',
+  examples: [
+    {
+      description: 'A simple area chart showing heap used over time.',
+      code: 'AREA_CHART(x: "timestamp", y: ["heapUsed"]) TITLE "Heap Usage Over Time"',
+      sampleData: [
+        { timestamp: '2023-01-01T12:00:00Z', heapUsed: 512 },
+        { timestamp: '2023-01-01T12:01:00Z', heapUsed: 768 },
+        { timestamp: '2023-01-01T12:02:00Z', heapUsed: 640 },
+        { timestamp: '2023-01-01T12:03:00Z', heapUsed: 900 },
+      ],
+    },
+    {
+      description: 'A stacked area chart showing the breakdown of memory regions over time.',
+      code: 'AREA_CHART(x: "timestamp", y: ["eden", "survivor", "old"], layout: "stacked")',
+      sampleData: [
+        { timestamp: '2023-01-01T12:00:00Z', eden: 200, survivor: 50, old: 300 },
+        { timestamp: '2023-01-01T12:01:00Z', eden: 350, survivor: 80, old: 320 },
+        { timestamp: '2023-01-01T12:02:00Z', eden: 100, survivor: 30, old: 340 },
+        { timestamp: '2023-01-01T12:03:00Z', eden: 400, survivor: 90, old: 360 },
+      ],
+    },
+  ],
+  parseConfig,
+  component: AreaChartComponent,
+};

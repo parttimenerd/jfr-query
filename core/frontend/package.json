@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bench": "vite --config vite.bench.config.ts"
+    "bench": "vite --config vite.bench.config.ts",
+    "dataset:plot": "tsx scripts/training/generatePlotDataset.ts",
+    "train:plot": "python scripts/training/python/train.py",
+    "eval:plot": "tsx scripts/training/evalPlotModel.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.0",

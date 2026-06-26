@@ -7,6 +7,8 @@ export interface ParserSpec {
         defaultValue?: any;
         description: string;
         options?: string[];
+        aliasFor?: string;
+        deprecated?: boolean;
     };
 }
 
@@ -19,6 +21,8 @@ export const buildParserSpec = (params: PlotParameter[]): ParserSpec => {
             defaultValue: param.defaultValue,
             description: param.description,
             options: param.options,
+            aliasFor: param.aliasFor,
+            deprecated: param.deprecated,
         };
     }
     // Every plot accepts an optional title parameter (rendered as a chart header).
@@ -108,26 +112,53 @@ export const findColumns = (baseName: string, allColumns: string[]): string[] =>
  */
 export const getTimeValue = (value: any): number => {
     if (value === null || value === undefined) return NaN;
-    const originalValue = String(value);
+    if (value instanceof Date) {
+        const t = value.getTime();
+        return normalizeEpochNumber(t);
+    }
     if (typeof value === 'number' || typeof value === 'bigint') {
         const num = Number(value);
-        // Heuristic: if it's a very large number (likely nanos), convert to millis.
-        if (originalValue.length > 15) return num / 1_000_000;
-        return num;
+        if (!Number.isFinite(num)) return NaN;
+        return normalizeEpochNumber(num);
     }
     if (typeof value === 'string') {
-        const asNumber = Number(value);
-        // Check if the string is purely numeric
-        if (!isNaN(asNumber) && value.match(/^\d+$/)) {
-             if (value.length > 15) return asNumber / 1_000_000;
-             return asNumber;
+        if (/^-?\d+$/.test(value)) {
+            const asInt = Number(value);
+            if (!Number.isFinite(asInt)) return NaN;
+            return normalizeEpochInteger(asInt, value.length);
         }
-        // Otherwise, parse as a date string (e.g., ISO format)
+        const asNumber = Number(value);
+        if (!isNaN(asNumber) && /^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(value)) {
+            return normalizeEpochNumber(asNumber);
+        }
         const date = new Date(value);
         if (!isNaN(date.getTime())) return date.getTime();
     }
     return NaN;
 };
+
+// Heuristic conversion of a numeric epoch into milliseconds.
+// - Float with 10-digit integer part: epoch-seconds → ×1000.
+// - Integer length 16 (or 15–17): microseconds → ÷1000.
+// - Integer length 19 (or 18–20): nanoseconds → ÷1_000_000.
+// - Otherwise: already milliseconds.
+function normalizeEpochNumber(n: number): number {
+    if (!Number.isFinite(n)) return NaN;
+    if (!Number.isInteger(n)) {
+        const intPart = Math.trunc(Math.abs(n));
+        const digits = intPart === 0 ? 1 : Math.floor(Math.log10(intPart)) + 1;
+        if (digits === 10) return n * 1000;
+        return n;
+    }
+    const digits = n === 0 ? 1 : Math.floor(Math.log10(Math.abs(n))) + 1;
+    return normalizeEpochInteger(n, digits);
+}
+
+function normalizeEpochInteger(n: number, digits: number): number {
+    if (digits >= 18) return n / 1_000_000;
+    if (digits >= 15) return n / 1_000;
+    return n;
+}
 
 /**
  * Given a plot type name and available data columns, returns a template string with

@@ -10,15 +10,39 @@ import { formatNumber } from '../utils/numberFormatter';
 
 const DURATION_KEYWORDS = ['duration', 'pause', 'latency', 'elapsed', 'time', 'period', 'age', 'length', 'wait', 'delay'];
 
+// DuckDB interval arrays: [microseconds, days, months, ?] — first element is µs.
+const INTERVAL_RE = /^(-?\d+),(-?\d+),(-?\d+)(?:,(-?\d+))?$/;
+
+const parseIntervalToSeconds = (value: any): number | null => {
+    if (Array.isArray(value)) {
+        const µs = Number(value[0]);
+        return isNaN(µs) ? null : µs / 1_000_000;
+    }
+    if (typeof value === 'string') {
+        const m = INTERVAL_RE.exec(value);
+        if (!m) return null;
+        return Number(m[1]) / 1_000_000;
+    }
+    return null;
+};
+
+const isIntervalLike = (value: any): boolean => {
+    if (Array.isArray(value) && value.length >= 3) return true;
+    if (typeof value === 'string' && INTERVAL_RE.test(value)) return true;
+    return false;
+};
+
 const isDurationLike = (key: string, sample: any): boolean => {
     if (!sample || sample[key] === undefined || sample[key] === null) return false;
     const value = sample[key];
+    const lc = key.toLowerCase();
+    if (!DURATION_KEYWORDS.some(kw => lc.includes(kw))) return false;
+    if (isIntervalLike(value)) return true;
     if (typeof value !== 'number' && typeof value !== 'bigint') return false;
     const num = Number(value);
     // Exclude timestamps (large epoch values) and negative values.
     if (num < 0 || num > 1e9) return false;
-    const lc = key.toLowerCase();
-    return DURATION_KEYWORDS.some(kw => lc.includes(kw));
+    return true;
 };
 
 const formatDuration = (seconds: number): string => {
@@ -157,7 +181,10 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
   const formatCell = useCallback((value: any, header: string): string => {
     if (value === null || value === undefined) return '';
     if (timestampColumns.has(header)) return formatTimestampUtil(value, displaySettings.timeFormat);
-    if (durationColumns.has(header))  return formatDuration(Number(value));
+    if (durationColumns.has(header)) {
+        const secs = isIntervalLike(value) ? parseIntervalToSeconds(value) : Number(value);
+        return formatDuration(secs ?? Number(value));
+    }
     if (numericColumns.has(header))   return formatNumber(value, displaySettings.decimalPlaces);
     return String(value);
   }, [timestampColumns, durationColumns, numericColumns, displaySettings]);
@@ -214,7 +241,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
                     <>
                       <button onClick={()=>requestSort(h)} className="inline-flex items-center gap-1.5">
                         {h}
-                        {durationColumns.has(h) && <span className="text-[10px] text-gray-500 font-normal">(s)</span>}
+                        {durationColumns.has(h) && <span className="text-[10px] text-gray-500 font-normal">⏱</span>}
                         {sortConfig.key===h&&(sortConfig.direction==='ascending'?<ChevronUpIcon className="w-3 h-3"/>:<ChevronDownIcon className="w-3 h-3"/>)}
                       </button>
                       <div onMouseDown={e=>handleMouseDown(i,e)} className="resize-handle"/>

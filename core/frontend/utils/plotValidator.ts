@@ -1,4 +1,5 @@
 import { plotRegistry } from '../components/plots/plotRegistry';
+import { normalizePlotName } from '../components/plots/plotNames';
 import { parsePlotCall } from './plotParser';
 import { expandPlotConstants } from './plotConstants';
 
@@ -34,7 +35,7 @@ export const validatePlotConfig = (config: string, data: any[]): string | null =
         try {
             const { mainConfig, on } = parsePlotCall(singleConfig);
             const plotTypeMatch = mainConfig.match(/^(\w+)\s*\(/);
-            const plotTypeName = plotTypeMatch ? plotTypeMatch[1].toUpperCase() : 'TABLE';
+            const plotTypeName = plotTypeMatch ? normalizePlotName(plotTypeMatch[1]) : 'TABLE';
             const plotRegistration = plotRegistry[plotTypeName];
     
             if (!plotRegistration) {

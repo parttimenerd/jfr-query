@@ -12,6 +12,7 @@ interface BarChartConfig {
   x: string;
   y: string[];
   lineY?: string[];
+  color?: string;
   layout: 'stacked' | 'grouped';
   yAxisLabel?: string;
   logScale: boolean;
@@ -22,6 +23,7 @@ const params: PlotParameter[] = [
   { name: 'x', type: 'column', required: true, description: 'Column for the category axis.' },
   { name: 'y', type: 'column[]', required: true, description: 'One or more numeric columns for the bar values.' },
   { name: 'lineY', type: 'column[]', description: 'Optional. One or more numeric columns to render as lines over the bars.' },
+  { name: 'color', type: 'column', description: 'Optional column whose distinct values group bars by color (one series per value).' },
   { name: 'layout', type: 'string', options: ['stacked', 'grouped'], defaultValue: 'grouped', description: 'Layout for multiple `y` series: "stacked" or "grouped" (side-by-side).' },
   { name: 'yAxisLabel', type: 'string', description: 'Label for the numeric value axis.' },
   { name: 'logScale', type: 'boolean', defaultValue: false, description: 'Use a logarithmic scale for the value axis.' },

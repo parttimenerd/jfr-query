@@ -1,7 +1,42 @@
 import { Content } from "@google/genai";
-import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata } from './IAiProvider';
+import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata, ToolChatMessage, ToolStreamChunk, StreamChatWithToolsOpts } from './IAiProvider';
+import type { Tool } from './tools';
+import { toolsToOpenAi, parseOpenAiToolCalls } from './tools/openaiAdapter';
 import { OpenAiIcon } from '../../components/icons/OpenAiIcon';
 import { Settings } from "../../context/SettingsContext";
+
+/**
+ * Convert ToolChatMessage[] into OpenAI chat-completions wire messages.
+ * Keeps tool_calls / tool messages intact so multi-round tool loops stay
+ * coherent across calls.
+ */
+function openAiMessagesFromTool(messages: ToolChatMessage[], systemInstruction?: string): any[] {
+    const out: any[] = [];
+    if (systemInstruction) out.push({ role: 'system', content: systemInstruction });
+    for (const m of messages) {
+        if (m.role === 'tool') {
+            // Each tool result becomes its own role:tool message keyed by tool_call_id.
+            for (const tr of m.toolResults ?? []) {
+                out.push({
+                    role: 'tool',
+                    tool_call_id: tr.id,
+                    content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result),
+                });
+            }
+            continue;
+        }
+        const wire: any = { role: m.role, content: m.content ?? '' };
+        if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+            wire.tool_calls = m.toolCalls.map(tc => ({
+                id: tc.id,
+                type: 'function',
+                function: { name: tc.name, arguments: JSON.stringify(tc.args ?? {}) },
+            }));
+        }
+        out.push(wire);
+    }
+    return out;
+}
 
 export class OpenAiProvider implements IAiProvider {
     private apiKey: string;
@@ -23,10 +58,12 @@ export class OpenAiProvider implements IAiProvider {
             isConfigured: (settings: Settings) => !!settings.openaiApiKey,
             models: [
                 { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Fast and cost-effective for basic tasks.' },
+                { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Tiny, fast, low-cost — autocomplete / plot suggest.' },
                 { id: 'gpt-4o', name: 'GPT-4o', description: 'Newest, most efficient flagship model.' },
                 { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Powerful and intelligent model.' },
             ],
             defaultModels: {
+                tiny: 'gpt-4o-mini',
                 basic: 'gpt-3.5-turbo',
                 advanced: 'gpt-4o',
             },
@@ -127,6 +164,44 @@ export class OpenAiProvider implements IAiProvider {
         });
     }
     
+    async *streamChatWithTools(
+        messages: ToolChatMessage[],
+        tools: Tool[],
+        opts?: StreamChatWithToolsOpts,
+    ): AsyncIterable<ToolStreamChunk> {
+        const model = opts?.model || 'gpt-4o';
+        const wireMessages = openAiMessagesFromTool(messages, opts?.systemInstruction);
+        const body: any = {
+            model,
+            messages: wireMessages,
+        };
+        if (tools.length > 0) body.tools = toolsToOpenAi(tools);
+
+        const response = await fetch(this.API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`,
+            },
+            body: JSON.stringify(body),
+            signal: opts?.signal,
+        });
+        if (!response.ok) {
+            if (response.status === 401) throw new Error('Invalid API Key');
+            if (response.status === 429) throw new Error('Quota Exceeded');
+            const errorBody = await response.json().catch(() => ({}));
+            throw new Error(errorBody?.error?.message || `OpenAI tool call failed with status ${response.status}`);
+        }
+        const result = await response.json();
+        const message = result.choices?.[0]?.message;
+        if (message?.content) {
+            yield { kind: 'text', delta: String(message.content) };
+        }
+        for (const call of parseOpenAiToolCalls(message)) {
+            yield { kind: 'tool_call', id: call.id, name: call.name, args: call.args };
+        }
+    }
+
     async verifyCredentials(): Promise<boolean> {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 10000);

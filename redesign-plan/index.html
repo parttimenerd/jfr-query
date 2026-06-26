@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>JFR Notebook — redesign mockup</title>
+<style>
+  /* ============================================================
+     This is a reconstruction of the lost /tmp/jfr-mockup/index.html
+     referenced throughout REDESIGN_PLAN.md. See §5.1 of the plan
+     for context. It is a static HTML artifact, not a working app.
+     ============================================================ */
+
+  :root {
+    --bg: #0d1117;
+    --bg2: #151a23;
+    --bg3: #1c2330;
+    --panel: #161b25;
+    --border: #232a37;
+    --border-strong: #2e3645;
+    --text: #d8def0;
+    --text-mute: #6b7896;
+    --text-dim: #4a5468;
+    --accent: #22d3ee;       /* cyan: data deps */
+    --accent-amber: #fbbf24; /* amber: cells / static vars */
+    --accent-purple: #a78bfa;/* purple: AI / prompt deps */
+    --accent-green: #10b981; /* ok */
+    --accent-red: #ef4444;   /* error */
+    --accent-yellow: #f59e0b;/* running */
+    --accent-stale: #8b5cf6; /* stale */
+    --accent-orange: #fb923c;/* axis link */
+    --live-cyan: #06b6d4;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%; margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  /* ============================================================
+     LAYOUT — three columns: sidebar | main | chat (§1)
+     ============================================================ */
+  .app {
+    display: grid;
+    grid-template-columns: 220px 1fr 280px;
+    grid-template-rows: 32px 1fr 24px;
+    grid-template-areas:
+      "topbar topbar topbar"
+      "sidebar main chat"
+      "statusbar statusbar statusbar";
+    height: 100vh;
+  }
+  .topbar {
+    grid-area: topbar;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 12px; gap: 12px;
+    font-size: 12px;
+  }
+  .topbar .title { font-weight: 600; }
+  .topbar .file { color: var(--text-mute); }
+  .topbar .spacer { flex: 1; }
+  .topbar .chip { background: var(--bg3); padding: 2px 8px; border-radius: 3px; color: var(--text-mute); }
+
+  .sidebar {
+    grid-area: sidebar;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  .main {
+    grid-area: main;
+    overflow-y: auto;
+    padding: 8px 16px;
+  }
+  .chat {
+    grid-area: chat;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+  }
+  .statusbar {
+    grid-area: statusbar;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 12px;
+    font-size: 11px; color: var(--text-mute); gap: 12px;
+  }
+  .statusbar .sb-item { white-space: nowrap; }
+  .statusbar .sb-sep { color: var(--text-dim); }
+  .statusbar .sb-deps { color: var(--accent); cursor: pointer; }
+
+  /* ============================================================
+     SIDEBAR — 5 accordion panels (§2)
+     ============================================================ */
+  .panel {
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px; font-size: 11px; font-weight: 600;
+    color: var(--text-mute); letter-spacing: 0.4px;
+    background: var(--bg2); cursor: pointer; user-select: none;
+  }
+  .panel-head .count { color: var(--text-dim); font-weight: 400; }
+  .panel-body { padding: 4px 0; font-size: 12px; }
+  .panel-body .row {
+    padding: 3px 12px; display: flex; align-items: center; gap: 6px;
+    cursor: pointer; color: var(--text);
+  }
+  .panel-body .row:hover { background: var(--bg3); }
+  .panel-body .row .icon { width: 12px; color: var(--text-dim); }
+  .panel-body .row .cell-id {
+    margin-left: auto; color: var(--accent); font-family: var(--mono); font-size: 11px;
+    padding: 1px 4px; border-radius: 2px;
+  }
+  .panel-body .row .cell-id:hover { background: rgba(34, 211, 238, 0.1); border: 1px solid var(--accent); padding: 0 3px; }
+  .panel-body .saved { color: var(--accent-amber); }
+  .panel-body .temp { color: var(--text-mute); }
+  .panel-body .views-builtin { color: var(--accent-orange); }
+  .panel-body .err-dot { color: var(--accent-red); }
+
+  /* ============================================================
+     MAIN COLUMN — varbar + cells
+     ============================================================ */
+  .varbar {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 8px; margin-bottom: 12px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .varbar-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .varbar-row .label { color: var(--text-dim); font-size: 11px; margin-right: 4px; }
+  .var-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 10px; font-family: var(--mono); font-size: 11px;
+    background: var(--bg3); border: 1px solid var(--border);
+  }
+  .var-chip.static { color: var(--accent-amber); border-color: rgba(251, 191, 36, 0.3); }
+  .var-chip.live {
+    color: var(--live-cyan); border-color: rgba(6, 182, 212, 0.4);
+    background: linear-gradient(180deg, rgba(6, 182, 212, 0.08), rgba(6, 182, 212, 0.02));
+  }
+  .var-chip .val { color: var(--text-mute); }
+  .varbar-row.live-row {
+    background: linear-gradient(180deg, rgba(6, 182, 212, 0.04), transparent);
+    border-radius: 4px; padding: 2px 4px;
+  }
+  .pause-btn {
+    background: var(--bg3); border: 1px solid var(--border-strong);
+    color: var(--text-mute); padding: 1px 8px; font-size: 11px; border-radius: 3px;
+    cursor: pointer;
+  }
+
+  /* CELL */
+  .cell {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; margin-bottom: 12px; overflow: hidden;
+  }
+  .cell.focused { border-color: var(--accent); }
+  .cell.errored { border-color: rgba(239, 68, 68, 0.5); }
+  .cell-head {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .cell-head .link-chip {
+    color: var(--text-dim); cursor: pointer; font-family: var(--mono);
+  }
+  .cell-head .link-chip:hover { color: var(--accent); }
+  .cell-head .alias {
+    color: var(--accent-amber); font-family: var(--mono); font-weight: 500;
+  }
+  .cell.errored .cell-head .alias { color: var(--accent-red); }
+  .cell-head .badge {
+    background: var(--bg3); color: var(--text-mute);
+    padding: 1px 6px; border-radius: 3px; font-size: 11px;
+  }
+  .cell-head .badge.dashboard { color: var(--accent-purple); }
+  .cell-head .badge.axis-link { color: var(--accent-orange); }
+  .cell-head .badge.live { color: var(--live-cyan); }
+  .cell-head .ai-glyph { color: var(--accent-purple); }
+  .cell-head .status {
+    display: inline-flex; align-items: center; gap: 4px;
+    color: var(--text-mute); font-size: 11px;
+  }
+  .cell-head .status .dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+    background: var(--accent-green);
+  }
+  .cell-head .status.err .dot { background: var(--accent-red); }
+  .cell-head .status.err { color: var(--accent-red); }
+  .cell-head .status.running .dot { background: var(--accent-yellow); }
+  .cell-head .status.stale .dot { background: var(--accent-stale); }
+  .cell-head .spacer { flex: 1; }
+  .cell-head .iconbtn {
+    background: transparent; color: var(--text-dim); border: none;
+    cursor: pointer; padding: 2px 4px; font-size: 13px;
+  }
+  .cell-head .iconbtn:hover { color: var(--text); }
+  .cell-head .run-btn {
+    background: var(--bg3); color: var(--accent-green); border: 1px solid var(--border-strong);
+    padding: 1px 8px; border-radius: 3px; font-family: var(--mono); font-size: 11px;
+    cursor: pointer;
+  }
+
+  /* CELL BODY — split: SQL | plot, or just plot */
+  .cell-body { display: grid; gap: 1px; background: var(--border); }
+  .cell-body.split2 { grid-template-columns: 1fr 1fr; }
+  .cell-body.single { grid-template-columns: 1fr; }
+  .pane { background: var(--panel); padding: 10px 12px; min-height: 80px; }
+  .pane.sql { font-family: var(--mono); font-size: 12px; }
+  .pane.plot { display: flex; flex-direction: column; gap: 8px; }
+  .pane-title { color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+
+  /* Syntax highlight (cheap inline) */
+  .sql-kw { color: #ff7b72; }
+  .sql-fn { color: var(--accent-purple); }
+  .sql-num { color: var(--accent-amber); }
+  .sql-str { color: #a5d6ff; }
+  .sql-cmt { color: var(--text-dim); }
+  .sql-var { color: var(--live-cyan); }
+  .sql-err { text-decoration: underline wavy var(--accent-red); }
+
+  /* PLOT placeholders — pure CSS art */
+  .plot-box {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 4px; padding: 8px; position: relative;
+    flex: 1; min-height: 140px;
+  }
+  .plot-title { font-size: 11px; color: var(--text-mute); margin-bottom: 4px; }
+  .plot-axes {
+    height: 100%; width: 100%; position: relative;
+    background: linear-gradient(0deg, var(--border) 1px, transparent 1px) 0 100%/100% 25% repeat-y,
+                linear-gradient(90deg, var(--border) 1px, transparent 1px) 0 0/20% 100% repeat-x;
+  }
+  .line-mock {
+    height: 90px; background: linear-gradient(135deg,
+      transparent 0%, transparent 20%,
+      var(--live-cyan) 20%, var(--live-cyan) 21%,
+      transparent 21%, transparent 100%);
+    position: relative;
+    border-bottom: 1px solid var(--border);
+  }
+  .line-mock::after {
+    content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(2px 20px at 15% 60%, var(--live-cyan), transparent),
+      radial-gradient(2px 35px at 30% 30%, var(--live-cyan), transparent),
+      radial-gradient(2px 60px at 45% 10%, var(--live-cyan), transparent),
+      radial-gradient(2px 25px at 60% 50%, var(--live-cyan), transparent),
+      radial-gradient(2px 40px at 78% 25%, var(--live-cyan), transparent);
+    opacity: 0.4;
+  }
+
+  .ghost {
+    color: var(--accent-purple); background: rgba(167, 139, 250, 0.12);
+    border: 1px dashed rgba(167, 139, 250, 0.3); padding: 6px 8px;
+    border-radius: 3px; font-family: var(--mono); font-size: 11px;
+  }
+  .ghost .kbd { background: rgba(167, 139, 250, 0.25); padding: 1px 4px; border-radius: 2px; }
+
+  .slash-menu {
+    background: var(--bg2); border: 1px solid var(--border-strong); border-radius: 4px;
+    padding: 6px 0; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+  .slash-menu .group-title { color: var(--text-dim); font-size: 10px; padding: 2px 12px; text-transform: uppercase; }
+  .slash-menu .item { padding: 4px 12px; cursor: pointer; }
+  .slash-menu .item:hover { background: var(--bg3); }
+  .slash-menu .item .kbd { font-family: var(--mono); color: var(--text-mute); font-size: 11px; }
+
+  /* DEP GRAPH */
+  .depgraph {
+    background: var(--bg2); border: 1px solid var(--border-strong); border-radius: 6px;
+    padding: 16px; margin-bottom: 12px;
+    position: relative; min-height: 280px;
+  }
+  .depgraph-head { display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 12px; }
+  .depgraph-kbd { font-family: var(--mono); color: var(--text-dim); }
+  .dg-node {
+    position: absolute;
+    background: var(--bg3); border: 1.5px solid var(--accent-amber);
+    padding: 4px 10px; border-radius: 4px; font-family: var(--mono); font-size: 11px;
+    color: var(--accent-amber);
+  }
+  .dg-node.err { border-color: var(--accent-red); color: var(--accent-red); }
+  .dg-node.focused { border-color: var(--accent); color: var(--accent); border-width: 2px; }
+  .dg-node.var {
+    background: transparent; border-radius: 16px;
+    border-color: var(--accent-purple); color: var(--accent-purple);
+  }
+  .dg-node.live-var {
+    border-color: var(--live-cyan); color: var(--live-cyan);
+    transform: rotate(45deg); padding: 4px 8px;
+  }
+  .dg-node.live-var > span { display: inline-block; transform: rotate(-45deg); }
+  .dg-legend {
+    display: flex; gap: 16px; font-size: 11px; color: var(--text-mute);
+    margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border);
+  }
+  .dg-legend .swatch {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px;
+  }
+  .swatch.data { background: var(--accent); }
+  .swatch.var { background: var(--accent-purple); }
+  .swatch.live { background: var(--live-cyan); }
+  .swatch.prompt { background: var(--accent-purple); opacity: 0.7; }
+  .swatch.err { background: var(--accent-red); }
+
+  /* CHAT panel */
+  .chat-head { padding: 8px 12px; border-bottom: 1px solid var(--border);
+    font-size: 11px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.5px; }
+  .chat-body { flex: 1; padding: 12px; overflow-y: auto; font-size: 12px; }
+  .chat-msg { margin-bottom: 12px; }
+  .chat-msg .who { color: var(--text-dim); font-size: 11px; margin-bottom: 2px; }
+  .chat-msg .body { background: var(--bg3); padding: 8px; border-radius: 4px; line-height: 1.5; }
+  .chat-msg.ai .body { background: rgba(167, 139, 250, 0.08); border-left: 2px solid var(--accent-purple); }
+  .chat-input {
+    border-top: 1px solid var(--border); padding: 8px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .chat-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  .chat-chip {
+    background: var(--bg3); color: var(--text-mute); font-size: 11px;
+    padding: 1px 6px; border-radius: 3px; font-family: var(--mono);
+  }
+  .chat-input textarea {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 8px; border-radius: 4px; font-size: 12px; resize: none;
+    font-family: inherit;
+  }
+
+  /* DSL cheatsheet cell — markdown look */
+  .cheatsheet { font-size: 12px; line-height: 1.7; }
+  .cheatsheet h2 { font-size: 14px; margin: 12px 0 6px; color: var(--text); }
+  .cheatsheet table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
+  .cheatsheet td { padding: 3px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .cheatsheet td:first-child { color: var(--accent-purple); width: 40%; }
+
+  /* Misc */
+  .small { font-size: 11px; color: var(--text-mute); }
+  .ok-pill { color: var(--accent-green); }
+  hr.faint { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <span class="title">JFR Notebook</span>
+    <span class="file">▸ recording.jfr</span>
+    <span class="chip">10 cells</span>
+    <span class="chip" style="color: var(--accent-amber);" title="Phase A — alpha mockup; see §12 phase list">Phase A · v0.1-mock</span>
+    <span class="spacer"></span>
+    <span class="chip">⌘G dep graph</span>
+    <span class="chip">⌘⇧E issues</span>
+    <span class="chip">⌘⌥H history</span>
+    <span class="chip">⌘⇧F format</span>
+    <span class="chip">⌘\ fullscreen</span>
+  </header>
+
+  <!-- SIDEBAR — 5 panels -->
+  <aside class="sidebar">
+    <section class="panel">
+      <div class="panel-head">TABLES <span class="count">100+</span></div>
+      <div class="panel-body">
+        <div class="row"><span class="icon">▾</span>jdk_GarbageCollection</div>
+        <div class="row" style="padding-left: 28px;"><span class="icon">·</span>startTime</div>
+        <div class="row" style="padding-left: 28px;"><span class="icon">·</span>duration</div>
+        <div class="row" style="padding-left: 28px;"><span class="icon">·</span>cause</div>
+        <div class="row"><span class="icon">▸</span>jdk_GCPhasePause</div>
+        <div class="row"><span class="icon">▸</span>jdk_ObjectAllocationSample</div>
+        <div class="row"><span class="icon">▸</span>jdk_ThreadAllocationStatistics</div>
+        <div class="row"><span class="icon">▸</span>jdk_ExecutionSample</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">VIEWS <span class="count">12</span></div>
+      <div class="panel-body">
+        <div class="row views-builtin"><span class="icon">◆</span>gc_long_pauses</div>
+        <div class="row views-builtin"><span class="icon">◆</span>gc_pauses_by_cause</div>
+        <div class="row views-builtin"><span class="icon">◆</span>allocations_by_thread</div>
+        <div class="row views-builtin"><span class="icon">◆</span>top_methods_by_cpu</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">ISSUES <span class="count">3</span></div>
+      <div class="panel-body">
+        <div class="row" title="policy · panel-name-recommended — cell #5 has 4 producing panels and downstream refs use bare $alias.brush (§IT15.3.2 / §IT18.4)">
+          <span class="icon" style="color: var(--accent-yellow);">●</span>
+          <span style="font-family: var(--mono); font-size: 11px;">panel-name-recommended</span>
+          <span class="cell-id">#5</span>
+        </div>
+        <div class="row" title="type · brush-axis-implicit — consumer column does not match producer axis; add .x suffix (§IT14.4 / §IT15.1)">
+          <span class="icon" style="color: var(--accent-red);">●</span>
+          <span style="font-family: var(--mono); font-size: 11px;">brush-axis-implicit</span>
+          <span class="cell-id">#4</span>
+        </div>
+        <div class="row" title="ref · var-ambiguous — both $theme and $$theme exist; get_live_var('theme') is ambiguous (§IT14.6 / §IT18.6)">
+          <span class="icon" style="color: var(--accent-green);">●</span>
+          <span style="font-family: var(--mono); font-size: 11px;">var-ambiguous</span>
+          <span class="cell-id">#2</span>
+        </div>
+        <div class="small" style="margin: 6px 12px 4px; color: var(--text-dim);">⌘⇧E to open panel</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">SAVED &amp; TEMP <span class="count">5</span></div>
+      <div class="panel-body">
+        <div class="row saved"><span class="icon">★</span>gc_overview <span class="cell-id">#1</span></div>
+        <div class="row err-dot"><span class="icon">○</span>gc_errors <span class="cell-id">#2</span></div>
+        <div class="row temp"><span class="icon">○</span>gc_by_cause <span class="cell-id">#3</span></div>
+        <div class="row temp"><span class="icon">○</span>long_pauses <span class="cell-id">#4</span></div>
+        <div class="row saved"><span class="icon">★</span>pause_correlation <span class="cell-id">#5</span></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">MACROS <span class="count">3</span></div>
+      <div class="panel-body">
+        <div class="row"><span class="icon">ƒ</span>ms(d)</div>
+        <div class="row"><span class="icon">ƒ</span>bucket(t, sec)</div>
+        <div class="row"><span class="icon">ƒ</span>top_n(col, n)</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">PREVIEW</div>
+      <div class="panel-body" style="padding: 8px 10px;">
+        <div class="small" style="margin-bottom: 4px; color: var(--text-dim);">Scratchpad SQL</div>
+        <div style="font-family: var(--mono); font-size: 11px; background: var(--bg); padding: 6px;
+                    border-radius: 3px; border: 1px solid var(--border); color: var(--text-mute);">
+          <span class="sql-kw">SELECT</span> count(*) <span class="sql-kw">FROM</span> gc_overview;
+        </div>
+        <div class="small" style="margin-top: 8px; color: var(--text-dim);">Deps for #5</div>
+        <div class="small" style="margin-top: 2px;">▸ reads: gc_overview, peaks</div>
+        <div class="small">▸ writes: pause_correlation</div>
+      </div>
+    </section>
+  </aside>
+
+  <!-- MAIN COLUMN -->
+  <main class="main">
+    <!-- VARBAR — two rows: static / live -->
+    <div class="varbar">
+      <div class="varbar-row">
+        <span class="label">VARS</span>
+        <span class="var-chip static">$start <span class="val">12:00</span></span>
+        <span class="var-chip static">$end <span class="val">13:00</span></span>
+        <span class="var-chip static">$threshold_ms <span class="val">100</span></span>
+        <span class="var-chip static">$flame_filter <span class="val">""</span></span>
+      </div>
+      <div class="varbar-row live-row">
+        <span class="label">LIVE</span>
+        <span class="var-chip live">$zoom <span class="val">12:30 → 12:45</span></span>
+        <span class="var-chip live">$brush <span class="val">— (clear)</span></span>
+        <span class="var-chip live">$hover <span class="val">—</span></span>
+        <span class="var-chip live">$focused_cell <span class="val">#1</span></span>
+        <span style="flex:1"></span>
+        <button class="pause-btn">⏸ pause live coupling</button>
+      </div>
+    </div>
+
+    <!-- CELL #0 — system-provisioned welcome (pinned, hidden_from_dep_graph) §IT12.1 -->
+    <article class="cell">
+      <header class="cell-head">
+        <span class="link-chip" title="hidden_from_dep_graph">📌</span>
+        <span class="alias" style="color: var(--accent-purple);">#welcome</span>
+        <span class="badge">system · pinned</span>
+        <span class="badge">📝 markdown</span>
+        <span class="status"><span class="dot"></span>ok</span>
+        <span class="spacer"></span>
+        <button class="iconbtn" title="dismiss">✕</button>
+      </header>
+      <div class="cell-body single">
+        <div class="pane" style="line-height: 1.6;">
+          <div style="font-size: 14px; font-weight: 600; margin-bottom: 6px;">Welcome to JFR Notebook.</div>
+          <p style="margin: 0 0 8px;">
+            This is a SQL-first notebook for exploring Java Flight Recorder dumps. Drag a <code>.jfr</code>
+            file onto this page, or click <em>Open demo</em> to explore a sample. Type <code>/</code> in any
+            empty cell to insert a new block — SQL, plot, markdown, or a magic recipe.
+          </p>
+          <p style="margin: 0 0 8px;">
+            Coupled gestures (brush, hover, zoom) are visible in the varbar above. Use
+            <span style="font-family: var(--mono);">⌘G</span> to see the dep graph,
+            <span style="font-family: var(--mono);">⌘⇧E</span> for the issues panel, and
+            <span style="font-family: var(--mono);">?</span> for the keyboard map.
+          </p>
+          <div style="margin-top: 8px;">
+            <button class="run-btn" style="color: var(--accent);">Open demo ▾</button>
+            <button class="pause-btn">Watch 90-second tour</button>
+            <button class="pause-btn">Skip</button>
+          </div>
+          <div class="small" style="margin-top: 10px; color: var(--text-dim);">
+            What's new this session: iter-18 convergence — namespaced brush producers (<code>$alias.brush</code>),
+            panel <code>name:</code> clauses, two-sigil vars (<code>$x</code> / <code>$$x</code>), and the
+            6-kind issues taxonomy.
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- CELL #1 — sugar line -->
+    <article class="cell focused">
+      <header class="cell-head">
+        <span class="link-chip">#</span>
+        <span class="alias">#1 gc_overview</span>
+        <span class="badge axis-link">🔗 x: $zoom</span>
+        <span class="status"><span class="dot"></span>ok / 0.42s</span>
+        <span class="spacer"></span>
+        <button class="iconbtn">⛶</button>
+        <button class="run-btn">▶ run</button>
+        <button class="iconbtn">⋯</button>
+      </header>
+      <div class="cell-body split2">
+        <div class="pane sql">
+          <div class="pane-title">SQL</div>
+<pre style="margin: 0; white-space: pre-wrap;"><span class="sql-cmt">-- @ gc_overview</span>
+<span class="sql-kw">SELECT</span>
+  startTime,
+  cause,
+  ms(duration) <span class="sql-kw">AS</span> duration_ms
+<span class="sql-kw">FROM</span>   jdk_GarbageCollection
+<span class="sql-kw">WHERE</span>  duration > <span class="sql-var">$threshold_ms</span> * 1e6
+<span class="sql-kw">ORDER BY</span> startTime;</pre>
+        </div>
+        <div class="pane plot">
+          <div class="pane-title">PLOT (sugar)</div>
+<pre style="margin: 0; font-family: var(--mono); font-size: 11px; color: var(--text);">
+<span class="sql-kw">let</span> @gc_y = [<span class="sql-str">"duration_ms"</span>]
+<span class="sql-fn">line</span> { x: <span class="sql-str">"startTime"</span>, y: @gc_y,
+       color: <span class="sql-str">"cause"</span>, yScale: <span class="sql-str">"linear"</span>,
+       xRefLines: [{value: 30, label: <span class="sql-str">"spike"</span>}] }
+  | title: <span class="sql-str">"GC pauses over time"</span>
+  | link-x: <span class="sql-var">$zoom</span> master clamp
+  | width: 100% | height: 200px</pre>
+          <div class="plot-box" style="margin-top: 4px;">
+            <div class="plot-title">GC pauses over time</div>
+            <div class="line-mock"></div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- CELL #2 — error state -->
+    <article class="cell errored">
+      <header class="cell-head">
+        <span class="link-chip">#</span>
+        <span class="alias">#2 gc_errors</span>
+        <span class="status err"><span class="dot"></span>err: column "startime" not found</span>
+        <span class="spacer"></span>
+        <button class="iconbtn">⛶</button>
+        <button class="run-btn">▶ run</button>
+        <button class="iconbtn">⋯</button>
+      </header>
+      <div class="cell-body single">
+        <div class="pane sql">
+<pre style="margin: 0;"><span class="sql-kw">SELECT</span> <span class="sql-err">startime</span>, cause, duration
+<span class="sql-kw">FROM</span>   gc_overview
+<span class="sql-kw">WHERE</span>  cause = <span class="sql-str">'G1 Evacuation Pause'</span>;</pre>
+        </div>
+      </div>
+    </article>
+
+    <!-- CELL #3 — sugar bar -->
+    <article class="cell">
+      <header class="cell-head">
+        <span class="link-chip">#</span>
+        <span class="alias">#3 gc_by_cause</span>
+        <span class="status"><span class="dot"></span>ok / 0.11s</span>
+        <span class="spacer"></span>
+        <button class="iconbtn">⛶</button>
+        <button class="run-btn">▶ run</button>
+        <button class="iconbtn">⋯</button>
+      </header>
+      <div class="cell-body split2">
+        <div class="pane sql">
+<pre style="margin: 0;"><span class="sql-cmt">-- @ gc_by_cause</span>
+<span class="sql-kw">SELECT</span> cause,
+       count(*) <span class="sql-kw">AS</span> n,
+       avg(ms(duration)) <span class="sql-kw">AS</span> avg_ms
+<span class="sql-kw">FROM</span>   jdk_GarbageCollection
+<span class="sql-kw">GROUP BY</span> cause;</pre>
+        </div>
+        <div class="pane plot">
+<pre style="margin: 0; font-family: var(--mono); font-size: 11px;">
+bar { data: gc_by_cause, x: cause, y: [n],
+      lineY: [avg_ms], layout: grouped }
+| title: <span class="sql-str">"GC by cause"</span>
+| on: [1, q_compare]
+| height: 220px</pre>
+          <div class="plot-box" style="margin-top: 6px;">
+            <div class="plot-title">GC by cause</div>
+            <div style="display: flex; align-items: flex-end; gap: 10px; height: 90px; padding: 0 6px;">
+              <div style="width: 30px; height: 80%; background: var(--accent);"></div>
+              <div style="width: 30px; height: 60%; background: var(--accent);"></div>
+              <div style="width: 30px; height: 45%; background: var(--accent);"></div>
+              <div style="width: 30px; height: 30%; background: var(--accent);"></div>
+              <div style="width: 30px; height: 20%; background: var(--accent);"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- CELL #4 — AI ghost suggestion + AI authorship + filter-from chip §IT12.x / §IT14.5 / §IT15.3 -->
+    <article class="cell">
+      <header class="cell-head">
+        <span class="link-chip">#</span>
+        <span class="alias">#4 long_pauses</span>
+        <span class="ai-glyph" title='last_ai_prompt: "show me GC pauses above the threshold, filtered by the brush on #1"'>🤖</span>
+        <span class="badge" style="color: var(--live-cyan); cursor: pointer;" title="click to bind to a producer (§IT14.5 catalog)">◉ filter from… ▾</span>
+        <span class="status"><span class="dot"></span>ok / 0.05s</span>
+        <span class="spacer"></span>
+        <button class="iconbtn">⛶</button>
+        <button class="run-btn">▶ run</button>
+        <button class="iconbtn">⋯</button>
+      </header>
+      <!-- filter-from popover — namespaced producer list (§IT14.5 / §IT15.3) -->
+      <div style="position: relative;">
+        <div class="slash-menu" style="position: absolute; left: 230px; top: -4px; width: 320px; z-index: 5;">
+          <div class="group-title">Bind to a live-var producer</div>
+          <div class="item">
+            <span style="color: var(--live-cyan);">←</span>
+            <span style="font-family: var(--mono); color: var(--text);">$gc_overview.brush</span>
+            <span class="kbd"> brush on #1 line</span>
+          </div>
+          <div class="item">
+            <span style="color: var(--live-cyan);">←</span>
+            <span style="font-family: var(--mono); color: var(--text);">$gc_by_cause.hover</span>
+            <span class="kbd"> hover on #3 bar</span>
+          </div>
+          <div class="item">
+            <span style="color: var(--live-cyan);">←</span>
+            <span style="font-family: var(--mono); color: var(--text);">$pause_correlation.gc.brush</span>
+            <span class="kbd"> brush on #5 panel "gc"</span>
+          </div>
+          <div class="item">
+            <span style="color: var(--live-cyan);">←</span>
+            <span style="font-family: var(--mono); color: var(--text);">$pause_correlation.matrix.brush</span>
+            <span class="kbd"> brush on #5 panel "matrix"</span>
+          </div>
+          <div class="item" style="color: var(--text-mute);">
+            <span>↻</span> <span class="kbd">bare $brush (most-recent)</span>
+          </div>
+        </div>
+      </div>
+      <div class="cell-body split2">
+        <div class="pane sql">
+<pre style="margin: 0;"><span class="sql-cmt">-- @ long_pauses</span>
+<span class="sql-kw">SELECT</span> *
+<span class="sql-kw">FROM</span>   gc_overview
+<span class="sql-kw">WHERE</span>  duration_ms > <span class="sql-var">$threshold_ms</span>
+  <span class="sql-kw">AND</span>  startTime <span class="sql-kw">IN</span> <span class="sql-var">$gc_overview.brush</span>;</pre>
+        </div>
+        <div class="pane plot" style="position: relative;">
+          <div class="ghost">
+            <div>boxplot { value: "duration_ms", category: "cause" } | name: "by_cause"</div>
+            <div style="margin-top: 4px;">
+              <span class="kbd">TAB</span> to accept · <span class="kbd">ESC</span> to dismiss
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- CELL #5 — pause_correlation dashboard (the superset demo) -->
+    <article class="cell">
+      <header class="cell-head">
+        <span class="link-chip">#</span>
+        <span class="alias">#5 pause_correlation</span>
+        <span class="badge dashboard">📐 dashboard (4 panels)</span>
+        <span class="badge axis-link">🔗 x: $zoom</span>
+        <span class="badge live">◉ live</span>
+        <span class="status"><span class="dot"></span>ok / 1.2s</span>
+        <span class="spacer"></span>
+        <button class="iconbtn">⛶</button>
+        <button class="run-btn">▶ run</button>
+        <button class="iconbtn">⋯</button>
+      </header>
+      <div class="cell-body single">
+        <div class="pane plot">
+<pre style="margin: 0; font-family: var(--mono); font-size: 11px;">
+col {
+  row {
+    line { ... xRefLines: [{value: 30, label: <span class="sql-str">"spike"</span>}] } | name: <span class="sql-str">"gc"</span>
+    + scatter { x: startTime, y: ms(duration), size: duration }
+      | link-x: <span class="sql-var">$zoom</span> master clamp
+      | width: 65%;
+    bar { layout: stacked, horizontal: true } | width: 35% | name: <span class="sql-str">"causes"</span>
+  }
+  row {
+    histogram { bins: 30, logBins: true } | name: <span class="sql-str">"hist"</span>;
+    boxplot   { value: duration, category: cause } | name: <span class="sql-str">"box"</span>;
+    heatmap   { x: cause, y: phase, value: avg_ms } | name: <span class="sql-str">"matrix"</span>
+  } | height: 180px
+  table { headers: [startTime, cause, duration_ms, eventThread] } | name: <span class="sql-str">"samples"</span>
+} | title: <span class="sql-str">"Long pauses dashboard"</span>
+
+<span class="sql-cmt">-- Downstream consumer (cell elsewhere):</span>
+<span class="sql-cmt">--   WHERE startTime IN $pause_correlation.gc.brush</span>
+<span class="sql-cmt">--   WHERE (cause, phase) IN $pause_correlation.matrix.brush</span></pre>
+          <div style="display: grid; grid-template-columns: 65% 35%; gap: 6px; margin-top: 8px;">
+            <div class="plot-box" style="min-height: 100px;">
+              <div class="plot-title">overlaid line + scatter</div>
+              <div class="line-mock"></div>
+            </div>
+            <div class="plot-box" style="min-height: 100px;">
+              <div class="plot-title">stacked bar</div>
+              <div style="display:flex;gap:4px;height:70px;align-items:flex-end;">
+                <div style="width:18px;background:linear-gradient(0deg,var(--accent) 0,var(--accent) 60%,var(--accent-purple) 60%,var(--accent-purple) 100%);height:70%"></div>
+                <div style="width:18px;background:linear-gradient(0deg,var(--accent) 0,var(--accent) 50%,var(--accent-purple) 50%);height:55%"></div>
+                <div style="width:18px;background:var(--accent);height:40%"></div>
+              </div>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 6px;">
+            <div class="plot-box" style="min-height: 80px;"><div class="plot-title">histogram</div></div>
+            <div class="plot-box" style="min-height: 80px;"><div class="plot-title">boxplot</div></div>
+            <div class="plot-box" style="min-height: 80px;"><div class="plot-title">heatmap</div></div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- CELL #5b — downstream consumer of #5's panels (§IT15.3 multi-panel addressing) -->
+    <article class="cell">
+      <header class="cell-head">
+        <span class="link-chip">#</span>
+        <span class="alias">#5b samples_in_brush</span>
+        <span class="badge live">◉ live · 2 producers</span>
+        <span class="status"><span class="dot"></span>ok / 0.18s</span>
+        <span class="spacer"></span>
+        <button class="iconbtn">⛶</button>
+        <button class="run-btn">▶ run</button>
+        <button class="iconbtn">⋯</button>
+      </header>
+      <div class="cell-body single">
+        <div class="pane sql">
+<pre style="margin: 0;"><span class="sql-cmt">-- @ samples_in_brush — listens to two panels of #5 dashboard</span>
+<span class="sql-kw">SELECT</span> startTime, cause, phase, ms(duration) <span class="sql-kw">AS</span> dur_ms, eventThread
+<span class="sql-kw">FROM</span>   jdk_GarbageCollection
+<span class="sql-kw">WHERE</span>  startTime  <span class="sql-kw">IN</span> <span class="sql-var">$pause_correlation.gc.brush</span>
+  <span class="sql-kw">AND</span>  (cause, phase) <span class="sql-kw">IN</span> <span class="sql-var">$pause_correlation.matrix.brush</span>
+<span class="sql-kw">ORDER BY</span> startTime
+<span class="sql-kw">LIMIT</span>  200;</pre>
+        </div>
+      </div>
+    </article>
+
+    <!-- CELL #6 — slash menu -->
+    <article class="cell">
+      <header class="cell-head">
+        <span class="link-chip">#</span>
+        <span class="alias">#6 untitled</span>
+        <span class="status idle"><span class="dot" style="background:var(--text-dim)"></span>idle</span>
+        <span class="spacer"></span>
+        <button class="iconbtn">⋯</button>
+      </header>
+      <div class="cell-body single">
+        <div class="pane" style="position: relative; min-height: 240px;">
+          <div style="color: var(--text-dim); font-family: var(--mono); font-size: 12px;">/</div>
+          <div class="slash-menu" style="position: absolute; left: 14px; top: 32px; width: 320px;">
+            <div class="group-title">Blocks</div>
+            <div class="item">⌘ SQL query <span class="kbd">/sql</span></div>
+            <div class="item">📊 Plot <span class="kbd">/plot</span></div>
+            <div class="item">★ Saved view <span class="kbd">/view</span></div>
+            <div class="item">📝 Markdown <span class="kbd">/md</span></div>
+            <div class="group-title">Magic cells</div>
+            <div class="item">🔥 Profile GC pauses <span class="kbd">/profile gc-pauses</span></div>
+            <div class="item">⬆ Top-k events <span class="kbd">/topk events 20</span></div>
+            <div class="item">🔥 Flamegraph <span class="kbd">/flame method</span></div>
+            <div class="group-title">Variables</div>
+            <div class="item">$ Define variable <span class="kbd">/var name=value</span></div>
+            <div class="item">🖱 Brush filter <span class="kbd">/brush</span></div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- CELL #7 — pie + flamegraph -->
+    <article class="cell">
+      <header class="cell-head">
+        <span class="link-chip">#</span>
+        <span class="alias">#7 alloc_by_class</span>
+        <span class="badge dashboard">📐 2 panels</span>
+        <span class="status"><span class="dot"></span>ok / 0.3s</span>
+        <span class="spacer"></span>
+        <button class="iconbtn">⛶</button>
+        <button class="run-btn">▶ run</button>
+        <button class="iconbtn">⋯</button>
+      </header>
+      <div class="cell-body split2">
+        <div class="pane plot">
+          <div class="pane-title">Pie (sugar)</div>
+          <div class="plot-box">
+            <div class="plot-title">allocations by class</div>
+            <div style="width: 110px; height: 110px; border-radius: 50%; margin: 8px auto;
+                        background: conic-gradient(var(--accent) 0 40%, var(--accent-purple) 40% 65%,
+                                                   var(--accent-amber) 65% 85%, var(--text-mute) 85% 100%);"></div>
+          </div>
+        </div>
+        <div class="pane plot">
+          <div class="pane-title">Flamegraph (sugar) — search: $flame_filter</div>
+          <div class="plot-box" style="padding: 6px;">
+            <div style="display: flex; flex-direction: column; gap: 1px; font-family: var(--mono); font-size: 10px;">
+              <div style="background: var(--accent-orange); padding: 1px 4px; width: 100%;">java.lang.Thread.run</div>
+              <div style="display: flex; gap: 1px;">
+                <div style="background: var(--accent-amber); padding: 1px 4px; flex: 6;">workerLoop</div>
+                <div style="background: var(--accent-red); padding: 1px 4px; flex: 4;">gcWorker</div>
+              </div>
+              <div style="display: flex; gap: 1px;">
+                <div style="background: var(--accent); padding: 1px 4px; flex: 3;">parse</div>
+                <div style="background: var(--accent-purple); padding: 1px 4px; flex: 3;">execute</div>
+                <div style="background: var(--accent-red); padding: 1px 4px; flex: 4;">collect</div>
+              </div>
+              <div style="display: flex; gap: 1px;">
+                <div style="background: var(--accent); padding: 1px 4px; flex: 1;"></div>
+                <div style="background: var(--accent); padding: 1px 4px; flex: 2;">tokenize</div>
+                <div style="background: var(--accent-purple); padding: 1px 4px; flex: 1;"></div>
+                <div style="background: var(--accent-purple); padding: 1px 4px; flex: 2;">eval</div>
+                <div style="background: var(--accent-red); padding: 1px 4px; flex: 4;">scan</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- CELL #8 — DSL cheatsheet -->
+    <article class="cell">
+      <header class="cell-head">
+        <span class="link-chip">#</span>
+        <span class="alias">#8 dsl_cheatsheet</span>
+        <span class="badge">📝 markdown / saved view</span>
+        <span class="status"><span class="dot"></span>ok</span>
+        <span class="spacer"></span>
+        <button class="iconbtn">⋯</button>
+      </header>
+      <div class="cell-body single">
+        <div class="pane cheatsheet">
+<pre style="margin: 0 0 8px; color: var(--text-dim); font-family: var(--mono); font-size: 11px;">---
+pinned: true
+hidden: false
+autorun: false
+style: sugar
+---</pre>
+          <h2>Plot DSL — sugar (the only form, post iter-13)</h2>
+          <table>
+            <tr><td>line { x: ..., y: [...], color: ..., xRefLines: [...] }</td><td>time series</td></tr>
+            <tr><td>bar { x: ..., y: [...], layout: stacked|grouped, horizontal }</td><td>categorical bars</td></tr>
+            <tr><td>scatter { x, y, size, category }</td><td>point cloud</td></tr>
+            <tr><td>histogram { value, bins, logBins, xDomain }</td><td>distribution</td></tr>
+            <tr><td>boxplot { value, category }</td><td>quartile summary</td></tr>
+            <tr><td>heatmap { x, y, value }</td><td>2-D density</td></tr>
+            <tr><td>pie { value, category, innerRadius }</td><td>composition</td></tr>
+            <tr><td>flamegraph { frames, value, direction, search }</td><td>stack traces</td></tr>
+            <tr><td>table { headers, columnWidths }</td><td>tabular result</td></tr>
+            <tr><td>gantt { x0, x1, lane, color }</td><td>spans/intervals</td></tr>
+            <tr><td>area { x, y, stack }</td><td>stacked over time</td></tr>
+            <tr><td>range { x, lo, hi, bands }</td><td>min/max + percentiles</td></tr>
+            <tr><td>| title: ... | width: ... | height: ...</td><td>panel clauses</td></tr>
+            <tr><td>| link-x: $var master clamp</td><td>linked axes (scope is by name — iter-16 §IT16.1)</td></tr>
+            <tr><td>| name: "id"</td><td>panel id within a multi-panel cell (§IT15.3)</td></tr>
+            <tr><td>row { a; b } / col { a; b } / a + b (overlay)</td><td>composition</td></tr>
+          </table>
+          <h2>Live-variable filter operators (iter-14/15)</h2>
+          <table>
+            <tr><td>WHERE col IN $brush</td><td>most-recent brush across notebook (bare form)</td></tr>
+            <tr><td>WHERE col IN $alias.brush</td><td>namespaced — specific cell's brush</td></tr>
+            <tr><td>WHERE col IN $alias.brush.x</td><td>axis-explicit (col ≠ producer axis)</td></tr>
+            <tr><td>WHERE col IN $alias.panel.brush</td><td>multi-panel cell, by panel name (§IT15.3)</td></tr>
+            <tr><td>WHERE (a, b) IN $heatmap.brush</td><td>multi-dim brush (heatmap box-select)</td></tr>
+            <tr><td>WHERE col IN $hover</td><td>hover position (point-equality)</td></tr>
+            <tr><td>WHERE col IN $hover.category</td><td>categorical hover (pie / flamegraph frame)</td></tr>
+            <tr><td>WHERE col IN $zoom</td><td>linked zoom range / viewport</td></tr>
+            <tr><td>WHERE col IN $selection</td><td>multi-select / legend / table-row</td></tr>
+          </table>
+          <h2>Variable sigils (iter-16 — two-prefix system)</h2>
+          <table>
+            <tr><td>$x</td><td>notebook-local var; coupled across this notebook's cells; persisted via frontmatter <code>vars:</code></td></tr>
+            <tr><td>$$x</td><td>workspace-global var; shared across notebooks (phase F+); in phase A behaves like <code>$x</code></td></tr>
+            <tr><td colspan="2" style="color: var(--text-dim);">Liveness is universal — every reference subscribes. Scope is by <em>name</em>: same name → coupled, different names → independent. No <code>scope=</code> clauses.</td></tr>
+          </table>
+        </div>
+      </div>
+    </article>
+
+    <!-- DEP GRAPH (toggleable in real app; shown pinned here) -->
+    <div class="depgraph">
+      <div class="depgraph-head">
+        <span>DEPENDENCY GRAPH <span class="depgraph-kbd">⌘G</span></span>
+        <span class="depgraph-kbd">esc</span>
+      </div>
+      <!-- SVG edges (5 edge types per §6c.7) — drawn before nodes so nodes paint on top -->
+      <svg style="position: absolute; inset: 16px; pointer-events: none;" width="640" height="260">
+        <defs>
+          <marker id="arr-data" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+          </marker>
+          <marker id="arr-var" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent-purple)"/>
+          </marker>
+          <marker id="arr-live" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--live-cyan)"/>
+          </marker>
+          <marker id="arr-axis" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent-orange)"/>
+          </marker>
+          <marker id="arr-prompt" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent-purple)" opacity="0.7"/>
+          </marker>
+        </defs>
+        <!-- cyan solid — data dep (FROM alias): #1 → #4 -->
+        <path d="M 90,140 C 220,160 360,160 490,140" stroke="var(--accent)" stroke-width="1.5" fill="none" marker-end="url(#arr-data)"/>
+        <!-- gray dashed — static var dep: $threshold_ms → #1 -->
+        <path d="M 240,55 C 200,90 110,110 65,124" stroke="var(--text-mute)" stroke-width="1" fill="none" stroke-dasharray="4,3" marker-end="url(#arr-var)"/>
+        <!-- thick gray dashed — LIVE var dep: $zoom → #5 -->
+        <path d="M 400,60 C 360,140 320,170 305,200" stroke="var(--live-cyan)" stroke-width="2.2" fill="none" stroke-dasharray="6,3" marker-end="url(#arr-live)"/>
+        <!-- thick gray dashed — LIVE var dep: $brush → #4 (live-var consumer) -->
+        <path d="M 495,60 C 510,90 520,110 525,124" stroke="var(--live-cyan)" stroke-width="2.2" fill="none" stroke-dasharray="6,3" marker-end="url(#arr-live)"/>
+        <!-- orange thin — linked axis: #1 ←→ #5 (link-x $zoom) -->
+        <path d="M 65,148 C 120,210 220,220 280,210" stroke="var(--accent-orange)" stroke-width="1" fill="none" marker-end="url(#arr-axis)"/>
+        <!-- purple dotted — prompt edge: chat used #1 to author #4 -->
+        <path d="M 75,138 C 200,90 380,90 515,130" stroke="var(--accent-purple)" stroke-width="1" stroke-dasharray="1,3" fill="none" opacity="0.75" marker-end="url(#arr-prompt)"/>
+      </svg>
+      <!-- variables row -->
+      <div class="dg-node var" style="top: 40px; left: 30px;">$start</div>
+      <div class="dg-node var" style="top: 40px; left: 130px;">$end</div>
+      <div class="dg-node var" style="top: 40px; left: 220px;">$threshold_ms</div>
+      <div class="dg-node live-var" style="top: 40px; left: 380px;"><span>$zoom</span></div>
+      <div class="dg-node live-var" style="top: 40px; left: 480px;"><span>$brush</span></div>
+      <!-- cells row -->
+      <div class="dg-node" style="top: 130px; left: 30px;">#1 gc_overview</div>
+      <div class="dg-node err" style="top: 130px; left: 180px;">#2 gc_errors</div>
+      <div class="dg-node" style="top: 130px; left: 330px;">#3 gc_by_cause</div>
+      <div class="dg-node" style="top: 130px; left: 490px;">#4 long_pauses</div>
+      <div class="dg-node focused" style="top: 200px; left: 260px;">#5 pause_correlation ⚙</div>
+      <!-- glyph legend strip (§IT12.4 inline) -->
+      <div style="position: absolute; right: 16px; top: 130px; background: var(--bg3);
+                  border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px;
+                  font-size: 10px; color: var(--text-mute); font-family: var(--mono); line-height: 1.7;">
+        <div style="color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 2px;">glyphs</div>
+        <div>🤖 ai · 🪄 suggest · 📐 dash</div>
+        <div>◉ live · 🔗 link-x · ⛶ full</div>
+        <div>● status · ▣ idle · ⛔ tool</div>
+      </div>
+      <div class="dg-legend">
+        <span><span class="swatch data" style="border-bottom: 1.5px solid var(--accent); background: transparent; border-radius: 0; width: 14px; height: 0;"></span> cyan solid — data dep</span>
+        <span><span class="swatch var" style="border-bottom: 1px dashed var(--accent-purple); background: transparent; border-radius: 0; width: 14px; height: 0;"></span> gray dashed — static var</span>
+        <span><span class="swatch live" style="border-bottom: 2.2px dashed var(--live-cyan); background: transparent; border-radius: 0; width: 14px; height: 0;"></span> thick dashed — live var</span>
+        <span><span class="swatch" style="border-bottom: 1px solid var(--accent-orange); background: transparent; border-radius: 0; width: 14px; height: 0; display: inline-block; margin-right: 4px;"></span> orange thin — axis link</span>
+        <span><span class="swatch prompt" style="border-bottom: 1px dotted var(--accent-purple); background: transparent; border-radius: 0; width: 14px; height: 0; opacity: 0.8;"></span> purple dotted — prompt</span>
+        <span><span class="swatch err"></span>error</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- CHAT panel (right) -->
+  <aside class="chat">
+    <header class="chat-head">ASSISTANT · cell-scoped: #5</header>
+    <div class="chat-body">
+      <div class="chat-msg ai">
+        <div class="who">Assistant</div>
+        <div class="body">
+          The dashboard in <span style="color:var(--accent)">@5</span> overlays a line and scatter on the same x-axis;
+          the link-x clause means zooming either panel zooms both. Want me to add a brush filter that feeds
+          a "selected pauses" cell below?
+        </div>
+      </div>
+      <div class="chat-msg">
+        <div class="who">You</div>
+        <div class="body">yes — call it <code>pauses_in_brush</code></div>
+      </div>
+      <div class="chat-msg ai">
+        <div class="who">Assistant · generated SQL (iter-14 compact form)</div>
+        <div class="body" style="font-family: var(--mono); font-size: 11px;">
+<pre style="margin:0;"><span class="sql-cmt">-- @ pauses_in_brush</span>
+<span class="sql-kw">SELECT</span> *
+<span class="sql-kw">FROM</span>   gc_overview
+<span class="sql-kw">WHERE</span>  startTime <span class="sql-kw">IN</span> <span class="sql-var">$gc_overview.brush</span>;</pre>
+          <div style="margin-top: 6px; color: var(--text-mute); font-size: 10px;">
+            <span style="color: var(--live-cyan);">◉</span> bound to: #1 gc_overview.brush
+            &middot; <a href="#" style="color: var(--accent);">[edit ▼]</a> rebind…
+          </div>
+          <div style="margin-top: 6px;">
+            <button class="pause-btn" style="color: var(--accent-green);">▸ accept into new cell</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="chat-input">
+      <div class="chat-chips">
+        <span class="chat-chip">@cell #5</span>
+        <span class="chat-chip">@schema</span>
+      </div>
+      <textarea rows="3" placeholder="Ask about cell #5..."></textarea>
+    </div>
+  </aside>
+
+  <!-- STATUSBAR -->
+  <footer class="statusbar">
+    <span class="sb-item ok-pill">● DB ready</span>
+    <span class="sb-sep">·</span>
+    <span class="sb-item">recording.jfr</span>
+    <span class="sb-sep">·</span>
+    <span class="sb-item">10 cells · 7 ran · 1 error · 2 stale</span>
+    <span class="sb-sep">·</span>
+    <span class="sb-item sb-deps">↗ deps (6 edges)</span>
+    <span class="sb-sep">·</span>
+    <span class="sb-item" style="color: var(--text-mute); font-family: var(--mono);" title="cell-status pill (§IT12.4)">▣ idle</span>
+    <span class="sb-sep">·</span>
+    <span class="sb-item">last run #5 · 0.42s ago</span>
+    <span class="sb-sep">|</span>
+    <span class="sb-item" style="font-family: var(--mono); color: var(--accent-yellow);" title="open issues panel (§IT12.2)">⌘⇧E issues (3)</span>
+    <span class="sb-sep">·</span>
+    <span class="sb-item" style="font-family: var(--mono);" title="interaction timeline (§IT12.5)">⌘⌥H history</span>
+    <span class="sb-sep">|</span>
+    <span class="sb-item">Browser AI: ready</span>
+    <span class="sb-sep">·</span>
+    <span class="sb-item">cell-scoped chat: #5</span>
+    <span class="sb-sep">·</span>
+    <span class="sb-item">autosaved 14:33</span>
+    <span class="sb-sep">·</span>
+    <span class="sb-item" style="font-family: var(--mono);">⌘S</span>
+  </footer>
+</div>
+</body>
+</html>

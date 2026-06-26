@@ -6,6 +6,7 @@ import ResizablePanel from './components/ResizablePanel';
 import FileLoader from './components/FileLoader';
 import JFRDropZone from './components/JFRDropZone';
 import SettingsModal from './components/SettingsModal';
+import CommandPalette, { type CommandAction } from './components/CommandPalette';
 import ToastNotification from './components/ToastNotification';
 import { DataContext, DBState } from './context/DuckDBContext';
 import type { SourceType } from './context/DuckDBContext';
@@ -16,8 +17,9 @@ import { aiService } from './services/AiService';
 import type { NotebookCellData, NotebookMetadata } from './types';
 import { initialNotebook } from './data/mockData';
 import { gcAnalysisNotebook } from './data/gcNotebookTemplate';
-import { parseNotebook, reconstructNotebook, tokenizeCellContent, reconstructCellContent, parseCellContent } from './utils/notebookParser';
+import { parseNotebook, reconstructNotebook, tokenizeCellContent, reconstructCellContent, parseCellContent, parseCellDirective } from './utils/notebookParser';
 import { formatPlotCode } from './utils/plotFormatter';
+import { formatSql } from './utils/sqlFormatter';
 import { substituteVariables, findRemainingVariables } from './utils/variableSubstitution';
 
 import { ArrowUturnLeftIcon } from './components/icons/ArrowUturnLeftIcon';
@@ -36,7 +38,9 @@ import { CodeBracketIcon } from './components/icons/CodeBracketIcon';
 import { ArrowDownTrayIcon } from './components/icons/ArrowDownTrayIcon';
 import { TrashIcon } from './components/icons/TrashIcon';
 import { BeakerIcon } from './components/icons/BeakerIcon';
+import { EyeIcon } from './components/icons/EyeIcon';
 import * as EmbeddingService from './services/ml/EmbeddingService';
+import { initPlotModel } from './services/ml/PlotGenerationService';
 
 function topoSort<T extends { name: string; includes?: string[] }>(items: T[], _label: string): T[] {
     const nameSet = new Set(items.map(i => i.name));
@@ -84,7 +88,7 @@ function usePersistentState<T>(key: string, defaultValue: T): [T, React.Dispatch
 
 const App: React.FC = () => {
     const {
-        dbState, mode, sourceType, errorMessage, serverProbeError, query, refreshSchema, loadFile
+        dbState, mode, sourceType, errorMessage, serverProbeError, query, refreshSchema, loadFile, loadDemo
     } = useContext(DataContext);
     
     const { settings } = useContext(SettingsContext);
@@ -141,6 +145,7 @@ const App: React.FC = () => {
     const [collapseTrigger, setCollapseTrigger] = useState(0);
     const [allCollapsed, setAllCollapsed] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    const [isCmdPaletteOpen, setIsCmdPaletteOpen] = useState(false);
 
     const notebookFileInputRef = useRef<HTMLInputElement>(null);
     const savedMarkdownRef = useRef<string>(notebookMarkdown);
@@ -304,6 +309,9 @@ const App: React.FC = () => {
         EmbeddingService.ensureLoaded().catch(() => {
             // Silently ignore — ranker is optional, prefix-match still works.
         });
+        initPlotModel().catch(() => {
+            // Optional — heuristic + cloud paths remain available.
+        });
     }, [dbState]);
 
     // Global keyboard shortcuts. Cmd-S always intercepts (browser default is
@@ -334,6 +342,46 @@ const App: React.FC = () => {
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [notebookMarkdown, undo, redo, canUndo, canRedo]);
+
+    // Command palette: Shift-Shift (within 400ms) opens it. Cmd/Ctrl-K or
+    // Cmd/Ctrl-Shift-P also work as familiar VSCode-style shortcuts.
+    useEffect(() => {
+        let lastShiftAt = 0;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') { setIsCmdPaletteOpen(false); return; }
+            const meta = e.metaKey || e.ctrlKey;
+            if (meta && (e.key === 'k' || e.key === 'K')) {
+                e.preventDefault();
+                setIsCmdPaletteOpen(true);
+                return;
+            }
+            if (meta && e.shiftKey && (e.key === 'p' || e.key === 'P')) {
+                e.preventDefault();
+                setIsCmdPaletteOpen(true);
+                return;
+            }
+            if (e.key === 'Shift' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                const now = Date.now();
+                if (now - lastShiftAt < 400) {
+                    // Suppress when focused inside an editable input/textarea
+                    // (where rapid shift presses are common during typing).
+                    const tag = (document.activeElement?.tagName ?? '').toLowerCase();
+                    const editable = tag === 'input' || tag === 'textarea' || (document.activeElement as HTMLElement)?.isContentEditable;
+                    const inEditor = document.activeElement && (document.activeElement.closest?.('.cm-editor') || document.activeElement.closest?.('.CodeMirror'));
+                    if (!editable && !inEditor) {
+                        setIsCmdPaletteOpen(true);
+                    }
+                    lastShiftAt = 0;
+                } else {
+                    lastShiftAt = now;
+                }
+            } else if (e.key !== 'Shift') {
+                lastShiftAt = 0;
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, []);
 
     const { metadata, content: cellsContent } = useMemo(() => parseNotebook(notebookMarkdown), [notebookMarkdown]);
 
@@ -402,6 +450,19 @@ const App: React.FC = () => {
 
     const cells = useMemo(() => {
         const cellContents = cellsContent.split(/\n\n---\n\n/);
+        // Detect duplicate cell `name=` directives and apply deterministic
+        // `-2`, `-3` suffixes so cell handles stay unique.
+        const nameCounts: Record<string, number> = {};
+        const parsedNames: (string | undefined)[] = cellContents.map(c => {
+            const d = parseCellDirective(c);
+            return d?.name?.trim() || undefined;
+        });
+        const finalNames: (string | undefined)[] = parsedNames.map(n => {
+            if (!n) return undefined;
+            const seen = (nameCounts[n] ?? 0) + 1;
+            nameCounts[n] = seen;
+            return seen === 1 ? n : `${n}-${seen}`;
+        });
         // Use position-based IDs so that editing a cell's content doesn't
         // re-key the React subtree and orphan its results. This still misaligns
         // on insert/delete/reorder, but content-edit churn is the common case
@@ -410,6 +471,7 @@ const App: React.FC = () => {
             id: `cell-${index}`,
             title: '',
             content,
+            name: finalNames[index],
         }));
     }, [cellsContent]);
 
@@ -452,6 +514,29 @@ const App: React.FC = () => {
         };
         const newCells = [...cells, newCell];
         updateCellsAndMarkdown(newCells);
+    };
+
+    /**
+     * C7 — Tool-runtime variant of addCell. The AI tool runtime emits
+     * `{ type: 'sql' | 'plot' | 'markdown', content, afterCellId? }`; we
+     * wrap that shape into a notebook cell and splice it in. Returns the
+     * id so the model can subsequently reference it via `editCell` /
+     * `applyPlot`. Shared between ChatPanel and InlineChat.
+     */
+    const addCellFromTool = (mut: { type: 'sql' | 'plot' | 'markdown'; content: string; afterCellId?: string }): string => {
+        const id = `cell-${Date.now()}`;
+        const fence = mut.type === 'sql' ? '```sql' : mut.type === 'plot' ? '```plot' : null;
+        const body = fence ? `${fence}\n${mut.content}\n\`\`\`\n` : `${mut.content}\n`;
+        const newCell: NotebookCellData = { id, title: '', content: body };
+        let inserted = false;
+        const next: NotebookCellData[] = [];
+        for (const c of cells) {
+            next.push(c);
+            if (!inserted && mut.afterCellId && c.id === mut.afterCellId) { next.push(newCell); inserted = true; }
+        }
+        if (!inserted) next.push(newCell);
+        updateCellsAndMarkdown(next);
+        return id;
     };
     
     const addCellFromAI = (sql: string, plotConfig: string, title: string, markdownText: string) => {
@@ -558,16 +643,8 @@ const App: React.FC = () => {
     };
 
     const formatCode = async (code: string, type: 'sql' | 'plot'): Promise<string | null> => {
-        if (type === 'plot') {
-            return formatPlotCode(code);
-        }
-        if (!isAiFeatureActive) return code;
-        try {
-            return await aiService.getAiCodeFormat(code);
-        } catch (error) {
-            console.error("Error formatting code:", error);
-            return code;
-        }
+        if (type === 'plot') return formatPlotCode(code);
+        return formatSql(code);
     };
     
     const runPreviewQuery = async (queryToRun: string): Promise<any[]> => {
@@ -583,6 +660,7 @@ const App: React.FC = () => {
     };
     
     const [isRunningAll, setIsRunningAll] = useState(false);
+    const [presenterMode, setPresenterMode] = useState(false);
     const isRunningAllRef = useRef(false);
 
     const handleRunAll = useCallback(async () => {
@@ -605,6 +683,31 @@ const App: React.FC = () => {
 
     const handleClearResults = useCallback(() => { setResults({}); }, []);
 
+    const formatAllCells = useCallback(() => {
+        const newCells = cells.map(cell => {
+            const segments = tokenizeCellContent(cell.content);
+            const formattedSegments = segments.map(seg => {
+                if (seg.type === 'sql') return { ...seg, content: formatSql(seg.content) };
+                if (seg.type === 'plot') return { ...seg, content: formatPlotCode(seg.content) };
+                return seg;
+            });
+            return { ...cell, content: reconstructCellContent(formattedSegments) };
+        });
+        updateCellsAndMarkdown(newCells);
+    }, [cells, metadata]);
+
+    const cmdActions: CommandAction[] = useMemo(() => [
+        { id: 'format-all', label: 'Format all cells', hint: '⇧⇧ then "format"', keywords: 'beautify pretty indent', run: () => formatAllCells() },
+        { id: 'run-all', label: 'Run all queries', hint: 'run every SQL block', keywords: 'execute', run: () => { void handleRunAll(); } },
+        { id: 'add-cell', label: 'Add new cell', keywords: 'new insert', run: () => addCell() },
+        { id: 'settings', label: 'Open settings', keywords: 'preferences config', run: () => setIsSettingsModalOpen(true) },
+        { id: 'toggle-ai', label: `${isAiEnabled ? 'Disable' : 'Enable'} AI features`, keywords: 'llm assistant', run: () => setIsAiEnabled(!isAiEnabled) },
+        { id: 'toggle-autorun', label: `${isAutoRunEnabled ? 'Disable' : 'Enable'} auto-run on load`, keywords: 'autorun', run: () => setIsAutoRunEnabled(!isAutoRunEnabled) },
+        { id: 'toggle-md', label: `${isMarkdownMode ? 'Exit' : 'Enter'} raw markdown view`, keywords: 'markdown raw', run: () => setIsMarkdownMode(!isMarkdownMode) },
+        { id: 'clear-results', label: 'Clear all results', keywords: 'reset', run: () => handleClearResults() },
+        { id: 'save', label: 'Save notebook', keywords: 'download export', run: () => handleSaveNotebook() },
+    ], [formatAllCells, handleRunAll, addCell, isAiEnabled, setIsAiEnabled, isAutoRunEnabled, setIsAutoRunEnabled, isMarkdownMode, setIsMarkdownMode, handleClearResults]);
+
     const handleMetadataChange = async (newMetadata: NotebookMetadata) => {
         const newNotebookMarkdown = reconstructNotebook({ metadata: newMetadata, content: cellsContent });
         setNotebookMarkdown(newNotebookMarkdown);
@@ -618,6 +721,8 @@ const App: React.FC = () => {
                     onFileSelected={(bytes, fileName) => { void loadFile(bytes, fileName); }}
                     isImporting={dbState === DBState.IMPORTING}
                     errorMessage={dbState === DBState.ERROR ? errorMessage : null}
+                    onLoadDemo={() => { setNotebookMarkdown(initialNotebook); void loadDemo(); }}
+                    onLoadGcNotebook={() => { setNotebookMarkdown(gcAnalysisNotebook); void loadDemo(); }}
                 />
             );
         }
@@ -635,6 +740,7 @@ const App: React.FC = () => {
                 </div>
             )}
             <SettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} />
+            <CommandPalette isOpen={isCmdPaletteOpen} onClose={() => setIsCmdPaletteOpen(false)} actions={cmdActions} />
             {aiFailureMessage && <ToastNotification title="AI Assistant Alert" message={aiFailureMessage} onClose={() => setAiFailureMessage(null)} action={{ label: 'Open Settings →', onClick: () => setIsSettingsModalOpen(true) }} />}
             {serverProbeError && !probeToastDismissed && <ToastNotification title="Running in WASM mode" message={`Server probe failed: ${serverProbeError}. Drop a .jfr or .duckdb file to get started.`} onClose={() => setProbeToastDismissed(true)} duration={12000} />}
 
@@ -698,6 +804,10 @@ const App: React.FC = () => {
                         </button>
                     )}
                     <div className="w-px h-5 bg-gray-700 mx-1" />
+                    <button onClick={() => setPresenterMode(!presenterMode)} className={`p-1.5 rounded-md ${presenterMode ? 'text-cyan-300 bg-cyan-900/30' : 'text-gray-400'} hover:text-cyan-300`} title={presenterMode ? "Exit Presenter Mode" : "Presenter Mode (hide editors)"}>
+                        <EyeIcon className="w-4 h-4"/>
+                    </button>
+                    <div className="w-px h-5 bg-gray-700 mx-1" />
                     <button onClick={() => setIsSettingsModalOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Settings"><CogIcon className="w-4 h-4"/></button>
                 </div>
             </header>
@@ -738,15 +848,17 @@ const App: React.FC = () => {
                         onUpdateCell={updateCell}
                         onDeleteCell={deleteCell}
                         onAddCell={addCell}
+                        onAddCellFromTool={addCellFromTool}
                         onMoveCell={moveCell}
                         onSuggestPlot={suggestPlot}
                         onFormatCode={formatCode}
                         onRunPreviewQuery={runPreviewQuery}
                         onMetadataChange={handleMetadataChange}
                         onDeleteQueryBlock={(cellId, index) => deleteQueryBlock(cellId, index)}
+                        presenterMode={presenterMode}
                     />
                 </main>
-                
+
                 {isAiFeatureActive && (
                      <ResizablePanel
                         side="right"
@@ -755,7 +867,13 @@ const App: React.FC = () => {
                         isCollapsed={isChatPanelCollapsed}
                         onCollapseToggle={() => setIsChatPanelCollapsed(!isChatPanelCollapsed)}
                     >
-                        <ChatPanel metadata={metadata} onAddCellFromAI={addCellFromAI} />
+                        <ChatPanel
+                            metadata={metadata}
+                            onAddCellFromAI={addCellFromAI}
+                            cells={cells}
+                            onAddCell={addCellFromTool}
+                            onUpdateCell={updateCell}
+                        />
                     </ResizablePanel>
                 )}
                 {isAiFeatureActive && isChatPanelCollapsed && (

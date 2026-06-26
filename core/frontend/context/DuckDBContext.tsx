@@ -3,6 +3,7 @@ import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
 import { TableSchema, ViewSchema, MacroSchema } from '../types';
 import { initDuckDBWasm, loadDuckDbFileIntoWasm } from '../utils/duckdbWasmLoader';
 import { loadJfrIntoWasm } from '../utils/jfrToWasmLoader';
+import { DEMO_SETUP_SQL } from '../data/demoNotebook';
 
 const QUERY_ENDPOINT = `/api/query`;
 
@@ -54,6 +55,7 @@ interface DataContextType {
   refreshSchema: () => Promise<void>;
   loadFile: (bytes: Uint8Array, fileName: string) => Promise<void>;
   loadServerFile: (path: string) => Promise<void>;
+  loadDemo: () => Promise<void>;
 }
 
 export const DataContext = createContext<DataContextType>({
@@ -70,6 +72,7 @@ export const DataContext = createContext<DataContextType>({
   refreshSchema: async () => { throw new Error('DataContext not initialized'); },
   loadFile: async () => { throw new Error('DataContext not initialized'); },
   loadServerFile: async () => { throw new Error('DataContext not initialized'); },
+  loadDemo: async () => { throw new Error('DataContext not initialized'); },
 });
 
 const executeRemoteQuery = async (sql: string): Promise<any> => {
@@ -113,6 +116,10 @@ const runWasmQuery = async (conn: AsyncDuckDBConnection, sql: string): Promise<a
                 const v = obj[k];
                 if (typeof v === 'bigint') {
                     obj[k] = Number(v);
+                } else if (ArrayBuffer.isView(v) && !(v instanceof DataView)) {
+                    // Convert typed arrays (Float64Array, Int32Array, etc.) to plain arrays
+                    // so Recharts can safely freeze/mutate them.
+                    obj[k] = Array.from(v as unknown as ArrayLike<unknown>);
                 }
             }
             return obj;
@@ -277,6 +284,30 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [fetchSchemaFor]);
 
+  const loadDemo = useCallback(async () => {
+    setDbState(DBState.IMPORTING);
+    setErrorMessage(null);
+    try {
+      if (!wasmDbRef.current) {
+        wasmDbRef.current = await initDuckDBWasm();
+        wasmConnRef.current = await wasmDbRef.current.connect();
+      }
+      const conn = wasmConnRef.current!;
+      // Execute each statement in DEMO_SETUP_SQL individually
+      for (const stmt of DEMO_SETUP_SQL.split(/;\s*\n/).map(s => s.trim()).filter(Boolean)) {
+        await runWasmQuery(conn, stmt + ';');
+      }
+      setSourceType('jfr');
+      setDbState(DBState.SCHEMA_LOADING);
+      await fetchSchemaFor((sql) => runWasmQuery(conn, sql), true);
+      setDbState(DBState.READY);
+    } catch (err: any) {
+      console.error('Demo load failed', err);
+      setErrorMessage(err.message || String(err));
+      setDbState(DBState.ERROR);
+    }
+  }, [fetchSchemaFor]);
+
   const loadServerFile = useCallback(async (path: string) => {
     setDbState(DBState.IMPORTING);
     setErrorMessage(null);
@@ -321,9 +352,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const contextValue = useMemo(() => ({
     dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
-    recordingStart, recordingEnd, refreshSchema, loadFile, loadServerFile,
+    recordingStart, recordingEnd, refreshSchema, loadFile, loadServerFile, loadDemo,
   }), [dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
-    recordingStart, recordingEnd, refreshSchema, loadFile, loadServerFile]);
+    recordingStart, recordingEnd, refreshSchema, loadFile, loadServerFile, loadDemo]);
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;
 };

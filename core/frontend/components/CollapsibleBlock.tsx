@@ -3,7 +3,7 @@ import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { ChevronUpIcon } from './icons/ChevronUpIcon';
 
 interface CollapsibleBlockProps {
-    title: string;
+    title: React.ReactNode;
     preview: string;
     isCollapsed: boolean;
     onToggle: () => void;
@@ -16,9 +16,9 @@ const CollapsibleBlock: React.FC<CollapsibleBlockProps> = ({ title, preview, isC
     return (
         <div className="bg-gray-900/40 rounded-md border border-gray-700/60">
             <div className="px-2 py-1.5 border-b border-gray-700/60 flex items-center justify-between">
-                <div onClick={onToggle} className="flex items-center gap-2 cursor-pointer w-full overflow-hidden">
+                <div className="flex items-center gap-2 cursor-pointer w-full overflow-hidden" onClick={onToggle}>
                     {isCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" /> : <ChevronUpIcon className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />}
-                    <h5 className="font-medium text-sm text-gray-300 select-none flex-shrink-0">{title}</h5>
+                    <div className="font-medium text-sm text-gray-300 select-none flex-shrink-0" onClick={e => e.stopPropagation()}>{title}</div>
                     <span className="text-xs text-gray-500 font-mono truncate select-none">{preview}</span>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>

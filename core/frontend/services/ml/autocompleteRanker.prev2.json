@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "mrr": 0.950067243035542,
+  "trainedAt": "2026-06-25T09:45:39.518Z",
+  "weights": {
+    "prefixMatch": 1,
+    "substringMatch": 0.5,
+    "scenarioBoost": 1,
+    "lengthPenalty": 0.1,
+    "isKeyword": 0.2,
+    "isColumn": 0.3,
+    "isFunction": 0.1
+  }
+}

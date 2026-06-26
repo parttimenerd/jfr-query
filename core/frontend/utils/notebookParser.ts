@@ -12,7 +12,10 @@ export interface ParsedContent {
     variableWarnings: string[];
     sqlBlocks: string[];
     queryAliases: (string | null)[];
+    /** Per SQL block: was the `-- alias <name> materialized` flag set? */
+    queryAliasMaterialized: boolean[];
     plotBlocks: string[];
+    plotAliases: (string | null)[];
     /** All plot blocks in document order with their associated SQL block index. */
     plotBlocksWithSqlIndex: Array<{ config: string; sqlIndex: number }>;
     conclusion: MarkdownSection | null;
@@ -31,18 +34,21 @@ const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 const parseFrontMatter = (fmString: string): NotebookMetadata => {
     const lines = fmString.split('\n');
     const result: NotebookMetadata = { views: [], macros: [] };
-    let currentSection: 'views' | 'macros' | 'variables' | null = null;
+    let currentSection: 'views' | 'macros' | 'variables' | 'cellConditions' | null = null;
     let currentObject: any = null;
     let multilineKey: string | null = null;
+    /** When parsing a `cellConditions:` block-scalar value (`key: |`), this is the key being built. */
+    let cellConditionMultilineKey: string | null = null;
 
     for (const line of lines) {
-        if (line.trim() === '' && !multilineKey) continue;
+        if (line.trim() === '' && !multilineKey && !cellConditionMultilineKey) continue;
         const indent = line.length - line.trimStart().length;
         const trimmedLine = line.trim();
 
         if (indent === 0) {
             currentSection = null;
             multilineKey = null;
+            cellConditionMultilineKey = null;
             currentObject = null;
             const [key, ...valParts] = trimmedLine.split(':');
             const keyTrimmed = key.trim();
@@ -53,6 +59,9 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
             } else if (keyTrimmed === 'variables') {
                 currentSection = 'variables';
                 if (!result.variables) result.variables = {};
+            } else if (keyTrimmed === 'cellConditions') {
+                currentSection = 'cellConditions';
+                if (!result.cellConditions) result.cellConditions = {};
             } else if (keyTrimmed === 'decimalPlaces') {
                 const num = parseInt(value, 10);
                 if (!isNaN(num)) result.decimalPlaces = num;
@@ -64,6 +73,27 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
             }
         } else if (multilineKey && !currentSection) { // Top-level multiline (customSystemPrompt)
              result.customSystemPrompt += (result.customSystemPrompt ? '\n' : '') + line.substring(indent);
+        } else if (currentSection === 'cellConditions') {
+            // `key: <single-line SQL>` or `key: |` followed by indented lines.
+            if (cellConditionMultilineKey && indent > 2) {
+                const existing = result.cellConditions![cellConditionMultilineKey];
+                result.cellConditions![cellConditionMultilineKey] = existing
+                    ? existing + '\n' + line.substring(indent)
+                    : line.substring(indent);
+            } else {
+                cellConditionMultilineKey = null;
+                const colonIdx = trimmedLine.indexOf(':');
+                if (colonIdx > 0) {
+                    const k = trimmedLine.substring(0, colonIdx).trim();
+                    const v = trimmedLine.substring(colonIdx + 1).trim();
+                    if (v === '|') {
+                        cellConditionMultilineKey = k;
+                        result.cellConditions![k] = '';
+                    } else if (k) {
+                        result.cellConditions![k] = v.replace(/^['"]|['"]$/g, '');
+                    }
+                }
+            }
         } else if (currentSection === 'variables') {
             // Map of name -> value, written as "  $name: value" (no leading "- ").
             const [k, ...vParts] = trimmedLine.split(':');
@@ -169,8 +199,22 @@ const stringifyFrontMatter = (metadata: NotebookMetadata): string => {
         }
     }
 
+    if (metadata.cellConditions && Object.keys(metadata.cellConditions).length > 0) {
+        if (parts.length > 0) parts.push(''); // Add separator
+        parts.push('cellConditions:');
+        for (const [k, v] of Object.entries(metadata.cellConditions)) {
+            const sql = String(v);
+            if (sql.includes('\n')) {
+                parts.push(`  ${k}: |`);
+                parts.push(sql.split('\n').map(line => `    ${line}`).join('\n'));
+            } else {
+                parts.push(`  ${k}: '${sql.replace(/'/g, "''")}'`);
+            }
+        }
+    }
+
     // Serialize unknown string/number fields
-    const knownKeys = new Set(['customSystemPrompt', 'timeFormat', 'decimalPlaces', 'views', 'macros', 'variables']);
+    const knownKeys = new Set(['customSystemPrompt', 'timeFormat', 'decimalPlaces', 'views', 'macros', 'variables', 'cellConditions']);
     for (const [key, val] of Object.entries(metadata)) {
         if (!knownKeys.has(key) && val !== undefined && val !== null && typeof val !== 'object') {
             parts.push(`${key}: ${val}`);
@@ -289,7 +333,9 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
         variableWarnings: [],
         sqlBlocks: [],
         queryAliases: [],
+        queryAliasMaterialized: [],
         plotBlocks: [],
+        plotAliases: [],
         plotBlocksWithSqlIndex: [],
         conclusion: null,
     };
@@ -342,11 +388,21 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
         } else if (seg.type === 'sql') {
             let content = seg.content;
             let alias: string | null = null;
+            let materialized = false;
 
-            const aliasMatch = content.match(/^\s*--\s*([a-zA-Z_][\w]*)\s*\n/);
-            if (aliasMatch) {
-                alias = aliasMatch[1];
-                content = content.substring(aliasMatch[0].length);
+            // Accept both `-- alias <name>[ materialized]` (preferred) and
+            // legacy `-- <name>` as the first SQL line.
+            const aliasMatchExplicit = content.match(/^\s*--\s*alias\s+([a-zA-Z_][\w]*)\s*(materialized)?\s*\n/i);
+            if (aliasMatchExplicit) {
+                alias = aliasMatchExplicit[1];
+                materialized = !!aliasMatchExplicit[2];
+                content = content.substring(aliasMatchExplicit[0].length);
+            } else {
+                const aliasMatch = content.match(/^\s*--\s*([a-zA-Z_][\w]*)\s*\n/);
+                if (aliasMatch) {
+                    alias = aliasMatch[1];
+                    content = content.substring(aliasMatch[0].length);
+                }
             }
 
             const sqlLines = content.split('\n');
@@ -354,6 +410,7 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
             if (sqlLines.length > 0 && sqlLines[sqlLines.length - 1].trim() === '') sqlLines.pop();
             result.sqlBlocks.push(sqlLines.join('\n'));
             result.queryAliases.push(alias);
+            result.queryAliasMaterialized.push(materialized);
             currentSqlIndex++;
         } else if (seg.type === 'plot') {
             if (currentSqlIndex < 0) {
@@ -363,11 +420,21 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
             while (result.plotBlocks.length <= currentSqlIndex) {
                 result.plotBlocks.push('');
             }
-            const plotLines = seg.content.split('\n');
+            let plotContent = seg.content;
+            let plotAlias: string | null = null;
+
+            const plotAliasMatch = plotContent.match(/^\s*--\s*([a-zA-Z_][\w\s]*?)\s*\n/);
+            if (plotAliasMatch) {
+                plotAlias = plotAliasMatch[1].trim();
+                plotContent = plotContent.substring(plotAliasMatch[0].length);
+            }
+
+            const plotLines = plotContent.split('\n');
             if (plotLines.length > 0 && plotLines[0].trim() === '') plotLines.shift();
             if (plotLines.length > 0 && plotLines[plotLines.length - 1].trim() === '') plotLines.pop();
             const plotConfig = plotLines.join('\n');
             result.plotBlocks[currentSqlIndex] = plotConfig;
+            result.plotAliases.push(plotAlias);
             result.plotBlocksWithSqlIndex.push({ config: plotConfig, sqlIndex: currentSqlIndex });
         }
     }
@@ -377,4 +444,58 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
     }
 
     return result;
+};
+
+/**
+ * Parses a `<!-- @cell key=value (key="quoted value")* -->` directive line.
+ * Returns null if `content` does not begin with such a directive (allowing
+ * leading whitespace / blank lines).
+ *
+ * Accepted keys for v1: `name` (string), `collapsed` (true|false).
+ * Unknown keys are preserved in `rest`.
+ */
+export interface ParsedCellDirective {
+    name?: string;
+    collapsed?: boolean;
+    rest: Record<string, string>;
+    /** Length of the matched directive line including the trailing newline. */
+    matchLength: number;
+    /** Original raw directive text (no trailing newline). */
+    raw: string;
+}
+
+const CELL_DIRECTIVE_RE = /^[\s\r\n]*(<!--\s*@cell\s+([^>]*?)\s*-->)\s*(\r?\n)?/;
+
+export const parseCellDirective = (content: string): ParsedCellDirective | null => {
+    const m = content.match(CELL_DIRECTIVE_RE);
+    if (!m) return null;
+    const raw = m[1];
+    const attrString = m[2];
+    const rest: Record<string, string> = {};
+    let name: string | undefined;
+    let collapsed: boolean | undefined;
+
+    // Tokenize key=value pairs. Values may be quoted ("..." or '...') or bare.
+    const attrRe = /([A-Za-z_][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"']+))/g;
+    let am: RegExpExecArray | null;
+    while ((am = attrRe.exec(attrString)) !== null) {
+        const key = am[1];
+        const value = am[2] ?? am[3] ?? am[4] ?? '';
+        if (key === 'name') name = value;
+        else if (key === 'collapsed') collapsed = value === 'true';
+        else rest[key] = value;
+    }
+
+    return { name, collapsed, rest, matchLength: m[0].length, raw };
+};
+
+/**
+ * Convenience: strip a leading cell directive from `content` and return both
+ * the parsed directive (if any) and the remaining body. The body is byte-
+ * identical to the original minus the matched directive line.
+ */
+export const stripCellDirective = (content: string): { directive: ParsedCellDirective | null; body: string } => {
+    const directive = parseCellDirective(content);
+    if (!directive) return { directive: null, body: content };
+    return { directive, body: content.substring(directive.matchLength) };
 };

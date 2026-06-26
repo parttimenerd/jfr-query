@@ -1,4 +1,5 @@
 import { ParserSpec } from './plotUtils';
+import { warnDeprecated } from '../components/plots/deprecation';
 
 // A simple parser for a function-call-like configuration string.
 // Handles strings, numbers, booleans, and arrays of those (one level deep).
@@ -40,6 +41,37 @@ function closestMatch(input: string, candidates: string[]): string | null {
     // so simple transpositions (cost 2 in pure Levenshtein) like "tiem" → "time" still match.
     const threshold = Math.min(3, Math.max(2, Math.floor(input.length * 0.5)));
     return best && bestScore <= threshold ? best : null;
+}
+
+/**
+ * W12 — Strip `#`-to-end-of-line comments from a config string while preserving
+ * `#` inside single- or double-quoted strings (e.g. a CSS color `#abc`).
+ */
+function stripComments(s: string): string {
+    let out = '';
+    let inStr: string | null = null;
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (inStr) {
+            out += ch;
+            if (ch === inStr && s[i - 1] !== '\\') inStr = null;
+            continue;
+        }
+        if (ch === '"' || ch === "'") {
+            inStr = ch;
+            out += ch;
+            continue;
+        }
+        if (ch === '#') {
+            // skip to next newline
+            while (i < s.length && s[i] !== '\n') i++;
+            // preserve the newline (loop's i++ will advance past it)
+            if (i < s.length) out += s[i];
+            continue;
+        }
+        out += ch;
+    }
+    return out;
 }
 
 const parseValue = (valueStr: string, expectedType: string, data: any[], paramName?: string): any => {
@@ -131,9 +163,12 @@ export const createConfigParser = <TConfig extends object>(spec: ParserSpec) => 
     return (configStr: string, data: any[]): TConfig => {
         const result: Partial<TConfig> = {};
 
+        // W12: strip `#`-to-EOL comments (outside string literals).
+        configStr = stripComments(configStr);
+
         const funcNameMatch = configStr.match(/^\w+/);
         const funcName = funcNameMatch ? funcNameMatch[0].toUpperCase() : 'FUNCTION';
-        const match = configStr.match(/^\w+\s*\((.*)\)\s*$/);
+        const match = configStr.match(/^\w+\s*\(([\s\S]*)\)\s*$/);
 
         if (!match) {
             // Be specific about what went wrong.
@@ -181,40 +216,57 @@ export const createConfigParser = <TConfig extends object>(spec: ParserSpec) => 
                     );
                 }
 
-                const paramSpec = spec[key];
+                // W12: case-insensitive param name lookup. Resolve user's typed key
+                // to the spec's canonical-cased key so downstream code stores under it.
+                let specKey: string | undefined = spec[key] ? key : undefined;
+                if (!specKey) {
+                    specKey = Object.keys(spec).find(k => k.toLowerCase() === key.toLowerCase());
+                }
+                const paramSpec = specKey ? spec[specKey] : undefined;
                 if (!paramSpec) {
-                    const knownParams = Object.keys(spec);
-                    const suggestion = closestMatch(key, knownParams);
+                    const knownParams = Object.keys(spec).filter(k => !spec[k].aliasFor);
+                    const suggestion = closestMatch(key, Object.keys(spec));
                     const didYouMean = suggestion ? `\nDid you mean "${suggestion}"?` : '';
                     throw new Error(
                         `Unknown parameter "${key}".\nAvailable parameters for ${funcName}: ${knownParams.join(', ')}.${didYouMean}`
                     );
                 }
+                // Resolve alias → canonical, emit one-shot deprecation warning if alias is marked deprecated.
+                let canonicalKey: string = specKey!;
+                let canonicalSpec = paramSpec;
+                if (paramSpec.aliasFor) {
+                    canonicalKey = paramSpec.aliasFor;
+                    canonicalSpec = spec[canonicalKey] ?? paramSpec;
+                    if (paramSpec.deprecated) {
+                        warnDeprecated(funcName, specKey!, canonicalKey);
+                    }
+                }
                 try {
-                    const parsed = parseValue(value, paramSpec.type, data, key);
+                    const parsed = parseValue(value, canonicalSpec.type, data, canonicalKey);
 
                     // Enforce options for string-typed params
-                    if (paramSpec.options && paramSpec.type === 'string' && typeof parsed === 'string') {
-                        if (!paramSpec.options.includes(parsed)) {
-                            const suggestion = closestMatch(parsed, paramSpec.options);
+                    if (canonicalSpec.options && canonicalSpec.type === 'string' && typeof parsed === 'string') {
+                        if (!canonicalSpec.options.includes(parsed)) {
+                            const suggestion = closestMatch(parsed, canonicalSpec.options);
                             const didYouMean = suggestion ? `\nDid you mean "${suggestion}"?` : '';
                             throw new Error(
-                                `Invalid value "${parsed}" for "${key}". Allowed: ${paramSpec.options.map(o => `"${o}"`).join(', ')}.${didYouMean}`
+                                `Invalid value "${parsed}" for "${canonicalKey}". Allowed: ${canonicalSpec.options.map(o => `"${o}"`).join(', ')}.${didYouMean}`
                             );
                         }
                     }
 
-                    result[key as keyof TConfig] = parsed;
+                    result[canonicalKey as keyof TConfig] = parsed;
                 } catch (e: any) {
                     throw new Error(
-                        `Error in parameter "${key}":\n${e.message}\n\nHint: ${paramSpec.description}`
+                        `Error in parameter "${canonicalKey}":\n${e.message}\n\nHint: ${canonicalSpec.description}`
                     );
                 }
             }
         }
 
-        // Required-param check
+        // Required-param check (skip alias entries — they redirect to canonical).
         for (const key in spec) {
+            if (spec[key].aliasFor) continue;
             if (result[key as keyof TConfig] === undefined) {
                 if (spec[key].required) {
                     throw new Error(
