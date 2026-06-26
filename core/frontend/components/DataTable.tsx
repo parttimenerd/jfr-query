@@ -7,8 +7,12 @@ import { formatTimestamp as formatTimestampUtil } from '../utils/timeFormatter';
 import { formatNumber } from '../utils/numberFormatter';
 
 // ─── Duration detection + formatting ────────────────────────────────────────
-
-const DURATION_KEYWORDS = ['duration', 'pause', 'latency', 'elapsed', 'time', 'period', 'age', 'length', 'wait', 'delay'];
+//
+// Auto-formatting only applies to genuine DuckDB INTERVAL values (the
+// [microseconds, days, months] array form, or the equivalent comma string).
+// Plain numbers are shown as numbers — if a column is named `duration_ms` the
+// user has already done the unit conversion in SQL and we shouldn't
+// re-interpret it.
 
 // DuckDB interval arrays: [microseconds, days, months, ?] — first element is µs.
 const INTERVAL_RE = /^(-?\d+),(-?\d+),(-?\d+)(?:,(-?\d+))?$/;
@@ -32,17 +36,9 @@ const isIntervalLike = (value: any): boolean => {
     return false;
 };
 
-const isDurationLike = (key: string, sample: any): boolean => {
-    if (!sample || sample[key] === undefined || sample[key] === null) return false;
-    const value = sample[key];
-    const lc = key.toLowerCase();
-    if (!DURATION_KEYWORDS.some(kw => lc.includes(kw))) return false;
-    if (isIntervalLike(value)) return true;
-    if (typeof value !== 'number' && typeof value !== 'bigint') return false;
-    const num = Number(value);
-    // Exclude timestamps (large epoch values) and negative values.
-    if (num < 0 || num > 1e9) return false;
-    return true;
+const isDurationLike = (_key: string, sample: any): boolean => {
+    if (!sample) return false;
+    return isIntervalLike(sample[_key]);
 };
 
 const formatDuration = (seconds: number): string => {
@@ -182,8 +178,8 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
     if (value === null || value === undefined) return '';
     if (timestampColumns.has(header)) return formatTimestampUtil(value, displaySettings.timeFormat);
     if (durationColumns.has(header)) {
-        const secs = isIntervalLike(value) ? parseIntervalToSeconds(value) : Number(value);
-        return formatDuration(secs ?? Number(value));
+        const secs = parseIntervalToSeconds(value);
+        if (secs !== null) return formatDuration(secs);
     }
     if (numericColumns.has(header))   return formatNumber(value, displaySettings.decimalPlaces);
     return String(value);
