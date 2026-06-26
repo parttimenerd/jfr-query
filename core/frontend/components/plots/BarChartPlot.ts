@@ -50,7 +50,7 @@ const CustomTooltip: React.FC<any> = ({ active, payload, label, formatter }) => 
     return null;
 };
 
-const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; }> = ({ config, data, isAnimationActive, animationDuration }) => {
+const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; domainY?: [number, number]; }> = ({ config, data, isAnimationActive, animationDuration, domainY }) => {
     const { settings } = useContext(SettingsContext);
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
 
@@ -72,7 +72,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         tick: { fontSize: 12 },
         tickFormatter: numberFormatter,
         scale: config.logScale ? "log" as const : "auto" as const,
-        domain: (config.logScale ? [0.1, 'dataMax'] : [0, 'dataMax']) as any,
+        domain: (domainY ?? (config.logScale ? [0.1, 'dataMax'] : [0, 'dataMax'])) as any,
         allowDataOverflow: true,
     };
     

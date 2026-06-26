@@ -229,19 +229,20 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     }
                     if (op.kind === 'applyPlot') {
                         if (!onUpdateCell) return { ok: false, error: 'applyPlot not supported in this environment' };
-                        // Replace the plot block content within the cell (or append if absent).
-                        // Use segment-based reconstruction to target the exact Nth plot block
-                        // rather than a regex that may match the wrong one in multi-plot cells.
+                        // Replace the Nth plot block (op.plotBlockIndex, 0-based) within the cell,
+                        // or append a new plot block if none exist.
                         const cell = cellSnapshot.find(c => c.id === op.cellId);
                         if (!cell) return { ok: false, error: `cell not found: ${op.cellId}` };
                         const segs = tokenizeCellContent(cell.content);
-                        const plotIdx = segs.findIndex(s => s.type === 'plot');
+                        const targetIdx = op.plotBlockIndex ?? 0;
+                        const plotSegs = segs.map((s, i) => ({ s, i })).filter(x => x.s.type === 'plot');
                         let newContent: string;
-                        if (plotIdx === -1) {
+                        if (plotSegs.length === 0) {
                             newContent = cell.content + '\n\n```plot\n' + op.plotConfig + '\n```\n';
                         } else {
+                            const target = plotSegs[Math.min(targetIdx, plotSegs.length - 1)];
                             const updatedSegs = segs.map((s, i) =>
-                                i === plotIdx ? { ...s, content: '\n' + op.plotConfig + '\n' } : s
+                                i === target.i ? { ...s, content: '\n' + op.plotConfig + '\n' } : s
                             );
                             newContent = reconstructCellContent(updatedSegs);
                         }

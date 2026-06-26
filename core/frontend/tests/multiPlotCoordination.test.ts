@@ -523,3 +523,65 @@ describe('plotBrushStore — multiple independent LINK-Y variable subscriptions'
         expect(memGot).toEqual([[512, 4096]]);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Part 10: applyPlot plotBlockIndex segment selection
+// ---------------------------------------------------------------------------
+
+import { tokenizeCellContent, reconstructCellContent } from '../utils/notebookParser';
+
+describe('applyPlot — plotBlockIndex segment selection', () => {
+    function applyPlotToCell(content: string, plotConfig: string, plotBlockIndex: number): string {
+        const segs = tokenizeCellContent(content);
+        const targetIdx = plotBlockIndex;
+        const plotSegs = segs.map((s, i) => ({ s, i })).filter(x => x.s.type === 'plot');
+        if (plotSegs.length === 0) {
+            return content + '\n\n```plot\n' + plotConfig + '\n```\n';
+        }
+        const target = plotSegs[Math.min(targetIdx, plotSegs.length - 1)];
+        const updatedSegs = segs.map((s, i) =>
+            i === target.i ? { ...s, content: '\n' + plotConfig + '\n' } : s
+        );
+        return reconstructCellContent(updatedSegs);
+    }
+
+    it('replaces the first plot block when plotBlockIndex is 0', () => {
+        const content = '```sql\nSELECT 1;\n```\n\n```plot\nTABLE()\n```\n';
+        const result = applyPlotToCell(content, 'LINE_CHART(x: ts, y: v)', 0);
+        expect(result).toContain('LINE_CHART(x: ts, y: v)');
+        expect(result).not.toContain('TABLE()');
+    });
+
+    it('replaces the second plot block (index 1) in a multi-plot cell', () => {
+        const content = '```sql\nSELECT 1;\n```\n\n```plot\nTABLE()\n```\n\n```sql\nSELECT 2;\n```\n\n```plot\nBAR_CHART(x: cat, y: [])\n```\n';
+        const result = applyPlotToCell(content, 'LINE_CHART(x: ts, y: v)', 1);
+        expect(result).toContain('TABLE()');
+        expect(result).toContain('LINE_CHART(x: ts, y: v)');
+        expect(result).not.toContain('BAR_CHART');
+    });
+
+    it('clamps to the last plot block when plotBlockIndex exceeds available blocks', () => {
+        const content = '```sql\nSELECT 1;\n```\n\n```plot\nTABLE()\n```\n';
+        // Only one plot block; index 5 should clamp to it.
+        const result = applyPlotToCell(content, 'AREA_CHART(x: ts, y: v)', 5);
+        expect(result).toContain('AREA_CHART(x: ts, y: v)');
+        expect(result).not.toContain('TABLE()');
+    });
+
+    it('appends a new plot block when the cell has no existing plot blocks', () => {
+        const content = '```sql\nSELECT 1;\n```\n';
+        const result = applyPlotToCell(content, 'LINE_CHART(x: ts, y: v)', 0);
+        expect(result).toContain('LINE_CHART(x: ts, y: v)');
+        expect(result).toContain('```plot');
+        // Original SQL is preserved
+        expect(result).toContain('SELECT 1;');
+    });
+
+    it('first plot block is left unchanged when replacing the second', () => {
+        const content = '```sql\nSELECT 1;\n```\n\n```plot\nTABLE()\n```\n\n```sql\nSELECT 2;\n```\n\n```plot\nSCATTER_PLOT(x: a, y: b)\n```\n';
+        const result = applyPlotToCell(content, 'LINE_CHART(x: ts, y: v)', 1);
+        expect(result).toContain('TABLE()');
+        expect(result).toContain('LINE_CHART(x: ts, y: v)');
+        expect(result).not.toContain('SCATTER_PLOT');
+    });
+});
