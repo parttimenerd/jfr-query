@@ -6,6 +6,7 @@ import ResizablePanel from './components/ResizablePanel';
 import FileLoader from './components/FileLoader';
 import JFRDropZone from './components/JFRDropZone';
 import SettingsModal from './components/SettingsModal';
+import TemplateGalleryModal from './components/TemplateGalleryModal';
 import CommandPalette, { type CommandAction } from './components/CommandPalette';
 import ToastNotification from './components/ToastNotification';
 import { DataContext, DBState } from './context/DuckDBContext';
@@ -39,6 +40,7 @@ import { CodeBracketIcon } from './components/icons/CodeBracketIcon';
 import { ArrowDownTrayIcon } from './components/icons/ArrowDownTrayIcon';
 import { TrashIcon } from './components/icons/TrashIcon';
 import { BeakerIcon } from './components/icons/BeakerIcon';
+import { DocumentTextIcon } from './components/icons/DocumentTextIcon';
 import { EyeIcon } from './components/icons/EyeIcon';
 import * as EmbeddingService from './services/ml/EmbeddingService';
 import { initPlotModel } from './services/ml/PlotGenerationService';
@@ -147,6 +149,7 @@ const App: React.FC = () => {
     const [allCollapsed, setAllCollapsed] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [isCmdPaletteOpen, setIsCmdPaletteOpen] = useState(false);
+    const [isTemplateGalleryOpen, setIsTemplateGalleryOpen] = useState(false);
 
     const notebookFileInputRef = useRef<HTMLInputElement>(null);
     const savedMarkdownRef = useRef<string>(notebookMarkdown);
@@ -742,6 +745,18 @@ const App: React.FC = () => {
                 </div>
             )}
             <SettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} />
+            <TemplateGalleryModal
+                isOpen={isTemplateGalleryOpen}
+                onClose={() => setIsTemplateGalleryOpen(false)}
+                currentSource={notebookMarkdown}
+                mode={mode}
+                onInsert={(merged, warnings) => {
+                    setNotebookMarkdown(merged);
+                    if (warnings.length > 0) {
+                        console.warn('Template merge warnings:', warnings);
+                    }
+                }}
+            />
             <CommandPalette isOpen={isCmdPaletteOpen} onClose={() => setIsCmdPaletteOpen(false)} actions={cmdActions} />
             {aiFailureMessage && <ToastNotification title="AI Assistant Alert" message={aiFailureMessage} onClose={() => setAiFailureMessage(null)} action={{ label: 'Open Settings →', onClick: () => setIsSettingsModalOpen(true) }} />}
             {serverProbeError && !probeToastDismissed && <ToastNotification title="Running in WASM mode" message={`Server probe failed: ${serverProbeError}. Drop a .jfr or .duckdb file to get started.`} onClose={() => setProbeToastDismissed(true)} duration={12000} />}
@@ -797,6 +812,7 @@ const App: React.FC = () => {
                     <div className="w-px h-5 bg-gray-700 mx-1" />
                     <input ref={notebookFileInputRef} type="file" accept=".md,.markdown" className="hidden" onChange={handleLoadNotebook} />
                     <button onClick={() => notebookFileInputRef.current?.click()} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Load Notebook"><ArrowUpTrayIcon className="w-4 h-4"/></button>
+                    <button onClick={() => setIsTemplateGalleryOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-cyan-300" title="New from template"><DocumentTextIcon className="w-4 h-4"/></button>
                     <button onClick={() => setNotebookMarkdown(gcAnalysisNotebook)} className="p-1.5 rounded-md text-gray-400 hover:text-emerald-400" title="New GC Analysis Notebook"><BeakerIcon className="w-4 h-4"/></button>
                     <button onClick={handleSaveNotebook} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Save Notebook (⌘S)"><ArrowDownTrayIcon className="w-4 h-4"/></button>
                     <button onClick={() => setIsMarkdownMode(!isMarkdownMode)} className={`p-1.5 rounded-md ${isMarkdownMode ? 'text-cyan-300' : 'text-gray-400'} hover:text-cyan-300`} title={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown"}><CodeBracketIcon className="w-4 h-4"/></button>
