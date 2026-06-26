@@ -158,7 +158,7 @@ test.describe.serial('SQL completion smoke', () => {
 async function gotoAppAndLoadDemo(page: Page) {
   await page.goto('/');
   // Wait for the demo button to appear (DropZone rendered).
-  const demoBtn = page.getByRole('button', { name: /Try example/i });
+  const demoBtn = page.getByRole('button', { name: /Try the demo/i });
   await demoBtn.waitFor({ state: 'visible', timeout: 30_000 });
   await demoBtn.click();
   // Wait for the notebook header (rendered once dbState === READY).
