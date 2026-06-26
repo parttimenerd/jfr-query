@@ -1,5 +1,7 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { DataContext } from '../context/DuckDBContext';
 import { useCellAliases } from '../context/CellAliasContext';
 import { CellSegment } from '../utils/notebookParser';
@@ -116,11 +118,11 @@ const InlineProse: React.FC<InlineProseProps> = ({ text, query, variables, forma
     }, [parts, query, variables, formatSettings, aliasVersionSum]);
 
     const md = parts.map((p, i) => {
-        if (p.type === 'text') return p.value;
+        if (p.type === 'text') return substituteVariables(p.value, variables);
         return resolved[i] ?? '…';
     }).join('');
 
-    return <ReactMarkdown>{md}</ReactMarkdown>;
+    return <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{md}</ReactMarkdown>;
 };
 
 interface IfBlockProps {

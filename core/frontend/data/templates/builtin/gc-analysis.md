@@ -93,8 +93,8 @@ SELECT
   name AS "Phase",
   COUNT(*) AS "Count",
   round(MEDIAN(duration) * 1000, 3) AS "Median (ms)",
-  round(P90(duration) * 1000, 3) AS "P90 (ms)",
-  round(P99(duration) * 1000, 3) AS "P99 (ms)",
+  round(quantile_cont(duration, 0.9) * 1000, 3) AS "P90 (ms)",
+  round(quantile_cont(duration, 0.99) * 1000, 3) AS "P99 (ms)",
   round(MAX(duration) * 1000, 3) AS "Max (ms)"
 FROM GCPhasePause
 GROUP BY name

@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { XMarkIcon } from './icons/XMarkIcon';
 import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { listTemplates, loadTemplate, type TemplateMeta } from '../services/TemplateService';
 import { mergeTemplate, type InsertMode } from '../utils/templateMerge';
+import StaticCodeHighlighter from './StaticCodeHighlighter';
 
 interface TemplateGalleryModalProps {
     isOpen: boolean;
@@ -157,7 +160,11 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
                                 </div>
                                 <div className="flex-grow overflow-y-auto p-4 prose prose-sm prose-invert max-w-none">
                                     {/* Preview does NOT execute SQL — render the body as plain markdown. */}
-                                    <ReactMarkdown>{stripFrontMatter(body)}</ReactMarkdown>
+                                    <ReactMarkdown
+                                        remarkPlugins={[remarkMath]}
+                                        rehypePlugins={[rehypeKatex]}
+                                        components={previewMarkdownComponents}
+                                    >{stripFrontMatter(body)}</ReactMarkdown>
                                 </div>
                             </>
                         ) : (
@@ -211,7 +218,51 @@ const TemplateRow: React.FC<{ template: TemplateMeta; selected: boolean; onClick
 );
 
 function stripFrontMatter(body: string): string {
-    return body.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '');
+    return body
+        .replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '')
+        .replace(/<!--\s*@cell\b[^>]*-->\s*\n?/g, '');
 }
+
+/**
+ * ReactMarkdown component overrides for the gallery preview:
+ *   - ```` ```sql ```` and ```` ```plot ```` fences render via the
+ *     CodeMirror-backed StaticCodeHighlighter, matching the in-notebook look.
+ *   - ```` ```{if SELECT … } ```` fences are tagged with `language-if` by the
+ *     markdown parser; we surface them as a labeled conditional block so the
+ *     author can see the condition without misreading it as runnable SQL.
+ *   - Other fences fall through to a plain `<code>`.
+ */
+const previewMarkdownComponents: any = {
+    code: ({ inline, className, children, ...props }: any) => {
+        const langMatch = /language-(\S+)/.exec(className || '');
+        const lang = langMatch?.[1];
+        const code = String(children ?? '').replace(/\n$/, '');
+        if (inline) {
+            return <code className="bg-gray-700 text-cyan-300 px-1 rounded" {...props}>{children}</code>;
+        }
+        if (lang === 'sql' || lang === 'plot') {
+            return (
+                <div className="my-2 border border-gray-700 rounded-md overflow-hidden bg-[#263238] not-prose">
+                    <StaticCodeHighlighter code={code} language={lang}/>
+                </div>
+            );
+        }
+        if (lang && lang.startsWith('{if')) {
+            // Strip the leading `{if ` and trailing `}` from the language token
+            // (markdown captures the whole fence after the backticks as language).
+            const condition = lang.replace(/^\{if\s*/, '').replace(/\}$/, '').trim();
+            return (
+                <div className="my-2 border border-cyan-800/40 rounded-md bg-cyan-900/10 p-2 not-prose">
+                    <div className="text-[10px] text-cyan-400 font-mono mb-1">{`{if …}`} when:</div>
+                    <div className="text-xs font-mono text-cyan-200 mb-2 whitespace-pre-wrap">{condition}</div>
+                    <div className="text-xs text-gray-400 whitespace-pre-wrap">{code}</div>
+                </div>
+            );
+        }
+        return (
+            <pre className="bg-gray-900/60 border border-gray-700 rounded p-2 text-xs overflow-x-auto"><code {...props}>{code}</code></pre>
+        );
+    },
+};
 
 export default TemplateGalleryModal;
