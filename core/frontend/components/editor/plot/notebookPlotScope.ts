@@ -19,6 +19,7 @@ import { parse } from './parser';
 import { walk, type PlotNode, type ColumnSchema } from './ast';
 import type { NotebookCellData } from '../../../types';
 import { tokenizeCellContent, parseCellContent } from '../../../utils/notebookParser';
+import { parsePlotCall } from '../../../utils/plotParser';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -33,7 +34,7 @@ export interface PlotScopeView {
         shape: string;                          // 'line', 'scatter', ...
         sqlBlockIndex?: number;                 // links back to the SQL block that drives it
         linkedXVars?: [string, string];         // ($start, $end) names without leading $
-        linkedYVars?: [string, string];
+        linkedYVars?: string;                   // $brushVarName for LINK-Y / LINK-XY (single variable)
         hasBrush: boolean;                      // true if the user has interacted (live brush state)
         declaredColumns?: ColumnSchema[];       // from P2's discovery cache if available
     }>;
@@ -147,7 +148,7 @@ export class NotebookPlotScope {
 // Implementation
 // ---------------------------------------------------------------------------
 
-const VIEW_ALIAS_RE = /create\s+(?:or\s+replace\s+)?(?:temp(?:orary)?\s+)?(?:materialized\s+)?view\s+(?:if\s+not\s+exists\s+)?["']?([a-zA-Z_][\w]*)["']?\s+as\b/i;
+const VIEW_ALIAS_RE = /create\s+(?:or\s+replace\s+)?(?:temp(?:ory)?\s+)?(?:materialized\s+)?view\s+(?:if\s+not\s+exists\s+)?(?:"([^"]+)"|'([^']+)'|([a-zA-Z_][\w]*))\s+as\b/i;
 
 function buildScopeView(args: BuildArgs): PlotScopeView {
     const namedPlots: PlotScopeView['namedPlots'][number][] = [];
@@ -190,13 +191,15 @@ function buildScopeView(args: BuildArgs): PlotScopeView {
         summary.sqlBlocks.forEach((sql, sqlBlockIndex) => {
             const trimmed = sql.trim();
             if (!trimmed) {
-                queryIndexCounter++;
+                // Only count non-current-cell empty blocks so the index
+                // stays in sync with what's actually in queryRefs (B-151).
+                if (!isCurrentCell) queryIndexCounter++;
                 return;
             }
             let alias = summary.queryAliases[sqlBlockIndex] ?? undefined;
             if (!alias) {
                 const m = VIEW_ALIAS_RE.exec(trimmed);
-                if (m) alias = m[1];
+                if (m) alias = m[1] ?? m[2] ?? m[3];
             }
             const columns = args.lookupColumns?.(trimmed) ?? undefined;
             if (!isCurrentCell) {
@@ -207,8 +210,8 @@ function buildScopeView(args: BuildArgs): PlotScopeView {
                     alias,
                     columns: columns ?? undefined,
                 });
+                queryIndexCounter++;
             }
-            queryIndexCounter++;
         });
 
         // 2b. Plot blocks → namedPlots (skip the current cell — only earlier plots are visible).
@@ -224,8 +227,9 @@ function buildScopeView(args: BuildArgs): PlotScopeView {
                 const linkedVars = meta.linkedXVars && meta.linkedXVars.length >= 2
                     ? [meta.linkedXVars[0], meta.linkedXVars[1]] as [string, string]
                     : undefined;
-                const linkedYVars = meta.linkedYVars && meta.linkedYVars.length >= 2
-                    ? [meta.linkedYVars[0], meta.linkedYVars[1]] as [string, string]
+                // LINK-Y takes a single brush variable name.
+                const linkedYVars = meta.linkedYVars && meta.linkedYVars.length >= 1
+                    ? meta.linkedYVars[0]
                     : undefined;
 
                 namedPlots.push({
@@ -326,7 +330,7 @@ export function extractPlotMetadata(plotSrc: string): PlotMetadata {
                     for (const item of list.children) {
                         if (item.kind === 'varRef' && item.dollar) {
                             const v = item.dollar;
-                            collected.push(v.path.length > 0 ? v.name : v.name);
+                            collected.push(v.path.length > 0 ? v.name + '.' + v.path.join('.') : v.name);
                         }
                     }
                 }
@@ -335,6 +339,18 @@ export function extractPlotMetadata(plotSrc: string): PlotMetadata {
             }
         }
     });
+
+    // Fallback: the AST parser does not handle `LINK-Y $var` / `LINK-XY $var`
+    // (uppercase hyphenated bare form without parens). Use the regex-based
+    // parsePlotCall to fill in what the walk missed.
+    if (!meta.linkedYVars) {
+        try {
+            const p = parsePlotCall(plotSrc);
+            if (p.linkY) meta.linkedYVars = [p.linkY.replace(/^\$/, '')];
+            else if (p.linkXY) meta.linkedYVars = [p.linkXY.replace(/^\$/, '')];
+        } catch { /* ignore */ }
+    }
+
     return meta;
 }
 

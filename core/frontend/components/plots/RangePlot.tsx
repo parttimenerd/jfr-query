@@ -59,18 +59,19 @@ const RangePlotComponent: React.FC<{
     const timeValue = getTimeValue(firstXValue);
     const isTimeAxis = !isNaN(timeValue);
 
-    // Recharts Area with a band uses a [low, high] array as the dataKey value.
-    // We expose them as separate columns and use two Areas stacked via referenceArea trick:
-    // Actually, we use a single Area where dataKey returns [low, high] — Recharts supports
-    // this for "area between two values" when using type="monotone" and passing the range
-    // as [baseValue, topValue]. We store these as __rangeLow and __rangeHigh.
+    // Recharts stacked Areas: the first Area fills 0→low (transparent baseline),
+    // the second Area fills low→high by storing the *band height* (high - low) as
+    // __rangeHeight. Both share stackId="range-band" so they stack correctly.
     const transformedData = data.map(row => {
       const newRow: any = { ...row };
       if (isTimeAxis) {
         newRow[xCol] = getTimeValue(newRow[xCol]);
       }
-      newRow.__rangeLow = Number(row[lCol]);
-      newRow.__rangeHigh = Number(row[hCol]);
+      const lo = Number(row[lCol]);
+      const hi = Number(row[hCol]);
+      newRow.__rangeLow = lo;
+      newRow.__rangeHigh = Math.max(0, hi - lo); // band height for stacking
+      newRow.__rangeHighAbs = hi; // kept for tooltip display
       if (cCol) newRow.__center = Number(row[cCol]);
       return newRow;
     });
@@ -112,9 +113,10 @@ const RangePlotComponent: React.FC<{
           />
           <Tooltip
             contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
-            formatter={(v: any, n: any) => {
+            formatter={(v: any, n: any, item: any) => {
               if (n === '__rangeLow') return [numberFormatter(v), `Low (${lowKey})`];
-              if (n === '__rangeHigh') return [numberFormatter(v), `High (${highKey})`];
+              // For the band height, display the absolute high value from __rangeHighAbs
+              if (n === '__rangeHigh') return [numberFormatter(item?.payload?.__rangeHighAbs ?? v + (item?.payload?.__rangeLow ?? 0)), `High (${highKey})`];
               if (n === '__center') return [numberFormatter(v), centerKey ? `Center (${centerKey})` : 'Center'];
               return [numberFormatter(v), String(n).replace(/_/g, ' ')];
             }}
@@ -129,17 +131,18 @@ const RangePlotComponent: React.FC<{
               return String(v).replace(/_/g, ' ');
             }}
           />
-          {/* Lower bound line — invisible, used as the baseline for the filled Area */}
+          {/* Lower bound — invisible base, fills from 0 to low */}
           <Area
             type="monotone"
             dataKey="__rangeLow"
             stroke="none"
             fill="none"
+            stackId="range-band"
             isAnimationActive={isAnimationActive}
             animationDuration={animationDuration}
             legendType="none"
           />
-          {/* Upper bound — fills down to __rangeLow via baseValue stack trick using two Areas */}
+          {/* Upper bound — fills only the band between low and high via stackId */}
           <Area
             type="monotone"
             dataKey="__rangeHigh"
@@ -148,6 +151,7 @@ const RangePlotComponent: React.FC<{
             strokeDasharray="4 2"
             fill={color}
             fillOpacity={config.opacity}
+            stackId="range-band"
             isAnimationActive={isAnimationActive}
             animationDuration={animationDuration}
             dot={false}

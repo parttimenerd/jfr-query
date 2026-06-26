@@ -30,7 +30,7 @@ function freedmanDiaconisBins(values: number[]): number {
     return Math.max(1, Math.min(100, Math.ceil(range / binWidth)));
 }
 
-const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; }> = ({ config, data, isAnimationActive, animationDuration }) => {
+const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; }> = ({ config, data, isAnimationActive, animationDuration, domainX }) => {
     const { settings } = useContext(SettingsContext);
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
 
@@ -70,7 +70,7 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
             <ResponsiveContainer>
                 <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 50 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568"/>
-                    <XAxis dataKey="range" stroke="#9ca3af" tick={{fontSize:12}} angle={-45} textAnchor="end" interval="preserveStartEnd" domain={config.xDomain as any}/>
+                    <XAxis dataKey="range" stroke="#9ca3af" tick={{fontSize:12}} angle={-45} textAnchor="end" interval="preserveStartEnd" domain={domainX ?? config.xDomain ?? ['auto', 'auto']}/>
                     <YAxis stroke="#9ca3af" tick={{fontSize:12}} label={{value:'Frequency',angle:-90,position:'insideLeft',fill:'#9ca3af'}} scale={config.logScale?"log":"auto"} domain={config.logScale?[0.1,'dataMax']:[0,'dataMax']} allowDataOverflow/>
                     <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}}/>
                     <Bar dataKey="count" fill="#8884d8" isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>

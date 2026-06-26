@@ -106,14 +106,26 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         }),
         React.createElement(YAxis, {
             key: 'y-axis',
+            yAxisId: 'left',
             ...commonValueAxisProps,
             label: config.yAxisLabel ? { value: config.yAxisLabel, angle: -90, position: 'insideLeft', fill: '#9ca3af' } : undefined
-        })
+        }),
+        // B-129: secondary right-side Y axis for lineY series so different scales don't collapse.
+        ...(lineYCols.length > 0 ? [React.createElement(YAxis, {
+            key: 'y-axis-right',
+            yAxisId: 'right',
+            orientation: 'right',
+            type: "number" as const,
+            stroke: "#9ca3af",
+            tick: { fontSize: 12 },
+            tickFormatter: numberFormatter,
+        })] : []),
     ];
 
     const barElements = yCols.map((y, i) => React.createElement(Bar, {
         key: `bar-${y}`,
         dataKey: y,
+        yAxisId: config.horizontal ? undefined : 'left',
         stackId: config.layout === 'stacked' ? 'a' : undefined,
         fill: COLORS[i % COLORS.length],
         isAnimationActive,
@@ -124,6 +136,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         key: `line-${y}`,
         type: "monotone",
         dataKey: y,
+        yAxisId: config.horizontal ? undefined : 'right',
         stroke: COLORS[(yCols.length + i) % COLORS.length],
         strokeWidth: 2,
         isAnimationActive,

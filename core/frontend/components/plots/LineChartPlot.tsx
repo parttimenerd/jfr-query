@@ -16,7 +16,7 @@ const params: PlotParameter[] = [ { name: 'x', type: 'column', required: true, d
 
 const parseConfig = createConfigParser<Config>(buildParserSpec(params));
 
-const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any, any]; isAnimationActive?: boolean; animationDuration?: number; clauses?: import('../../utils/plotParser').ParsedPlotCall; }> = ({ config, data, domainX, isAnimationActive, animationDuration, clauses }) => {
+const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any, any]; domainY?: [number, number]; isAnimationActive?: boolean; animationDuration?: number; clauses?: import('../../utils/plotParser').ParsedPlotCall; }> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration, clauses }) => {
   const { settings } = useContext(SettingsContext);
   const numberFormatter = (v: any) => formatNumber(v, settings.decimalPlaces);
 
@@ -74,7 +74,7 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568"/>
           <XAxis allowDataOverflow dataKey={finalXCol} type={isTime?'number':'category'} domain={xDomainFromClause || domainX || (isTime?['dataMin','dataMax']:undefined)} tickFormatter={isTime?(t:any)=>formatTimestamp(t,"HH:mm:ss.SS"):undefined} stroke="#9ca3af" tick={{fontSize:12}} label={xLabel?{value:xLabel,position:'insideBottom',fill:'#9ca3af',fontSize:12,offset:-5}:undefined}/>
-          <YAxis yAxisId="left" stroke="#9ca3af" tick={{fontSize:12}} tickFormatter={numberFormatter} label={(yLabelFromClause || config.yAxisLabel)?{value:yLabelFromClause || config.yAxisLabel,angle:-90,position:'insideLeft',fill:'#9ca3af',fontSize:12}:undefined} scale={config.yScale === 'log' ? "log" : "auto"} domain={config.yScale === 'log' ? [0.1,'dataMax'] : (yDomainFromClause || config.yDomain) as any} allowDataOverflow/>
+          <YAxis yAxisId="left" stroke="#9ca3af" tick={{fontSize:12}} tickFormatter={numberFormatter} label={(yLabelFromClause || config.yAxisLabel)?{value:yLabelFromClause || config.yAxisLabel,angle:-90,position:'insideLeft',fill:'#9ca3af',fontSize:12}:undefined} scale={config.yScale === 'log' ? "log" : "auto"} domain={config.yScale === 'log' ? [0.1,'dataMax'] : (domainY ?? yDomainFromClause ?? config.yDomain) as any} allowDataOverflow/>
           {allY2.length>0 && <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" tick={{fontSize:12}} tickFormatter={numberFormatter} label={config.y2AxisLabel?{value:config.y2AxisLabel,angle:90,position:'insideRight',fill:'#82ca9d',fontSize:12}:undefined} scale={config.y2Scale === 'log' ? "log" : "auto"} domain={config.y2Scale === 'log' ? [0.1,'dataMax'] : config.y2Domain as any} allowDataOverflow/>}
           <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}} formatter={(v,n)=>[numberFormatter(v),String(n).replace(/_/g,' ')]} labelFormatter={isTime?(l)=>formatTimestamp(l,settings.timeFormat):undefined}/>
           {showLegend && <Legend wrapperStyle={{fontSize:"12px"}} formatter={v=>String(v).replace(/_/g,' ')} verticalAlign={legendPos === 'top' ? 'top' : legendPos === 'bottom' ? 'bottom' : 'middle'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'}/>}

@@ -24,7 +24,7 @@ const params: PlotParameter[] = [
 
 const parseConfig = createConfigParser<ScatterPlotConfig>(buildParserSpec(params));
 
-const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], domainX?: [any, any], isAnimationActive?: boolean, animationDuration?: number }> = ({ config, data, domainX, isAnimationActive, animationDuration }) => {
+const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], domainX?: [any, any], domainY?: [number, number], isAnimationActive?: boolean, animationDuration?: number }> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration }) => {
   const { settings } = useContext(SettingsContext);
   const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
 
@@ -42,12 +42,13 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
     return Object.keys(groups).map(name => ({ name, data: groups[name] }));
   }, [data, config.color, config.y]);
   
-  const sizeDomain = React.useMemo(() => {
+    const sizeDomain = React.useMemo(() => {
     if (!config.size || data.length === 0) return [10, 100];
     const values = data.map(d => d[config.size]).filter(v => typeof v === 'number');
     if(values.length === 0) return [10, 100];
     const min = Math.min(...values);
     const max = Math.max(...values);
+    if (min === max) return [0, max * 2 || 1];
     return [min, max];
   }, [data, config.size]);
 
@@ -57,7 +58,7 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
         <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
           <XAxis allowDataOverflow type="number" dataKey={config.x} name={config.x} tickFormatter={numberFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={domainX} />
-          <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={numberFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} />
+          <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={numberFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={domainY} allowDataOverflow />
           {config.size && <ZAxis type="number" dataKey={config.size} name={config.size} range={[10, 200]} domain={sizeDomain} />}
           <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} formatter={numberFormatter} />
           <Legend wrapperStyle={{ fontSize: "12px" }} verticalAlign="bottom" align="center" />

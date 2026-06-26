@@ -110,7 +110,7 @@ const GanttChartComponent: React.FC<{
     return [`${startFmt} → ${endFmt}`, 'Range'];
   };
 
-  const chartHeight = Math.max(320, chartData.length * 28 + 60);
+  const chartHeight = Math.max(320, new Set(chartData.map(r => r.__rowLabel ?? r.lane ?? r.row)).size * 28 + 60);
   return (
     <div style={{ width: '100%' }}>
       <ResponsiveContainer width="100%" height={chartHeight}>

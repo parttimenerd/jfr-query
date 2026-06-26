@@ -25,14 +25,22 @@ const parseConfig = createConfigParser<BoxPlotConfig>(buildParserSpec(params));
 const calculateStats = (arr: number[]) => {
     if (arr.length === 0) return null;
     const sorted = [...arr].sort((a, b) => a - b);
-    const q1 = sorted[Math.floor(sorted.length * 0.25)];
-    const median = sorted[Math.floor(sorted.length * 0.5)];
-    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    // Use linear interpolation for quantiles to avoid zero-height boxes on small arrays.
+    const quantile = (p: number): number => {
+        const pos = p * (sorted.length - 1);
+        const lo = Math.floor(pos);
+        const hi = Math.ceil(pos);
+        if (lo === hi) return sorted[lo];
+        return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+    };
+    const q1 = quantile(0.25);
+    const median = quantile(0.5);
+    const q3 = quantile(0.75);
     const iqr = q3 - q1;
     // The whiskers extend to the furthest data point within 1.5 * IQR from the box.
     let lowerWhisker = q1 - 1.5 * iqr;
     let upperWhisker = q3 + 1.5 * iqr;
-    
+
     // Find the actual min/max data points within the whisker range
     const actualMin = sorted.find(v => v >= lowerWhisker) ?? sorted[0];
     const actualMax = sorted.slice().reverse().find(v => v <= upperWhisker) ?? sorted[sorted.length - 1];

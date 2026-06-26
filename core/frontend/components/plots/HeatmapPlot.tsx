@@ -51,8 +51,8 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
   }
 
   return (
-    <div style={{ width: '100%', height: 200 }}>
-      <ResponsiveContainer>
+    <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
+      <ResponsiveContainer width="100%" height="100%">
         <ScatterChart margin={{ top: 20, right: 30, bottom: 60, left: 80 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
           <XAxis 

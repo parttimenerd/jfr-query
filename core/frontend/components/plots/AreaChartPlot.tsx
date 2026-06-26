@@ -84,17 +84,33 @@ const AreaChartComponent: React.FC<{
       : data;
 
     // W13 — LTTB decimation when over the soft cap (time-axis only).
-    const primaryY = allYCols[0];
-    const decimated = (isTimeAxis && primaryY && transformedData.length > AREA_SOFT_CAP_PER_SERIES)
-      ? lttb(transformedData, xCol, primaryY, AREA_SOFT_CAP_PER_SERIES)
-      : transformedData;
+    // B-121: run LTTB guided by each Y series and union the selected indices so
+    // features of ALL series are preserved, not just the first one.
+    let decimated = transformedData;
+    if (isTimeAxis && transformedData.length > AREA_SOFT_CAP_PER_SERIES && allYCols.length > 0) {
+        if (allYCols.length === 1) {
+            decimated = lttb(transformedData, xCol, allYCols[0], AREA_SOFT_CAP_PER_SERIES);
+        } else {
+            // Union of per-series selections (deduplicated, preserving order).
+            const selected = new Set<number>();
+            const perSeries = allYCols.map(y => lttb(transformedData, xCol, y, AREA_SOFT_CAP_PER_SERIES));
+            for (const pts of perSeries) {
+                for (const pt of pts) {
+                    const idx = transformedData.indexOf(pt);
+                    if (idx >= 0) selected.add(idx);
+                }
+            }
+            // Re-sort by original index to preserve time ordering.
+            decimated = Array.from(selected).sort((a, b) => a - b).map(i => transformedData[i]);
+        }
+    }
 
     return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, finalXCol: xCol };
   }, [data, config.x, config.y]);
 
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-      <ResponsiveContainer width="100%" height={320}>
+      <ResponsiveContainer width="100%" height="100%">
         <AreaChart
           data={chartData}
           margin={{ top: 5, right: 30, left: 20, bottom: 5 }}

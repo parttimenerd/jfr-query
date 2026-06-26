@@ -31,6 +31,7 @@ export interface ParsedPlotCall {
     palette?: string;
     linkY?: string; // $var
     linkXY?: string; // $var
+    linkScroll?: string; // group name
     tooltipColumns?: string[];
     onHoverTooltip?: string;
     onClickNavigate?: string;
@@ -69,12 +70,23 @@ function splitTopLevel(s: string, sep: string): string[] {
     const out: string[] = [];
     let depth = 0;
     let inStr: string | null = null;
+    let escaped = false;
     let cur = '';
     for (let i = 0; i < s.length; i++) {
         const c = s[i];
+        if (escaped) {
+            cur += c;
+            escaped = false;
+            continue;
+        }
+        if (c === '\\' && inStr) {
+            cur += c;
+            escaped = true;
+            continue;
+        }
         if (inStr) {
             cur += c;
-            if (c === inStr && s[i - 1] !== '\\') inStr = null;
+            if (c === inStr) inStr = null;
             continue;
         }
         if (c === '"' || c === "'") {
@@ -131,13 +143,14 @@ const CLAUSES: ClauseSpec[] = [
     { key: 'zoom', regex: /(?<!\w)ZOOM\s+([\d\.]+)\s*$/i, processor: (m) => parseFloat(m[1]) },
     { key: 'height', regex: /(?<!\w)HEIGHT\s+((?:\d+)(?:px|%)?)\s*$/i, processor: (m) => m[1] },
     { key: 'width', regex: /(?<!\w)WIDTH\s+((?:\d+)(?:px|%)?)\s*$/i, processor: (m) => m[1] },
-    { key: 'on', regex: /(?<!\w)ON\s+((?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*)\s*$/i, processor: (m) => m[1].split(',').map(s => s.trim()) },
+    { key: 'on', regex: /(?<!\w)ON\s+((?:#\d+|\w+|\d+)(?:\s*,\s*(?:#\d+|\w+|\d+))*)\s*$/i, processor: (m) => m[1].split(',').map(s => s.trim()) },
     // Showcase canon clauses (W2)
     { key: 'legend', regex: /(?<!\w)LEGEND\s+HIDDEN\s*$/i, processor: () => 'none' as LegendPosition },
     { key: 'legend', regex: /(?<!\w)LEGEND\s+AT\s+(RIGHT|LEFT|TOP|BOTTOM|NONE)\s*$/i, processor: (m) => m[1].toLowerCase() as LegendPosition },
     { key: 'palette', regex: /(?<!\w)PALETTE\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
-    { key: 'linkY', regex: /(?<!\w)LINK-Y\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
-    { key: 'linkXY', regex: /(?<!\w)LINK-XY\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
+    { key: 'linkY', regex: /(?<!\w)LINK-Y\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)'|(\$[A-Za-z_][\w]*))\s*$/i, processor: (m) => m[1] ?? m[2] ?? m[3] },
+    { key: 'linkXY', regex: /(?<!\w)LINK-XY\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)'|(\$[A-Za-z_][\w]*))\s*$/i, processor: (m) => m[1] ?? m[2] ?? m[3] },
+    { key: 'linkScroll', regex: /(?<!\w)LINK[_-]SCROLL\s+(?:"([^"]*)"|'([^']*)'|([A-Za-z_][\w]*))\s*$/i, processor: (m) => m[1] ?? m[2] ?? m[3] },
     { key: 'tooltipColumns', regex: /(?<!\w)TOOLTIP\s+COLUMNS\s+\[([^\]]+)\]\s*$/i, processor: (m) => m[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean) },
     { key: 'onHoverTooltip', regex: /(?<!\w)ON\s+HOVER\s+TOOLTIP\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     { key: 'onClickNavigate', regex: /(?<!\w)ON\s+CLICK\s+NAVIGATE\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
@@ -178,7 +191,11 @@ const tryMatchClauses = (remaining: string, result: ParsedPlotCall): { remaining
  * from advanced clauses. Robust to clause order.
  */
 export const parsePlotCall = (configLine: string): ParsedPlotCall => {
-    let remainingConfig = configLine.trim();
+    // B-157: strip trailing `# comment` from the end of the config line so that
+    // e.g. `LINE_CHART(…) LINK_X($a, $b) # interactive zoom` parses correctly.
+    // Only strips when `#` is preceded by whitespace (not `#\d+` query-index refs
+    // like those used in `ON #1`).
+    let remainingConfig = configLine.replace(/\s+#(?!\d)\S*.*$/, '').trim();
     const result: ParsedPlotCall = { mainConfig: '' };
 
     // Repeatedly try to match and strip clauses from the end until no more can be found.
@@ -195,6 +212,11 @@ export const parsePlotCall = (configLine: string): ParsedPlotCall => {
         const linkArgs = linkXMatch[1].split(',').map(s => s.trim()).filter(Boolean);
         const variables = linkArgs.filter(arg => arg.startsWith('$'));
         const options = linkArgs.filter(arg => !arg.startsWith('$'));
+        // Warn if args look like variable names but are missing the $ prefix.
+        const bareVarLike = options.filter(o => /^[A-Za-z_]/.test(o) && !['master', 'clamp'].includes(o.toLowerCase()));
+        if (bareVarLike.length > 0) {
+            console.warn(`[plotParser] LINK_X: argument(s) "${bareVarLike.join(', ')}" look like variable names but are missing the $ prefix. Did you mean "$${bareVarLike[0]}"?`);
+        }
         remainingConfig = remainingConfig.substring(0, linkXMatch.index).trim();
         if (variables.length >= 2) {
             result.linkX = [variables[0], variables[1]];
@@ -240,12 +262,23 @@ function splitTopLevelOp(s: string, op: string): string[] {
     const out: string[] = [];
     let depth = 0;
     let inStr: string | null = null;
+    let escaped = false;
     let cur = '';
     for (let i = 0; i < s.length; i++) {
         const c = s[i];
+        if (escaped) {
+            cur += c;
+            escaped = false;
+            continue;
+        }
+        if (c === '\\' && inStr) {
+            cur += c;
+            escaped = true;
+            continue;
+        }
         if (inStr) {
             cur += c;
-            if (c === inStr && s[i - 1] !== '\\') inStr = null;
+            if (c === inStr) inStr = null;
             continue;
         }
         if (c === '"' || c === "'") { inStr = c; cur += c; continue; }
@@ -345,6 +378,21 @@ export function validateComposite(parsed: ParsedPlotCall): CompositeValidationIs
                 issues.push({
                     severity: 'warn',
                     message: `"+" overlay: child x columns differ (${unique.join(' vs ')}); using "${unique[0]}" from the first child.`,
+                });
+            }
+        }
+
+        // B-154: warn if LINK_X variable pairs differ across overlay children.
+        const linkXPairs = parsed.composite.children
+            .map(c => c.linkX)
+            .filter((lx): lx is [string, string] => !!lx);
+        if (linkXPairs.length >= 2) {
+            const key = (pair: [string, string]) => pair.join(',');
+            const uniquePairs = Array.from(new Set(linkXPairs.map(key)));
+            if (uniquePairs.length > 1) {
+                issues.push({
+                    severity: 'warn',
+                    message: `"+" overlay: LINK_X variable pairs differ (${uniquePairs.join(' vs ')}); charts will pan independently.`,
                 });
             }
         }

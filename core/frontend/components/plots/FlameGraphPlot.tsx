@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec } from '../../utils/plotUtils';
@@ -129,30 +129,36 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
   const [zoomStack, setZoomStack] = useState<FlameGraphNodeData[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const root: FlameGraphNodeData = { name: 'root', value: 0, children: [] };
-  let totalValue = 0;
+  // B-125: memoize root so typing in the search box doesn't rebuild O(n·depth) on every keystroke.
+  // B-126: stable root reference fixes stale closure in handleZoom.
+  const root = useMemo<FlameGraphNodeData>(() => {
+    const r: FlameGraphNodeData = { name: 'root', value: 0, children: [] };
+    let totalValue = 0;
 
-  for (const row of data) {
-    const stack = (row[framesCol] || '').split(';');
-    const valueNum = Number(row[valueCol]);
-    if (isNaN(valueNum)) continue;
+    for (const row of data) {
+      const stack = (row[framesCol] || '').split(';');
+      const valueNum = Number(row[valueCol]);
+      if (isNaN(valueNum)) continue;
 
-    totalValue += valueNum;
-    let currentNode: FlameGraphNodeData = root;
-    for (const frame of stack) {
+      totalValue += valueNum;
+      let currentNode: FlameGraphNodeData = r;
+      for (const frame of stack) {
         if (!frame) continue;
         let childNode = currentNode.children.find((c: any) => c.name === frame);
         if (!childNode) {
-            childNode = { name: frame, value: 0, children: [] };
-            currentNode.children.push(childNode);
+          childNode = { name: frame, value: 0, children: [] };
+          currentNode.children.push(childNode);
         }
         childNode.value += valueNum;
         currentNode = childNode;
+      }
     }
-  }
-  root.value = totalValue;
+    r.value = totalValue;
+    return r;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, framesCol, valueCol]);
 
-  if (totalValue === 0) {
+  if (root.value === 0) {
     return <div className="p-4 text-center text-gray-500 text-sm">No valid flame graph data. Ensure the label column contains semicolon-separated stack frames and the value column is numeric.</div>;
   }
 

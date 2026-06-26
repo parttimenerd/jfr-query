@@ -12,12 +12,59 @@ import { expandPlotConstants } from '../utils/plotConstants';
 import { getTimeValue } from '../utils/plotUtils';
 import { LockClosedIcon } from './icons/LockClosedIcon';
 import { LockOpenIcon } from './icons/LockOpenIcon';
+import { useScrollProducer } from '../hooks/useScrollProducer';
+import { plotBrushStore } from '../services/plotBrushStore';
+import type { BrushMode } from '../services/plotBrushStore';
+
+/**
+ * Split a multi-plot config string on blank lines, but only when the blank
+ * line is at nesting depth 0 (not inside parentheses, brackets, braces, or
+ * quotes). Two consecutive blank lines at depth 0 act as the separator.
+ */
+function splitTopLevelConfigs(config: string): string[] {
+    const out: string[] = [];
+    let cur = '';
+    let depth = 0;
+    let inStr: string | null = null;
+    const lines = config.split('\n');
+    let prevWasBlank = false;
+    for (const line of lines) {
+        const trimmed = line.trim();
+        // Track string state and depth for this line
+        for (let i = 0; i < line.length; i++) {
+            const c = line[i];
+            if (inStr) {
+                if (c === inStr) inStr = null;
+                continue;
+            }
+            if (c === '"' || c === "'") { inStr = c; continue; }
+            if (c === '(' || c === '[' || c === '{') depth++;
+            else if (c === ')' || c === ']' || c === '}') depth--;
+        }
+        if (trimmed === '' && depth === 0 && cur.trim()) {
+            if (prevWasBlank) {
+                // Two consecutive blank lines at depth 0 = separator
+                out.push(cur.trim());
+                cur = '';
+                prevWasBlank = false;
+            } else {
+                prevWasBlank = true;
+                cur += '\n';
+            }
+        } else {
+            prevWasBlank = false;
+            cur += line + '\n';
+        }
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out.length > 0 ? out : [''];
+}
 
 function debounce<T extends (...args: any[]) => any>(func: T, delay: number): (...args: Parameters<T>) => void {
   let timeout: ReturnType<typeof setTimeout>;
   return function(this: any, ...args: Parameters<T>) {
     clearTimeout(timeout);
-    setTimeout(() => func.apply(this, args), delay);
+    timeout = setTimeout(() => func.apply(this, args), delay);
   };
 }
 
@@ -62,14 +109,18 @@ const AiErrorFixer: React.FC<AiErrorFixerProps> = ({ error, config, data, sql, c
 
     useEffect(() => {
         let isMounted = true;
-        setIsLoading(true);
-        setApiError(null);
-        aiService.getAiPlotFixSuggestion(error, sql, data, config, cellContext.content, metadata.customSystemPrompt)
-            .then(res => { if (isMounted) setSuggestion(res); })
-            .catch(err => { if (isMounted) setApiError(err.message); })
-            .finally(() => { if (isMounted) setIsLoading(false); });
-        
-        return () => { isMounted = false; };
+        // B-118: 500ms debounce — don't fire synchronously on every re-render.
+        const timer = setTimeout(() => {
+            if (!isMounted) return;
+            setIsLoading(true);
+            setApiError(null);
+            aiService.getAiPlotFixSuggestion(error, sql, data, config, cellContext.content, metadata.customSystemPrompt)
+                .then(res => { if (isMounted) setSuggestion(res); })
+                .catch(err => { if (isMounted) setApiError(err.message); })
+                .finally(() => { if (isMounted) setIsLoading(false); });
+        }, 500);
+
+        return () => { isMounted = false; clearTimeout(timer); };
     }, [error, config, data, sql, cellContext, metadata]);
 
     return (
@@ -96,7 +147,15 @@ const InteractivePlotWrapper: React.FC<{
     const wrapperRef = useRef<HTMLDivElement>(null);
     const [isLocked, setIsLocked] = useState(false);
     const [localDomain, setLocalDomain] = useState<[number, number] | null>(null);
-    const debouncedOnVariableChange = useCallback(debounce(onVariableChange, 200), [onVariableChange]);
+
+    // B-148: stable debounce — keep a ref to the latest onVariableChange so the
+    // debounce function itself never needs to be recreated across renders.
+    const onVarChangeRef = useRef(onVariableChange);
+    onVarChangeRef.current = onVariableChange;
+    const stableOnVar = useCallback((p: Record<string, string>) => onVarChangeRef.current(p), []);
+    // B-150: 300 ms debounce (was 200 ms) to reduce write frequency during pan.
+    const debouncedOnVariableChange = useMemo(() => debounce(stableOnVar, 300), [stableOnVar]);
+
     // Drag-to-pan state.
     const dragRef = useRef<{ startX: number; domainMin: number; domainMax: number } | null>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -124,7 +183,9 @@ const InteractivePlotWrapper: React.FC<{
         return min !== null && max !== null ? { min, max } : null;
     }, [data, xCol]);
 
-    const handleInteraction = (newMin: number, newMax: number) => {
+    // B-149: stable handleInteraction so the wheel useEffect below doesn't
+    // re-register the listener on every render frame.
+    const handleInteraction = useCallback((newMin: number, newMax: number) => {
         if (newMin >= newMax) return;
 
         let finalMin = newMin;
@@ -148,9 +209,11 @@ const InteractivePlotWrapper: React.FC<{
 
         setLocalDomain([finalMin, finalMax]);
         debouncedOnVariableChange({ [linkX[0]]: String(finalMin), [linkX[1]]: String(finalMax) });
-    };
+    }, [linkXClamp, dataRange, linkX, debouncedOnVariableChange]);
 
     // Use a non-passive wheel listener so preventDefault() actually works.
+    // B-149: deps list only contains stable values; handleInteraction is a
+    // useCallback so this effect re-registers only when truly necessary.
     useEffect(() => {
         const el = wrapperRef.current;
         if (!el) return;
@@ -236,10 +299,34 @@ const InteractivePlotWrapper: React.FC<{
     );
 };
 
+/** Wraps a plot container in a LINK_SCROLL group — synchronizes scroll position
+ *  with other plots in the same group. Pass `group=null` to disable. */
+const ScrollSyncWrapper: React.FC<{ group: string | null; children: React.ReactNode }> = ({ group, children }) => {
+    const scrollRef = useScrollProducer(group);
+    if (!group) return <>{children}</>;
+    return (
+        <div
+            ref={scrollRef as React.RefObject<HTMLDivElement>}
+            style={{ width: '100%', height: '100%', overflow: 'auto' }}
+        >
+            {children}
+        </div>
+    );
+};
+
 
 interface PlotRendererProps {
     config: string;
     data: any[] | null;
+    /**
+     * B-141/142/143: Map of query reference → dataset, enabling per-leaf ON clause
+     * data routing in multi-plot configs. Keys are 1-based numeric query indices
+     * (as strings, e.g. "1", "2") and/or named query aliases. When a leaf's parsed
+     * `on` field resolves a key here, that dataset is used instead of the primary
+     * `data` prop. Falls back to `data` when the key is absent or the map is not
+     * provided.
+     */
+    dataByQueryRef?: Record<string | number, any[]>;
     sql: string;
     cellContext: NotebookCellData;
     onApplyFix: (newConfig: string) => void;
@@ -250,11 +337,87 @@ interface PlotRendererProps {
     allVariables: Record<string, string>;
 }
 
-const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellContext, onApplyFix, isAiFeatureActive = false, metadata, onMetadataChange, onCellVariableChange, allVariables }) => {
+const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRef, sql, cellContext, onApplyFix, isAiFeatureActive = false, metadata, onMetadataChange, onCellVariableChange, allVariables }) => {
+
+    // Extract ALL distinct LINK-Y / LINK-XY variable names from the config so we
+    // can subscribe once per unique name and pass per-leaf domains to composites.
+    const linkYVarNames = useMemo((): string[] => {
+        try {
+            const cfg = config?.trim() || '';
+            if (!cfg) return [];
+            const expansion = expandPlotConstants(cfg);
+            const cfgStr = expansion.expanded.trim();
+            const allConfigs = splitTopLevelConfigs(cfgStr).flatMap(row =>
+                row.split(';').map(c => c.trim()).filter(Boolean)
+            );
+            const names = new Set<string>();
+            for (const c of allConfigs) {
+                try {
+                    const p = parsePlotCall(c);
+                    if (p.linkY) names.add(p.linkY);
+                    if (p.linkXY) names.add(p.linkXY);
+                } catch { /* ignore */ }
+            }
+            return Array.from(names);
+        } catch { /* ignore */ }
+        return [];
+    }, [config]);
+
+    // varName → [lo, hi] from the brush store. Updated per subscription.
+    const [linkYDomains, setLinkYDomains] = useState<Map<string, [number, number] | null>>(new Map());
+
+    useEffect(() => {
+        if (linkYVarNames.length === 0) { setLinkYDomains(new Map()); return; }
+        const unsubs = linkYVarNames.map(name =>
+            plotBrushStore.subscribe(name, payload => {
+                setLinkYDomains(prev => {
+                    const next = new Map(prev);
+                    if (payload.domain && (payload.mode === 'y' || payload.mode === 'xy')) {
+                        next.set(name, payload.domain);
+                    } else {
+                        next.set(name, null);
+                    }
+                    return next;
+                });
+            }, cellNameRef.current)
+        );
+        return () => unsubs.forEach(u => u());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [linkYVarNames.join(',')]);
+
+    /** Return the stored domain for a leaf's linkY or linkXY variable, or undefined. */
+    const getLinkYDomain = (leaf: ParsedPlotCall): [number, number] | undefined => {
+        const v = leaf.linkY ?? leaf.linkXY;
+        if (!v) return undefined;
+        return linkYDomains.get(v) ?? undefined;
+    };
+
+    /**
+     * B-141/142/143: Resolve the dataset for a leaf plot, given its parsed `on` clause.
+     * When `on` is present, look up the first reference in `dataByQueryRef`:
+     *   - Numeric refs (e.g. "1", "#1") map to 1-based query indices stored under
+     *     numeric keys. We strip a leading "#" before parsing.
+     *   - Named refs map to string keys equal to the alias name.
+     * Falls back to the primary `data` prop if the ref doesn't resolve.
+     */
+    const resolveLeafData = (on: string[] | undefined): any[] => {
+        if (on && on.length > 0 && dataByQueryRef) {
+            const ref = on[0].replace(/^#/, '');
+            const asNum = parseInt(ref, 10);
+            if (!isNaN(asNum) && dataByQueryRef[asNum] != null) return dataByQueryRef[asNum];
+            if (dataByQueryRef[ref] != null) return dataByQueryRef[ref];
+        }
+        return data ?? [];
+    };
 
     // Keep the last successfully-rendered plot content so we can show it while the
     // user is in the middle of typing a new (temporarily-broken) config.
     const lastValidContentRef = useRef<React.ReactNode>(null);
+
+    // Stable cellName ref for brush publisher registration. Uses cellContext.id
+    // so it survives config changes without un/re-registering.
+    const cellNameRef = useRef<string>(cellContext.id);
+    cellNameRef.current = cellContext.id;
 
     const handleVariableChange = (vars: Record<string, string>) => {
         // LINK_X variable changes always route to notebook-global metadata.variables
@@ -264,6 +427,120 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
         onMetadataChange({ ...metadata, variables: { ...metadata.variables, ...vars } });
     };
 
+    /**
+     * Build a brush-variable change handler for a leaf with a BRUSH clause.
+     * `usePlotGestures` writes { "gestureName.brush": {lo, hi} } as a nested
+     * object. We intercept and:
+     *  1. Flatten to { "$brushVarName.brush.lo": String(lo), "$brushVarName.brush.hi": String(hi) }
+     *     so substituteVariables and expandBrushOperator can resolve them.
+     *  2. Publish to plotBrushStore for cross-cell LINK-X/Y/XY subscriptions.
+     *  3. On clear (lo/hi absent), store null domain in brush store.
+     *
+     * `gestureName` is the name without leading `$` (the gesture prefix written
+     * by usePlotGestures); `brushVarName` is the full `$sel` form from the DSL.
+     */
+    const makeBrushVarHandler = useCallback(
+        (brushVarName: string, mode: BrushMode) => (vars: Record<string, unknown>) => {
+            const gestureName = brushVarName.replace(/^\$/, '');
+            const raw = vars[`${gestureName}.brush`];
+            if (raw && typeof raw === 'object') {
+                const { lo, hi } = raw as { lo?: unknown; hi?: unknown };
+                if (lo != null && hi != null) {
+                    const loStr = String(lo);
+                    const hiStr = String(hi);
+                    handleVariableChange({
+                        [`${brushVarName}.brush.lo`]: loStr,
+                        [`${brushVarName}.brush.hi`]: hiStr,
+                    });
+                    plotBrushStore.publish({
+                        name: brushVarName,
+                        domain: [parseFloat(loStr), parseFloat(hiStr)],
+                        mode,
+                        cellName: cellNameRef.current,
+                    });
+                } else {
+                    // Brush cleared.
+                    plotBrushStore.clear(brushVarName, cellNameRef.current);
+                }
+            }
+        },
+        // handleVariableChange reads metadata via closure; it's stable enough here.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [metadata, onMetadataChange],
+    );
+
+    // Register any BRUSH clause names in the brush store so cycle detection
+    // works even before the first gesture fires. Re-runs whenever config changes.
+    useEffect(() => {
+        try {
+            const expansion = expandPlotConstants(config?.trim() || 'TABLE()');
+            const cfgStr = expansion.expanded.trim() || 'TABLE()';
+            const allConfigs = splitTopLevelConfigs(cfgStr).flatMap(row => row.split(';').map(c => c.trim()).filter(Boolean));
+            const cellName = cellNameRef.current;
+            for (const c of allConfigs) {
+                try {
+                    const parsed = parsePlotCall(c);
+                    if (parsed.brush?.name) {
+                        plotBrushStore.registerPublisher(parsed.brush.name, cellName);
+                    }
+                } catch { /* ignore malformed configs during registration */ }
+            }
+        } catch { /* ignore */ }
+        return () => {
+            // Signal unmount so brush store can retain last value briefly.
+            try {
+                const expansion = expandPlotConstants(config?.trim() || 'TABLE()');
+                const cfgStr = expansion.expanded.trim() || 'TABLE()';
+                const allConfigs = splitTopLevelConfigs(cfgStr).flatMap(row => row.split(';').map(c => c.trim()).filter(Boolean));
+                const cellName = cellNameRef.current;
+                for (const c of allConfigs) {
+                    try {
+                        const parsed = parsePlotCall(c);
+                        if (parsed.brush?.name) {
+                            plotBrushStore.publisherUnmounting(parsed.brush.name, cellName);
+                        }
+                    } catch { /* ignore */ }
+                }
+            } catch { /* ignore */ }
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [config]);
+
+    // When data refreshes, clamp any active brush domain to the new data range (B-140/B-171).
+    // We only do this for numeric X axes; for time axes the data is already converted to ms so
+    // numeric comparison works. Runs after each data change if there is a BRUSH clause.
+    useEffect(() => {
+        if (!data || data.length === 0) return;
+        try {
+            const expansion = expandPlotConstants(config?.trim() || 'TABLE()');
+            const cfgStr = expansion.expanded.trim() || 'TABLE()';
+            const allConfigs = splitTopLevelConfigs(cfgStr).flatMap(row => row.split(';').map(c => c.trim()).filter(Boolean));
+            for (const c of allConfigs) {
+                try {
+                    const parsed = parsePlotCall(c);
+                    if (!parsed.brush?.name) continue;
+                    // Find the X column name from the main config.
+                    const xMatch = parsed.mainConfig.match(/\bx\s*:\s*"?([^",)\s]+)"?/);
+                    if (!xMatch) continue;
+                    const xCol = xMatch[1];
+                    // Compute min/max of the X column in current data.
+                    let rMin: number | null = null;
+                    let rMax: number | null = null;
+                    const effectiveData = resolveLeafData(parsed.on);
+                    for (const row of effectiveData) {
+                        const v = getTimeValue(row[xCol]);
+                        if (!isNaN(v)) {
+                            if (rMin === null || v < rMin) rMin = v;
+                            if (rMax === null || v > rMax) rMax = v;
+                        }
+                    }
+                    if (rMin === null || rMax === null) continue;
+                    plotBrushStore.clampToRange(parsed.brush.name, [rMin, rMax]);
+                } catch { /* ignore malformed configs */ }
+            }
+        } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data, config]);
     let mainContent: React.ReactNode = null;
     let inlineError: React.ReactNode = null;
 
@@ -281,7 +558,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
             throw new Error(expansion.errors.join('\n'));
         }
         const effectiveConfig = expansion.expanded.trim() || 'TABLE()';
-        const rows = effectiveConfig.split('\n\n').map(rowStr => rowStr.split(';').map(c => c.trim()).filter(Boolean)).filter(row => row.length > 0);
+        const rows = splitTopLevelConfigs(effectiveConfig).map(rowStr => rowStr.split(';').map(c => c.trim()).filter(Boolean)).filter(row => row.length > 0);
 
         const flatConfigs = rows.flat();
         if (flatConfigs.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">Empty plot config.</div>;
@@ -306,16 +583,37 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
                             const leafTypeName = normalizePlotName(leafMain.match(/^(\w+)/)?.[1] || 'TABLE');
                             const leafReg = plotRegistry[leafTypeName];
                             if (!leafReg) throw new Error(`Unknown plot type "${leafTypeName}".`);
-                            const leafCfg = leafReg.parseConfig(leafMain, data);
+                            // B-141/142/143: use leaf's ON clause to select the correct dataset.
+                            const leafData = resolveLeafData(leaf.on);
+                            const leafCfg = leafReg.parseConfig(leafMain, leafData);
                             const LeafComp = leafReg.component;
+                            // Wire BRUSH clause: pass gestureName (without leading $) so the
+                            // plot component shows its recharts Brush widget, and intercept
+                            // variable change to flatten nested {lo,hi} to flat string keys
+                            // and publish to plotBrushStore for cross-cell coupling.
+                            const brushVarName = leaf.brush?.name;
+                            const brushHandler = brushVarName
+                                ? makeBrushVarHandler(brushVarName, leaf.brush!.mode)
+                                : undefined;
                             let leafContent: React.ReactElement = (
                                 <PlotErrorBoundary>
-                                    <LeafComp config={leafCfg} data={data} clauses={leaf} isAnimationActive={true} animationDuration={300} />
+                                    <LeafComp
+                                        config={leafCfg}
+                                        data={leafData}
+                                        clauses={leaf}
+                                        isAnimationActive={true}
+                                        animationDuration={300}
+                                        {...(brushVarName ? {
+                                            gestureName: brushVarName.replace(/^\$/, ''),
+                                            onVariableChange: brushHandler,
+                                        } : {})}
+                                        {...(getLinkYDomain(leaf) ? { domainY: getLinkYDomain(leaf) } : {})}
+                                    />
                                 </PlotErrorBoundary>
                             );
                             if (leaf.linkX) {
                                 leafContent = (
-                                    <InteractivePlotWrapper linkX={leaf.linkX} linkXClamp={!!leaf.linkXClamp} data={data} xCol={(leafCfg as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
+                                    <InteractivePlotWrapper linkX={leaf.linkX} linkXClamp={!!leaf.linkXClamp} data={leafData} xCol={(leafCfg as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
                                         {leafContent}
                                     </InteractivePlotWrapper>
                                 );
@@ -359,23 +657,42 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
                         mainConfig = parsedCall.mainConfig;
                         outerClauses = singleConfig.substring(mainConfig.length);
 
-                        const { width, height, zoom, title, linkX, linkXClamp } = parsedCall;
+                        const { width, height, zoom, title, linkX, linkXClamp, linkScroll } = parsedCall;
                         const plotTypeName = normalizePlotName(mainConfig.match(/^(\w+)/)?.[1] || 'TABLE');
                         const reg = plotRegistry[plotTypeName];
                         if (!reg) throw new Error(`Unknown plot type "${plotTypeName}".`);
 
-                        const parsedConfig = reg.parseConfig(mainConfig, data);
+                        // B-141/142/143: resolve dataset via ON clause for the single-plot path too.
+                        const singlePlotData = resolveLeafData(parsedCall.on);
+                        const parsedConfig = reg.parseConfig(mainConfig, singlePlotData);
                         const PlotComponent = reg.component;
+
+                        // Wire BRUSH clause for single-plot path.
+                        const singleBrushVarName = parsedCall.brush?.name;
+                        const singleBrushHandler = singleBrushVarName
+                            ? makeBrushVarHandler(singleBrushVarName, parsedCall.brush!.mode)
+                            : undefined;
 
                         let plotContent: React.ReactElement = (
                             <PlotErrorBoundary>
-                                <PlotComponent config={parsedConfig} data={data} clauses={parsedCall} isAnimationActive={true} animationDuration={300} />
+                                <PlotComponent
+                                    config={parsedConfig}
+                                    data={singlePlotData}
+                                    clauses={parsedCall}
+                                    isAnimationActive={true}
+                                    animationDuration={300}
+                                    {...(singleBrushVarName ? {
+                                        gestureName: singleBrushVarName.replace(/^\$/, ''),
+                                        onVariableChange: singleBrushHandler,
+                                    } : {})}
+                                    {...(getLinkYDomain(parsedCall) ? { domainY: getLinkYDomain(parsedCall) } : {})}
+                                />
                             </PlotErrorBoundary>
                         );
 
                         if (linkX) {
                             plotContent = (
-                                <InteractivePlotWrapper linkX={linkX} linkXClamp={!!linkXClamp} data={data} xCol={(parsedConfig as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
+                                <InteractivePlotWrapper linkX={linkX} linkXClamp={!!linkXClamp} data={singlePlotData} xCol={(parsedConfig as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
                                     {plotContent}
                                 </InteractivePlotWrapper>
                             );
@@ -385,11 +702,13 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
                         const showContainer = !!displayTitle;
 
                         const finalPlotEl = (
-                            <div style={{position:'relative',width:'100%',height:'100%',overflow:'hidden'}}>
-                                <div style={{width:zoom?`${100/zoom}%`:'100%',height:zoom?`${100/zoom}%`:'100%',transform:`scale(${zoom||1})`,transformOrigin:'top left'}}>
-                                    {plotContent}
+                            <ScrollSyncWrapper group={linkScroll ?? null}>
+                                <div style={{position:'relative',width:'100%',height:'100%',overflow:'hidden'}}>
+                                    <div style={{width:zoom?`${100/zoom}%`:'100%',height:zoom?`${100/zoom}%`:'100%',transform:`scale(${zoom||1})`,transformOrigin:'top left'}}>
+                                        {plotContent}
+                                    </div>
                                 </div>
-                            </div>
+                            </ScrollSyncWrapper>
                         );
 
                         const cellStyle: React.CSSProperties = { flex: width ? `0 0 ${width}` : '1 1 0px', width, height, minWidth: 0 };
@@ -427,11 +746,15 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, sql, cellCont
         lastValidContentRef.current = mainContent;
 
     } catch (e: any) {
-        const errorInfo = { error: e, failedConfig: e.fixContext?.failedConfig || config, onFix: e.fixContext?.onFix || onApplyFix };
+        // B-110: guard against non-Error thrown values (strings, plain objects, etc.)
+        // before accessing `.fixContext` or `.message`.
+        const fixContext = e instanceof Error ? (e as any).fixContext : (e && typeof e === 'object' ? e.fixContext : undefined);
+        const errorMessage: string = (e instanceof Error ? e.message : typeof e === 'string' ? e : String(e ?? 'Unknown error'));
+        const errorInfo = { error: e, failedConfig: fixContext?.failedConfig || config, onFix: fixContext?.onFix || onApplyFix };
 
-        const ErrorDisplay = isAiFeatureActive && (errorInfo.error.message.includes("column") || errorInfo.error.message.includes("parameter"))
-            ? <AiErrorFixer error={errorInfo.error.message} config={errorInfo.failedConfig} data={data!} sql={sql} cellContext={cellContext} onApplyFix={errorInfo.onFix} metadata={metadata} />
-            : <div className="p-3 text-sm text-red-400 bg-red-900/30 font-mono whitespace-pre-wrap">{e.message}</div>;
+        const ErrorDisplay = isAiFeatureActive && (errorMessage.includes("column") || errorMessage.includes("parameter"))
+            ? <AiErrorFixer error={errorMessage} config={errorInfo.failedConfig} data={data!} sql={sql} cellContext={cellContext} onApplyFix={errorInfo.onFix} metadata={metadata} />
+            : <div className="p-3 text-sm text-red-400 bg-red-900/30 font-mono whitespace-pre-wrap">{errorMessage}</div>;
 
         // Show the last valid plot below the error banner so the user doesn't lose
         // their chart while they're in the middle of typing a new config.
