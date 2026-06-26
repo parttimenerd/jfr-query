@@ -153,7 +153,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
     ];
 
     return React.createElement('div', { style: { width: '100%', height: '100%', minHeight: 200 } },
-        React.createElement(ResponsiveContainer, { minHeight: 200 },
+        React.createElement(ResponsiveContainer, null,
             React.createElement(BarChart, {
                 data: data,
                 layout: config.horizontal ? 'vertical' : 'horizontal',

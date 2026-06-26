@@ -279,12 +279,40 @@ describe('lintPlot — LINK_X zero-arg error (B-167)', () => {
         expect(e!.actions?.some(a => /Add two variables/.test(a.name))).toBe(true);
     });
 
-    it('LINK_Y() with no args emits an error', () => {
+    it('LINK_Y() with no args emits an error (needs one $variable)', () => {
         const src = 'LINE_CHART(x: ts) LINK_Y()';
         const diags = lintPlot(src, makeDeps({ cellColumns: [{ name: 'ts' }] }));
-        const e = diags.find(d => /LINK_Y.*requires at least two/i.test(d.message));
+        const e = diags.find(d => /LINK_Y.*requires one/i.test(d.message));
         expect(e).toBeTruthy();
         expect(e!.severity).toBe('error');
+    });
+
+    it('LINK_Y($var) with one arg produces no LINK_Y error', () => {
+        const src = 'LINE_CHART(x: ts) LINK_Y($domain)';
+        const diags = lintPlot(src, makeDeps({
+            cellColumns: [{ name: 'ts' }],
+            variables: { domain: '0' },
+        }));
+        const linkErr = diags.filter(d => /LINK_Y/i.test(d.message) && d.severity !== 'hint');
+        expect(linkErr.length).toBe(0);
+    });
+
+    it('LINK_XY() with no args emits an error (needs one $variable)', () => {
+        const src = 'SCATTER_PLOT(x: a, y: b) LINK_XY()';
+        const diags = lintPlot(src, makeDeps({ cellColumns: [{ name: 'a' }, { name: 'b' }] }));
+        const e = diags.find(d => /LINK_XY.*requires one/i.test(d.message));
+        expect(e).toBeTruthy();
+        expect(e!.severity).toBe('error');
+    });
+
+    it('LINK_XY($var) with one arg produces no LINK_XY error', () => {
+        const src = 'SCATTER_PLOT(x: a, y: b) LINK_XY($combined)';
+        const diags = lintPlot(src, makeDeps({
+            cellColumns: [{ name: 'a' }, { name: 'b' }],
+            variables: { combined: '0' },
+        }));
+        const linkErr = diags.filter(d => /LINK_XY/i.test(d.message) && d.severity !== 'hint');
+        expect(linkErr.length).toBe(0);
     });
 
     it('LINK_X($a) with one arg emits a warning (not an error)', () => {

@@ -38,18 +38,26 @@ export const setVariableSpec = StateEffect.define<VariableSpec | null>();
 
 const variableRegex = /\$\$?\w+/g;
 
-// Matches LINK_X/LINK_Y/LINK_XY/LINK_SCROLL(...) — variables inside are
-// output bindings written by the plot on interaction, not read variables.
-const LINK_ARGS_RE = /\bLINK_(?:X|Y|XY|SCROLL)\s*\(([^)]*)\)/gi;
+// Matches LINK_X/LINK_Y/LINK_XY/LINK_SCROLL(...) — uppercase paren form.
+const LINK_ARGS_PAREN_RE = /\bLINK_(?:X|Y|XY|SCROLL)\s*\(([^)]*)\)/gi;
+// Matches lowercase pipe-DSL form: `| link-x: [...]` or `| link-y: $var`.
+// Captures everything from the colon to end-of-value (up to next `|` or end).
+const LINK_ARGS_PIPE_RE = /\|\s*link-(?:x|y|xy|scroll)\s*:\s*(\[[^\]]*\]|\$\w+)/gi;
 
 function buildLinkArgRanges(text: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
-  LINK_ARGS_RE.lastIndex = 0;
+  LINK_ARGS_PAREN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = LINK_ARGS_RE.exec(text)) !== null) {
+  while ((m = LINK_ARGS_PAREN_RE.exec(text)) !== null) {
     const parenOpen = m.index + m[0].indexOf('(');
     const parenClose = m.index + m[0].length - 1;
     ranges.push([parenOpen + 1, parenClose]);
+  }
+  LINK_ARGS_PIPE_RE.lastIndex = 0;
+  while ((m = LINK_ARGS_PIPE_RE.exec(text)) !== null) {
+    // m[1] is the value portion (bracket list or bare $var); find its start.
+    const valueStart = m.index + m[0].indexOf(m[1]);
+    ranges.push([valueStart, valueStart + m[1].length]);
   }
   return ranges;
 }

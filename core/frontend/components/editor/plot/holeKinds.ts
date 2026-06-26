@@ -45,7 +45,7 @@ export type PlotHoleHint =
         tail: string;
         valueType: 'string' | 'number' | 'dimension' | 'identList' | 'linkArgs';
     }
-    | { kind: 'linkArgs'; positional: ('var' | 'master' | 'clamp')[]; consumed: number }
+    | { kind: 'linkArgs'; positional: ('var' | 'master' | 'clamp')[]; consumed: number; keyword?: string }
     | { kind: 'onArg'; expects: ('queryRef' | 'ident')[]; consumedIndexes: number[] }
     | { kind: 'letName' }
     | { kind: 'letValue' }

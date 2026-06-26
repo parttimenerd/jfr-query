@@ -202,7 +202,9 @@ describe('plotCompletionSource — linkArgs / variables', () => {
 
   it('inside `LINK_Y(<CURSOR>)` offers brush refs typed for the y axis', () => {
     const scope: PlotScopeView = {
-      namedPlots: [],
+      namedPlots: [
+        { plotName: 'gc', cellId: 'c0', plotIndexInCell: 0, shape: 'line', hasBrush: true, brushVarName: 'gcBrush' },
+      ],
       queryRefs: [],
       variables: new Map(),
       brushes: new Map([
@@ -216,8 +218,10 @@ describe('plotCompletionSource — linkArgs / variables', () => {
     }));
     expect(r).not.toBeNull();
     const ls = labels(r);
-    expect(ls).toContain('$gc.brush.lo');
-    expect(ls).toContain('$gc.brush.hi');
+    // LINK_Y takes a bare brush variable name, not .brush.lo/.hi paths.
+    expect(ls).toContain('$gcBrush');
+    expect(ls).not.toContain('$gc.brush.lo');
+    expect(ls).not.toContain('$gc.brush.hi');
   });
 
   it('offers brush refs alongside regular variables when both exist', () => {

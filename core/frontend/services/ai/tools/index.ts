@@ -31,11 +31,13 @@ export const TOOLS: Tool[] = [
     {
         name: 'runQuery',
         kind: 'read',
-        description: 'Execute a read-only SQL query against the loaded DuckDB. Returns the first 100 rows.',
+        description: 'Execute a read-only SQL query against the loaded DuckDB. Returns up to 500 rows per page. Use `offset` to page through large result sets.',
         inputSchema: {
             type: 'object',
             properties: {
                 sql: { type: 'string', description: 'A read-only SQL query.' },
+                limit: { type: 'integer', minimum: 1, maximum: 500, description: 'Max rows to return (default 100, max 500).' },
+                offset: { type: 'integer', minimum: 0, description: 'Row offset for pagination (default 0).' },
             },
             required: ['sql'],
         },
@@ -60,7 +62,7 @@ export const TOOLS: Tool[] = [
             type: 'object',
             properties: {
                 name: { type: 'string' },
-                limit: { type: 'integer', maximum: 100, minimum: 1 },
+                limit: { type: 'integer', maximum: 500, minimum: 1 },
             },
             required: ['name'],
         },

@@ -864,9 +864,10 @@ class PlotParser {
                 // If cursor lands inside an empty / partial args list, emit a hole
                 // so completion offers brush refs / variables.
                 if (this.cursorPos >= lp.to && this.cursorPos <= this.peek().from) {
+                    const isOneVar = keyword === 'LINK_Y' || keyword === 'LINK_XY';
                     argsNode.children.push(this.hole(
                         ['varRef', 'ident'],
-                        { kind: 'linkArgs', positional: ['var', 'var', 'master', 'clamp'], consumed },
+                        { kind: 'linkArgs', positional: isOneVar ? ['var'] : ['var', 'var', 'master', 'clamp'], consumed, keyword },
                     ));
                 }
                 if (this.at('rparen')) argsNode.to = this.consume().to;

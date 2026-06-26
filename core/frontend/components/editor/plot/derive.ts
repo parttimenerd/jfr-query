@@ -20,8 +20,8 @@ export interface ParsedPlotCall {
     linkX?: [string, string];
     linkXMaster?: boolean;
     linkXClamp?: boolean;
-    linkY?: [string, string];
-    linkXY?: [string, string];
+    linkY?: string;
+    linkXY?: string;
     linkScroll?: string;
     plotName?: string;
     disabled?: boolean;
@@ -303,5 +303,7 @@ function applyLink(result: ParsedPlotCall, tail: PlotNode, key: 'linkX' | 'linkY
             result.linkXMaster = opts.includes('master');
             result.linkXClamp = opts.includes('clamp');
         }
+    } else if (vars.length === 1 && (key === 'linkY' || key === 'linkXY')) {
+        (result as any)[key] = vars[0];
     }
 }

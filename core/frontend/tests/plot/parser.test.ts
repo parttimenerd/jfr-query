@@ -63,10 +63,10 @@ describe('plot parser — round trip uppercase', () => {
     });
 
     it('LINK_Y / LINK_XY / LINK_SCROLL', () => {
-        const a = p('LINE_CHART(x: ts) LINK_Y($yMin, $yMax)');
-        expect(a.linkY).toEqual(['$yMin', '$yMax']);
-        const b = p('LINE_CHART(x: ts) LINK_XY($a, $b)');
-        expect(b.linkXY).toEqual(['$a', '$b']);
+        const a = p('LINE_CHART(x: ts) LINK_Y($yDomain)');
+        expect(a.linkY).toBe('$yDomain');
+        const b = p('LINE_CHART(x: ts) LINK_XY($combined)');
+        expect(b.linkXY).toBe('$combined');
         const c = p('LINE_CHART(x: ts) LINK_SCROLL($flameGroup)');
         expect(c.linkScroll).toBe('flameGroup');
     });

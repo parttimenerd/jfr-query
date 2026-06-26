@@ -132,6 +132,22 @@ describe('NotebookPlotScope.build', () => {
         expect(view.namedPlots[0]?.linkedYVars).toBe('memDomain');
     });
 
+    it('3c. captures brushVarName from BRUSH clause on a named plot', () => {
+        const cells = [cell('a'), cell('b')];
+        const view = buildView({
+            cells,
+            currentCellId: 'b',
+            parsed: {
+                a: {
+                    sqlBlocks: ['SELECT ts, cpu FROM events'],
+                    plotBlocks: [{ config: 'LINE_CHART(x: ts, y: cpu) BRUSH "$gcSel" MODE Y NAME "gcPlot"', sqlIndex: 0 }],
+                },
+            },
+        });
+        expect(view.namedPlots[0]?.brushVarName).toBe('gcSel');
+        expect(view.namedPlots[0]?.plotName).toBe('gcPlot');
+    });
+
     it('4. parses `CREATE VIEW <alias> AS …` from SQL blocks', () => {
         const cells = [cell('a'), cell('b')];
         const view = buildView({
@@ -217,6 +233,17 @@ describe('extractPlotMetadata', () => {
         const meta = extractPlotMetadata('AREA_CHART(x: ts, y: mem) NAME "memChart" LINK-Y $memDomain');
         expect(meta.plotName).toBe('memChart');
         expect(meta.linkedYVars).toEqual(['memDomain']);
+    });
+
+    it('extracts brushVarName from BRUSH "$var" clause', () => {
+        const meta = extractPlotMetadata('LINE_CHART(x: ts, y: cpu) BRUSH "$gcSel" MODE Y NAME "gcPlot"');
+        expect(meta.brushVarName).toBe('gcSel');
+        expect(meta.plotName).toBe('gcPlot');
+    });
+
+    it('brushVarName is undefined when no BRUSH clause', () => {
+        const meta = extractPlotMetadata('LINE_CHART(x: ts, y: cpu) NAME "gcPlot"');
+        expect(meta.brushVarName).toBeUndefined();
     });
 });
 

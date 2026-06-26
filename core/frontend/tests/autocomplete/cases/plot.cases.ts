@@ -218,14 +218,16 @@ export const plotCases: AutocompleteCase[] = [
         tier: 'plot-link',
         input: 'LINE_CHART(x: "ts", y: "cpu") LINK_Y(|)',
         plotScope: {
-            namedPlots: [],
+            namedPlots: [
+                { plotName: 'lat', cellId: 'c0', plotIndexInCell: 0, shape: 'line', hasBrush: true, brushVarName: 'latBrush' },
+            ],
             queryRefs: [],
             variables: new Map(),
             brushes: new Map([
                 ['lat', { plotName: 'lat', cellId: 'c0', xType: 'timestamp', yType: 'number' }],
             ]),
         },
-        expected: { contains: ['$lat.brush.lo', '$lat.brush.hi'] },
+        expected: { contains: ['$latBrush'] },
     },
     {
         name: 'link-x-paren-mixes-vars-and-brushes',
@@ -267,14 +269,16 @@ export const plotCases: AutocompleteCase[] = [
         tier: 'plot-link',
         input: 'LINE_CHART(x: "ts", y: "cpu") LINK_XY(|)',
         plotScope: {
-            namedPlots: [],
+            namedPlots: [
+                { plotName: 'gc', cellId: 'c0', plotIndexInCell: 0, shape: 'line', hasBrush: true, brushVarName: 'gcBrush' },
+            ],
             queryRefs: [],
             variables: new Map(),
             brushes: new Map([
                 ['gc', { plotName: 'gc', cellId: 'c0', xType: 'timestamp', yType: 'number' }],
             ]),
         },
-        expected: { contains: ['$gc.brush.lo', '$gc.brush.hi'] },
+        expected: { contains: ['$gcBrush'] },
     },
     {
         name: 'link-x-paren-multiple-brushes',

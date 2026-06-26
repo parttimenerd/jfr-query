@@ -602,7 +602,9 @@ function buildConstOptions(
 // ─── Per-hint dispatchers ────────────────────────────────────────────────────
 
 function completeTopLevel(from: number, _hint: Extract<PlotHoleHint, { kind: 'topLevel' }>): CompletionResult {
-  const options: Completion[] = Object.values(plotRegistry).map(p => ({
+  const options: Completion[] = Array.from(
+    new Map(Object.values(plotRegistry).map(p => [p.name, p])).values()
+  ).map(p => ({
     label: p.name,
     detail: p.description,
     type: 'plotFn',
@@ -788,9 +790,37 @@ function completeLinkArgs(
   scope: PlotScopeView | null,
 ): CompletionResult | null {
   const options: Completion[] = [];
-  // First two positions are variables. After that we suggest master/clamp.
-  if (hint.consumed < 2) {
-    options.push(...buildVariableOptions(deps, scope, partial));
+  // Variable slots: as many 'var' entries are in positional before 'master'/'clamp'.
+  const varSlotCount = hint.positional.filter(p => p === 'var').length;
+  if (hint.consumed < varSlotCount) {
+    const isYLink = hint.keyword === 'LINK_Y' || hint.keyword === 'LINK_XY';
+    if (isYLink && scope) {
+      // For LINK-Y / LINK-XY, offer the bare brush variable names declared via
+      // BRUSH "$var" on other plots — not the .brush.lo/.hi accessor paths.
+      const lc = partial.toLowerCase().replace(/^\$+/, '');
+      const seen = new Set<string>();
+      for (const p of scope.namedPlots) {
+        if (!p.brushVarName) continue;
+        const varName = p.brushVarName;
+        if (lc && !varName.toLowerCase().startsWith(lc)) continue;
+        if (seen.has(varName)) continue;
+        seen.add(varName);
+        options.push({
+          label: `$${varName}`,
+          detail: `brush var · ${p.plotName}`,
+          type: 'variable',
+          apply: `$${varName}`,
+          boost: 5,
+        });
+      }
+    }
+    // Also include regular variables (workspace / cell-local) but filter out
+    // .brush.lo/.hi paths when completing LINK-Y (they are wrong for this slot).
+    if (isYLink) {
+      options.push(...buildVariableOptionsExcludingBrushPaths(deps, scope, partial));
+    } else {
+      options.push(...buildVariableOptions(deps, scope, partial));
+    }
   } else {
     const lc = partial.toLowerCase();
     for (const kw of LINK_POSITIONAL_KEYWORDS) {
@@ -907,6 +937,49 @@ function buildVariableOptions(
         });
       }
     }
+  }
+  return options;
+}
+
+/** Same as buildVariableOptions but skips `.brush.lo/.hi` paths (for LINK-Y context). */
+function buildVariableOptionsExcludingBrushPaths(
+  deps: PlotCompletionDeps,
+  scope: PlotScopeView | null,
+  partial: string,
+): Completion[] {
+  const options: Completion[] = [];
+  const lc = partial.toLowerCase().replace(/^\$+/, '');
+  const seen = new Set<string>();
+  if (scope) {
+    for (const [name, v] of scope.variables) {
+      if (lc && !name.toLowerCase().startsWith(lc)) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const prefix = v.scope === 'workspace' ? '$$' : '$';
+      options.push({
+        label: `${prefix}${name}`,
+        detail: `${v.scope} · ${v.dataType}`,
+        type: 'variable',
+        apply: `${prefix}${name}`,
+        boost: 3,
+      });
+    }
+  }
+  const vars = deps.getVariables?.() ?? {};
+  for (const [name, value] of Object.entries(vars)) {
+    const bare = name.startsWith('$') ? name.replace(/^\$+/, '') : name;
+    if (lc && !bare.toLowerCase().startsWith(lc)) continue;
+    if (seen.has(bare.toLowerCase())) continue;
+    seen.add(bare.toLowerCase());
+    const prefix = name.startsWith('$$') ? '$$' : '$';
+    options.push({
+      label: `${prefix}${bare}`,
+      detail: `= ${truncate(String(value), 30)}`,
+      type: 'variable',
+      apply: `${prefix}${bare}`,
+      boost: 2,
+    });
   }
   return options;
 }
@@ -1078,7 +1151,10 @@ export function plotCompletionSource(deps: PlotCompletionDeps) {
       if (atTopLevelPos) {
         const lcShape = partial.text.toLowerCase();
         const options: Completion[] = [];
+        const seen = new Set<string>();
         for (const p of Object.values(plotRegistry)) {
+          if (seen.has(p.name)) continue;
+          seen.add(p.name);
           if (lcShape && !p.name.toLowerCase().startsWith(lcShape)) continue;
           options.push({
             label: p.name,

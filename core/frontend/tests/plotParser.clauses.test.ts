@@ -4,7 +4,7 @@
 // tests/plotParser.test.ts.
 
 import { describe, it, expect } from 'vitest';
-import { parsePlotCall } from '../utils/plotParser';
+import { parsePlotCall, parseComposite } from '../utils/plotParser';
 
 describe('parsePlotCall — new showcase clauses', () => {
     it('parses LEGEND AT RIGHT', () => {
@@ -226,5 +226,37 @@ describe('parsePlotCall — LINK_SCROLL clause (LINK-SCROLL / LINK_SCROLL)', () 
         const p = parsePlotCall('LINE_CHART(x:"ts",y:["c"]) TITLE "My Chart" LINK_SCROLL group1');
         expect(p.title).toBe('My Chart');
         expect(p.linkScroll).toBe('group1');
+    });
+});
+
+// Bug fix: LINK-Y and LINK-XY take exactly one $variable (not two).
+describe('parsePlotCall — LINK-Y / LINK-XY one-var semantics', () => {
+    it('LINK-Y takes one $var and leaves linkX unset', () => {
+        const p = parsePlotCall('AREA_CHART(x: ts, y: mem) LINK-Y $memDomain');
+        expect(p.linkY).toBe('$memDomain');
+        expect(p.linkX).toBeUndefined();
+    });
+
+    it('LINK-XY takes one $var and leaves linkX unset', () => {
+        const p = parsePlotCall('SCATTER_PLOT(x: a, y: b) LINK-XY $combined');
+        expect(p.linkXY).toBe('$combined');
+        expect(p.linkX).toBeUndefined();
+    });
+
+    it('LINK-Y and LINK_X can coexist on the same plot', () => {
+        const p = parsePlotCall('LINE_CHART(x: ts, y: cpu) LINK_X($start, $end) LINK-Y $cpuDomain');
+        expect(p.linkX).toEqual(['$start', '$end']);
+        expect(p.linkY).toBe('$cpuDomain');
+    });
+
+    it('LINK-Y $var is independent of LINK-XY $var on different leaves in a ROW', () => {
+        const root = parseComposite(
+            'ROW(LINE_CHART(x: ts, y: cpu) LINK-Y $cpuDomain, AREA_CHART(x: ts, y: mem) LINK-XY $memDomain)'
+        );
+        const children = root.composite!.children;
+        expect(children[0].linkY).toBe('$cpuDomain');
+        expect(children[0].linkXY).toBeUndefined();
+        expect(children[1].linkXY).toBe('$memDomain');
+        expect(children[1].linkY).toBeUndefined();
     });
 });

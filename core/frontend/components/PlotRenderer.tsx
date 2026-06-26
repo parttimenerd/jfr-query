@@ -351,11 +351,14 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                 row.split(';').map(c => c.trim()).filter(Boolean)
             );
             const names = new Set<string>();
+            function collectFromParsed(p: ParsedPlotCall) {
+                if (p.linkY) names.add(p.linkY);
+                if (p.linkXY) names.add(p.linkXY);
+                if (p.composite) p.composite.children.forEach(collectFromParsed);
+            }
             for (const c of allConfigs) {
                 try {
-                    const p = parsePlotCall(c);
-                    if (p.linkY) names.add(p.linkY);
-                    if (p.linkXY) names.add(p.linkXY);
+                    collectFromParsed(parseComposite(c));
                 } catch { /* ignore */ }
             }
             return Array.from(names);
@@ -616,6 +619,13 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                                     <InteractivePlotWrapper linkX={leaf.linkX} linkXClamp={!!leaf.linkXClamp} data={leafData} xCol={(leafCfg as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
                                         {leafContent}
                                     </InteractivePlotWrapper>
+                                );
+                            }
+                            if (leaf.linkScroll) {
+                                leafContent = (
+                                    <ScrollSyncWrapper group={leaf.linkScroll}>
+                                        {leafContent}
+                                    </ScrollSyncWrapper>
                                 );
                             }
                             const leafTitle = leaf.title || (leafCfg as any).title;

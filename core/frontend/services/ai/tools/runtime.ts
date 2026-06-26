@@ -65,8 +65,11 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
             case 'runQuery': {
                 const sql: string = args.sql;
                 if (isForbiddenSql(sql)) return { ok: false, error: 'forbidden token' };
-                const result = await deps.duckdbQuery(sql, { limit: 100 });
-                return { ok: true, data: { columns: result.columns, rows: result.rows.slice(0, 100) } };
+                const pageSize = typeof args.limit === 'number' ? Math.min(Math.max(args.limit, 1), 500) : 100;
+                const offset = typeof args.offset === 'number' ? Math.max(args.offset, 0) : 0;
+                const result = await deps.duckdbQuery(sql, { limit: pageSize + offset });
+                const page = result.rows.slice(offset, offset + pageSize);
+                return { ok: true, data: { columns: result.columns, rows: page, total: result.rows.length, offset, limit: pageSize } };
             }
             case 'describeTable': {
                 const tname: string = args.name;
@@ -75,7 +78,7 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
             }
             case 'sampleRows': {
                 const tname: string = args.name;
-                const limit = Math.min(typeof args.limit === 'number' ? args.limit : 10, 100);
+                const limit = Math.min(typeof args.limit === 'number' ? args.limit : 10, 500);
                 const result = await deps.duckdbQuery(`SELECT * FROM "${tname.replace(/"/g, '""')}" LIMIT ${limit}`);
                 return { ok: true, data: { columns: result.columns, rows: result.rows } };
             }

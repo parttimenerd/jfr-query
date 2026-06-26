@@ -9,20 +9,22 @@ import type { PlotRegistration } from './plots/plotTypes';
 import type { NotebookMetadata } from '../types';
 
 const preferredOrder = ['LINE_CHART', 'BAR_CHART', 'TABLE', 'PIE_CHART'];
-const plotDocs = (Object.values(plotRegistry) as PlotRegistration[]).sort((a, b) => {
+const plotDocs = Array.from(
+    new Map((Object.values(plotRegistry) as PlotRegistration[]).map(p => [p.name, p])).values()
+).sort((a, b) => {
     const indexA = preferredOrder.indexOf(a.name);
     const indexB = preferredOrder.indexOf(b.name);
 
     if (indexA !== -1 && indexB !== -1) {
-        return indexA - indexB; // Both are in the preferred list, sort by that order
+        return indexA - indexB;
     }
     if (indexA !== -1) {
-        return -1; // A is preferred, B is not
+        return -1;
     }
     if (indexB !== -1) {
-        return 1; // B is preferred, A is not
+        return 1;
     }
-    return a.name.localeCompare(b.name); // Neither are preferred, sort alphabetically
+    return a.name.localeCompare(b.name);
 });
 
 // Generic sample data used if an example doesn't provide its own
@@ -85,6 +87,13 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
             }, 0);
         }
     }, [isOpen]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+    }, [isOpen, onClose]);
     
     const multiQueryData = useMemo(() => {
        const merged = genericSampleData.map((row, i) => ({

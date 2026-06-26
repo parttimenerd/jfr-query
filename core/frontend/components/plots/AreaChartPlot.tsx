@@ -8,6 +8,7 @@ import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn, findColumns, getTimeValue } from '../../utils/plotUtils';
 import { usePlotGestures } from '../../hooks/usePlotGestures';
 import { warnDeprecated } from './deprecation';
+import type { ParsedPlotCall } from '../../utils/plotParser';
 import { lttb } from '../../services/plot/decimation';
 
 const AREA_SOFT_CAP_PER_SERIES = 5000;
@@ -51,10 +52,12 @@ const AreaChartComponent: React.FC<{
   animationDuration?: number;
   gestureName?: string;
   onVariableChange?: (vars: Record<string, unknown>) => void;
-}> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration, gestureName, onVariableChange }) => {
+  clauses?: ParsedPlotCall;
+}> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration, gestureName, onVariableChange, clauses }) => {
   const { settings } = useContext(SettingsContext);
   const numberFormatter = (v: any) => formatNumber(v, settings.decimalPlaces);
   const gestures = usePlotGestures({ name: gestureName, onVariableChange });
+  const effectiveYScale = (clauses?.axisY?.type === 'log' ? 'log' : config.yScale) as 'linear' | 'log';
 
   const { chartData, isTime, allY, finalXCol } = useMemo(() => {
     if (!data || !data.length || !data[0] || !config.x) {
@@ -137,8 +140,8 @@ const AreaChartComponent: React.FC<{
                 ? { value: config.yAxisLabel, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 }
                 : undefined
             }
-            scale={config.yScale === 'log' ? 'log' : 'auto'}
-            domain={domainY ?? (config.yScale === 'log' ? [0.1, 'dataMax'] : undefined)}
+            scale={effectiveYScale === 'log' ? 'log' : 'auto'}
+            domain={domainY ?? (effectiveYScale === 'log' ? [0.1, 'dataMax'] : undefined)}
             allowDataOverflow
           />
           <Tooltip

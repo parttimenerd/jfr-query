@@ -433,20 +433,25 @@ function lintTail(
         if (!list) return;
         const args = list.children;
         const vars = args.filter(a => a.kind === 'varRef');
-        if (vars.length === 0) {
-            // Zero $variable arguments — at least two are required.
+        // LINK_Y and LINK_XY take exactly one $variable; LINK_X requires two.
+        // LINK_SCROLL takes a group name string, not a $variable at all.
+        const requiresTwo = upperKey === 'LINK_X';
+        const requiresOne = upperKey === 'LINK_Y' || upperKey === 'LINK_XY';
+        if (vars.length === 0 && (requiresTwo || requiresOne)) {
+            const example = requiresTwo ? `${upperKey}($a, $b)` : `${upperKey}($a)`;
+            const count = requiresTwo ? 'two' : 'one';
             out.push({
                 from: list.from,
                 to: list.to,
                 severity: 'error',
-                message: `${upperKey} requires at least two $variable arguments (e.g. '${upperKey}($a, $b)').`,
+                message: `${upperKey} requires ${requiresTwo ? 'at least two' : 'one'} $variable argument (e.g. '${example}').`,
                 actions: [{
-                    name: 'Add two variables',
-                    apply: (view, _from, _to) => insertAt(view, list.from + 1, '$a, $b'),
+                    name: `Add ${count === 'one' ? 'a' : 'two'} variable${count === 'two' ? 's' : ''}`,
+                    apply: (view, _from, _to) => insertAt(view, list.from + 1, requiresTwo ? '$a, $b' : '$a'),
                 }],
             });
-        } else if (vars.length === 1) {
-            // Suggest a second variable.
+        } else if (requiresTwo && vars.length === 1) {
+            // LINK_X with only one arg — suggest adding a second.
             const insertPos = vars[0].to;
             out.push({
                 from: list.from,

@@ -120,7 +120,7 @@ const CustomBoxPlotTooltip: React.FC<any> = ({ active, payload, label, formatter
 };
 
 
-const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; }> = ({ config, data, isAnimationActive, animationDuration }) => {
+const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; domainY?: [number, number]; }> = ({ config, data, isAnimationActive, animationDuration, domainY }) => {
     const { settings } = useContext(SettingsContext);
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
 
@@ -161,7 +161,7 @@ const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimati
                 <BarChart data={chartData} barCategoryGap="30%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
                     <XAxis dataKey="category" stroke="#9ca3af" tick={{ fontSize: 12 }} />
-                    <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={numberFormatter} domain={['dataMin', 'dataMax']} />
+                    <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={numberFormatter} domain={domainY ?? ['dataMin', 'dataMax']} allowDataOverflow />
                     <Tooltip 
                         content={<CustomBoxPlotTooltip formatter={numberFormatter} />}
                         cursor={{ fill: 'rgba(130, 202, 157, 0.1)' }}
