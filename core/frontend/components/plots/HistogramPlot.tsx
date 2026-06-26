@@ -67,7 +67,7 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
 
     return (
         <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer minHeight={200}>
                 <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 50 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568"/>
                     <XAxis dataKey="range" stroke="#9ca3af" tick={{fontSize:12}} angle={-45} textAnchor="end" interval="preserveStartEnd" domain={domainX ?? config.xDomain ?? ['auto', 'auto']}/>

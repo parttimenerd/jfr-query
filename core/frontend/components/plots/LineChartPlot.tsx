@@ -70,7 +70,7 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
 
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-      <ResponsiveContainer>
+      <ResponsiveContainer minHeight={200}>
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568"/>
           <XAxis allowDataOverflow dataKey={finalXCol} type={isTime?'number':'category'} domain={xDomainFromClause || domainX || (isTime?['dataMin','dataMax']:undefined)} tickFormatter={isTime?(t:any)=>formatTimestamp(t,"HH:mm:ss.SS"):undefined} stroke="#9ca3af" tick={{fontSize:12}} label={xLabel?{value:xLabel,position:'insideBottom',fill:'#9ca3af',fontSize:12,offset:-5}:undefined}/>

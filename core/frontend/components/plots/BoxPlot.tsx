@@ -157,7 +157,7 @@ const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimati
 
     return (
         <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer minHeight={200}>
                 <BarChart data={chartData} barCategoryGap="30%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
                     <XAxis dataKey="category" stroke="#9ca3af" tick={{ fontSize: 12 }} />

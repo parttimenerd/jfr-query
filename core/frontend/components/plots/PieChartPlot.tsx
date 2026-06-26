@@ -70,7 +70,7 @@ const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnima
 
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-      <ResponsiveContainer>
+      <ResponsiveContainer minHeight={200}>
         <PieChart>
           <Pie
             data={chartData}

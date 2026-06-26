@@ -190,8 +190,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   ) => {
       if (isInitial) {
           try {
-            const info = await runQuery(`SELECT "firstEvent", "lastEvent" FROM "RecordingInfo" LIMIT 1;`);
-            if (info[0]) { const s = new Date(info[0].firstEvent).getTime(), e = new Date(info[0].lastEvent).getTime(); if(!isNaN(s)&&!isNaN(e)){ setRecordingStart(s); setRecordingEnd(e); }}
+            const exists = await runQuery(`SELECT 1 FROM duckdb_tables() WHERE table_name='RecordingInfo' LIMIT 1`);
+            if (exists.length > 0) {
+              const info = await runQuery(`SELECT "firstEvent", "lastEvent" FROM "RecordingInfo" LIMIT 1;`);
+              if (info[0]) { const s = new Date(info[0].firstEvent).getTime(), e = new Date(info[0].lastEvent).getTime(); if(!isNaN(s)&&!isNaN(e)){ setRecordingStart(s); setRecordingEnd(e); }}
+            }
           } catch (e) { console.warn(`Could not get recording time, using fallback.`, e); }
       }
 

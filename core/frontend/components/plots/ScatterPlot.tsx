@@ -54,7 +54,7 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
 
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-      <ResponsiveContainer>
+      <ResponsiveContainer minHeight={200}>
         <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
           <XAxis allowDataOverflow type="number" dataKey={config.x} name={config.x} tickFormatter={numberFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={domainX} />

@@ -110,7 +110,7 @@ const AreaChartComponent: React.FC<{
 
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minHeight={200}>
         <AreaChart
           data={chartData}
           margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
