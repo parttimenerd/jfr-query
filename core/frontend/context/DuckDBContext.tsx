@@ -115,11 +115,26 @@ const runWasmQuery = async (conn: AsyncDuckDBConnection, sql: string): Promise<a
             for (const k of Object.keys(obj)) {
                 const v = obj[k];
                 if (typeof v === 'bigint') {
-                    obj[k] = Number(v);
+                    // B-133: keep BigInt precision for values that exceed Number.MAX_SAFE_INTEGER
+                    // (e.g. JFR nanosecond timestamps ~1.7×10^18 > 2^53). Only convert to Number
+                    // when the value is safely representable.
+                    const abs = v < 0n ? -v : v;
+                    obj[k] = abs <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : v;
                 } else if (ArrayBuffer.isView(v) && !(v instanceof DataView)) {
-                    // Convert typed arrays (Float64Array, Int32Array, etc.) to plain arrays
-                    // so Recharts can safely freeze/mutate them.
-                    obj[k] = Array.from(v as unknown as ArrayLike<unknown>);
+                    // Arrow returns HUGEINT/DECIMAL/INT128 scalars as a 4-element
+                    // Int32 view (the little-endian byte representation of the
+                    // 128-bit integer). When the upper three words are zero the
+                    // value fits in 32 bits and we unwrap to that scalar so
+                    // downstream formatters see a real number rather than
+                    // "1234,0,0,0". Genuine LIST columns are left as plain
+                    // arrays for Recharts.
+                    const arr = Array.from(v as unknown as ArrayLike<unknown>) as number[];
+                    if (arr.length === 4 && arr[1] === 0 && arr[2] === 0 && arr[3] === 0
+                        && typeof arr[0] === 'number') {
+                        obj[k] = arr[0];
+                    } else {
+                        obj[k] = arr;
+                    }
                 }
             }
             return obj;
@@ -200,9 +215,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           sql: r.sql
       }));
 
+      // Build the counts query. The two escape paths are kept strictly
+      // separate (B-134): identEsc uses ISO double-quote doubling for the FROM
+      // clause identifier; litEsc uses single-quote doubling for the SELECT
+      // string literal that carries the table name back to JS.
       const countsQuery = tables.map(t => {
-        const safeName = t.name.replace(/"/g, '""');
-        return `SELECT '${t.name.replace(/'/g, "''")}' as name, COUNT(*) as count FROM "${safeName}"`;
+        const identEsc = t.name.replace(/"/g, '""');
+        const litEsc   = t.name.replace(/'/g, "''");
+        return `SELECT '${litEsc}' as name, COUNT(*) as count FROM "${identEsc}"`;
       }).join(' UNION ALL ');
       try {
         const counts = tables.length > 0 ? await runQuery(countsQuery) : [];
@@ -334,7 +354,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [fetchSchemaFor]);
 
   const query = useCallback(async (sql: string): Promise<any[]> => {
-    if (dbState !== DBState.READY && sql.trim().toLowerCase().startsWith('select')) {
+    if (dbState !== DBState.READY) {
       throw new Error('DB not ready.');
     }
     return executeQuery(sql);

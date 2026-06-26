@@ -32,6 +32,17 @@ const FRONT_MATTER_DELIMITER = '---';
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 
 const parseFrontMatter = (fmString: string): NotebookMetadata => {
+    // B-120: This is a hand-rolled line-by-line YAML parser, not a full YAML parser.
+    // It handles the specific subset of YAML used in notebook front matter (scalar
+    // values, simple lists with "- key: value" entries, indented block scalars with
+    // the "|" indicator, and inline arrays). However, it does NOT support general
+    // structured YAML values such as:
+    //   - Nested mappings beyond the supported sections (views, macros, variables, cellConditions)
+    //   - Multi-line values for sections other than customSystemPrompt / cellConditions
+    //   - Quoted scalars containing colons (e.g. `key: "value: with colon"`)
+    //   - Anchors, aliases, merge keys, or other advanced YAML features
+    // Structured values for unsupported keys are stored as raw strings via the
+    // `(result as any)[keyTrimmed] = value` fallback at indent==0 (line 72).
     const lines = fmString.split('\n');
     const result: NotebookMetadata = { views: [], macros: [] };
     let currentSection: 'views' | 'macros' | 'variables' | 'cellConditions' | null = null;
@@ -354,7 +365,12 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
 
     const introSegments = segments.slice(0, firstCodeBlockIndex);
     let introContent = introSegments.map(s => reconstructCellContent([s])).join('');
-    
+
+    // Strip the cell directive (`<!-- @cell ... -->`) from the rendered intro;
+    // the directive controls cell identity but should never be visible to the
+    // reader.
+    introContent = stripCellDirective(introContent).body;
+
     const titleRegex = /^\s*##\s+(.*)(\r?\n|\r)?/m;
     const titleMatch = introContent.match(titleRegex);
 

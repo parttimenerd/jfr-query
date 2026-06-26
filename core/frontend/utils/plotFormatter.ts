@@ -283,14 +283,7 @@ function shouldBreakCallArgs(s: EState, tokens: PlotToken[], commaIdx: number): 
     // Only break when this comma is inside a 'call' paren AND the call's
     // total inline length exceeds the threshold.
     if (s.parenStack.length === 0 || s.parenStack[s.parenStack.length - 1] !== 'call') return false;
-    // Never break commas inside brackets [ … ] — array elements stay inline.
-    let bracketDepth = 0;
-    for (let j = 0; j < commaIdx; j++) {
-        if (tokens[j].kind === 'lbracket') bracketDepth++;
-        else if (tokens[j].kind === 'rbracket') bracketDepth--;
-    }
-    if (bracketDepth > 0) return false;
-    // Walk back to find the opening `(`.
+    // Walk back to find the opening `(` first — needed for bracket-depth check too.
     let depth = 0;
     let lparenIdx = -1;
     for (let j = commaIdx - 1; j >= 0; j--) {
@@ -302,6 +295,13 @@ function shouldBreakCallArgs(s: EState, tokens: PlotToken[], commaIdx: number): 
         }
     }
     if (lparenIdx < 0) return false;
+    // B-184: only scan from lparenIdx to commaIdx (not from 0) — O(n) per call, not O(n²).
+    let bracketDepth = 0;
+    for (let j = lparenIdx + 1; j < commaIdx; j++) {
+        if (tokens[j].kind === 'lbracket') bracketDepth++;
+        else if (tokens[j].kind === 'rbracket') bracketDepth--;
+    }
+    if (bracketDepth > 0) return false;
     // Walk forward to find matching `)`.
     let depth2 = 1;
     let rparenIdx = tokens.length;

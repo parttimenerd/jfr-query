@@ -12,6 +12,12 @@
 // References to undefined constants surface as a parse-time error rather than
 // passing through to the underlying SQL/plot parser, which would otherwise
 // produce confusing "column not found" messages.
+//
+// CONSTRAINT — Forward references are NOT supported (B-189): a constant may
+// only reference constants that were declared on earlier lines. A reference to
+// a constant defined *later* in the same config block is treated as undefined
+// and produces an error.  Reorder your LET lines so every dependency appears
+// before its first use.
 
 export interface ExpansionResult {
     /** The config with all LET lines stripped and @-references substituted. */

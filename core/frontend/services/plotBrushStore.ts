@@ -1,5 +1,6 @@
 // W4 — Cross-cell brush coupling store.
 // W14 — Adds cycle detection, publisher-unmount retention, and clamp-on-refresh.
+// W15 — B-139: separate publisherNames map for pre-publish cycle detection.
 //
 // A pub/sub registry mapping `$brushName` → published domain. Cells with
 // `BRUSH "$sel" MODE X` publish; cells with `LINK-X "$sel"` (or LINK-Y/XY)
@@ -34,6 +35,15 @@ class BrushStore {
     private listeners = new Map<string, Set<ListenerEntry>>();
     /** subscriberCell → set of brush names that cell subscribes to. */
     private subscriberToNames = new Map<string, Set<string>>();
+    /**
+     * B-139: cellName → set of brush names it publishes.
+     * Tracked separately from `state` so cycle detection works even when a
+     * subscriber registers before the publisher has called publish() for
+     * the first time (pre-publish subscribe).
+     */
+    private publisherToNames = new Map<string, Set<string>>();
+    /** Brush name → the cellName that registered it as a publisher. */
+    private nameToPublisher = new Map<string, string>();
     /** Brush names whose publisher has been marked for retention-eviction. */
     private retentionTimers = new Map<string, ReturnType<typeof setTimeout>>();
     /** Already-warned cycle pairs (dedupe). */
@@ -46,6 +56,16 @@ class BrushStore {
         if (t) {
             clearTimeout(t);
             this.retentionTimers.delete(payload.name);
+        }
+        // Register in the publisher index so pre-publish subscribers can detect cycles.
+        if (payload.cellName) {
+            let pubs = this.publisherToNames.get(payload.cellName);
+            if (!pubs) {
+                pubs = new Set();
+                this.publisherToNames.set(payload.cellName, pubs);
+            }
+            pubs.add(payload.name);
+            this.nameToPublisher.set(payload.name, payload.cellName);
         }
         this.state.set(payload.name, payload);
         const subs = this.listeners.get(payload.name);
@@ -72,6 +92,10 @@ class BrushStore {
      * and subscribes to `$y`, and a cell B publishes `$y` and subscribes to `$x`,
      * the second subscription emits a one-shot warning and skips the second
      * subscriber's wake-up (the cycle is broken at the second hop).
+     *
+     * B-139: cycle detection now uses `publisherToNames` / `nameToPublisher`
+     * instead of `state.get(name)` so it works even when subscribe() is called
+     * before the publisher has fired its first publish().
      */
     subscribe(name: string, fn: Listener, subscriberCell?: string): () => void {
         if (subscriberCell) {
@@ -83,17 +107,20 @@ class BrushStore {
             }
             names.add(name);
 
-            // Cycle detection: is there a publisher P that wrote `name` whose
-            // own cell ALSO subscribes to a brush WE publish?
-            const publisher = this.state.get(name);
-            if (publisher?.cellName && publisher.cellName !== subscriberCell) {
-                const pubSubs = this.subscriberToNames.get(publisher.cellName);
-                const oursPublished = Array.from(this.state.values()).filter(p => p.cellName === subscriberCell).map(p => p.name);
+            // Cycle detection: find which cell publishes `name` (if known) and
+            // check if THAT cell also subscribes to something WE publish.
+            // B-139 fix: use nameToPublisher (populated on publish() or via
+            // registerPublisher()) rather than state.get(name)?.cellName, so
+            // pre-publish subscriptions are also covered.
+            const publisherCell = this.nameToPublisher.get(name) ?? this.state.get(name)?.cellName;
+            if (publisherCell && publisherCell !== subscriberCell) {
+                const pubSubs = this.subscriberToNames.get(publisherCell);
+                const oursPublished = Array.from(this.publisherToNames.get(subscriberCell) ?? []);
                 if (pubSubs && oursPublished.some(n => pubSubs.has(n))) {
-                    const pairKey = [subscriberCell, publisher.cellName].sort().join('↔');
+                    const pairKey = [subscriberCell, publisherCell].sort().join('↔');
                     if (!this.cycleWarned.has(pairKey)) {
                         this.cycleWarned.add(pairKey);
-                        console.warn(`[plotBrushStore] cycle detected between cells "${subscriberCell}" and "${publisher.cellName}"; second subscriber will see initial value only.`);
+                        console.warn(`[plotBrushStore] cycle detected between cells "${subscriberCell}" and "${publisherCell}"; second subscriber will see initial value only.`);
                     }
                     // Skip live notifications for the second subscriber.
                     return () => {
@@ -111,6 +138,11 @@ class BrushStore {
         }
         const entry: ListenerEntry = { fn, subscriberCell };
         subs.add(entry);
+        // Replay the current stored value so late-subscribing plots (e.g. LINK-Y
+        // cells that mount after the publisher has already brushed) see the
+        // current domain immediately rather than waiting for the next gesture.
+        const current = this.state.get(name);
+        if (current) fn(current);
         return () => {
             const s = this.listeners.get(name);
             if (s) {
@@ -128,6 +160,20 @@ class BrushStore {
     }
 
     /**
+     * Declare that a cell intends to publish a brush name, before the first
+     * publish() call. Enables cycle detection for pre-publish subscribers (B-139).
+     */
+    registerPublisher(name: string, cellName: string): void {
+        let pubs = this.publisherToNames.get(cellName);
+        if (!pubs) {
+            pubs = new Set();
+            this.publisherToNames.set(cellName, pubs);
+        }
+        pubs.add(name);
+        this.nameToPublisher.set(name, cellName);
+    }
+
+    /**
      * Signal that a publisher cell is unmounting. State is retained for
      * PUBLISHER_RETENTION_MS to bridge re-mounts during re-render. After
      * that window, the payload is evicted and subscribers are notified
@@ -138,7 +184,9 @@ class BrushStore {
         if (existing) clearTimeout(existing);
         const t = setTimeout(() => {
             this.retentionTimers.delete(name);
-            this.clear(name, cellName);
+            // B-170: read current cellName from state at fire time to avoid stale captured name.
+            const currentCellName = this.state.get(name)?.cellName ?? cellName;
+            this.clear(name, currentCellName);
         }, PUBLISHER_RETENTION_MS);
         this.retentionTimers.set(name, t);
     }
@@ -146,6 +194,10 @@ class BrushStore {
     /**
      * Clamp the stored brush domain to a new data range. Called when a cell's
      * underlying query refreshes. Returns the action taken.
+     *
+     * State is updated synchronously so callers see the new value immediately.
+     * Subscriber notifications are deferred via queueMicrotask to avoid
+     * re-entrant publish calls when a subscriber itself calls clampToRange (B-140).
      */
     clampToRange(name: string, range: [number, number]): 'kept' | 'clamped' | 'cleared' {
         const current = this.state.get(name);
@@ -154,11 +206,22 @@ class BrushStore {
         const [rMin, rMax] = range;
         if (bMin >= rMin && bMax <= rMax) return 'kept';
         if (bMax < rMin || bMin > rMax) {
-            this.clear(name, current.cellName);
+            // Update state now, notify later.
+            const cleared: BrushPayload = { name, domain: null, mode: current.mode, cellName: current.cellName };
+            this.state.set(name, cleared);
+            queueMicrotask(() => {
+                const subs = this.listeners.get(name);
+                if (subs) subs.forEach(entry => entry.fn(cleared));
+            });
             return 'cleared';
         }
         const newDomain: [number, number] = [Math.max(bMin, rMin), Math.min(bMax, rMax)];
-        this.publish({ ...current, domain: newDomain });
+        const clamped: BrushPayload = { ...current, domain: newDomain };
+        this.state.set(name, clamped);
+        queueMicrotask(() => {
+            const subs = this.listeners.get(name);
+            if (subs) subs.forEach(entry => entry.fn(clamped));
+        });
         return 'clamped';
     }
 
@@ -167,6 +230,8 @@ class BrushStore {
         this.state.clear();
         this.listeners.clear();
         this.subscriberToNames.clear();
+        this.publisherToNames.clear();
+        this.nameToPublisher.clear();
         this.retentionTimers.forEach(t => clearTimeout(t));
         this.retentionTimers.clear();
         this.cycleWarned.clear();

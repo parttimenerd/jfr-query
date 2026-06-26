@@ -14,8 +14,9 @@ export function collectPrecedingCellVariables(
     currentCellId: string,
 ): Record<string, string> {
     const out: Record<string, string> = {};
+    let found = false;
     for (const c of cells) {
-        if (c.id === currentCellId) break;
+        if (c.id === currentCellId) { found = true; break; }
         const cTitle = c.title;
         if (!cTitle) continue;
         const parsed = parseCellContent(tokenizeCellContent(c.content));
@@ -24,5 +25,8 @@ export function collectPrecedingCellVariables(
             out[`$${cTitle}.${varName}`] = v;
         }
     }
+    // If currentCellId was not found in the cells array, return empty rather
+    // than leaking all cells' variables (B-099/B-165).
+    if (!found) return {};
     return out;
 }

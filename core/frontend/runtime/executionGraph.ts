@@ -21,6 +21,13 @@ export interface GraphCell {
     producedBareAliases: string[];
     /** SQL fragments this cell references (any combination — concatenated for scanning). */
     referencedSql: string;
+    /**
+     * B-161: Named (non-numeric) ON-clause refs extracted from this cell's plot
+     * blocks. These reference a SQL alias produced by another cell and must be
+     * tracked as DAG edges so the producing cell runs first.
+     * Numeric refs like "#1" are cell-local and are intentionally excluded.
+     */
+    plotOnRefs?: string[];
 }
 
 export interface GraphResult {
@@ -73,6 +80,18 @@ export const buildExecutionGraph = (cells: GraphCell[]): GraphResult => {
         }
     }
 
+    // B-161: resolve plot ON-clause alias refs across cells.
+    // Numeric refs (#N / plain N) are cell-local and excluded from plotOnRefs.
+    for (const c of cells) {
+        for (const ref of c.plotOnRefs ?? []) {
+            const producer = bareProducer.get(ref.toLowerCase());
+            if (producer && producer !== c.id) {
+                deps.get(c.id)!.add(producer);
+                dependents.get(producer)!.add(c.id);
+            }
+        }
+    }
+
     // Kahn's algorithm with cycle detection
     const order: string[] = [];
     const remaining = new Map<string, number>();
@@ -80,8 +99,9 @@ export const buildExecutionGraph = (cells: GraphCell[]): GraphResult => {
     const ready: string[] = [];
     for (const [id, n] of remaining) if (n === 0) ready.push(id);
 
-    while (ready.length) {
-        const id = ready.shift()!;
+    let readyIdx = 0;
+    while (readyIdx < ready.length) {
+        const id = ready[readyIdx++];
         order.push(id);
         for (const dep of dependents.get(id)!) {
             const next = remaining.get(dep)! - 1;

@@ -1,13 +1,13 @@
 import { plotRegistry } from '../components/plots/plotRegistry';
 import { normalizePlotName } from '../components/plots/plotNames';
-import { parsePlotCall } from './plotParser';
+import { parsePlotCall, parseComposite } from './plotParser';
 import { expandPlotConstants } from './plotConstants';
 
 /**
  * Validates a plot configuration string against a given dataset.
  * This is used by the AI agent to check its own suggestions before
  * finalizing a response.
- * @param config The full plot config string (can contain multiple plots).
+ * @param config The full plot config string (can contain multiple plots or composite layouts).
  * @param data The data result from the SQL query.
  * @returns An error message string if validation fails, otherwise null.
  */
@@ -18,43 +18,69 @@ export const validatePlotConfig = (config: string, data: any[]): string | null =
         return null;
     }
 
-    // Expand LET constants first; bail out with the constant error if any.
+    // Expand LET constants first; bail out with all constant errors if any (B-190).
     const expansion = expandPlotConstants(config?.trim() || 'TABLE()');
     if (expansion.errors.length > 0) {
-        return expansion.errors[0];
+        return expansion.errors.join('\n');
     }
 
     const configTrimmed = expansion.expanded.trim() || 'TABLE()';
-    // Join lines that are part of a multi-line function call
-    const joinedConfig = configTrimmed.replace(/\(\s*\n([\s\S]*?)\n\s*\)/g, (match) => {
-        return match.replace(/\s*\n\s*/g, ' ');
-    });
-    const configs = joinedConfig.split('\n').map(c => c.trim()).filter(Boolean);
 
-    for (const singleConfig of configs) {
-        try {
-            const { mainConfig, on } = parsePlotCall(singleConfig);
-            const plotTypeMatch = mainConfig.match(/^(\w+)\s*\(/);
-            const plotTypeName = plotTypeMatch ? normalizePlotName(plotTypeMatch[1]) : 'TABLE';
-            const plotRegistration = plotRegistry[plotTypeName];
-    
-            if (!plotRegistration) {
-                return `Unknown plot type "${plotTypeName}".`;
+    return validateSingleOrComposite(configTrimmed, data);
+};
+
+function validateSingleOrComposite(configTrimmed: string, data: any[]): string | null {
+    const parsed = parseComposite(configTrimmed);
+
+    // Composite (ROW, COL, overlay +) — recurse into children.
+    if (parsed.composite) {
+        for (const child of parsed.composite.children) {
+            // Each child mainConfig may itself be composite or single.
+            const childConfig = child.composite ? configTrimmed : child.mainConfig;
+            if (child.composite) {
+                // Recursively validate nested composites.
+                const err = validateSingleOrComposite(
+                    child.composite.children.map(c => c.mainConfig).join(' + '),
+                    data,
+                );
+                if (err) return err;
+            } else {
+                const err = validateLeaf(child, data);
+                if (err) return err;
             }
-
-            if (on && on.length > 1 && !plotRegistration.supportsMultiQuery) {
-                return `Plot type "${plotTypeName}" does not support multiple queries with the ON clause.`;
-            }
-
-            // The parseConfig function for each plot is designed to throw an error
-            // if the configuration is malformed or if required columns are not
-            // present in the data.
-            plotRegistration.parseConfig(mainConfig, data);
-
-        } catch (e: any) {
-             return e.message;
         }
+        return null;
     }
 
-    return null; // All configs are valid
-};
+    // Single plot call.
+    return validateLeaf(parsed, data);
+}
+
+function validateLeaf(leaf: ReturnType<typeof parsePlotCall>, data: any[]): string | null {
+    try {
+        const { mainConfig, on } = leaf;
+        const plotTypeMatch = mainConfig.match(/^(\w+)\s*\(/);
+        const plotTypeName = plotTypeMatch ? normalizePlotName(plotTypeMatch[1]) : 'TABLE';
+        const plotRegistration = plotRegistry[plotTypeName];
+
+        if (!plotRegistration) {
+            return `Unknown plot type "${plotTypeName}".`;
+        }
+
+        // Use strict === false check: only error when the field is explicitly
+        // false, not when it's absent (undefined). Most plot types simply
+        // don't declare the field at all.
+        if (on && on.length > 1 && plotRegistration.supportsMultiQuery === false) {
+            return `Plot type "${plotTypeName}" does not support multiple queries with the ON clause.`;
+        }
+
+        // The parseConfig function for each plot is designed to throw an error
+        // if the configuration is malformed or if required columns are not
+        // present in the data.
+        plotRegistration.parseConfig(mainConfig, data);
+
+    } catch (e: any) {
+         return e.message;
+    }
+    return null;
+}

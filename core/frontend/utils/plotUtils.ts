@@ -77,8 +77,12 @@ export const findColumn = (baseName: string, allColumns: string[]): string => {
     if (allColumns.includes(baseName)) {
         return baseName;
     }
+    // B-073: case-insensitive fallback for quoted-vs-unquoted name mismatches.
+    const lc = baseName.toLowerCase();
+    const ciMatch = allColumns.find(c => c.toLowerCase() === lc);
+    if (ciMatch) return ciMatch;
     const escaped = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const prefixedMatch = allColumns.find(c => c.match(`^\\d+_${escaped}$`));
+    const prefixedMatch = allColumns.find(c => new RegExp(`^\\d+_${escaped}$`, 'i').test(c));
     return prefixedMatch || baseName;
 };
 
@@ -91,12 +95,15 @@ export const findColumn = (baseName: string, allColumns: string[]): string => {
  */
 export const findColumns = (baseName: string, allColumns: string[]): string[] => {
     const escaped = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const prefixedMatches = allColumns.filter(c => c.match(`^\\d+_${escaped}$`));
+    const prefixedMatches = allColumns.filter(c => new RegExp(`^\\d+_${escaped}$`, 'i').test(c));
     if (prefixedMatches.length > 0) {
         return prefixedMatches;
     }
 
-    // If no prefixed columns, check for a direct match.
+    // If no prefixed columns, check for a direct match (case-insensitive).
+    const lc = baseName.toLowerCase();
+    const ciMatch = allColumns.find(c => c.toLowerCase() === lc);
+    if (ciMatch) return [ciMatch];
     if (allColumns.includes(baseName)) {
         return [baseName];
     }
@@ -165,8 +172,8 @@ function normalizeEpochInteger(n: number, digits: number): number {
  * required column arguments pre-filled using heuristics.
  * Falls back to the plot's own blank template if columns can't be resolved.
  */
-export const buildSmartTemplate = (plotName: string, columns: string[], sampleRow: Record<string, any> | null): string => {
-    if (columns.length === 0) return null as any;
+export const buildSmartTemplate = (plotName: string, columns: string[], sampleRow: Record<string, any> | null): string | null => {
+    if (columns.length === 0) return null;
 
     // Classify each column as numeric, time-like, or categorical
     const isNumeric = (col: string) => {
@@ -210,8 +217,8 @@ export const buildSmartTemplate = (plotName: string, columns: string[], sampleRo
         case 'PIE_CHART': {
             const nameCol = categoryCols[0] ?? columns[0];
             const valCol = numericCols[0] ?? columns.find(c => c !== nameCol) ?? columns[1];
-            if (!valCol) return 'PIE_CHART(name: , value: )';
-            return `PIE_CHART(name: ${q(nameCol)}, value: ${q(valCol)})`;
+            if (!valCol) return 'PIE_CHART(category: , value: )';
+            return `PIE_CHART(category: ${q(nameCol)}, value: ${q(valCol)})`;
         }
         case 'SCATTER_PLOT': {
             const xCol = numericCols[0] ?? columns[0];
@@ -242,6 +249,6 @@ export const buildSmartTemplate = (plotName: string, columns: string[], sampleRo
             return `FLAMEGRAPH(frame: ${q(nameCol)}, value: ${q(valCol)})`;
         }
         default:
-            return null as any;
+            return null;
     }
 };

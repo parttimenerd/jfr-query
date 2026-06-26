@@ -12,6 +12,8 @@ interface GroupEntry {
     last: ScrollPosition;
     rafId: number | null;
     pending: ScrollPosition | null;
+    /** Per-group debounce timer (B-172: was incorrectly module-level). */
+    debounceTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const groups = new Map<string, GroupEntry>();
@@ -23,6 +25,7 @@ function getOrCreateGroup(group: string): GroupEntry {
             last: { top: 0, left: 0 },
             rafId: null,
             pending: null,
+            debounceTimer: null,
         });
     }
     return groups.get(group)!;
@@ -41,11 +44,13 @@ export function subscribeScrollGroup(
     entry.subscribers.set(id, callback);
     return () => {
         entry.subscribers.delete(id);
-        if (entry.subscribers.size === 0) groups.delete(group);
+        if (entry.subscribers.size === 0) {
+            if (entry.debounceTimer !== null) clearTimeout(entry.debounceTimer);
+            if (entry.rafId !== null) cancelAnimationFrame(entry.rafId);
+            groups.delete(group);
+        }
     };
 }
-
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Broadcast a scroll position to all other members of a group.
@@ -66,8 +71,9 @@ export function broadcastScrollPosition(
     // Cancel prior rAF if any
     if (entry.rafId !== null) cancelAnimationFrame(entry.rafId);
 
-    if (debounceTimer !== null) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
+    if (entry.debounceTimer !== null) clearTimeout(entry.debounceTimer);
+    entry.debounceTimer = setTimeout(() => {
+        entry.debounceTimer = null;
         entry.rafId = requestAnimationFrame(() => {
             entry.rafId = null;
             if (!entry.pending) return;

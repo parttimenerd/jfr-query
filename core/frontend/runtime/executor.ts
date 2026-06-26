@@ -82,7 +82,11 @@ export class Executor {
             // Wait for upstream cells.
             if (deps && !cycle) {
                 for (const depId of deps) {
-                    try { await this.awaitCell(depId); } catch { /* keep going */ }
+                    try { await this.awaitCell(depId); } catch (upstreamErr) {
+                        // B-163: log upstream failure but continue running downstream
+                        // against potentially stale data (consistent with test expectations).
+                        console.warn(`[Executor] upstream cell ${depId} failed; ${cellId} may run against stale data`, upstreamErr);
+                    }
                 }
             }
             // If the run id was bumped while we waited, abandon this run.

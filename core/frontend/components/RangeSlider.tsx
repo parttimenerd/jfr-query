@@ -16,7 +16,7 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
   const maxValRef = useRef(value.max);
   const range = useRef<HTMLDivElement>(null);
 
-  const getPercent = useCallback((value: number) => Math.round(((value - min) / (max - min)) * 100), [min, max]);
+  const getPercent = useCallback((v: number) => Math.round(((v - min) / (max - min)) * 100), [min, max]);
 
   useEffect(() => {
     setMinVal(value.min);
@@ -28,7 +28,6 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
   useEffect(() => {
     const minPercent = getPercent(minVal);
     const maxPercent = getPercent(maxValRef.current);
-
     if (range.current) {
       range.current.style.left = `${minPercent}%`;
       range.current.style.width = `${maxPercent - minPercent}%`;
@@ -38,7 +37,6 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
   useEffect(() => {
     const minPercent = getPercent(minValRef.current);
     const maxPercent = getPercent(maxVal);
-
     if (range.current) {
       range.current.style.width = `${maxPercent - minPercent}%`;
     }
@@ -58,8 +56,50 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
     onChange({ min: minVal, max: newValue });
   };
 
+  // B-093: keyboard text inputs for precise value entry
+  const [minText, setMinText] = useState('');
+  const [maxText, setMaxText] = useState('');
+  const [editingMin, setEditingMin] = useState(false);
+  const [editingMax, setEditingMax] = useState(false);
+
+  const commitMinText = () => {
+    const parsed = Number(minText);
+    if (!isNaN(parsed)) {
+      const clamped = Math.max(min, Math.min(parsed, maxVal - step));
+      setMinVal(clamped);
+      minValRef.current = clamped;
+      onChange({ min: clamped, max: maxVal });
+    }
+    setEditingMin(false);
+  };
+
+  const commitMaxText = () => {
+    const parsed = Number(maxText);
+    if (!isNaN(parsed)) {
+      const clamped = Math.max(minVal + step, Math.min(parsed, max));
+      setMaxVal(clamped);
+      maxValRef.current = clamped;
+      onChange({ min: minVal, max: clamped });
+    }
+    setEditingMax(false);
+  };
+
+  // B-094: when thumbs are very close (within 5% of range), stack labels vertically
+  const minPercent = getPercent(minVal);
+  const maxPercent = getPercent(maxVal);
+  const tooClose = Math.abs(maxPercent - minPercent) < 5;
+
+  const labelStyle = (isMin: boolean): React.CSSProperties => ({
+    left: `${isMin ? minPercent : maxPercent}%`,
+    transform: 'translateX(-50%)',
+    top: tooClose ? (isMin ? '4px' : '16px') : '4px',
+  });
+
+  const displayMin = formatter ? formatter(minVal) : String(minVal);
+  const displayMax = formatter ? formatter(maxVal) : String(maxVal);
+
   return (
-    <div className="relative w-full py-4 h-12">
+    <div className="relative w-full py-4">
       <style>{`
         .thumb {
           pointer-events: none;
@@ -95,6 +135,7 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
         type="range"
         min={min}
         max={max}
+        step={step}
         value={minVal}
         onChange={handleMinChange}
         className="thumb thumb--left"
@@ -104,20 +145,59 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
         type="range"
         min={min}
         max={max}
+        step={step}
         value={maxVal}
         onChange={handleMaxChange}
         className="thumb thumb--right"
       />
 
-      <div className="relative w-full top-1/2 -translate-y-1/2">
-        <div className="absolute w-full h-1 rounded bg-gray-600 z-0" />
-        <div ref={range} className="absolute h-1 rounded bg-cyan-500 z-1" />
-        <div className="absolute text-xs text-gray-400 top-4" style={{ left: `${getPercent(minVal)}%`, transform: 'translateX(-50%)' }}>
-          {formatter ? formatter(minVal) : minVal}
-        </div>
-        <div className="absolute text-xs text-gray-400 top-4" style={{ left: `${getPercent(maxVal)}%`, transform: 'translateX(-50%)' }}>
-           {formatter ? formatter(maxVal) : maxVal}
-        </div>
+      <div className="relative w-full" style={{ height: tooClose ? '36px' : '24px' }}>
+        <div className="absolute top-1/2 -translate-y-1/2 w-full h-1 rounded bg-gray-600 z-0" />
+        <div ref={range} className="absolute top-1/2 -translate-y-1/2 h-1 rounded bg-cyan-500 z-1" />
+        {/* Min label — click to edit (B-093) */}
+        {editingMin ? (
+          <input
+            autoFocus
+            type="number"
+            className="absolute text-xs bg-gray-700 border border-cyan-500 rounded px-1 w-20 text-center"
+            style={labelStyle(true)}
+            value={minText}
+            onChange={e => setMinText(e.target.value)}
+            onBlur={commitMinText}
+            onKeyDown={e => { if (e.key === 'Enter') commitMinText(); if (e.key === 'Escape') setEditingMin(false); }}
+          />
+        ) : (
+          <div
+            className="absolute text-xs text-gray-400 cursor-text hover:text-cyan-400 select-none"
+            style={labelStyle(true)}
+            onClick={() => { setMinText(String(minVal)); setEditingMin(true); }}
+            title="Click to type a value"
+          >
+            {displayMin}
+          </div>
+        )}
+        {/* Max label — click to edit (B-093) */}
+        {editingMax ? (
+          <input
+            autoFocus
+            type="number"
+            className="absolute text-xs bg-gray-700 border border-cyan-500 rounded px-1 w-20 text-center"
+            style={labelStyle(false)}
+            value={maxText}
+            onChange={e => setMaxText(e.target.value)}
+            onBlur={commitMaxText}
+            onKeyDown={e => { if (e.key === 'Enter') commitMaxText(); if (e.key === 'Escape') setEditingMax(false); }}
+          />
+        ) : (
+          <div
+            className="absolute text-xs text-gray-400 cursor-text hover:text-cyan-400 select-none"
+            style={labelStyle(false)}
+            onClick={() => { setMaxText(String(maxVal)); setEditingMax(true); }}
+            title="Click to type a value"
+          >
+            {displayMax}
+          </div>
+        )}
       </div>
     </div>
   );

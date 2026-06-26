@@ -54,9 +54,14 @@ export function substituteVariables(
  * Returns the de-duplicated list of `$name` and `$$name` tokens still present
  * in `sql`. Intended to be called on the output of `substituteVariables` to
  * detect references that had no binding.
+ *
+ * Captures dotted paths too (`$sel.brush`, `$Overview.start`, `$sel.brush.lo`)
+ * so callers can produce correct error messages for brush variables.
  */
 export function findRemainingVariables(sql: string): string[] {
-    const matches = sql.match(/\$\$?\w+/g);
+    // Match $$name or $name, optionally followed by .segment parts (for
+    // dotted-path vars like $sel.brush or $Overview.start).
+    const matches = sql.match(/\$\$?\w+(?:\.\w+)*/g);
     if (!matches) return [];
     return [...new Set(matches)];
 }

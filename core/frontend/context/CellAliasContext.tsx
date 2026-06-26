@@ -166,12 +166,25 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
 
         // Capture column schema from the just-created view/table.
+        // If this fetch fails, rollback the created objects so no orphaned
+        // schema entry is left in the registry.
         let columns: ColumnSchema[] = [];
         try {
             const cols = await query(built.columnsQuery);
             columns = cols.map((r: any) => ({ name: String(r.column_name), type: String(r.data_type) }));
         } catch {
-            columns = [];
+            // Rollback: drop what we just created so the registry stays consistent.
+            const objectKind = built.statements.some(s => s.includes('TABLE')) ? 'TABLE' : 'VIEW';
+            const rollbackStatements: string[] = [
+                `DROP ${objectKind} IF EXISTS ${quoteIdent(built.sanitizedHandle)}.${quoteIdent(built.aliasOr1)}`,
+            ];
+            if (alias && !built.bareShadowed) {
+                rollbackStatements.push(`DROP ${objectKind} IF EXISTS ${quoteIdent(alias)}`);
+            }
+            for (const stmt of rollbackStatements) {
+                try { await query(stmt); } catch { /* best-effort */ }
+            }
+            return null;
         }
 
         versionRef.current += 1;
@@ -209,7 +222,9 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
         for (const key of owned) {
             try {
                 if (key.includes('.')) {
-                    const [h, a] = key.split('.');
+                    const dotIdx = key.indexOf('.');
+                    const h = key.slice(0, dotIdx);
+                    const a = key.slice(dotIdx + 1);
                     await query(`DROP VIEW IF EXISTS ${quoteIdent(h)}.${quoteIdent(a)}`);
                     await query(`DROP TABLE IF EXISTS ${quoteIdent(h)}.${quoteIdent(a)}`);
                 } else {

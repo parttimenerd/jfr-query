@@ -4,6 +4,7 @@ import { cellHandle } from '../utils/cellHandle';
 import { buildExecutionGraph, GraphCell } from '../runtime/executionGraph';
 import { Executor } from '../runtime/executor';
 import { parseCellContent, tokenizeCellContent } from '../utils/notebookParser';
+import { parsePlotCall } from '../utils/plotParser';
 
 interface ExecutorContextType {
     /**
@@ -41,15 +42,38 @@ export const ExecutorProvider: React.FC<ProviderProps> = ({ cells, children }) =
     const executorRef = useRef<Executor | null>(null);
 
     // Build graph cells from the live notebook cells.
+    // Derive a stable structural key from cell id+content so that changes that
+    // don't affect SQL structure (e.g. metadata.variables updates that trigger a
+    // parent re-render) don't rebuild the execution graph on every frame.
+    const graphStructKey = useMemo(
+        () => cells.map(c => `${c.id}:${c.name ?? ''}:${c.content}`).join('\n'),
+        [cells],
+    );
     const graphCells: GraphCell[] = useMemo(() => {
         return cells.map((c, idx) => {
             const handle = cellHandle(c, idx);
             const parsed = parseCellContent(tokenizeCellContent(c.content));
             const aliases = parsed.queryAliases.filter((a): a is string => !!a);
             const referencedSql = parsed.sqlBlocks.join('\n');
-            return { id: c.id, handle, producedBareAliases: aliases, referencedSql };
+            // B-161: collect named (non-numeric) ON-clause refs from plot blocks so
+            // cross-cell alias dependencies are tracked in the execution graph.
+            const plotOnRefs: string[] = [];
+            for (const plotContent of parsed.plotBlocks) {
+                if (!plotContent?.trim()) continue;
+                try {
+                    const call = parsePlotCall(plotContent.trim());
+                    for (const ref of call.on ?? []) {
+                        const stripped = ref.replace(/^#/, '');
+                        // Skip numeric refs — those are cell-local (ON #1, ON 1).
+                        if (/^\d+$/.test(stripped)) continue;
+                        plotOnRefs.push(stripped);
+                    }
+                } catch { /* ignore malformed plot configs */ }
+            }
+            return { id: c.id, handle, producedBareAliases: aliases, referencedSql, plotOnRefs };
         });
-    }, [cells]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [graphStructKey]);
 
     // Build/refresh the executor as the graph changes. Existing in-flight
     // runs continue against their old graph; new scheduleRun calls use the

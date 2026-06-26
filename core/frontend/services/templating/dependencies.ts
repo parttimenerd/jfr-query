@@ -114,8 +114,9 @@ export const extractReferences = (sql: string): Reference[] => {
     }
 
     // Qualified: handle.alias (both alphanumeric). Capture greedily; SQL uses
-    // dot for schema.table — same thing in our model.
-    const qualRe = /\b([A-Za-z_][\w]*)\.([A-Za-z_][\w]*)\b/g;
+    // dot for schema.table — same thing in our model. The alias side also
+    // accepts plain digits (e.g. cell_3.1) per B-164.
+    const qualRe = /\b([A-Za-z_][\w]*)\.([A-Za-z_][\w]*|\d+)\b/g;
     while ((m = qualRe.exec(cleaned))) {
         const handle = m[1];
         const alias = m[2];

@@ -10,6 +10,7 @@ import { useExecutor } from '../context/ExecutorContext';
 import TemplatedMarkdown from './TemplatedMarkdown';
 import { collectPrecedingCellVariables } from '../utils/crossCellVariables';
 import { substituteVariables } from '../utils/variableSubstitution';
+import { expandBrushOperator } from '../services/variableExpander';
 import { parsePlotCall } from '../utils/plotParser';
 import { expandPlotConstants } from '../utils/plotConstants';
 import { cleanDuckDBError, heuristicTip, parseCandidateBindings } from '../utils/sqlErrorMessage';
@@ -46,6 +47,12 @@ interface NotebookCellProps {
     allCells: NotebookCellData[];
     metadata: NotebookMetadata;
     results: (any[] | null)[];
+    /**
+     * Cross-cell query results keyed by SQL alias name. Populated by Notebook.tsx
+     * from all sibling cells' named query blocks. Used to resolve plot ON-clause
+     * references that point to SQL aliases in other cells.
+     */
+    crossCellQueryRefs?: Record<string, any[]>;
     isAutoRunEnabled: boolean;
     collapseTrigger: number;
     allCollapsed: boolean;
@@ -72,14 +79,14 @@ function debounce<T extends (...args: any[]) => any>(func: T, delay: number): (.
   let timeout: ReturnType<typeof setTimeout>;
   return function(this: any, ...args: Parameters<T>) {
     clearTimeout(timeout);
-    setTimeout(() => func.apply(this, args), delay);
+    timeout = setTimeout(() => func.apply(this, args), delay);
   };
 }
 
-const MarkdownSectionEditor: React.FC<{ section: MarkdownSection | null; defaultTitle: string; onUpdate: (s: MarkdownSection | null) => void; onAdd: () => void; isEditing: boolean; onSetEditing: (isEditing: boolean) => void; }> = ({ section, defaultTitle, onUpdate, onAdd, isEditing, onSetEditing }) => {
+const MarkdownSectionEditor: React.FC<{ section: MarkdownSection | null; defaultTitle: string; onUpdate: (s: MarkdownSection | null) => void; onAdd: () => void; isEditing: boolean; onSetEditing: (isEditing: boolean) => void; variables?: Record<string, string>; formatSettings?: { timeFormat?: string; decimalPlaces?: number }; }> = ({ section, defaultTitle, onUpdate, onAdd, isEditing, onSetEditing, variables, formatSettings }) => {
     const [content, setContent] = useState(section?.content || '');
     useEffect(() => { setContent(section?.content || ''); }, [section]);
-    
+
     const handleBlur = () => {
         const newContent = content;
         onSetEditing(false);
@@ -89,11 +96,18 @@ const MarkdownSectionEditor: React.FC<{ section: MarkdownSection | null; default
             onUpdate({ title: section?.title || defaultTitle, content: newContent });
         }
     };
-    
+
     const components = useMemo(() => ({ code: ({ node, inline, className, children, ...props }: any) => { const m = /language-(\w+)/.exec(className||''); return !inline&&(m?.[1]==='sql'||m?.[1]==='plot')?<div className="my-2 border border-gray-700 rounded-md overflow-hidden bg-[#263238]"><StaticCodeHighlighter code={String(children).trim()} language={m[1]}/></div>:<code className="bg-gray-700 text-cyan-300 p-1 rounded-md" {...props}>{children}</code>; } }), []);
 
+    // Tokenize the section content so inline `${…}` and `{if …}` regions
+    // evaluate at render time. Plain markdown is preserved 1:1 by the tokenizer.
+    const renderSegments = useMemo(
+        () => section ? tokenizeCellContent(section.content) : [],
+        [section?.content],
+    );
+
     if (!section) return <div className="py-1"><button onClick={onAdd} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add {defaultTitle}</button></div>;
-    return <div>{isEditing ? <SQLEditor value={content} onChange={setContent} onBlur={handleBlur} mode="markdown" autoFocus/> : <div className="space-y-1"><div onClick={() => onSetEditing(true)} className="prose prose-invert max-w-none px-2 py-1 rounded-md hover:bg-gray-700/30 cursor-pointer min-h-[2rem]"><ReactMarkdown components={components}>{section.content}</ReactMarkdown></div></div>}</div>;
+    return <div>{isEditing ? <SQLEditor value={content} onChange={setContent} onBlur={handleBlur} mode="markdown" autoFocus/> : <div className="space-y-1"><div onClick={() => onSetEditing(true)} className="prose prose-invert max-w-none px-2 py-1 rounded-md hover:bg-gray-700/30 cursor-pointer min-h-[2rem]"><TemplatedMarkdown segments={renderSegments} variables={variables ?? {}} formatSettings={formatSettings}/></div></div>}</div>;
 };
 
 const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: string[]; onChange: (o: string, n: string, v: string) => void; onDelete: (k: string) => void; inputRef: React.RefCallback<HTMLInputElement> }> = ({ varKey, varValue, usedIn, onChange, onDelete, inputRef }) => {
@@ -123,7 +137,7 @@ const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: stri
 };
 
 
-const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, onRunQuery, onUpdate, onUpdateCell, onAddCellFromTool, onDelete, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false }) => {
+const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, onRunQuery, onUpdate, onUpdateCell, onAddCellFromTool, onDelete, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false }) => {
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [editingTitleValue, setEditingTitleValue] = useState('');
     const [isRawEditing, setIsRawEditing] = useState(false);
@@ -339,11 +353,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             const refs: string[] = [];
             const pattern = new RegExp(`\\${varKey.replace(/\$/g, '\\$')}\\b`);
             parsed.sqlBlocks.forEach((sql, i) => { if (pattern.test(sql)) refs.push(`Query ${i + 1}`); });
-            parsed.plotBlocks.forEach((plot, i) => { if (pattern.test(plot)) refs.push(`Plot ${i + 1}`); });
+            // Use plotBlocksWithSqlIndex (dense, sequential) rather than plotBlocks
+            // (sparse, SQL-indexed) so "Plot N" labels match what the user sees (B-100).
+            parsed.plotBlocksWithSqlIndex.forEach((pb, i) => { if (pattern.test(pb.config)) refs.push(`Plot ${i + 1}`); });
             usage[varKey] = refs;
         }
         return usage;
-    }, [parsed.variables, parsed.sqlBlocks, parsed.plotBlocks]);
+    }, [parsed.variables, parsed.sqlBlocks, parsed.plotBlocksWithSqlIndex]);
 
     const [isVariablesCollapsed, setIsVariablesCollapsed] = useState(Object.keys(parsed.variables || {}).length === 0);
 
@@ -450,11 +466,12 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             // here: this is what makes topo-order possible regardless of
             // document position.
             await awaitUpstream(cell.id);
-            await onRunQuery(cell.id, sql, index, allVariables);
-            // After a successful run, register the alias as a TEMP VIEW so
-            // other cells (and templating expressions) can reference it. We
-            // need the post-substitution SQL because aliases bind variables.
-            const substitutedSql = substituteVariables(sql, allVariables);
+            // Expand brush shorthand (WHERE ts IN $x.brush → BETWEEN lo AND hi)
+            // before variable substitution so unresolved brushes produce a clear
+            // "unresolved variable" skip rather than a DuckDB syntax error.
+            const expandedSql = expandBrushOperator(sql, allVariables);
+            const substitutedSql = substituteVariables(expandedSql, allVariables);
+            await onRunQuery(cell.id, substitutedSql, index, allVariables);
             const aliasName = parsed.queryAliases[index] ?? null;
             const materialized = !!parsed.queryAliasMaterialized?.[index];
             // Fire-and-forget: don't block the UI, and don't surface alias
@@ -656,8 +673,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             if (seg.type !== type) return seg;
             blockIdx++;
             if (blockIdx !== idx) return seg;
-            // Remove existing alias comment line at the top, then prepend new one.
-            const withoutAlias = seg.content.replace(/^\s*--\s*[^\n]*\n/, '');
+            // Remove existing alias directive comment at the top (-- alias <name> or
+            // legacy -- <name> where name is an identifier-like word), then prepend
+            // new one. Only strips recognised alias comments, not arbitrary SQL comments
+            // like `-- SELECT * intentionally excluded` (B-180/B-098).
+            const withoutAlias = seg.content.replace(/^\s*--\s*(?:alias\s+)?[a-zA-Z_][\w\s-]*?\s*\n/, '');
             const newContent = name ? `-- ${name}\n${withoutAlias}` : withoutAlias;
             return { ...seg, content: newContent };
         });
@@ -705,13 +725,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 <div className="flex items-center gap-1 flex-shrink-0"><button onClick={()=>setIsRawEditing(!isRawEditing)} className="p-1.5 hover:bg-cyan-600/30 rounded-md" title={isRawEditing?"Rich View":"Raw Markdown"}>{isRawEditing ? <EyeIcon className="w-4 h-4 text-cyan-300"/>:<CodeBracketIcon className="w-4 h-4 text-gray-500"/>}</button><button onClick={()=>{if(window.confirm('Delete this cell?'))onDelete();}} className="p-1.5 hover:bg-red-600/50 rounded-md" title="Delete Cell"><TrashIcon className="w-4 h-4 text-gray-500"/></button></div>
             </div>
             {isRawEditing ? <div className="p-2"><SQLEditor value={reconstructCellContent(segments)} onChange={handleRawContentChange} mode="markdown"/></div> : <div className="p-3 space-y-3">
-                 <MarkdownSectionEditor 
-                    section={parsed.introduction} 
-                    defaultTitle="Introduction" 
-                    onUpdate={handleIntroUpdate} 
-                    onAdd={()=> handleIntroUpdate({title:'Introduction', content:'## Title\n\n '})} 
-                    isEditing={editingSection==='intro'} 
+                 <MarkdownSectionEditor
+                    section={parsed.introduction}
+                    defaultTitle="Introduction"
+                    onUpdate={handleIntroUpdate}
+                    onAdd={()=> handleIntroUpdate({title:'Introduction', content:'## Title\n\n '})}
+                    isEditing={editingSection==='intro'}
                     onSetEditing={e=>setEditingSection(e?'intro':null)}
+                    variables={allVariables}
+                    formatSettings={{ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }}
                 />
 
                 {Object.keys(parsed.variables||{}).length > 0 || (parsed.variableWarnings?.length ?? 0) > 0
@@ -825,7 +847,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 if (!presenterMode) {
                                     items.push(
                                         <CollapsibleBlock key={`sql-${i}`} title={sqlTitleNode} preview={sql.replace(/\s+/g,' ').substring(0,60)} isCollapsed={!!collapsedStates[`sql-${i}`]} onToggle={()=>toggleCollapse(`sql-${i}`)} statusIndicator={runningStates[i]?(<div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"/>):pendingRunStates[i]?(<div className="w-4 h-4 text-gray-500 animate-pulse">...</div>):null} controls={<><button onClick={()=>handleRun(sql,i)} disabled={runningStates[i]||pendingRunStates[i]} className="p-1.5 rounded-md disabled:opacity-50"><PlayIcon className="w-4 h-4 text-green-400"/></button><button onClick={()=>handleFormat(sql,'sql',i)} title="Format SQL" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSuggest(sql,i)} className="p-1.5 rounded-md"><SparklesIcon className="w-4 h-4 text-yellow-400"/></button><button onClick={()=>setActiveChat(p=>p===`sql-${i}`?null:`sql-${i}`)} className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>handleCopySql(sql,i)} title="Copy SQL" className="p-1.5 rounded-md">{copiedSql===i ? <CheckCircleIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>onDeleteQueryBlock(i)} className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
-                                            <SQLEditor value={sql} onChange={handleSqlChange} index={i} variables={allVariables} onVariableClick={handleVariableClick} metadata={metadata} onRun={() => handleRun(sql, i)} error={errSpec} />
+                                            <SQLEditor value={sql} onChange={handleSqlChange} index={i} variables={allVariables} onVariableClick={handleVariableClick} metadata={metadata} onRun={() => handleRun(sql, i)} error={errSpec} notebookPlotScope={plotScopeView} />
                                             {errSpec && (
                                                 <div className="mt-1 px-2 py-1.5 text-xs text-red-300 bg-red-900/25 border-l-2 border-red-500/60 font-mono whitespace-pre-wrap rounded-r animate-fade-in" title={errSpec.line ? `LINE ${errSpec.line}${errSpec.column ? `:${errSpec.column}` : ''}` : undefined}>
                                                     {errSpec.message}
@@ -945,13 +967,29 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
                                 // Inline plot result directly below its editor (or always in presenter mode).
                                 if (resolvedData) {
+                                    // B-141/142/143: Build a lookup map so PlotRenderer can route per-leaf
+                                    // ON clauses to the correct dataset. Keys are 1-based numeric indices
+                                    // (matching `ON #1`, `ON 1`) and alias strings (matching `ON myView`).
+                                    // Cross-cell refs (aliases from sibling cells) are merged in first so
+                                    // local aliases (same name) override them.
+                                    const dataByQueryRef: Record<string | number, any[]> = {
+                                        ...(crossCellQueryRefs ?? {}),
+                                    };
+                                    results.forEach((r, idx) => {
+                                        if (r) {
+                                            dataByQueryRef[idx + 1] = r; // 1-based numeric key
+                                            const alias = parsed.queryAliases[idx];
+                                            if (alias) dataByQueryRef[alias] = r;
+                                        }
+                                    });
+
                                     items.push(
                                         <div key={`result-${pi}`} className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative" style={{ height: `${resultHeight}px` }}>
                                             <button title="Download as PNG" className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-${pi}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-${pi + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                             </button>
                                             <div id={`result-container-${cell.id}-${pi}`} className="flex-grow overflow-auto">
-                                                <PlotRenderer config={configToRender} data={resolvedData} sql={resolvedSql} cellContext={{...cell, content: reconstructCellContent(segments)}} onApplyFix={c => handleApplyPlotFix(c, defaultSqlIndex)} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange} onCellVariableChange={handleCellVariableChange} allVariables={allVariables} />
+                                                <PlotRenderer config={configToRender} data={resolvedData} dataByQueryRef={dataByQueryRef} sql={resolvedSql} cellContext={{...cell, content: reconstructCellContent(segments)}} onApplyFix={c => handleApplyPlotFix(c, defaultSqlIndex)} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange} onCellVariableChange={handleCellVariableChange} allVariables={allVariables} />
                                             </div>
                                         </div>
                                     );
@@ -973,12 +1011,14 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     )}
                 </div>
                  <MarkdownSectionEditor
-                    section={parsed.conclusion} 
-                    defaultTitle="Conclusion" 
-                    onUpdate={handleConclusionUpdate} 
-                    onAdd={()=> handleConclusionUpdate({title:'Conclusion', content:' '})} 
-                    isEditing={editingSection==='conclusion'} 
+                    section={parsed.conclusion}
+                    defaultTitle="Conclusion"
+                    onUpdate={handleConclusionUpdate}
+                    onAdd={()=> handleConclusionUpdate({title:'Conclusion', content:' '})}
+                    isEditing={editingSection==='conclusion'}
                     onSetEditing={e=>setEditingSection(e?'conclusion':null)}
+                    variables={allVariables}
+                    formatSettings={{ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }}
                 />
             </div>}
             {isDraggingOver === 'bottom' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-cyan-400 z-10" />}

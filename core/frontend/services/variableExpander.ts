@@ -11,7 +11,8 @@
  * by the standard substituteVariables pass.
  *
  * If `variables` is supplied, only expands when the `.lo` sub-key is present —
- * i.e. when the brush is actually set. When the brush is not yet set the
+ * i.e. when the brush is actually set (PlotRenderer writes flat keys like
+ * `$gc.brush.lo` / `$gc.brush.hi`). When the brush is not yet set the
  * original `IN $varName.brush` token is left intact (and the query is skipped
  * by the caller's unresolved-variable check, producing a clear message).
  */
@@ -19,7 +20,7 @@ export function expandBrushOperator(sql: string, variables?: Record<string, stri
     return sql.replace(
         /\bIN\s+\$([a-zA-Z_][a-zA-Z0-9_]*\.brush)\b/g,
         (_match, varPath) => {
-            if (variables && variables[`$${varPath}`] === undefined) {
+            if (variables && variables[`$${varPath}.lo`] === undefined) {
                 // Brush not yet set — leave the token unresolved so the caller
                 // knows to skip execution (rather than producing a confusing
                 // DuckDB syntax error from the unsubstituted $x.brush.lo tokens).

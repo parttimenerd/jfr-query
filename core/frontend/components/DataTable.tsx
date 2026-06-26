@@ -5,41 +5,14 @@ import { SearchIcon } from './icons/SearchIcon';
 import { useDisplaySettings } from '../context/DisplaySettingsContext';
 import { formatTimestamp as formatTimestampUtil } from '../utils/timeFormatter';
 import { formatNumber } from '../utils/numberFormatter';
+import {
+    isDurationLike,
+    parseIntervalToSeconds,
+    compareValues,
+    csvValue,
+} from '../utils/dataTableUtils';
 
-// ─── Duration detection + formatting ────────────────────────────────────────
-//
-// Auto-formatting only applies to genuine DuckDB INTERVAL values (the
-// [microseconds, days, months] array form, or the equivalent comma string).
-// Plain numbers are shown as numbers — if a column is named `duration_ms` the
-// user has already done the unit conversion in SQL and we shouldn't
-// re-interpret it.
-
-// DuckDB interval arrays: [microseconds, days, months, ?] — first element is µs.
-const INTERVAL_RE = /^(-?\d+),(-?\d+),(-?\d+)(?:,(-?\d+))?$/;
-
-const parseIntervalToSeconds = (value: any): number | null => {
-    if (Array.isArray(value)) {
-        const µs = Number(value[0]);
-        return isNaN(µs) ? null : µs / 1_000_000;
-    }
-    if (typeof value === 'string') {
-        const m = INTERVAL_RE.exec(value);
-        if (!m) return null;
-        return Number(m[1]) / 1_000_000;
-    }
-    return null;
-};
-
-const isIntervalLike = (value: any): boolean => {
-    if (Array.isArray(value) && value.length >= 3) return true;
-    if (typeof value === 'string' && INTERVAL_RE.test(value)) return true;
-    return false;
-};
-
-const isDurationLike = (_key: string, sample: any): boolean => {
-    if (!sample) return false;
-    return isIntervalLike(sample[_key]);
-};
+// ─── Duration formatting ─────────────────────────────────────────────────────
 
 const formatDuration = (seconds: number): string => {
     if (seconds === 0) return '0 ms';
@@ -97,11 +70,11 @@ const isNumericLike = (key: string, sample: any, isTimestamp: boolean): boolean 
 
 // ─── CSV export ──────────────────────────────────────────────────────────────
 
-const exportToCsv = (headers: string[], rows: any[], formatCell: (v: any, h: string) => string) => {
+const exportToCsv = (headers: string[], rows: any[]) => {
     const escape = (s: string) => `"${s.replace(/"/g, '""')}"`;
     const lines = [
         headers.map(escape).join(','),
-        ...rows.map(r => headers.map(h => escape(String(formatCell(r[h], h)))).join(',')),
+        ...rows.map(r => headers.map(h => escape(csvValue(r[h]))).join(',')),
     ];
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -180,6 +153,10 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
     if (durationColumns.has(header)) {
         const secs = parseIntervalToSeconds(value);
         if (secs !== null) return formatDuration(secs);
+        // Numeric duration (microseconds heuristic) — convert µs → seconds.
+        if (typeof value === 'number' || typeof value === 'bigint') {
+            return formatDuration(Number(value) / 1_000_000);
+        }
     }
     if (numericColumns.has(header))   return formatNumber(value, displaySettings.decimalPlaces);
     return String(value);
@@ -189,16 +166,17 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
     let filtered = filterTerm ? data.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(filterTerm.toLowerCase()))) : [...data];
     if (sortConfig.key) {
       const { key, direction } = sortConfig;
-      filtered.sort((a, b) => {
-        const asc = direction === 'ascending' ? 1 : -1;
-        if(a[key]==null && b[key]==null) return 0;
-        if(a[key]==null) return 1; if(b[key]==null) return -1;
-        if (typeof a[key] === 'number' && typeof b[key] === 'number') return (a[key]-b[key])*asc;
-        return String(a[key]).localeCompare(String(b[key]))*asc;
-      });
+      const asc = direction === 'ascending';
+      filtered.sort((a, b) => compareValues(a[key], b[key], asc));
     }
     return filtered;
   }, [data, filterTerm, sortConfig]);
+
+  // B-051: cap rendered rows to avoid rendering 100k+ DOM nodes.
+  const DISPLAY_CAP = 2000;
+  const [showAll, setShowAll] = useState(false);
+  const displayData = showAll ? processedData : processedData.slice(0, DISPLAY_CAP);
+  const isCapped = !showAll && processedData.length > DISPLAY_CAP;
 
   if (!data || data.length === 0) return <div className="text-center text-gray-500 p-8">No data to display.</div>;
 
@@ -218,7 +196,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
           </div>
           <span className="text-xs text-gray-500 whitespace-nowrap">{rowCountLabel}</span>
           <button
-            onClick={() => exportToCsv(finalHeaders, processedData, formatCell)}
+            onClick={() => exportToCsv(finalHeaders, processedData)}
             title="Export to CSV"
             className="flex-shrink-0 px-2 py-1.5 text-xs rounded-md bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white transition-colors"
           >
@@ -248,7 +226,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700">
-            {processedData.map((row,i) => (
+            {displayData.map((row,i) => (
               <tr key={i} className="hover:bg-gray-700/50">
                 {finalHeaders.map((h,j) => (
                   <td key={h} className={`p-2 font-mono whitespace-nowrap overflow-hidden text-ellipsis ${numericColumns.has(h)?'text-right':'text-left'}`} style={{width: widths[j]}} title={String(row[h])}>{formatCell(row[h],h)}</td>
@@ -258,6 +236,17 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
           </tbody>
         </table>
       </div>
+      {isCapped && (
+        <div className="flex-shrink-0 px-4 py-2 border-t border-gray-700 flex items-center justify-between text-xs text-gray-400">
+          <span>Showing {DISPLAY_CAP.toLocaleString()} of {processedData.length.toLocaleString()} rows</span>
+          <button
+            onClick={() => setShowAll(true)}
+            className="text-cyan-400 hover:text-cyan-300 underline"
+          >
+            Show all {processedData.length.toLocaleString()} rows
+          </button>
+        </div>
+      )}
     </div>
   );
 };
