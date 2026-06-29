@@ -5,6 +5,8 @@ import {
     parseIntervalToSeconds,
     compareValues,
     csvValue,
+    isByteLike,
+    formatBytes,
 } from '../utils/dataTableUtils';
 
 // ─── B-113: isDurationLike upper cap ─────────────────────────────────────────
@@ -41,6 +43,19 @@ describe('isDurationLike — B-113: upper cap raised to 1e12', () => {
 
     it('rejects negative values', () => {
         expect(isDurationLike('duration', { duration: -1 })).toBe(false);
+    });
+
+    it('rejects zero', () => {
+        expect(isDurationLike('duration', { duration: 0 })).toBe(false);
+    });
+
+    it('accepts fractional-second JFR duration (0.012 s = 12 ms)', () => {
+        // JFR stores GarbageCollection.duration in seconds as a float.
+        expect(isDurationLike('duration', { duration: 0.012 })).toBe(true);
+    });
+
+    it('accepts sub-second pause like 0.189 s', () => {
+        expect(isDurationLike('longestPause', { longestPause: 0.189 })).toBe(true);
     });
 
     it('rejects numeric column without a duration keyword', () => {
@@ -182,5 +197,54 @@ describe('parseIntervalToSeconds', () => {
 
     it('returns null for non-interval string', () => {
         expect(parseIntervalToSeconds('hello')).toBeNull();
+    });
+});
+
+// ─── isByteLike ──────────────────────────────────────────────────────────────
+
+describe('isByteLike', () => {
+    it('detects heapUsed with a typical MB-range value', () => {
+        expect(isByteLike('heapUsed', { heapUsed: 524_288_000 })).toBe(true);
+    });
+    it('detects heapCommitted', () => {
+        expect(isByteLike('heapCommitted', { heapCommitted: 786_432_000 })).toBe(true);
+    });
+    it('detects memory column by keyword', () => {
+        expect(isByteLike('usedMemory', { usedMemory: 50 * 1024 * 1024 })).toBe(true);
+    });
+    it('rejects a pure count column even with large value', () => {
+        expect(isByteLike('count', { count: 10_000_000 })).toBe(false);
+    });
+    it('rejects a value below 1 KB', () => {
+        expect(isByteLike('heapUsed', { heapUsed: 512 })).toBe(false);
+    });
+    it('rejects a value above 256 GB (probably not a heap size)', () => {
+        expect(isByteLike('heapUsed', { heapUsed: 300 * 1024 ** 3 })).toBe(false);
+    });
+    it('rejects null value', () => {
+        expect(isByteLike('heapUsed', { heapUsed: null })).toBe(false);
+    });
+    it('rejects string value', () => {
+        expect(isByteLike('heapUsed', { heapUsed: 'big' })).toBe(false);
+    });
+});
+
+// ─── formatBytes ─────────────────────────────────────────────────────────────
+
+describe('formatBytes', () => {
+    it('formats bytes', () => {
+        expect(formatBytes(512)).toBe('512 B');
+    });
+    it('formats KB', () => {
+        expect(formatBytes(2048)).toBe('2.0 KB');
+    });
+    it('formats MB', () => {
+        expect(formatBytes(524_288_000)).toBe('500.0 MB');
+    });
+    it('formats GB', () => {
+        expect(formatBytes(2 * 1024 ** 3)).toBe('2.0 GB');
+    });
+    it('handles negative values', () => {
+        expect(formatBytes(-1024 * 1024)).toBe('-1.0 MB');
     });
 });
