@@ -571,9 +571,16 @@ GUIDELINES:
 
             // Execute each tool sequentially, surface results back as a single
             // tool-role message and as tool_result chunks to the caller.
+            // B-195: wrap each call in try/catch so one failing tool doesn't abort
+            // the rest — every tool_call must receive a tool_result.
             const toolResults: Array<{ id: string; name: string; result: any }> = [];
             for (const call of pendingCalls) {
-                const result = await executeTool(call.name, call.args, deps);
+                let result: any;
+                try {
+                    result = await executeTool(call.name, call.args, deps);
+                } catch (toolErr: any) {
+                    result = { error: toolErr?.message ?? String(toolErr) };
+                }
                 toolResults.push({ id: call.id, name: call.name, result });
                 yield { kind: 'tool_result', id: call.id, result };
             }

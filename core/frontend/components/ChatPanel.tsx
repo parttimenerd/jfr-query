@@ -521,6 +521,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                 }
             },
             requireApproval: (toolName: string, args: any) => new Promise<void>((resolve, reject) => {
+                // B-197: reject immediately if the user already cancelled so the
+                // tool loop doesn't hang waiting for an approval that will never come.
+                if (cancelledRef.current) { reject(new Error('cancelled')); return; }
                 // The runtime always calls this for mutate tools. We've already
                 // registered the pending proposal in onToolCall before reaching
                 // executeTool; the resolver gets stored under the same call id.
@@ -836,6 +839,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         const wrappedDeps: ToolDeps = {
             ...deps,
             requireApproval: (toolName: string, args: any) => new Promise<void>((resolve, reject) => {
+                // B-197: reject immediately if already cancelled.
+                if (cancelledRef.current) { reject(new Error('cancelled')); return; }
                 // Find the most recent pending proposal for this tool/args pair.
                 const pending = [...proposalsRef.current].reverse().find(p => p.name === toolName && p.status === 'pending');
                 if (pending) {

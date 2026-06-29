@@ -1,7 +1,7 @@
 # jfr-query bugs and UX issues
 
 Last triaged: 2026-06-29
-Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, PlotConfigEditor.tsx, PlotRenderer.tsx, Sidebar.tsx, SettingsModal.tsx, SettingsPanel.tsx, ChatPanel.tsx, notebookParser.ts, variableSubstitution.ts, useHistoryState.ts) plus a live Playwright probe against http://localhost:3003 with `default.jfr`. Extended: plot autocomplete pipeline (parser.ts, ast.ts, lint.ts, aiPlotSource.ts, aiPlotContext.ts, schemaProvider.tsx, annotators/), AI chat integration (tools/runtime.ts, visibility.ts, BrowserModelProvider.ts, AiService.ts), local ML models (heuristicPlot.ts, classifyColumns.ts, PlotGenerationService.ts), date selectors (FilterModal.tsx, RangeSlider.tsx), SQL autocomplete (dispatcher.ts, providers/).
+Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, PlotConfigEditor.tsx, PlotRenderer.tsx, Sidebar.tsx, SettingsModal.tsx, SettingsPanel.tsx, ChatPanel.tsx, notebookParser.ts, variableSubstitution.ts, useHistoryState.ts) plus a live Playwright probe against http://localhost:3003 with `default.jfr`. Extended: plot autocomplete pipeline (parser.ts, ast.ts, lint.ts, aiPlotSource.ts, aiPlotContext.ts, schemaProvider.tsx, annotators/), AI chat integration (tools/runtime.ts, visibility.ts, BrowserModelProvider.ts, AiService.ts), local ML models (heuristicPlot.ts, classifyColumns.ts, PlotGenerationService.ts), date selectors (FilterModal.tsx, RangeSlider.tsx), SQL autocomplete (dispatcher.ts, providers/). B-194–B-200: deep audit of DuckDBContext, AiService tool loop, RangeSlider, PlotRenderer brush subscriptions, and InlineChat/ChatPanel cancellation.
 
 ## Severity legend
 - 🔴 broken / data loss / crash
@@ -1171,3 +1171,51 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** If a variable in the map has a `null` or `undefined` value (possible when brush variables are cleared, or from deserialized notebook state), the replacer function `() => value` coerces it to `"null"`/`"undefined"` yielding invalid SQL like `WHERE x = null`. `toSqlVariables` also called `ISO_DATETIME_RE.test(null)` which silently converts to `"null"` string.
 **Fix:** Added `.filter(name => variables[name] != null)` in `substituteVariables` to skip unbound variables entirely. Added `if (value == null) { out[key] = ''; continue; }` guard in `toSqlVariables`.
 
+
+---
+
+## Post-fix deep audit (2026-06-29, B-194–B-200)
+
+### 🔴 [B-194] `DuckDBContext.tsx`: `new Date(null).getTime()` === 0 passes `!isNaN()` check, setting recording bounds to 1970-01-01 ✅ FIXED
+**Where:** `context/DuckDBContext.tsx:224`
+**Observed:** When `RecordingInfo.firstEvent` or `lastEvent` is `null`, `new Date(null)` returns a valid Date at epoch 0. The guard `!isNaN(s) && !isNaN(e)` passes, causing the UI to show January 1 1970 as the recording bounds and breaking time-range queries.
+**Fix:** Added explicit null guard: `if (info[0]?.firstEvent != null && info[0]?.lastEvent != null)` and added `s > 0 && e > 0` to the isNaN check so epoch-0 values are also rejected.
+
+### 🔴 [B-195] `AiService.ts`: tool execution loop has no per-tool error handling — a single failing tool aborts all subsequent tools ✅ FIXED
+**Where:** `services/AiService.ts:575-579`
+**Observed:** If `executeTool(call.name, call.args, deps)` throws, the entire `for` loop exits and no `tool_result` is yielded for that call or any later ones. This violates the tool_call/tool_result contract: the model issued N tool calls but received < N results, which confuses Anthropic's API and silently drops work.
+**Fix:** Wrapped each `executeTool` call in `try/catch`, surfacing errors as `{ error: message }` results so the loop always completes and every tool_call gets a tool_result.
+
+### 🟡 [B-196] `dataTableUtils.ts` `isDurationLike` rejects zero (by design — zero is ambiguous as a sample value for type detection) ✅ BY DESIGN
+**Where:** `utils/dataTableUtils.ts:50`
+**Notes:** `num <= 0` is intentional — a single-row sample `{ duration: 0 }` cannot be distinguished from a non-duration column. The `formatDuration` function already handles zero correctly once a column is identified as a duration column from other non-zero rows.
+
+### 🟠 [B-197] `InlineChat.tsx` and `ChatPanel.tsx`: `requireApproval` promise is created even after user cancels, hanging tool execution loop ✅ FIXED
+**Where:** `components/InlineChat.tsx:578`; `components/ChatPanel.tsx:523`, `components/ChatPanel.tsx:841`
+**Observed:** When the user cancels a chat request mid-execution while the AI is waiting for tool approval, `cancelledRef.current` is set to `true` but the `requireApproval` promise is still created and waits for a resolver that will never be called. The tool execution loop hangs indefinitely.
+**Fix:** Added `if (cancelledRef.current) { reject(new Error('cancelled')); return; }` as the first line of all three `requireApproval` implementations. Existing `handleCancel` paths already reject pending resolvers; this covers the race where cancel fires between tool call registration and `requireApproval` invocation.
+
+### 🟠 [B-199] `PlotRenderer.tsx`: brush store LINK-Y subscriptions use stale `cellName` when cell is renamed ✅ FIXED
+**Where:** `components/PlotRenderer.tsx:400` (before fix), `components/PlotRenderer.tsx:408` (after)
+**Observed:** The `useEffect` for LINK-Y subscriptions had `linkYVarNames.join(',')` as its only dependency. When the cell's `id`/`NAME` changes without the LINK-Y variable names changing, the effect never re-runs. Old subscriptions registered under the stale `cellName` are never cleaned up, causing the brush store to have orphaned subscriber entries and cycle detection to miss new links.
+**Fix:** Added `cellContext.id` to the effect dependency array so the effect re-runs (and cleans up old subscriptions) whenever the cell's identity changes.
+
+### 🟠 [B-200] `RangeSlider.tsx`: slider broken when `min === max` (zero-range dataset) ✅ FIXED
+**Where:** `components/RangeSlider.tsx:19`
+**Observed:** `getPercent = (v) => ((v - min) / (max - min)) * 100` produces `NaN` when `min === max` (division by zero). The NaN propagates into the `left` and `width` style calculations, making the slider's track range bar invisible. Additionally `handleMinChange` and `handleMaxChange` force `newValue <= maxVal - step`, which is `max - 1` when the range is zero — the min thumb gets stuck one step below max. Similarly `commitMinText`/`commitMaxText` apply the same wrong clamping.
+**Fix:** Computed `rangeSpan = max - min`; `getPercent` returns `0` when `rangeSpan === 0`. All three change/commit handlers short-circuit to `min`/`max` when `rangeSpan === 0`.
+
+### 🟠 [B-201] `useHistoryState.ts`: undo history stack is unbounded — grows to thousands of entries for long notebook sessions ✅ FIXED
+**Where:** `hooks/useHistoryState.ts`
+**Observed:** Each new history entry is appended to `state.history` with no size cap. For a large notebook (50 KB markdown), 500 unique keystrokes = 500 × 50 KB = 25 MB of history data in both memory and localStorage. The full history object is serialized to localStorage on every state change.
+**Fix:** Added `MAX_HISTORY_SIZE = 50`; when `newHistory.push(value)` would exceed the cap, evict the oldest entry with `newHistory.shift()`. This limits memory to 50 × ~50 KB = 2.5 MB worst-case.
+
+### 🟡 [B-202] `ToastNotification.tsx`: auto-dismiss timer restarts on every parent re-render because `onClose` is a new inline arrow function each render ✅ FIXED
+**Where:** `components/ToastNotification.tsx:15-23`
+**Observed:** `useEffect([onClose, duration])` re-runs whenever `onClose` identity changes. Callers in `App.tsx` pass inline arrow functions `() => setState(null)` which are created on every render. Because `App.tsx` re-renders on any state change (query running, schema loading, etc.), the 5-second dismiss timer kept resetting — the toast sometimes never disappeared.
+**Fix:** Store `onClose` in a ref (`onCloseRef`); call `onCloseRef.current()` in the timer. Effect dependency array has only `[duration]` so the timer starts once and runs to completion.
+
+### 🟠 [B-203] `utils/dataTableUtils.ts`: `parseIntervalToSeconds` ignores days and months components of DuckDB INTERVAL arrays ✅ FIXED
+**Where:** `utils/dataTableUtils.ts:11-22`
+**Observed:** DuckDB returns INTERVAL values as `[microseconds, days, months]` arrays (or comma-separated strings). `parseIntervalToSeconds` only read `value[0]` (µs), silently discarding `value[1]` (days) and `value[2]` (months). A 1-day interval `[0, 1, 0]` returned `0` instead of `86400`. A 30-min + 1-day interval `[1_800_000_000, 1, 0]` returned `1800` instead of `88200`. This caused duration columns with day/month-scale values to display as near-zero in the DataTable and sort incorrectly.
+**Fix:** Sum all three components — `µs / 1_000_000 + days * 86_400 + months * 30 * 86_400`. Months approximated as 30 days (standard calendar approximation used throughout DuckDB SQL). Same fix applied to the comma-string branch. Added 4 regression tests in `tests/dataTable.test.ts`.

@@ -11,12 +11,18 @@ export const INTERVAL_RE = /^(-?\d+),(-?\d+),(-?\d+)(?:,(-?\d+))?$/;
 export const parseIntervalToSeconds = (value: any): number | null => {
     if (Array.isArray(value)) {
         const µs = Number(value[0]);
-        return isNaN(µs) ? null : µs / 1_000_000;
+        if (isNaN(µs)) return null;
+        const days = Number(value[1] ?? 0);
+        const months = Number(value[2] ?? 0);
+        return µs / 1_000_000 + days * 86_400 + months * 30 * 86_400;
     }
     if (typeof value === 'string') {
         const m = INTERVAL_RE.exec(value);
         if (!m) return null;
-        return Number(m[1]) / 1_000_000;
+        const µs = Number(m[1]);
+        const days = Number(m[2] ?? 0);
+        const months = Number(m[3] ?? 0);
+        return µs / 1_000_000 + days * 86_400 + months * 30 * 86_400;
     }
     return null;
 };

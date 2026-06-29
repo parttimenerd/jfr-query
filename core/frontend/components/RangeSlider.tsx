@@ -16,7 +16,13 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
   const maxValRef = useRef(value.max);
   const range = useRef<HTMLDivElement>(null);
 
-  const getPercent = useCallback((v: number) => Math.round(((v - min) / (max - min)) * 100), [min, max]);
+  // B-200: guard against min===max (zero-range dataset) — dividing by 0 yields NaN
+  // which propagates into the style calculations and breaks the slider visually.
+  const rangeSpan = max - min;
+  const getPercent = useCallback(
+    (v: number) => rangeSpan === 0 ? 0 : Math.round(((v - min) / rangeSpan) * 100),
+    [min, rangeSpan],
+  );
 
   useEffect(() => {
     setMinVal(value.min);
@@ -43,14 +49,16 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
   }, [maxVal, getPercent]);
 
   const handleMinChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = Math.min(Number(event.target.value), maxVal - step);
+    // B-200: when min===max the slider is zero-range; clamp to min itself so the
+    // thumb can't push below the range floor.
+    const newValue = rangeSpan === 0 ? min : Math.min(Number(event.target.value), maxVal - step);
     setMinVal(newValue);
     minValRef.current = newValue;
     onChange({ min: newValue, max: maxVal });
   };
 
   const handleMaxChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = Math.max(Number(event.target.value), minVal + step);
+    const newValue = rangeSpan === 0 ? max : Math.max(Number(event.target.value), minVal + step);
     setMaxVal(newValue);
     maxValRef.current = newValue;
     onChange({ min: minVal, max: newValue });
@@ -65,7 +73,7 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
   const commitMinText = () => {
     const parsed = Number(minText);
     if (!isNaN(parsed)) {
-      const clamped = Math.max(min, Math.min(parsed, maxVal - step));
+      const clamped = rangeSpan === 0 ? min : Math.max(min, Math.min(parsed, maxVal - step));
       setMinVal(clamped);
       minValRef.current = clamped;
       onChange({ min: clamped, max: maxVal });
@@ -76,7 +84,7 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
   const commitMaxText = () => {
     const parsed = Number(maxText);
     if (!isNaN(parsed)) {
-      const clamped = Math.max(minVal + step, Math.min(parsed, max));
+      const clamped = rangeSpan === 0 ? max : Math.max(minVal + step, Math.min(parsed, max));
       setMaxVal(clamped);
       maxValRef.current = clamped;
       onChange({ min: minVal, max: clamped });

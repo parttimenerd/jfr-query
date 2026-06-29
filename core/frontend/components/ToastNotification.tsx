@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { ExclamationTriangleIcon } from './icons/ExclamationTriangleIcon';
 import { XMarkIcon } from './icons/XMarkIcon';
@@ -12,15 +12,23 @@ interface ToastNotificationProps {
 }
 
 const ToastNotification: React.FC<ToastNotificationProps> = ({ message, onClose, title = 'Alert', duration = 5000, action }) => {
+  // B-202: store onClose in a ref so the timer effect doesn't restart when
+  // the parent re-renders with a new inline arrow function — the timer would
+  // reset on every parent render and the toast might never auto-dismiss.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     const timer = setTimeout(() => {
-      onClose();
+      onCloseRef.current();
     }, duration);
 
     return () => {
       clearTimeout(timer);
     };
-  }, [onClose, duration]);
+  // Only re-start the timer if `duration` changes — not if `onClose` identity changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [duration]);
 
   return ReactDOM.createPortal(
     <div className="fixed top-5 right-5 z-[200] w-full max-w-sm animate-fade-in-down">
@@ -33,14 +41,14 @@ const ToastNotification: React.FC<ToastNotificationProps> = ({ message, onClose,
           <p className="text-sm text-yellow-100">{message}</p>
           {action && (
             <button
-              onClick={() => { action.onClick(); onClose(); }}
+              onClick={() => { action.onClick(); onCloseRef.current(); }}
               className="mt-2 text-xs font-semibold underline text-yellow-100 hover:text-white"
             >
               {action.label}
             </button>
           )}
         </div>
-        <button onClick={onClose} className="p-1 -mt-1 -mr-1 text-yellow-200 hover:text-white rounded-full">
+        <button onClick={() => onCloseRef.current()} className="p-1 -mt-1 -mr-1 text-yellow-200 hover:text-white rounded-full">
           <XMarkIcon className="w-5 h-5" />
         </button>
       </div>

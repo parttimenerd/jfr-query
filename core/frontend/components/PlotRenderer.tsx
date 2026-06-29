@@ -386,6 +386,13 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
 
     useEffect(() => {
         if (linkYVarNames.length === 0) { setLinkYDomains(new Map()); return; }
+        // B-199: capture cellName as a local so it's stable in the closure AND
+        // appears in the dep array — if the cell's id changes, the effect re-runs
+        // and old subscriptions (with the stale cellName) are cleaned up.
+        // Use cellContext.id directly (rather than cellNameRef.current) since refs
+        // can't appear in dependency arrays — the dep array is evaluated at hook
+        // registration time before the ref is necessarily updated.
+        const subscriberCell = cellContext.id;
         const unsubs = linkYVarNames.map(name =>
             plotBrushStore.subscribe(name, payload => {
                 setLinkYDomains(prev => {
@@ -397,11 +404,11 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                     }
                     return next;
                 });
-            }, cellNameRef.current)
+            }, subscriberCell)
         );
         return () => unsubs.forEach(u => u());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [linkYVarNames.join(',')]);
+    }, [linkYVarNames.join(','), cellContext.id]);
 
     /** Return the stored domain for a leaf's linkY or linkXY variable, or undefined. */
     const getLinkYDomain = (leaf: ParsedPlotCall): [number, number] | undefined => {

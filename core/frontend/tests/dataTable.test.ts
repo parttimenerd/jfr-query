@@ -191,6 +191,25 @@ describe('parseIntervalToSeconds', () => {
         expect(parseIntervalToSeconds('1800000000,0,0')).toBeCloseTo(1800);
     });
 
+    it('includes days component in result (B-203)', () => {
+        // [0 µs, 1 day, 0 months] → 86400 s
+        expect(parseIntervalToSeconds([0, 1, 0])).toBeCloseTo(86_400);
+    });
+
+    it('includes months component in result (B-203)', () => {
+        // [0 µs, 0 days, 1 month] → 30 × 86400 s
+        expect(parseIntervalToSeconds([0, 0, 1])).toBeCloseTo(30 * 86_400);
+    });
+
+    it('sums all three components (B-203)', () => {
+        // 1 800 000 000 µs (30 min) + 1 day = 1800 + 86400 = 88200 s
+        expect(parseIntervalToSeconds([1_800_000_000, 1, 0])).toBeCloseTo(88_200);
+    });
+
+    it('includes days component from comma-string (B-203)', () => {
+        expect(parseIntervalToSeconds('0,1,0')).toBeCloseTo(86_400);
+    });
+
     it('returns null for plain number', () => {
         expect(parseIntervalToSeconds(1800000000)).toBeNull();
     });

@@ -4,6 +4,10 @@ const DEBOUNCE_TIME_MS = 800;
 // B-043: cap the maximum duration of a single undo session so that long
 // uninterrupted typing still produces multiple undo checkpoints.
 const MAX_SESSION_MS = 3000;
+// B-201: cap the history stack to prevent unbounded localStorage growth.
+// Each entry may be a full notebook markdown string (tens of KB). 100 entries
+// × 50 KB = 5 MB, which approaches localStorage quotas; 50 entries is safer.
+const MAX_HISTORY_SIZE = 50;
 
 type Initializer<T> = () => T;
 
@@ -76,6 +80,8 @@ export const useHistoryState = <T,>(
             }
 
             newHistory.push(value);
+            // B-201: evict from the front to keep the stack bounded.
+            while (newHistory.length > MAX_HISTORY_SIZE) newHistory.shift();
             return {
                 history: newHistory,
                 currentIndex: newHistory.length - 1
