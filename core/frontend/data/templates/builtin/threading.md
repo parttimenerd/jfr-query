@@ -11,7 +11,15 @@ variables:
 
 ## Threading & Contention
 
-How many threads were live during the recording, and where they fought each other for monitors.
+How threads behaved during the recording — live thread counts and where threads blocked waiting on monitors.
+
+**What's here:**
+- Thread counts over time (active vs peak)
+- Top monitor contention hotspots by total wait time
+
+**Required events:** `JavaThreadStatistics`, `JavaMonitorEnter`
+
+If `JavaThreadStatistics` is missing, enable it with `-XX:StartFlightRecording:settings=default`. Monitor contention requires `-XX:StartFlightRecording:settings=profile` or enabling `jdk.JavaMonitorEnter`.
 
 ---
 

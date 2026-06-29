@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "test": "node scripts/check-template-licenses.mjs && vitest run",
     "test:watch": "vitest",
+    "test:e2e": "node tests/e2e/run.mjs",
+    "test:workflows": "node tests/e2e/test-workflows.mjs",
     "bench": "vite --config vite.bench.config.ts",
     "dataset:plot": "tsx scripts/training/generatePlotDataset.ts",
     "train:plot": "python scripts/training/python/train.py",
@@ -32,6 +34,7 @@
     "@lezer/highlight": "^1.2.0",
     "@lezer/lr": "^1.4.0",
     "apache-arrow": "^17.0.0",
+    "html2canvas": "^1.4.1",
     "katex": "^0.17.0",
     "path": "^0.12.7",
     "react": "^19.2.0",
@@ -40,6 +43,7 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.2.1",
     "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0"
   },
   "devDependencies": {

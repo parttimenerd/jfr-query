@@ -2,10 +2,6 @@ export const gcAnalysisNotebook: string = `## GC Analysis Notebook
 
 A ready-to-run analysis of garbage collection behavior from your JFR recording. Each cell runs automatically — scroll down to see results.
 
-\`\`\`variables
-$limit = 20
-\`\`\`
-
 ---
 
 ## Recording Overview
@@ -84,8 +80,8 @@ SELECT
   name AS "Phase",
   COUNT(*) AS "Count",
   round(MEDIAN(duration) * 1000, 3) AS "Median (ms)",
-  round(P90(duration) * 1000, 3) AS "P90 (ms)",
-  round(P99(duration) * 1000, 3) AS "P99 (ms)",
+  round(quantile_cont(duration, 0.90) * 1000, 3) AS "P90 (ms)",
+  round(quantile_cont(duration, 0.99) * 1000, 3) AS "P99 (ms)",
   round(MAX(duration) * 1000, 3) AS "Max (ms)"
 FROM GCPhasePause
 GROUP BY name
@@ -138,6 +134,10 @@ BAR_CHART(x: "Class", y: ["Sampled MB"], horizontal: true) TITLE "Top Allocating
 
 Megabytes reclaimed per second of GC pause per collection. Low values (short bars) indicate expensive pauses that reclaimed little memory.
 
+\`\`\`variables
+$limit = 20
+\`\`\`
+
 \`\`\`sql
 SELECT
   g.gcId AS "GC ID",
@@ -163,6 +163,10 @@ SCATTER_PLOT(x: "Pause (ms)", y: "Reclaimed (MB)", color: "Cause") TITLE "Reclai
 ## Concurrent GC Phases
 
 Non-stop-the-world (concurrent) GC work — these run alongside your application and don't add to pause time.
+
+\`\`\`variables
+$limit = 20
+\`\`\`
 
 \`\`\`sql
 SELECT * FROM "gc-concurrent-phases-detail" LIMIT $limit

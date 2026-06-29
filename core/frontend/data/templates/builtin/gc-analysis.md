@@ -14,7 +14,17 @@ cellConditions:
 
 ## GC Analysis
 
-A ready-to-run analysis of garbage-collection behavior from your JFR recording. Sections below appear or hide based on what your recording actually contains.
+A ready-to-run analysis of garbage-collection behavior from your JFR recording.
+
+**What's here:**
+- Recording overview (start, end, total duration)
+- Pause time breakdown by GC cause — which cause is costing the most stop-the-world time
+- Long-pause drill-down (shown only when pauses exceed `$$threshold_ms` ms)
+- Phase-level percentile table (P50 / P90 / P99 / Max per GC phase)
+
+**Required events:** `GarbageCollection`, `GCPhasePause`
+
+Change `$$threshold_ms` in the Notebook Settings cell above to adjust the long-pause threshold.
 
 ---
 

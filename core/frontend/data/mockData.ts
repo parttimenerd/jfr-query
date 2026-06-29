@@ -2,12 +2,14 @@ export const initialNotebook: string = `# JFR SQL Notebook
 
 Welcome! This notebook lets you query a loaded JFR recording (or any DuckDB database) using SQL, then visualize results as charts. Here's how it works:
 
-- **Left sidebar** — Schema Explorer: browse tables, views, and macros in the database. Click any item to insert a query.
-- **Each cell** has one or more SQL queries followed by a plot config that visualizes the results.
+- **Left sidebar** — Schema Explorer: browse tables, views, and macros in the database. Click any item to preview it in the sidebar; double-click to copy its name to clipboard.
+- **Each cell** has one or more SQL queries followed by a plot config that visualizes the results. Click the **›** chevron in the cell header to collapse/expand it; use **Collapse All** / **Expand All** in the toolbar.
 - **Run** a query with the ▶ button (or Cmd+Enter). The plot updates automatically.
-- **Edit this cell** by clicking the **</>** icon to switch to raw Markdown mode.
-- **Switch chart type** using the "switch to:" row below the plot editor — it auto-fills columns from your query results.
+- **Add content** — use **+ Add SQL** / **+ Plot** / **+ Prose** between blocks, or **+ Add Cell** at the bottom.
+- **Variables** — declare \`$name = value\` in a variables block; reference them in SQL as \`$name\`. Notebook-wide variables use \`$$name\` in the Settings cell.
 - **Column chips** appear above the plot editor — click any chip to copy the column name into your plot config.
+- **Templates** — click **New from template** in the toolbar to start from a pre-built analysis (GC, allocation, threading, exceptions).
+- **AI assistant** — the panel on the right answers questions and writes SQL. Click the speech-bubble icon on any query to open a per-cell chat.
 
 ---
 
@@ -33,7 +35,7 @@ TABLE()
 
 ## Step 2 — Visualize as a chart
 
-Now change the plot config from \`TABLE()\` to a \`BAR_CHART\` to compare pause durations by GC cause. The x-axis is the category, y is the numeric value.
+Change the plot config from \`TABLE()\` to a \`BAR_CHART\` to compare pause durations by GC cause. The x-axis is the category, y is the numeric value. You can edit the plot config directly — column chips above the editor show available columns.
 
 \`\`\`sql
 SELECT
@@ -53,7 +55,7 @@ BAR_CHART(x: "cause", y: ["count", "avg_ms"], layout: "grouped") TITLE "GC Cause
 
 ## Step 3 — Time series with zoom
 
-Use \`LINE_CHART\` for metrics over time. Add \`LINK_X($start, $end)\` to enable interactive **drag-to-pan** and **Shift+scroll to zoom**.
+Use \`LINE_CHART\` for metrics over time. \`LINK_X($start, $end)\` enables interactive **drag-to-pan** and **Shift+scroll to zoom**. The \`$limit\` variable below limits rows — change the value and the query re-runs automatically.
 
 \`\`\`variables
 $limit = 200
@@ -76,6 +78,8 @@ LINE_CHART(x: "startTime", y: ["duration_ms"]) LINK_X($start, $end) TITLE "GC Pa
 
 ## Step 4 — Add your own analysis
 
-Use **+ Add SQL** below a cell to add more queries, or click **+ New Cell** at the bottom of the notebook to start fresh. Click **Plot syntax** beneath any plot block for the full reference guide.
-
-Tip: open the **Schema Explorer** on the left and click any table or view to preview its columns and auto-insert a SELECT query.`;
+- Click **+ Add SQL** below any cell to add another query, or **+ Add Cell** at the bottom to start fresh.
+- Click **Plot syntax** beneath any plot block for the full chart reference (LINE_CHART, BAR_CHART, SCATTER_PLOT, HISTOGRAM, FLAMEGRAPH, and more).
+- Click **</>** in the cell header to edit the prose above as raw Markdown.
+- Try the **Schema Explorer** on the left — click a table to preview it, or search for a column name across all tables.
+- Open **New from template** in the toolbar for ready-made GC, allocation, threading, and exception notebooks.`;

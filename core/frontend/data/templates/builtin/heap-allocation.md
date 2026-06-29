@@ -11,7 +11,15 @@ variables:
 
 ## Heap Allocation
 
-Recordings sample object allocation via TLAB and outside-TLAB events. Counts here are sampled approximations, not exact totals.
+Where heap memory is going — which classes allocate the most and how the rate changes over time.
+
+**What's here:**
+- Top allocating classes by sampled weight (horizontal bar chart)
+- Allocation rate over time in MB/s (line chart) — spikes often precede GC events
+
+**Required events:** `ObjectAllocationSample` (needs `-XX:StartFlightRecording:settings=profile` or `jdk.ObjectAllocationSample#enabled=true`)
+
+Counts are **sampled approximations**, not exact totals. The `$limit` variable controls how many top classes are shown.
 
 ---
 

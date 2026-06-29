@@ -9,9 +9,17 @@ variables:
 
 <!-- @cell name=intro -->
 
-## Exceptions
+## Exceptions & Errors
 
-JFR records `jdk.JavaExceptionThrow` for thrown exceptions and `jdk.JavaErrorThrow` for errors. Frequent exceptions are often a hot path that swallows control flow.
+Which exception classes are thrown most often during the recording.
+
+**What's here:**
+- Exceptions by class (`jdk.JavaExceptionThrow`) — top thrown types
+- Errors by class (`jdk.JavaErrorThrow`) — serious errors like `OutOfMemoryError`
+
+**Required events:** `JavaExceptionThrow`, `JavaErrorThrow`
+
+These events require `-XX:StartFlightRecording:settings=profile` (they're off in the default profile). Frequent exceptions on hot paths can cause significant overhead — look for surprising counts of `NullPointerException`, `SocketTimeoutException`, or similar control-flow exceptions.
 
 ---
 
