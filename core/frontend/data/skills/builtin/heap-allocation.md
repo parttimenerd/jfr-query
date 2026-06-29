@@ -1,0 +1,114 @@
+---
+title: Heap Allocation Analyst
+description: Activates heap allocation domain knowledge — TLAB analysis, hot allocation sites, allocation rate over time.
+tags: [allocation, heap, memory, tlab]
+icon: "📦"
+commands:
+  - name: top-classes
+    description: "Show the hottest allocation sites by class"
+    cells: [alloc-top-classes]
+  - name: rate
+    description: "Allocation rate over time (MB/s)"
+    cells: [alloc-rate]
+  - name: tlabs
+    description: "TLAB efficiency statistics"
+    cells: [alloc-tlab-stats]
+  - name: help
+    description: "Show available allocation analysis commands"
+    cells: []
+license: MIT
+templates: []
+---
+
+## System Prompt
+
+You are a JVM heap allocation analysis expert embedded inside a JFR notebook. The user is investigating object allocation patterns from a JFR recording loaded into DuckDB.
+
+Key tables for allocation analysis:
+- `ObjectAllocationInNewTLAB` — sampled allocations that triggered a new TLAB: objectClass, allocationSize, tlabSize, startTime, stackTrace
+- `ObjectAllocationOutsideTLAB` — sampled allocations that bypassed TLAB (large objects): objectClass, allocationSize, startTime, stackTrace
+- `ObjectAllocationSample` — periodic allocation samples (newer JFR): objectClass, weight (bytes), startTime
+
+When analysing allocation:
+- Combine InNewTLAB and OutsideTLAB with UNION ALL for a complete picture
+- High OutsideTLAB count for small objects suggests TLAB is too small — check `tlabSize`
+- Repeated allocations of the same class are candidates for object pooling or escape analysis
+- Use time-bucketed aggregation to compute allocation rate: `time_bucket(interval '1 second', startTime)`
+- Flamegraph-style stacked SQL is not feasible in DuckDB; focus on class-level aggregates
+- Allocation events are *sampled*, not exhaustive — allocationSize values are approximate
+- If the user asks about specific classes, filter `objectClass` with LIKE or = 
+
+Recommend the user look at GC pause rate in correlation with allocation spikes.
+Always note the sampling caveat in your responses.
+
+## Cells
+
+<!-- @skill-cell name=alloc-top-classes -->
+
+## Top Allocation Sites by Class
+
+```sql
+-- alias alloc_top
+SELECT
+  objectClass                                          AS "Class",
+  COUNT(*)                                             AS "Samples",
+  round(SUM(allocationSize) / 1024.0 / 1024.0, 2)    AS "Total Alloc (MB)",
+  round(AVG(allocationSize) / 1024.0, 1)              AS "Avg Size (KB)"
+FROM (
+  SELECT objectClass, allocationSize FROM ObjectAllocationInNewTLAB
+  UNION ALL
+  SELECT objectClass, allocationSize FROM ObjectAllocationOutsideTLAB
+)
+GROUP BY objectClass
+ORDER BY SUM(allocationSize) DESC
+LIMIT 30
+```
+
+```plot
+BAR_CHART(x: "Class", y: ["Total Alloc (MB)"]) TITLE "Top Allocation Sites (MB)" HEIGHT 350px
+```
+
+<!-- @skill-cell name=alloc-rate -->
+
+## Allocation Rate Over Time
+
+```sql
+-- alias alloc_rate
+SELECT
+  time_bucket(interval '1 second', startTime)                AS "Time",
+  round(SUM(allocationSize) / 1024.0 / 1024.0, 2)          AS "Alloc Rate (MB/s)"
+FROM (
+  SELECT startTime, allocationSize FROM ObjectAllocationInNewTLAB
+  UNION ALL
+  SELECT startTime, allocationSize FROM ObjectAllocationOutsideTLAB
+)
+WHERE startTime BETWEEN $sessionStart AND $sessionEnd
+GROUP BY 1
+ORDER BY 1
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Alloc Rate (MB/s)"]) TITLE "Allocation Rate (MB/s)"
+```
+
+<!-- @skill-cell name=alloc-tlab-stats -->
+
+## TLAB Efficiency
+
+```sql
+-- alias tlab_stats
+SELECT
+  objectClass                                         AS "Class",
+  COUNT(*)                                            AS "New TLABs",
+  round(AVG(tlabSize)       / 1024.0, 1)             AS "Avg TLAB Size (KB)",
+  round(AVG(allocationSize) / 1024.0, 1)             AS "Avg Alloc Size (KB)",
+  round(AVG(allocationSize) / NULLIF(AVG(tlabSize), 0) * 100, 1) AS "Fill % Est."
+FROM ObjectAllocationInNewTLAB
+GROUP BY objectClass
+ORDER BY COUNT(*) DESC
+LIMIT 20
+```
+
+```plot
+TABLE()
+```
