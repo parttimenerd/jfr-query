@@ -39,6 +39,13 @@ export interface ProviderMetadata {
     advanced: string;
   };
   isInternal?: boolean;
+  /**
+   * True when the provider accepts image content inside `tool_result` messages.
+   * Drives whether `screenshotPlot` is allowed at runtime for this provider —
+   * a non-image-capable provider would otherwise just see the base64 string as
+   * stringified JSON, which doesn't help the model reason about the chart.
+   */
+  supportsImageToolResults?: boolean;
 }
 
 export type AiProviderType = 'google' | 'openai' | 'anthropic' | 'gardener' | 'local' | 'browser';
@@ -93,4 +100,10 @@ export interface IAiProvider {
         tools: Tool[],
         opts?: StreamChatWithToolsOpts,
     ) => AsyncIterable<ToolStreamChunk>;
+
+    /**
+     * True when the provider can carry an image inside a tool_result back to
+     * the model. Drives whether screenshotPlot is offered as a tool at runtime.
+     */
+    supportsImageToolResults?: () => boolean;
 }

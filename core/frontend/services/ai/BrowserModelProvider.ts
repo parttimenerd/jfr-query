@@ -117,6 +117,18 @@ export class BrowserModelProvider implements IAiProvider {
         return { text: completion, code: completion };
     }
 
+    async *stream(
+        systemInstruction: string,
+        request: string,
+        signal: AbortSignal,
+        _model: 'cloud-tiny' | 'browser',
+    ): AsyncIterable<string> {
+        const resp = await this.getInlineSuggestion(systemInstruction, request);
+        if (signal.aborted) return;
+        const text = resp?.text?.trim();
+        if (text) yield text;
+    }
+
     getCodeFormat: IAiProvider['getCodeFormat'] = NOT_SUPPORTED as any;
     getPlotFixSuggestion: IAiProvider['getPlotFixSuggestion'] = NOT_SUPPORTED as any;
 

@@ -16,16 +16,34 @@ interface AnthropicMessage {
  * messages; tool_use blocks live inside assistant messages and tool_result
  * blocks live inside user messages.
  */
-function anthropicMessagesFromTool(messages: ToolChatMessage[]): any[] {
+export function anthropicMessagesFromTool(messages: ToolChatMessage[]): any[] {
     const out: any[] = [];
     for (const m of messages) {
         if (m.role === 'system') continue; // promoted to top-level `system` by caller
         if (m.role === 'tool') {
-            const blocks = (m.toolResults ?? []).map(tr => ({
-                type: 'tool_result',
-                tool_use_id: tr.id,
-                content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result),
-            }));
+            const blocks = (m.toolResults ?? []).map(tr => {
+                const img = (tr.result && typeof tr.result === 'object')
+                    ? (tr.result.data?.image ?? tr.result.image)
+                    : null;
+                if (img && typeof img.dataUrl === 'string') {
+                    // Anthropic accepts a content array with image blocks for tool_result.
+                    const match = /^data:([^;]+);base64,(.+)$/.exec(img.dataUrl);
+                    if (match) {
+                        return {
+                            type: 'tool_result',
+                            tool_use_id: tr.id,
+                            content: [
+                                { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } },
+                            ],
+                        };
+                    }
+                }
+                return {
+                    type: 'tool_result',
+                    tool_use_id: tr.id,
+                    content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result),
+                };
+            });
             if (blocks.length > 0) out.push({ role: 'user', content: blocks });
             continue;
         }
@@ -52,14 +70,17 @@ interface AnthropicRequestBody {
 
 export class AnthropicProvider implements IAiProvider {
     private apiKey: string;
-    private readonly API_URL = 'https://api.anthropic.com/v1/messages';
+    private readonly apiUrl: string;
     private readonly ANTHROPIC_VERSION = '2023-06-01';
 
-    constructor(apiKey: string) {
+    constructor(apiKey: string, baseUrl?: string) {
         if (!apiKey) {
             throw new Error("Anthropic API key is required.");
         }
         this.apiKey = apiKey;
+        // Strip trailing slash, then append the messages path
+        const base = baseUrl ? baseUrl.replace(/\/$/, '') : 'https://api.anthropic.com';
+        this.apiUrl = `${base}/v1/messages`;
     }
 
     public static getMetadata(): ProviderMetadata {
@@ -79,6 +100,7 @@ export class AnthropicProvider implements IAiProvider {
                 basic: 'claude-sonnet-4-6',
                 advanced: 'claude-sonnet-4-6',
             },
+            supportsImageToolResults: true,
         };
     }
 
@@ -97,7 +119,7 @@ export class AnthropicProvider implements IAiProvider {
             body.system = systemPrompt;
         }
 
-        const response = await fetch(this.API_URL, {
+        const response = await fetch(this.apiUrl, {
             method: 'POST',
             headers: {
                 'x-api-key': this.apiKey,
@@ -203,7 +225,7 @@ export class AnthropicProvider implements IAiProvider {
         if (opts?.systemInstruction) body.system = opts.systemInstruction;
         if (tools.length > 0) body.tools = toolsToAnthropic(tools);
 
-        const response = await fetch(this.API_URL, {
+        const response = await fetch(this.apiUrl, {
             method: 'POST',
             headers: {
                 'x-api-key': this.apiKey,
@@ -268,8 +290,10 @@ export class AnthropicProvider implements IAiProvider {
         }
     }
 
+    supportsImageToolResults(): boolean { return true; }
+
     async verifyCredentials(): Promise<boolean> {
-        const response = await fetch(this.API_URL, {
+        const response = await fetch(this.apiUrl, {
             method: 'POST',
             headers: {
                 'x-api-key': this.apiKey,

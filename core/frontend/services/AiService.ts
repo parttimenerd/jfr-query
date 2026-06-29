@@ -2,6 +2,7 @@ import type { Content } from "@google/genai";
 import type { TableSchema, ViewSchema, MacroSchema } from '../types';
 import { plotRegistry } from '../components/plots/plotRegistry';
 import { generateSignature } from '../utils/plotUtils';
+import { normalizeChannelTitle } from '../components/chat/channelTitle';
 import type { PlotRegistration } from '../components/plots/plotTypes';
 import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata, AiProviderType, PlotSuggestContext, type ToolChatMessage, type ToolStreamChunk } from './ai/IAiProvider';
 import { GeminiProvider } from './ai/GeminiProvider';
@@ -45,7 +46,7 @@ type ProviderFactory = (settings: Settings) => IAiProvider;
 export const providerFactoryRegistry: Record<AiProviderType, ProviderFactory> = {
     google: (s) => new GeminiProvider(AiService.getEffectiveApiKey('google', s)),
     openai: (s) => new OpenAiProvider(AiService.getEffectiveApiKey('openai', s)),
-    anthropic: (s) => new AnthropicProvider(AiService.getEffectiveApiKey('anthropic', s)),
+    anthropic: (s) => new AnthropicProvider(AiService.getEffectiveApiKey('anthropic', s), s.anthropicBaseUrl || undefined),
     gardener: (s) => new GardenerProvider(AiService.getEffectiveApiKey('gardener', s)),
     local: (s) => new LocalAiProvider(
         AiService.getEffectiveApiKey('local', s),
@@ -107,9 +108,10 @@ class AiService {
         const { aiProvider } = settings;
         const factory = providerFactoryRegistry[aiProvider];
 
-        // Local provider doesn't need an API key — it's "configured" as long as
-        // the base URL is set. All other providers require a key.
-        const hasCredentials = aiProvider === 'local'
+        // Browser provider needs no credentials; local needs a base URL; others need an API key.
+        const hasCredentials = aiProvider === 'browser'
+            ? true
+            : aiProvider === 'local'
             ? !!settings.localBaseUrl
             : !!AiService.getEffectiveApiKey(aiProvider, settings);
 
@@ -348,6 +350,27 @@ GUIDELINES:
         return this.handleApiCall(() => this.provider!.getCodeFormat(code, model));
     }
 
+    /**
+     * Summarise a chat thread's opening user message into a short tab title.
+     * Returns null on any failure so callers can fall back to the default name.
+     */
+    async getAiChannelTitle(firstMessage: string): Promise<string | null> {
+        if (!this.settings) throw new Error("AI Service not initialized with settings.");
+        const model = this.getModelFor('basic');
+        const systemInstruction = `You generate short titles for chat threads. Given the user's first message, reply with a 2-4 word title (no quotes, no punctuation, no trailing period). Title only — nothing else.`;
+        try {
+            const resp = await this.handleApiCall(() =>
+                this.provider!.getInlineSuggestion(systemInstruction, firstMessage, model)
+            );
+            const text = (resp && typeof resp === 'object' && 'text' in resp && typeof (resp as any).text === 'string')
+                ? (resp as any).text as string
+                : '';
+            return normalizeChannelTitle(text);
+        } catch {
+            return null;
+        }
+    }
+
     async getAiSuggestPlot(sql: string, customPromptOverride?: string, context?: PlotSuggestContext, tier: AiTier = 'basic'): Promise<string | null> {
         if (!this.settings) throw new Error("AI Service not initialized with settings.");
         this.assertOfflineAllowed('plotSuggest');
@@ -461,9 +484,50 @@ GUIDELINES:
         const customPrompt = (opts.customSystemPrompt ?? this.settings?.customSystemPrompt ?? '').trim();
         const systemInstruction =
             `You are an expert DuckDB and data visualization assistant for analyzing Java Flight Recorder (JFR) data inside a notebook.\n` +
-            `You have access to tools: use runQuery / describeTable / sampleRows to explore data, ` +
-            `and addCell / editCell / applyPlot to modify the notebook. ` +
-            `Always explore the data first before suggesting changes. Be concise.\n\n` +
+            `\n` +
+            `TOOLS — group by purpose, prefer the lightest tool that answers the question:\n` +
+            `  Explore data (read-only, never modifies the notebook):\n` +
+            `    • describeTable(name) — column list + types. Cheap; call before writing non-trivial SQL.\n` +
+            `    • sampleRows(name, limit?) — a handful of rows to see real values.\n` +
+            `    • runQuery(sql, limit?, offset?) — full ad-hoc SQL. Results render inline as a table the user can see; do not re-paste rows in your reply.\n` +
+            `  Preview a chart inline (read-only, the user sees the chart and gets a one-click "Add to Notebook"):\n` +
+            `    • previewPlot(sql, plotConfig, limit?) — preferred way to PROPOSE a chart. After a successful previewPlot, DO NOT also call addCell for the same chart — the user has a button for that.\n` +
+            `    • screenshotPlot(previewId) — capture the rendered chart as a PNG so YOU can see it. Use rarely: only when the visual matters (label readability, layout, color overlap) and you cannot judge it from the DSL alone. Requires chat visibility 'full' and an image-capable provider; otherwise it errors.\n` +
+            `  Inspect the notebook (read-only):\n` +
+            `    • listCells() — id, type, content preview for every cell.\n` +
+            `    • readCell(cellId) — full content of one cell.\n` +
+            `    • listPlots() — id + config of every plot cell.\n` +
+            `    • listVariables() — current notebook variables (name → string).\n` +
+            `  Modify the notebook (require user approval per call):\n` +
+            `    • addCell(type, content, afterCellId?) — create sql / plot / markdown cell.\n` +
+            `    • editCell(cellId, content) — replace cell content.\n` +
+            `    • applyPlot(cellId, plotConfig, plotBlockIndex?) — replace a plot block inside an existing cell.\n` +
+            `    • deleteCell(cellId), moveCell(cellId, targetCellId, position).\n` +
+            `    • setVariable(name, value), deleteVariable(name).\n` +
+            `\n` +
+            `WORKING RULES:\n` +
+            `  1. Explore before you act: describeTable → maybe sampleRows → runQuery. Do not invent columns; if unsure, call describeTable first.\n` +
+            `  2. Proposing a chart? Use previewPlot, then stop and let the user decide. Skip addCell for that chart.\n` +
+            `  3. Mutations need user approval — batch related changes into the smallest set of calls that makes sense; don't spam approvals.\n` +
+            `  4. Once you have answered the user's question, stop calling tools. Don't loop "just to double-check".\n` +
+            `  5. Visibility modes affect what you can see and do:\n` +
+            `     • 'no-data' — runQuery / sampleRows / previewPlot results are returned to you redacted or refused; you must rely on schema + describeTable. previewPlot is disabled and will error.\n` +
+            `     • 'sanitized' — row values are sanitized in the payload you see; screenshotPlot still refuses.\n` +
+            `     • 'full' — you see real values; screenshotPlot is allowed.\n` +
+            `  6. Be concise in your text replies — the inline tables/plots already show the data, so summarize the finding rather than repeating numbers.\n` +
+            `\n` +
+            `SQL RULES:\n` +
+            `  • DuckDB syntax. Quote identifiers with double quotes ("My Column"), strings with single quotes.\n` +
+            `  • Read-only only: SELECT / WITH / DESCRIBE / SHOW / EXPLAIN. No INSERT / UPDATE / DELETE / CREATE / DROP / ATTACH.\n` +
+            `  • Add a LIMIT for exploratory queries unless the user asked for the full set.\n` +
+            `\n` +
+            `PLOT DSL — plot cells and previewPlot's plotConfig MUST use this custom DSL (NOT Observable Plot, NOT Vega):\n` +
+            `  BAR_CHART(x: "col", y: ["col2"])   LINE_CHART(x: "col", y: ["col2"])   SCATTER_PLOT(x: "col", y: "col2")\n` +
+            `  AREA_CHART(x: "col", y: ["col2"])  PIE_CHART(category: "col", value: "col2")  TABLE()\n` +
+            `  • Column names are ALWAYS quoted strings. y is ALWAYS an array (even for a single series).\n` +
+            `  • Optional modifiers: TITLE "string"  LINK_X($start, $end)  logScale: true  layout: "stacked"|"grouped"\n` +
+            `  • Example: BAR_CHART(x: "objectClass", y: ["totalWeight"]) TITLE "Top Classes"\n` +
+            `\n` +
             `${schemaPayload}` +
             (customPrompt ? `\n\nADDITIONAL INSTRUCTIONS FROM USER:\n${customPrompt}` : '');
 

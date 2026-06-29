@@ -148,9 +148,26 @@ describe('formatToolArgs', () => {
 });
 
 describe('TOOLS metadata sanity (consumed by ChatPanel)', () => {
-    it('declares the seven tool names', () => {
+    it('declares the expected tool names', () => {
         const names = TOOLS.map(t => t.name).sort();
-        expect(names).toEqual(['addCell', 'applyPlot', 'describeTable', 'editCell', 'listPlots', 'runQuery', 'sampleRows']);
+        expect(names).toEqual([
+            'addCell',
+            'applyPlot',
+            'deleteCell',
+            'deleteVariable',
+            'describeTable',
+            'editCell',
+            'listCells',
+            'listPlots',
+            'listVariables',
+            'moveCell',
+            'previewPlot',
+            'readCell',
+            'runQuery',
+            'sampleRows',
+            'screenshotPlot',
+            'setVariable',
+        ]);
     });
 
     it('classifies tools into read / mutate', () => {

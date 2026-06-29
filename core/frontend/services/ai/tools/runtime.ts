@@ -4,6 +4,7 @@
 // network mock.
 
 import { TOOLS, getTool, validateToolArgs, type Tool } from './index';
+import { parseComposite } from '../../../utils/plotParser';
 
 export interface ToolDeps {
     /** Execute a DuckDB SQL query. Caller decides about read-only enforcement. */
@@ -21,12 +22,25 @@ export interface ToolDeps {
      * the orchestrator (AiService.streamChatWithTools).
      */
     requireApproval: (toolName: string, args: any) => Promise<void>;
+    /** Read the notebook's current variables (name → string value). Optional;
+     *  variable tools will fail if not supplied. */
+    getVariables?: () => Record<string, string>;
+    /** Replace the notebook's variables map. Implementations should persist. */
+    setVariables?: (next: Record<string, string>) => Promise<{ ok: true } | { ok: false; error: string }>;
+    /** Current chat visibility mode. Used to gate previewPlot/screenshotPlot. */
+    getVisibility?: () => 'no-data' | 'sanitized' | 'full';
+    /** Capture a PNG of a previously rendered plot preview. Returns a data URL or null. */
+    screenshotPreview?: (previewId: string) => Promise<string | null>;
+    /** True when the active provider can carry image content in a tool_result. */
+    providerSupportsImages?: () => boolean;
 }
 
 export type NotebookMutation =
     | { kind: 'add'; type: 'sql' | 'plot' | 'markdown'; content: string; afterCellId?: string }
     | { kind: 'edit'; cellId: string; content: string }
-    | { kind: 'applyPlot'; cellId: string; plotConfig: string; plotBlockIndex?: number };
+    | { kind: 'applyPlot'; cellId: string; plotConfig: string; plotBlockIndex?: number }
+    | { kind: 'delete'; cellId: string }
+    | { kind: 'move'; cellId: string; targetCellId: string; position: 'before' | 'after' };
 
 export type ToolResult =
     | { ok: true; data: any }
@@ -67,9 +81,23 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                 if (isForbiddenSql(sql)) return { ok: false, error: 'forbidden token' };
                 const pageSize = typeof args.limit === 'number' ? Math.min(Math.max(args.limit, 1), 500) : 100;
                 const offset = typeof args.offset === 'number' ? Math.max(args.offset, 0) : 0;
+                // Ask the dep for pageSize + offset rows; the dep is allowed to
+                // return one extra so we can detect truncation without an
+                // extra round-trip. See ChatPanel.duckdbQuery.
                 const result = await deps.duckdbQuery(sql, { limit: pageSize + offset });
-                const page = result.rows.slice(offset, offset + pageSize);
-                return { ok: true, data: { columns: result.columns, rows: page, total: result.rows.length, offset, limit: pageSize } };
+                const fullPage = result.rows.slice(offset, offset + pageSize);
+                const truncated = result.rows.length > pageSize + offset;
+                return {
+                    ok: true,
+                    data: {
+                        columns: result.columns,
+                        rows: fullPage,
+                        returned: fullPage.length,
+                        truncated,
+                        offset,
+                        limit: pageSize,
+                    },
+                };
             }
             case 'describeTable': {
                 const tname: string = args.name;
@@ -78,12 +106,66 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
             }
             case 'sampleRows': {
                 const tname: string = args.name;
-                const limit = Math.min(typeof args.limit === 'number' ? args.limit : 10, 500);
+                const limit = Math.min(typeof args.limit === 'number' ? Math.max(args.limit, 1) : 10, 500);
                 const result = await deps.duckdbQuery(`SELECT * FROM "${tname.replace(/"/g, '""')}" LIMIT ${limit}`);
                 return { ok: true, data: { columns: result.columns, rows: result.rows } };
             }
             case 'listPlots': {
                 return { ok: true, data: { plots: deps.listPlotsInNotebook() } };
+            }
+            case 'previewPlot': {
+                const sql: string = args.sql;
+                const plotConfig: string = args.plotConfig;
+                if (isForbiddenSql(sql)) return { ok: false, error: 'forbidden token' };
+                if (deps.getVisibility?.() === 'no-data') {
+                    return { ok: false, error: "previewPlot disabled when chat visibility is 'no-data' — the user would see chart data the AI cannot." };
+                }
+                try {
+                    const parsed = parseComposite(plotConfig);
+                    const mainOk = !!(parsed.mainConfig && /^[A-Z_]+\s*\(/i.test(parsed.mainConfig.trim()));
+                    const compositeOk = !!parsed.composite && parsed.composite.children.length > 0;
+                    if (!mainOk && !compositeOk) {
+                        return { ok: false, error: 'invalid plot DSL: expected something like BAR_CHART(x: "col", y: ["col2"]).' };
+                    }
+                } catch (e: any) {
+                    return { ok: false, error: `invalid plot DSL: ${e?.message || String(e)}` };
+                }
+                const limit = typeof args.limit === 'number' ? Math.min(Math.max(args.limit, 1), 500) : 200;
+                // Ask the dep for limit+1 rows so we can detect truncation
+                // without a follow-up COUNT(*). See ChatPanel.duckdbQuery.
+                const result = await deps.duckdbQuery(sql, { limit });
+                const rows = result.rows.slice(0, limit);
+                const truncated = result.rows.length > limit;
+                const previewId = `preview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                return {
+                    ok: true,
+                    data: {
+                        previewId,
+                        columns: result.columns,
+                        rows,
+                        plotConfig,
+                        returned: rows.length,
+                        truncated,
+                        limit,
+                    },
+                };
+            }
+            case 'screenshotPlot': {
+                if (!deps.screenshotPreview) {
+                    return { ok: false, error: 'screenshotPlot not supported in this environment' };
+                }
+                if (!deps.providerSupportsImages?.()) {
+                    return { ok: false, error: 'screenshotPlot is not supported by the current AI provider — switch to Anthropic to enable image tool results.' };
+                }
+                if (deps.getVisibility?.() !== 'full') {
+                    return { ok: false, error: "screenshotPlot requires chat visibility 'full' — current setting redacts data and the rendered chart by extension." };
+                }
+                const previewId: string = args.previewId;
+                const dataUrl = await deps.screenshotPreview(previewId);
+                if (!dataUrl) return { ok: false, error: `no preview found with id: ${previewId}` };
+                // Wrap in an `image` shape so per-provider tool_result adapters
+                // can emit a multimodal content block on the next turn.
+                return { ok: true, data: { image: { mediaType: 'image/png', dataUrl } } };
             }
             case 'addCell': {
                 const res = await deps.mutateCells({
@@ -112,6 +194,61 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                     plotBlockIndex: typeof args.plotBlockIndex === 'number' ? args.plotBlockIndex : 0,
                 });
                 if (res.ok) return { ok: true, data: { cellId: args.cellId } };
+                return { ok: false, error: (res as { ok: false; error: string }).error };
+            }
+            case 'listCells': {
+                const cells = deps.listCells();
+                const data = cells.map(c => ({
+                    id: c.id,
+                    type: c.type,
+                    contentPreview: c.content.length > 200 ? c.content.slice(0, 200) + '…' : c.content,
+                    contentLength: c.content.length,
+                }));
+                return { ok: true, data: { cells: data } };
+            }
+            case 'readCell': {
+                const cell = deps.listCells().find(c => c.id === args.cellId);
+                if (!cell) return { ok: false, error: `cell not found: ${args.cellId}` };
+                return { ok: true, data: { id: cell.id, type: cell.type, content: cell.content } };
+            }
+            case 'deleteCell': {
+                const res = await deps.mutateCells({ kind: 'delete', cellId: args.cellId });
+                if (res.ok) return { ok: true, data: { cellId: args.cellId } };
+                return { ok: false, error: (res as { ok: false; error: string }).error };
+            }
+            case 'moveCell': {
+                const res = await deps.mutateCells({
+                    kind: 'move',
+                    cellId: args.cellId,
+                    targetCellId: args.targetCellId,
+                    position: args.position,
+                });
+                if (res.ok) return { ok: true, data: { cellId: args.cellId } };
+                return { ok: false, error: (res as { ok: false; error: string }).error };
+            }
+            case 'listVariables': {
+                if (!deps.getVariables) return { ok: false, error: 'variables not supported in this environment' };
+                return { ok: true, data: { variables: deps.getVariables() } };
+            }
+            case 'setVariable': {
+                if (!deps.getVariables || !deps.setVariables) return { ok: false, error: 'variables not supported in this environment' };
+                const name: string = args.name;
+                const value: string = args.value;
+                if (!name) return { ok: false, error: 'name must be non-empty' };
+                const next = { ...deps.getVariables(), [name]: value };
+                const res = await deps.setVariables(next);
+                if (res.ok) return { ok: true, data: { name, value } };
+                return { ok: false, error: (res as { ok: false; error: string }).error };
+            }
+            case 'deleteVariable': {
+                if (!deps.getVariables || !deps.setVariables) return { ok: false, error: 'variables not supported in this environment' };
+                const name: string = args.name;
+                const current = deps.getVariables();
+                if (!(name in current)) return { ok: true, data: { name, deleted: false } };
+                const next = { ...current };
+                delete next[name];
+                const res = await deps.setVariables(next);
+                if (res.ok) return { ok: true, data: { name, deleted: true } };
                 return { ok: false, error: (res as { ok: false; error: string }).error };
             }
             default:

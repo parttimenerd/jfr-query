@@ -218,6 +218,9 @@ export class LocalAiProvider implements IAiProvider {
      * structured `tools` field on the wire AND injects the local prompt hint
      * (a <tool>{…}</tool> textual fallback) into the system instruction. The
      * adapter parses both shapes — see `parseLocalToolCalls`.
+     *
+     * B-103: uses real SSE streaming (stream:true) so tokens appear progressively
+     * instead of all at once after the full response is received.
      */
     async *streamChatWithTools(
         messages: ToolChatMessage[],
@@ -251,22 +254,110 @@ export class LocalAiProvider implements IAiProvider {
             }
             wireMessages.push(wire);
         }
+
         const body: any = {
-            ...this.buildBody(model, wireMessages),
+            model,
+            messages: wireMessages,
+            stream: true,
+            max_tokens: this.maxTokens,
+            temperature: 0,
+            chat_template_kwargs: { enable_thinking: false },
         };
         if (tools.length > 0) body.tools = toolsToLocal(tools);
 
-        const raw = await this.sendWithRetry(body, opts?.signal);
-        const calls = (tools && tools.length > 0) ? parseLocalToolCalls({ content: raw }) : [];
-        if (raw && calls.length === 0) {
-            yield { kind: 'text', delta: raw };
-        } else if (raw) {
-            // Emit any prose text before the tool block so the UI shows it.
-            const cleaned = raw.replace(/<tool>[\s\S]*?<\/tool>/g, '').trim();
-            if (cleaned) yield { kind: 'text', delta: cleaned };
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
+        const onAbort = () => controller.abort();
+        opts?.signal?.addEventListener('abort', onAbort, { once: true });
+
+        let response: Response;
+        try {
+            response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+                method: 'POST',
+                headers: this.buildHeaders(),
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            });
+        } catch (e: any) {
+            clearTimeout(timer);
+            opts?.signal?.removeEventListener('abort', onAbort);
+            if (opts?.signal?.aborted || e.name === 'AbortError') throw new Error('Request aborted.');
+            throw new Error(`Cannot reach local AI server at ${this.baseUrl}: ${e.message ?? e}`);
+        } finally {
+            clearTimeout(timer);
+            opts?.signal?.removeEventListener('abort', onAbort);
         }
-        for (const call of calls) {
-            yield { kind: 'tool_call', id: call.id, name: call.name, args: call.args };
+
+        if (!response.ok) {
+            const errBody = await response.text().catch(() => '');
+            let msg = `Local AI server error ${response.status}`;
+            try {
+                const parsed = JSON.parse(errBody);
+                if (parsed?.error?.message) msg = parsed.error.message;
+                else if (typeof parsed?.error === 'string') msg = parsed.error;
+            } catch { /* not JSON */ }
+            if (response.status === 401) throw new Error('Local AI server rejected the API key (401).');
+            if (response.status === 404) throw new Error(`Local AI endpoint not found (404). Check the base URL: ${this.baseUrl}`);
+            throw new Error(msg);
+        }
+
+        // Accumulate partial tool-call argument chunks per index, emit at stream end.
+        const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
+        let fullText = '';
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let leftover = '';
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = leftover + decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+                leftover = lines.pop() ?? '';
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    const payload = line.slice(6).trim();
+                    if (payload === '[DONE]') break;
+                    let parsed: any;
+                    try { parsed = JSON.parse(payload); } catch { continue; }
+                    const delta = parsed.choices?.[0]?.delta;
+                    if (!delta) continue;
+                    if (delta.content) {
+                        fullText += delta.content;
+                        yield { kind: 'text', delta: String(delta.content) };
+                    }
+                    if (Array.isArray(delta.tool_calls)) {
+                        for (const tc of delta.tool_calls) {
+                            const idx: number = tc.index ?? 0;
+                            if (!toolCallBuffers.has(idx)) {
+                                toolCallBuffers.set(idx, { id: tc.id ?? '', name: tc.function?.name ?? '', args: '' });
+                            }
+                            const buf = toolCallBuffers.get(idx)!;
+                            if (tc.id) buf.id = tc.id;
+                            if (tc.function?.name) buf.name = tc.function.name;
+                            if (tc.function?.arguments) buf.args += tc.function.arguments;
+                        }
+                    }
+                }
+            }
+        } finally {
+            reader.releaseLock();
+        }
+
+        // If the model used textual <tool>…</tool> fallback instead of structured tool_calls,
+        // parse it out of the accumulated text buffer.
+        if (toolCallBuffers.size === 0 && tools.length > 0 && fullText) {
+            const calls = parseLocalToolCalls({ content: fullText });
+            for (const call of calls) {
+                yield { kind: 'tool_call', id: call.id, name: call.name, args: call.args };
+            }
+            return;
+        }
+
+        for (const buf of toolCallBuffers.values()) {
+            let args: any = {};
+            try { args = JSON.parse(buf.args); } catch { args = { _raw: buf.args }; }
+            yield { kind: 'tool_call', id: buf.id, name: buf.name, args };
         }
     }
 

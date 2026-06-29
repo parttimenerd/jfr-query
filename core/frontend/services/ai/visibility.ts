@@ -91,9 +91,14 @@ function describeSchema(schema: SchemaBundle | null | undefined): string {
     return out;
 }
 
+// B-086: cap the rows scanned for per-column stats so this stays O(1) for
+// large result sets. 1000 rows is more than enough for representativeness.
+const STATS_ROW_CAP = 1000;
+
 function summarizeColumn(col: ResultColumn, rows: Array<Record<string, any>>): string {
+    const sample = rows.length > STATS_ROW_CAP ? rows.slice(0, STATS_ROW_CAP) : rows;
     if (isNumericType(col.type)) {
-        const xs = rows
+        const xs = sample
             .map(r => r?.[col.name])
             .filter((v: any) => typeof v === 'number' && Number.isFinite(v)) as number[];
         if (xs.length === 0) return `${col.name} (${col.type}): all null`;
@@ -104,7 +109,7 @@ function summarizeColumn(col: ResultColumn, rows: Array<Record<string, any>>): s
         return `${col.name} (${col.type}): min=${min}, median=${median}, max=${max}`;
     }
     if (isStringType(col.type)) {
-        const distinct = [...new Set(rows.map(r => r?.[col.name]).filter(v => v != null))].slice(0, 3);
+        const distinct = [...new Set(sample.map(r => r?.[col.name]).filter(v => v != null))].slice(0, 3);
         if (distinct.length === 0) return `${col.name} (${col.type}): all null`;
         return `${col.name} (${col.type}): sample=[${distinct.map(s => JSON.stringify(s)).join(', ')}]`;
     }

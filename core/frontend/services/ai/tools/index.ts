@@ -77,14 +77,40 @@ export const TOOLS: Tool[] = [
         },
     },
     {
+        name: 'previewPlot',
+        kind: 'read',
+        description: 'Render a plot inline in the chat by running a SQL query and applying a plot DSL config. The user sees the chart in chat and can promote it to the notebook with one click. Use this to PROPOSE a plot without modifying the notebook — do not also call addCell for the same chart. plotConfig MUST be a DSL string like BAR_CHART(x: "col", y: ["col2"]) TITLE "Title". Disabled when chat visibility is "no-data".',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                sql: { type: 'string', description: 'A read-only SQL query whose result rows become the plot data.' },
+                plotConfig: { type: 'string', description: 'A plot DSL string, e.g. BAR_CHART(x: "objectClass", y: ["totalWeight"]) TITLE "Top Classes".' },
+                limit: { type: 'integer', minimum: 1, maximum: 500, description: 'Max rows fed into the plot (default 200).' },
+            },
+            required: ['sql', 'plotConfig'],
+        },
+    },
+    {
+        name: 'screenshotPlot',
+        kind: 'read',
+        description: 'Capture a PNG of a plot previously rendered with previewPlot. Returns the image so you can see what the user sees. Use sparingly — only when you need visual confirmation (e.g. label readability, layout) that you cannot infer from the SQL+DSL alone. Requires chat visibility "full"; returns an error otherwise.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                previewId: { type: 'string', description: 'The previewId returned by a recent previewPlot call. The chart with that id will be screenshotted.' },
+            },
+            required: ['previewId'],
+        },
+    },
+    {
         name: 'addCell',
         kind: 'mutate',
-        description: 'Add a new cell to the notebook. Cell type must be one of sql, plot, or markdown.',
+        description: 'Add a new cell to the notebook. Cell type must be one of sql, plot, or markdown. For plot cells, content MUST be a plot DSL string such as: BAR_CHART(x: "col", y: ["col2"]) TITLE "Title" — NOT JSON or Observable Plot syntax.',
         inputSchema: {
             type: 'object',
             properties: {
                 type: { type: 'string', enum: ['sql', 'plot', 'markdown'] },
-                content: { type: 'string' },
+                content: { type: 'string', description: 'For plot type: a DSL string like BAR_CHART(x: "objectClass", y: ["totalWeight"]) TITLE "My Chart". For sql type: the SQL query string. For markdown: markdown text.' },
                 afterCellId: { type: 'string', description: 'Optional id of the cell after which to insert.' },
             },
             required: ['type', 'content'],
@@ -106,15 +132,96 @@ export const TOOLS: Tool[] = [
     {
         name: 'applyPlot',
         kind: 'mutate',
-        description: 'Set a plot configuration on an existing plot cell. Use plotBlockIndex (0-based) to target a specific plot block when the cell has multiple plot blocks.',
+        description: 'Set a plot configuration on an existing plot cell using the DSL string format. plotConfig MUST be a DSL string like: BAR_CHART(x: "col", y: ["col2"]) TITLE "Title" — NOT JSON. Use plotBlockIndex (0-based) to target a specific plot block when the cell has multiple plot blocks.',
         inputSchema: {
             type: 'object',
             properties: {
                 cellId: { type: 'string' },
-                plotConfig: { type: 'string' },
+                plotConfig: { type: 'string', description: 'A plot DSL string, e.g.: BAR_CHART(x: "objectClass", y: ["totalWeight"]) TITLE "Top Classes". Valid plot types: LINE_CHART, BAR_CHART, AREA_CHART, SCATTER_PLOT, PIE_CHART, BOX_PLOT, TABLE. Do NOT use JSON or Observable Plot syntax.' },
                 plotBlockIndex: { type: 'number', description: '0-based index of the plot block to replace within the cell. Defaults to 0 (first plot block).' },
             },
             required: ['cellId', 'plotConfig'],
+        },
+    },
+    {
+        name: 'listCells',
+        kind: 'read',
+        description: 'List all cells in the notebook in order. Returns each cell\'s id, type, a content preview (up to 200 chars), and the full content length. Use readCell to fetch the full content of a specific cell.',
+        inputSchema: {
+            type: 'object',
+            properties: {},
+        },
+    },
+    {
+        name: 'readCell',
+        kind: 'read',
+        description: 'Return the full content of a single cell by id. Pair with listCells when you need to inspect a specific cell\'s full body.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                cellId: { type: 'string', description: 'The id of the cell to read.' },
+            },
+            required: ['cellId'],
+        },
+    },
+    {
+        name: 'deleteCell',
+        kind: 'mutate',
+        description: 'Delete a cell from the notebook by id. Requires user approval.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                cellId: { type: 'string', description: 'The id of the cell to delete.' },
+            },
+            required: ['cellId'],
+        },
+    },
+    {
+        name: 'moveCell',
+        kind: 'mutate',
+        description: 'Reorder a cell relative to another cell. position must be "before" or "after". Requires user approval.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                cellId: { type: 'string', description: 'The id of the cell to move.' },
+                targetCellId: { type: 'string', description: 'The id of the cell that cellId should be placed before/after.' },
+                position: { type: 'string', enum: ['before', 'after'], description: 'Whether to place cellId before or after targetCellId.' },
+            },
+            required: ['cellId', 'targetCellId', 'position'],
+        },
+    },
+    {
+        name: 'listVariables',
+        kind: 'read',
+        description: 'List the notebook\'s variables. Variables are referenced in SQL as $name (e.g. $session_start). Returns an object map of name → string value.',
+        inputSchema: {
+            type: 'object',
+            properties: {},
+        },
+    },
+    {
+        name: 'setVariable',
+        kind: 'mutate',
+        description: 'Set (or create) a notebook variable. Variables are referenced in SQL as $name. Value is always a string.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                name: { type: 'string', description: 'Variable name without the leading $.' },
+                value: { type: 'string', description: 'Value to assign (always stored as a string).' },
+            },
+            required: ['name', 'value'],
+        },
+    },
+    {
+        name: 'deleteVariable',
+        kind: 'mutate',
+        description: 'Delete a notebook variable by name. No error if it does not exist.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                name: { type: 'string', description: 'Variable name without the leading $.' },
+            },
+            required: ['name'],
         },
     },
 ];
