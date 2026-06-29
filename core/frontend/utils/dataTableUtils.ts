@@ -45,8 +45,42 @@ export const isDurationLike = (key: string, sample: any): boolean => {
     if (!DURATION_KEYWORDS.some(kw => lc.includes(kw))) return false;
     if (typeof value !== 'number' && typeof value !== 'bigint') return false;
     const num = Number(value);
-    if (num < 1 || num > 1e12) return false;
+    // Allow fractional-second values (e.g. JFR stores durations in seconds: 0.012 s = 12 ms).
+    // Upper cap 1e12 excludes epoch-scale timestamps.
+    if (num <= 0 || num > 1e12) return false;
     return true;
+};
+
+const BYTE_KEYWORDS = ['bytes', 'size', 'used', 'committed', 'reserved', 'allocated', 'heap', 'memory', 'ram', 'resident'];
+// Values in the range typical for JVM heap sizes: 1 KB – 256 GB
+const MIN_BYTE_VAL = 1_024;
+const MAX_BYTE_VAL = 256 * 1024 ** 3;
+
+/**
+ * Returns true when a numeric column looks like it holds byte counts.
+ * Heuristic: column name contains a byte-related keyword AND the sample
+ * value falls in [1 KB, 256 GB] (rules out raw counts and timestamps).
+ */
+export const isByteLike = (key: string, sample: any): boolean => {
+    if (!sample || sample[key] === undefined || sample[key] === null) return false;
+    const value = sample[key];
+    if (typeof value !== 'number' && typeof value !== 'bigint') return false;
+    const num = Number(value);
+    if (num < MIN_BYTE_VAL || num > MAX_BYTE_VAL) return false;
+    const lc = key.toLowerCase();
+    return BYTE_KEYWORDS.some(kw => lc.includes(kw));
+};
+
+/**
+ * Format a byte count as a human-readable string: "500.0 MB", "1.2 GB", etc.
+ */
+export const formatBytes = (bytes: number): string => {
+    const abs = Math.abs(bytes);
+    const sign = bytes < 0 ? '-' : '';
+    if (abs >= 1024 ** 3) return `${sign}${(abs / 1024 ** 3).toFixed(1)} GB`;
+    if (abs >= 1024 ** 2) return `${sign}${(abs / 1024 ** 2).toFixed(1)} MB`;
+    if (abs >= 1024)      return `${sign}${(abs / 1024).toFixed(1)} KB`;
+    return `${sign}${abs} B`;
 };
 
 /**

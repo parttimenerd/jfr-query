@@ -84,13 +84,17 @@ describe('buildPlotAiContext — security', () => {
 
 describe('buildPlotAiContext — truncation', () => {
     it('truncates prior cells FIFO (oldest first) when over budget', () => {
-        // Each cell ~1KB → 250 tokens; budget = 600 system+user → ~3 cells max.
+        // Each cell ~1KB → 250 tokens. Pick a budget that exceeds the system
+        // prompt + a few cells but cannot fit all five — so the algorithm has
+        // to drop the oldest (FIFO). The exact figure floats with the system
+        // prompt's size; keep it loose enough that prompt copy-edits don't
+        // break the assertion, tight enough that some cells must be dropped.
         const big = 'X'.repeat(1024);
         const built = buildPlotAiContext({
             priorPlotCellsContent: [`cell0-${big}`, `cell1-${big}`, `cell2-${big}`, `cell3-${big}`, `cell4-${big}`],
             currentCellUpToCursor: 'LINE_CHART(',
             currentCellAfterCursor: '',
-            budgetTokens: 600,
+            budgetTokens: 1200,
             maxPriorCellChars: 1024,
         });
         // Oldest must go first. cell0 should be excluded if any was dropped.
@@ -211,7 +215,7 @@ describe('buildPlotAiContext — B-186 O(n) truncation correctness', () => {
                 'cell2-small',
                 'cell3-small',
             ],
-            budgetTokens: 400, // enough for base + small cells but not the huge one
+            budgetTokens: 800, // base + small cells fit; huge cell does not
             currentCellUpToCursor: 'LINE(',
             currentCellAfterCursor: '',
             maxPriorCellChars: 4000,

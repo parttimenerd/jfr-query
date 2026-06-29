@@ -18,6 +18,14 @@ export default defineConfig(({ mode }) => {
             target: `http://localhost:${env.JFR_SERVER_PORT || '4244'}`,
             changeOrigin: true,
           },
+          // Forward /anthropic-proxy/* to the local Anthropic proxy (avoids COEP/CORS)
+          ...(env.ANTHROPIC_BASE_URL ? {
+            '/anthropic-proxy': {
+              target: env.ANTHROPIC_BASE_URL.replace(/\/$/, ''),
+              changeOrigin: true,
+              rewrite: (path: string) => path.replace(/^\/anthropic-proxy/, ''),
+            },
+          } : {}),
         },
       },
       optimizeDeps: {
@@ -29,6 +37,13 @@ export default defineConfig(({ mode }) => {
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.OPENAI_API_KEY': JSON.stringify(env.OPENAI_API_KEY),
         'process.env.GARDENER_API_KEY': JSON.stringify(env.GARDENER_API_KEY),
+        'process.env.ANTHROPIC_API_KEY': JSON.stringify(env.ANTHROPIC_API_KEY),
+        'process.env.ANTHROPIC_AUTH_TOKEN': JSON.stringify(env.ANTHROPIC_AUTH_TOKEN),
+        // When a local proxy is configured, rewrite to /anthropic-proxy so the browser
+        // fetches same-origin (no CORS/COEP issue). The Vite dev proxy forwards it.
+        'process.env.ANTHROPIC_BASE_URL': JSON.stringify(
+          env.ANTHROPIC_BASE_URL ? '/anthropic-proxy' : ''
+        ),
       },
       resolve: {
         alias: {
