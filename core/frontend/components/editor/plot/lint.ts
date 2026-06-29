@@ -625,8 +625,10 @@ function insertAt(view: EditorView, pos: number, text: string): void {
 }
 
 /**
- * Closest match by Levenshtein distance with a max of 2. Returns undefined
- * if nothing within range.
+ * Closest match by Levenshtein distance. The allowed distance scales with
+ * the shorter name's length: max(2, floor(len/5)) so long names like
+ * HISTOGRAM (9 chars → max 2) and GANTT_CHART (10 chars → max 2) still
+ * catch 3-edit typos, while single-character names never spuriously match.
  */
 export function closestMatch(needle: string, candidates: string[]): string | undefined {
     if (candidates.length === 0) return undefined;
@@ -635,8 +637,9 @@ export function closestMatch(needle: string, candidates: string[]): string | und
     for (const c of candidates) {
         const cLc = c.toLowerCase();
         if (cLc === lc) return c;
+        const maxDist = Math.max(2, Math.floor(Math.min(lc.length, cLc.length) / 5));
         const d = levenshtein(lc, cLc);
-        if (d > 2) continue;
+        if (d > maxDist) continue;
         if (!best || d < best.dist) best = { name: c, dist: d };
     }
     return best?.name;

@@ -108,19 +108,27 @@ const AiErrorFixer: React.FC<AiErrorFixerProps> = ({ error, config, data, sql, c
     const [apiError, setApiError] = useState<string | null>(null);
 
     useEffect(() => {
+        if (!aiService.isInitialized()) {
+            setIsLoading(false);
+            setApiError('AI feature not configured');
+            return;
+        }
         let isMounted = true;
-        // B-118: 500ms debounce — don't fire synchronously on every re-render.
+        let timeoutId: ReturnType<typeof setTimeout>;
         const timer = setTimeout(() => {
             if (!isMounted) return;
             setIsLoading(true);
             setApiError(null);
+            timeoutId = setTimeout(() => {
+                if (isMounted) { setIsLoading(false); setApiError('AI suggestion timed out'); }
+            }, 10_000);
             aiService.getAiPlotFixSuggestion(error, sql, data, config, cellContext.content, metadata.customSystemPrompt)
                 .then(res => { if (isMounted) setSuggestion(res); })
                 .catch(err => { if (isMounted) setApiError(err.message); })
-                .finally(() => { if (isMounted) setIsLoading(false); });
+                .finally(() => { if (isMounted) { setIsLoading(false); clearTimeout(timeoutId); } });
         }, 500);
 
-        return () => { isMounted = false; clearTimeout(timer); };
+        return () => { isMounted = false; clearTimeout(timer); clearTimeout(timeoutId); };
     }, [error, config, data, sql, cellContext, metadata]);
 
     return (
@@ -201,9 +209,14 @@ const InteractivePlotWrapper: React.FC<{
                 finalMax = dataRange.max;
                 finalMin = dataRange.max - range;
             }
-            if(dataRange.max - dataRange.min < finalMax - finalMin) {
-                finalMin = dataRange.min;
-                finalMax = dataRange.max;
+            // B-020: if the requested range is wider than the data, shrink it around the
+            // current center rather than jumping to [dataRange.min, dataRange.max].
+            const dataSpan = dataRange.max - dataRange.min;
+            if (dataSpan < finalMax - finalMin) {
+                const center = (finalMin + finalMax) / 2;
+                const clampedCenter = Math.max(dataRange.min + dataSpan / 2, Math.min(dataRange.max - dataSpan / 2, center));
+                finalMin = clampedCenter - dataSpan / 2;
+                finalMax = clampedCenter + dataSpan / 2;
             }
         }
 
@@ -226,6 +239,7 @@ const InteractivePlotWrapper: React.FC<{
             const [currentMin, currentMax] = localDomain ?? rangeArr ?? [0, 1];
 
             const rect = el.getBoundingClientRect();
+            if (rect.width <= 0) return;
             const mouseX = e.clientX - rect.left;
             const zoomFactor = 1 + Math.abs(e.deltaY) / 200;
             const currentRange = currentMax - currentMin;
@@ -261,6 +275,7 @@ const InteractivePlotWrapper: React.FC<{
     const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
         if (!dragRef.current || !wrapperRef.current) return;
         const rect = wrapperRef.current.getBoundingClientRect();
+        if (rect.width <= 0) return;
         const { startX, domainMin, domainMax } = dragRef.current;
         const range = domainMax - domainMin;
         const pixelsDragged = e.clientX - startX;

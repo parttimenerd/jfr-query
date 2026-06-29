@@ -48,6 +48,8 @@ export interface AiPlotSourceDeps {
     stream: StreamFn;
     /** Cap on rendered ghost-text length (chars). Default 320. */
     maxChars?: number;
+    /** Called each time a context is built; receives whether prior-cell context was trimmed to fit the token budget. */
+    onContextTrimmed?: (trimmed: boolean) => void;
 }
 
 const DEFAULT_DEBOUNCE_MS = 250;
@@ -121,9 +123,9 @@ function lastStableBoundary(s: string): number {
 export function validatePlotStream(prefix: string, acc: string): PlotStreamValidation {
     // Fast-path garbage filter: any acc that opens with a non-DSL character is
     // discarded outright. This catches models that hallucinate <<bracketed>>
-    // narration or other obvious non-DSL output. Whitespace (incl. \r) at the
-    // start is stripped so leading newlines/spaces stay legal continuations.
-    const firstNonWs = acc.replace(/^[\s\r]+/, '');
+    // narration or other obvious non-DSL output. Whitespace and BOM (U+FEFF) at
+    // the start are stripped so leading newlines/spaces stay legal continuations.
+    const firstNonWs = acc.replace(/^[\s﻿]+/, '');
     if (firstNonWs.length === 0) return { status: 'discard' };
     if (!isValidStartChar(firstNonWs[0])) {
         return { status: 'discard' };
@@ -251,6 +253,8 @@ export function aiPlotAutocompleteExtension(deps: AiPlotSourceDeps): Extension {
                     currentCellUpToCursor: upTo,
                     currentCellAfterCursor: after,
                 });
+
+                deps.onContextTrimmed?.(built.trimmed);
 
                 const cacheKey = `plot|${settings.aiAutocompleteModel}|${fnv1aHash(
                     built.system + '\x00' + built.user,

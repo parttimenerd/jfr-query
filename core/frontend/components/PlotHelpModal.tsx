@@ -41,12 +41,17 @@ const genericSampleData2 = [
     { id: 8, timestamp: "2023-01-01T12:03:00Z", other_metric: 91 },
 ];
 
-const initialGeneralExample = `LINE_CHART(x: "timestamp", y: ["duration", "other_metric"]) ON 1, 2 TITLE "Combined Metrics" ZOOM 0.6; PIE_CHART(name: "category", value: "value") ON 1 ZOOM 0.6
+const initialGeneralExample = `LINE_CHART(x: "timestamp", y: ["duration"]) ON 1 TITLE "Query 1: Duration" ZOOM 0.6; LINE_CHART(x: "timestamp", y: ["other_metric"]) ON 2 TITLE "Query 2: Other Metric" ZOOM 0.6
 
-TABLE() ON 1, 2 ZOOM 0.6
+
+PIE_CHART(name: "category", value: "value") ON 1 ZOOM 0.6
+
+
+TABLE() ON 1 ZOOM 0.6
 `;
 
 const initialInteractiveExample = `LINE_CHART(x: "timestamp", y: ["duration"]) LINK_X($start, $end, master) TITLE "Duration"
+
 
 LINE_CHART(x: "timestamp", y: ["value"]) LINK_X($start, $end) TITLE "Value"
 `;
@@ -159,7 +164,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                     <div className="p-4 bg-gray-900/50 rounded-lg mb-8 border border-gray-700">
                         <h3 className="font-semibold text-lg text-gray-200">Plot Syntax Quick Reference</h3>
                         <p className="mt-2 text-sm text-gray-400">
-                            Each plot block uses a function-call syntax. Column names available in your query results are shown as chips above the editor — click one to copy it. The <span className="text-gray-300 font-mono text-xs bg-gray-700 px-1 py-0.5 rounded">switch to:</span> row lets you instantly swap the plot type.
+                            Each plot block uses a function-call syntax. Column names available in your query results are shown as chips above the editor — click one to copy it into your plot config.
                         </p>
                         <ul className="mt-4 text-sm space-y-4 list-disc list-inside text-gray-300">
                             <li>
@@ -202,11 +207,12 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                     <div>
                                         <h5 className="text-xs font-semibold text-gray-400 mb-1">Preview</h5>
                                         <div className="bg-gray-900/50 rounded-lg border border-gray-700 h-[300px] overflow-hidden">
-                                            <PlotRenderer 
-                                                config={generalExample} 
+                                            <PlotRenderer
+                                                config={generalExample}
                                                 data={multiQueryData.prefixedData}
-                                                sql="SELECT * FROM table1; CREATE VIEW v2 AS SELECT * from table2;"
-                                                cellContext={{id: `ex-general`, title: 'Example', content:''}} 
+                                                dataByQueryRef={{ 1: genericSampleData, 2: genericSampleData2 }}
+                                                sql="SELECT * FROM table1; SELECT * from table2;"
+                                                cellContext={{id: `ex-general`, title: 'Example', content:''}}
                                                 onApplyFix={setGeneralExample}
                                                 metadata={mockMetadata}
                                                 onMetadataChange={async () => {}}

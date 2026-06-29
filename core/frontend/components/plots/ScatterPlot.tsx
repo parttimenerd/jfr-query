@@ -4,7 +4,7 @@ import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec } from '../../utils/plotUtils';
+import { buildParserSpec, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds } from '../../utils/plotUtils';
 
 interface ScatterPlotConfig {
   x: string;
@@ -27,6 +27,8 @@ const parseConfig = createConfigParser<ScatterPlotConfig>(buildParserSpec(params
 const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], domainX?: [any, any], domainY?: [number, number], isAnimationActive?: boolean, animationDuration?: number }> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration }) => {
   const { settings } = useContext(SettingsContext);
   const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
+  const yIsDuration = isDurationColumnName(config.y ?? '') && sampleLooksLikeNanoseconds(data, [config.y]);
+  const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
 
   const series = React.useMemo(() => {
     const groupCol = config.color;
@@ -58,9 +60,9 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
         <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
           <XAxis allowDataOverflow type="number" dataKey={config.x} name={config.x} tickFormatter={numberFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={domainX} />
-          <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={numberFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={domainY} allowDataOverflow />
+          <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={yFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={domainY} allowDataOverflow />
           {config.size && <ZAxis type="number" dataKey={config.size} name={config.size} range={[10, 200]} domain={sizeDomain} />}
-          <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} formatter={numberFormatter} />
+          <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} formatter={yFormatter} />
           <Legend wrapperStyle={{ fontSize: "12px" }} verticalAlign="bottom" align="center" />
           {series.map((s, i) => (
             <Scatter key={s.name} name={s.name} data={s.data} fill={`hsl(${i * 60}, 70%, 50%)`} isAnimationActive={isAnimationActive} animationDuration={animationDuration} />

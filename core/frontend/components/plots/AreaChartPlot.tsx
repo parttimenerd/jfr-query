@@ -5,7 +5,7 @@ import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { formatTimestamp } from '../../utils/timeFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec, findColumn, findColumns, getTimeValue } from '../../utils/plotUtils';
+import { buildParserSpec, findColumn, findColumns, getTimeValue, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds } from '../../utils/plotUtils';
 import { usePlotGestures } from '../../hooks/usePlotGestures';
 import { warnDeprecated } from './deprecation';
 import type { ParsedPlotCall } from '../../utils/plotParser';
@@ -111,6 +111,9 @@ const AreaChartComponent: React.FC<{
     return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, finalXCol: xCol };
   }, [data, config.x, config.y]);
 
+  const yIsDuration = allY.length > 0 && allY.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY);
+  const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
+
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
       <ResponsiveContainer width="100%" height="100%" minHeight={200}>
@@ -134,7 +137,7 @@ const AreaChartComponent: React.FC<{
           <YAxis
             stroke="#9ca3af"
             tick={{ fontSize: 12 }}
-            tickFormatter={numberFormatter}
+            tickFormatter={yFormatter}
             label={
               config.yAxisLabel
                 ? { value: config.yAxisLabel, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 }
@@ -146,7 +149,7 @@ const AreaChartComponent: React.FC<{
           />
           <Tooltip
             contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
-            formatter={(v, n) => [numberFormatter(v), String(n).replace(/_/g, ' ')]}
+            formatter={(v, n) => [yFormatter(v), String(n).replace(/_/g, ' ')]}
             labelFormatter={isTime ? (l) => formatTimestamp(l, settings.timeFormat) : undefined}
           />
           <Legend wrapperStyle={{ fontSize: '12px' }} formatter={v => String(v).replace(/_/g, ' ')} verticalAlign="bottom" align="center" />

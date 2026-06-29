@@ -167,6 +167,42 @@ function normalizeEpochInteger(n: number, digits: number): number {
     return n;
 }
 
+// Matches columns that store durations (not absolute timestamps). Mirrors classifyColumns.ts DURATION_NAMES_RE.
+const DURATION_COL_RE = /(duration|elapsed|latency|pause|wait|delay|interval|lag|_ns|nanos)/i;
+
+/** True when the column name suggests it stores a duration value (likely nanoseconds from JFR). */
+export function isDurationColumnName(name: string): boolean {
+    return DURATION_COL_RE.test(name);
+}
+
+/**
+ * Formats a nanosecond duration value as a human-readable string.
+ * ≥ 1s → "1.23s", ≥ 1ms → "1.23ms", else → "123ns"
+ */
+export function formatDurationNs(ns: any): string {
+    const n = Number(ns);
+    if (!Number.isFinite(n)) return String(ns);
+    const abs = Math.abs(n);
+    if (abs >= 1e9) return `${(n / 1e9).toPrecision(3)}s`;
+    if (abs >= 1e6) return `${(n / 1e6).toPrecision(3)}ms`;
+    if (abs >= 1e3) return `${(n / 1e3).toPrecision(3)}µs`;
+    return `${n}ns`;
+}
+
+/**
+ * Returns true when the sample values for the given columns are all large
+ * enough that they are likely nanoseconds (> 1ms = 1e6 ns).
+ */
+export function sampleLooksLikeNanoseconds(data: any[], cols: string[]): boolean {
+    if (!data.length || !cols.length) return false;
+    for (const col of cols) {
+        const sample = data.find(row => row[col] != null)?.[col];
+        if (sample == null) continue;
+        if (Math.abs(Number(sample)) < 1e6) return false;
+    }
+    return true;
+}
+
 /**
  * Given a plot type name and available data columns, returns a template string with
  * required column arguments pre-filled using heuristics.

@@ -65,6 +65,12 @@ const GanttChartComponent: React.FC<{
     const rCol = findColumn(config.lane, allColumns);
     const colorCol = config.color ? findColumn(config.color, allColumns) : null;
 
+    // B-183: if a required column wasn't found, bail out early to avoid silently
+    // rendering an empty chart with all-blank lane labels.
+    if (!allColumns.includes(sCol) || !allColumns.includes(eCol) || !allColumns.includes(rCol)) {
+      return { chartData: [], isTime: false, startCol: sCol, endCol: eCol, rowCol: rCol, colorCategories: [] };
+    }
+
     const firstStart = data.find(d => d[sCol] != null)?.[sCol];
     const timeVal = getTimeValue(firstStart);
     const isTimeAxis = !isNaN(timeVal);
