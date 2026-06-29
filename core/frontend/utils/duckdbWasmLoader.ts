@@ -1,5 +1,6 @@
 import * as duckdb from '@duckdb/duckdb-wasm';
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
+import { BUILTIN_MACROS_SQL } from '../data/builtinSql';
 
 export async function loadDuckDbFileIntoWasm(
   db: AsyncDuckDB,
@@ -28,6 +29,11 @@ export async function loadDuckDbFileIntoWasm(
     }
   } finally {
     await conn.query("DETACH src");
+  }
+  // Re-register builtin macros — DuckDB WASM doesn't support ATTACH for
+  // function/macro objects, so they must be recreated in the in-memory catalog.
+  for (const sql of BUILTIN_MACROS_SQL) {
+    try { await conn.query(sql); } catch { /* skip macros that depend on missing tables */ }
   }
 }
 

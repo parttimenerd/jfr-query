@@ -4,6 +4,7 @@ import { TableSchema, ViewSchema, MacroSchema } from '../types';
 import { initDuckDBWasm, loadDuckDbFileIntoWasm } from '../utils/duckdbWasmLoader';
 import { loadJfrIntoWasm } from '../utils/jfrToWasmLoader';
 import { DEMO_SETUP_SQL } from '../data/demoNotebook';
+import { BUILTIN_MACROS_SQL } from '../data/builtinSql';
 
 const QUERY_ENDPOINT = `/api/query`;
 
@@ -90,19 +91,26 @@ const executeRemoteQuery = async (sql: string): Promise<any> => {
     }
 };
 
-const probeServer = async (): Promise<{ ok: boolean; reason?: string }> => {
+const probeServer = async (): Promise<{ ok: boolean; reason?: string; silent?: boolean }> => {
     try {
         const r = await fetch(QUERY_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sql: 'SELECT 1' }),
         });
-        if (!r.ok) return { ok: false, reason: `server probe returned HTTP ${r.status}` };
+        // 5xx / 404 typically means "no query server is running here" — that's
+        // the normal WASM-only setup, not a noteworthy failure. Don't bother
+        // the user with a toast.
+        if (!r.ok) {
+            const silent = r.status >= 500 || r.status === 404;
+            return { ok: false, reason: `server probe returned HTTP ${r.status}`, silent };
+        }
         const body = await r.json().catch(() => null);
         if (Array.isArray(body) || (body && !body.error)) return { ok: true };
         return { ok: false, reason: body?.error || 'unexpected probe response' };
     } catch (err: any) {
-        return { ok: false, reason: err.message || 'network error' };
+        // Network errors (server unreachable) are the WASM-only happy path.
+        return { ok: false, reason: err.message || 'network error', silent: true };
     }
 };
 
@@ -214,6 +222,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             if (exists.length > 0) {
               const info = await runQuery(`SELECT "firstEvent", "lastEvent" FROM "RecordingInfo" LIMIT 1;`);
               if (info[0]) { const s = new Date(info[0].firstEvent).getTime(), e = new Date(info[0].lastEvent).getTime(); if(!isNaN(s)&&!isNaN(e)){ setRecordingStart(s); setRecordingEnd(e); }}
+            } else {
+              // No RecordingInfo table — derive bounds from JFR tables that have a startTime column.
+              const tablesWithStartTime = await runQuery(
+                `SELECT table_name FROM duckdb_columns() WHERE column_name='startTime' AND table_name NOT IN (SELECT view_name FROM duckdb_views()) LIMIT 10`
+              );
+              if (tablesWithStartTime.length > 0) {
+                const unionParts = tablesWithStartTime.map((r: any) => `SELECT MIN("startTime") AS lo, MAX("startTime") AS hi FROM "${r.table_name.replace(/"/g, '""')}"`);
+                const bounds = await runQuery(`SELECT MIN(lo) AS lo, MAX(hi) AS hi FROM (${unionParts.join(' UNION ALL ')})`);
+                if (bounds[0]?.lo != null) {
+                  const s = new Date(bounds[0].lo).getTime(), e = new Date(bounds[0].hi).getTime();
+                  if (!isNaN(s) && !isNaN(e)) { setRecordingStart(s); setRecordingEnd(e); }
+                }
+              }
             }
           } catch (e) { console.warn(`Could not get recording time, using fallback.`, e); }
       }
@@ -298,7 +319,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       } else {
         setMode('wasm');
-        setServerProbeError(probe.reason || 'server probe failed');
+        if (!probe.silent) setServerProbeError(probe.reason || 'server probe failed');
         setDbState(DBState.NEEDS_FILE);
       }
     })();
@@ -344,6 +365,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Execute each statement in DEMO_SETUP_SQL individually
       for (const stmt of DEMO_SETUP_SQL.split(/;\s*\n/).map(s => s.trim()).filter(Boolean)) {
         await runWasmQuery(conn, stmt + ';');
+      }
+      // Register built-in macros so notebooks can use P90(), format_duration(), etc.
+      for (const sql of BUILTIN_MACROS_SQL) {
+        try { await conn.query(sql); } catch (e) { console.warn('builtin macro failed:', e); }
       }
       setSourceType('jfr');
       setDbState(DBState.SCHEMA_LOADING);

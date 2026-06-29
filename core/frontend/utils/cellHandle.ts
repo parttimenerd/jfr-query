@@ -14,3 +14,6 @@ export const sanitizeForDuckDB = (id: string): string => id.replace(/-/g, '_').r
 
 /** Wraps an identifier in double quotes, escaping embedded quotes per DuckDB rules. */
 export const quoteIdent = (id: string): string => `"${id.replace(/"/g, '""')}"`;
+
+/** Wraps a value in single quotes for use in SQL string literals, escaping embedded single quotes. */
+export const quoteLiteral = (val: string): string => `'${val.replace(/'/g, "''")}'`;

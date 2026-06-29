@@ -1,7 +1,7 @@
 import React, { createContext, ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import type { ColumnSchema } from '../types';
 import { DataContext } from './DuckDBContext';
-import { quoteIdent, sanitizeForDuckDB } from '../utils/cellHandle';
+import { quoteIdent, quoteLiteral, sanitizeForDuckDB } from '../utils/cellHandle';
 
 /**
  * Information captured about a SQL cell's alias after a successful run.
@@ -117,8 +117,8 @@ export const buildAliasSql = (args: BuildAliasSqlArgs): BuildAliasSqlResult => {
 
     const columnsQuery =
         `SELECT column_name, data_type FROM information_schema.columns ` +
-        `WHERE table_schema = '${sanHandle.replace(/'/g, "''")}' ` +
-        `AND table_name = '${aliasOr1.replace(/'/g, "''")}'`;
+        `WHERE table_schema = ${quoteLiteral(sanHandle)} ` +
+        `AND table_name = ${quoteLiteral(aliasOr1)}`;
 
     return { sanitizedHandle: sanHandle, aliasOr1, statements, bareShadowed, columnsQuery };
 };

@@ -90,7 +90,11 @@ export class Executor {
                 }
             }
             // If the run id was bumped while we waited, abandon this run.
-            if (this.runIds.get(cellId) !== myRunId) return;
+            // B-112: reset to 'pending' so the cell doesn't show stale 'running' status.
+            if (this.runIds.get(cellId) !== myRunId) {
+                if (this.status.get(cellId) === 'running') this.setStatus(cellId, 'pending');
+                return;
+            }
 
             this.setStatus(cellId, 'running');
             try {

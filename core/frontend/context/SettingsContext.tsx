@@ -9,6 +9,7 @@ export interface Settings {
     googleApiKey: string;
     openaiApiKey: string;
     anthropicApiKey: string;
+    anthropicBaseUrl: string;
     gardenerApiKey: string;
     localApiKey: string;
     localBaseUrl: string;
@@ -75,7 +76,8 @@ const defaultSettings: Settings = {
     aiProvider: 'google',
     googleApiKey: process.env.GEMINI_API_KEY || process.env.API_KEY || '',
     openaiApiKey: process.env.OPENAI_API_KEY || '',
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || '',
+    anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || '',
     gardenerApiKey: process.env.GARDENER_API_KEY || '',
     localApiKey: process.env.LOCAL_AI_API_KEY || '',
     localBaseUrl: process.env.LOCAL_AI_BASE_URL || 'http://localhost:8080',
@@ -134,6 +136,9 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
                 if (!merged.googleApiKey) merged.googleApiKey = defaultSettings.googleApiKey;
                 if (!merged.openaiApiKey) merged.openaiApiKey = defaultSettings.openaiApiKey;
                 if (!merged.anthropicApiKey) merged.anthropicApiKey = defaultSettings.anthropicApiKey;
+                // Env-provided base URL always wins (the Vite define rewrites it to /anthropic-proxy
+                // when ANTHROPIC_BASE_URL is set, avoiding CORS). Override any stored value.
+                if (defaultSettings.anthropicBaseUrl) merged.anthropicBaseUrl = defaultSettings.anthropicBaseUrl;
                 if (!merged.gardenerApiKey) merged.gardenerApiKey = defaultSettings.gardenerApiKey;
                 if (!merged.localApiKey) merged.localApiKey = defaultSettings.localApiKey;
                 if (!merged.localBaseUrl) merged.localBaseUrl = defaultSettings.localBaseUrl;
