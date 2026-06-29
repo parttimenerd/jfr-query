@@ -1,5 +1,5 @@
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useCallback } from 'react';
 import type { NotebookCellData, NotebookMetadata } from '../types';
 import NotebookCell from './NotebookCell';
 import SettingsPanel from './SettingsPanel';
@@ -18,6 +18,8 @@ interface NotebookProps {
     collapseTrigger: number;
     allCollapsed: boolean;
     isAiFeatureActive: boolean;
+    /** Incremented on "Clear All Results" so cells can cancel pending auto-run timers. */
+    clearResultsTrigger?: number;
     onRunQuery: (cellId: string, sql: string, queryIndex: number, allVariables: Record<string, string>) => void;
     onUpdateCell: (cellId: string, updatedContent: string) => void;
     onDeleteCell: (cellId: string) => void;
@@ -31,17 +33,27 @@ interface NotebookProps {
     onRunPreviewQuery: (queryToRun: string) => Promise<any[]>;
     onMetadataChange: (newMetadata: NotebookMetadata) => Promise<void>;
     presenterMode?: boolean;
+    /** Forward to NotebookCell → InlineChat for "pop to sidebar" feature. */
+    onPopChatToSidebar?: (snapshot: import('./ChatPanel').InlineChatSnapshot) => void;
+    /** Forward to NotebookCell → InlineChat for reference link navigation. */
+    onNavigateRef?: (ref: string) => void;
 }
 
 const Notebook: React.FC<NotebookProps> = (props) => {
     const {
         notebookMarkdown, setNotebookMarkdown, isMarkdownMode, isAutoRunEnabled, cells, metadata, results,
-        collapseTrigger, allCollapsed, isAiFeatureActive, onRunQuery, onUpdateCell, onDeleteCell, onDeleteQueryBlock,
+        collapseTrigger, allCollapsed, isAiFeatureActive, clearResultsTrigger, onRunQuery, onUpdateCell, onDeleteCell, onDeleteQueryBlock,
         onAddCell, onAddCellFromTool, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange,
-        presenterMode = false
+        presenterMode = false, onPopChatToSidebar, onNavigateRef,
     } = props;
 
     const settingsPanelRef = useRef<{ focusVariable: (name: string) => void }>(null);
+
+    // B-033: persist per-cell collapse state across raw-mode remounts.
+    const cellCollapseStateRef = useRef<Map<string, boolean>>(new Map());
+    const handleCellCollapseChange = useCallback((cellId: string, collapsed: boolean) => {
+        cellCollapseStateRef.current.set(cellId, collapsed);
+    }, []);
 
     // Stable empty array — avoids creating a new reference on every render for
     // cells that have no results yet, which would cause useEffect deps to fire.
@@ -73,14 +85,57 @@ const Notebook: React.FC<NotebookProps> = (props) => {
 
     if (isMarkdownMode) {
         return (
-            <div className="p-4 md:p-6 lg:p-8 h-full">
-                <div className="h-full border border-gray-700 rounded-lg overflow-hidden">
-                   <SQLEditor 
-                        value={notebookMarkdown} 
-                        onChange={setNotebookMarkdown} 
+            <div className="flex h-full gap-0">
+                <div className="w-1/2 h-full border-r border-gray-700 shrink-0">
+                    <SQLEditor
+                        value={notebookMarkdown}
+                        onChange={setNotebookMarkdown}
                         mode="markdown"
                         fullHeight
                     />
+                </div>
+                <div className="w-1/2 h-full overflow-y-auto">
+                    <div className="p-4 md:p-6 space-y-4">
+                        <SettingsPanel
+                            ref={settingsPanelRef}
+                            metadata={metadata}
+                            onMetadataChange={onMetadataChange}
+                            onRunPreviewQuery={onRunPreviewQuery}
+                            isAiFeatureActive={isAiFeatureActive}
+                        />
+                        {cells.map(cell => (
+                            <NotebookCell
+                                key={cell.id}
+                                cell={cell}
+                                allCells={cells}
+                                metadata={metadata}
+                                results={results[cell.id] ?? emptyResults}
+                                crossCellQueryRefs={crossCellQueryRefs}
+                                isAutoRunEnabled={isAutoRunEnabled}
+                                collapseTrigger={collapseTrigger}
+                                allCollapsed={allCollapsed}
+                                isAiFeatureActive={isAiFeatureActive}
+                                initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
+                                onCellCollapseChange={(c) => handleCellCollapseChange(cell.id, c)}
+                                clearResultsTrigger={clearResultsTrigger}
+                                onRunQuery={onRunQuery}
+                                onUpdate={(updatedContent) => onUpdateCell(cell.id, updatedContent)}
+                                onUpdateCell={onUpdateCell}
+                                onAddCellFromTool={onAddCellFromTool}
+                                onDelete={() => onDeleteCell(cell.id)}
+                                onDeleteQueryBlock={(index) => onDeleteQueryBlock(cell.id, index)}
+                                onMoveCell={onMoveCell}
+                                onSuggestPlot={onSuggestPlot}
+                                onFormatCode={onFormatCode}
+                                onRunPreviewQuery={onRunPreviewQuery}
+                                onGlobalVariableClick={handleGlobalVariableClick}
+                                onMetadataChange={onMetadataChange}
+                                presenterMode={presenterMode}
+                                onPopChatToSidebar={onPopChatToSidebar}
+                                onNavigateRef={onNavigateRef}
+                            />
+                        ))}
+                    </div>
                 </div>
             </div>
         );
@@ -107,6 +162,9 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     collapseTrigger={collapseTrigger}
                     allCollapsed={allCollapsed}
                     isAiFeatureActive={isAiFeatureActive}
+                    initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
+                    onCellCollapseChange={(c) => handleCellCollapseChange(cell.id, c)}
+                    clearResultsTrigger={clearResultsTrigger}
                     onRunQuery={onRunQuery}
                     onUpdate={(updatedContent) => onUpdateCell(cell.id, updatedContent)}
                     onUpdateCell={onUpdateCell}
@@ -120,6 +178,8 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     onGlobalVariableClick={handleGlobalVariableClick}
                     onMetadataChange={onMetadataChange}
                     presenterMode={presenterMode}
+                    onPopChatToSidebar={onPopChatToSidebar}
+                    onNavigateRef={onNavigateRef}
                 />
             ))}
             <div className="flex justify-center py-4">

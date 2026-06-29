@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { substituteVariables, findRemainingVariables } from '../utils/variableSubstitution';
+import { substituteVariables, findRemainingVariables, toSqlVariables } from '../utils/variableSubstitution';
 
 describe('substituteVariables — basic substitution', () => {
     it('substitutes a single variable', () => {
@@ -143,5 +143,69 @@ describe('substituteVariables — transitive resolution (fixpoint, B-011)', () =
     it('word-boundary safety preserved across transitive passes', () => {
         expect(substituteVariables('SELECT $v, $v2', { '$v': '$base', '$v2': '99', '$base': '1' }))
             .toBe('SELECT 1, 99');
+    });
+});
+
+describe('substituteVariables — no-prefix keys (app-injected variables)', () => {
+    it('substitutes $session_start from a key stored without $ prefix', () => {
+        // session_start / session_end are stored without $ in metadata.variables
+        // but referenced as $session_start in SQL and markdown prose.
+        expect(substituteVariables(
+            "WHERE startTime > $session_start",
+            { session_start: '2024-03-15T11:00' },
+        )).toBe("WHERE startTime > 2024-03-15T11:00");
+    });
+
+    it('substitutes both session variables', () => {
+        expect(substituteVariables(
+            "WHERE t BETWEEN $session_start AND $session_end",
+            { session_start: '2024-03-15T11:00', session_end: '2024-03-15T11:19' },
+        )).toBe("WHERE t BETWEEN 2024-03-15T11:00 AND 2024-03-15T11:19");
+    });
+
+    it('no-prefix key does not match bare word (only $-prefixed form)', () => {
+        // "session_start" as a bare word in SQL should NOT be replaced.
+        expect(substituteVariables(
+            "SELECT session_start FROM t",
+            { session_start: 'REPLACED' },
+        )).toBe("SELECT session_start FROM t");
+    });
+});
+
+describe('toSqlVariables', () => {
+    it('wraps ISO datetime values in single quotes', () => {
+        const result = toSqlVariables({ session_start: '2024-03-15T11:00' });
+        expect(result.session_start).toBe("'2024-03-15T11:00'");
+    });
+
+    it('wraps datetime with seconds in single quotes', () => {
+        const result = toSqlVariables({ session_end: '2024-03-15T11:19:30' });
+        expect(result.session_end).toBe("'2024-03-15T11:19:30'");
+    });
+
+    it('leaves numeric values unquoted', () => {
+        const result = toSqlVariables({ threshold: '100', limit: '50' });
+        expect(result.threshold).toBe('100');
+        expect(result.limit).toBe('50');
+    });
+
+    it('leaves non-datetime string values unquoted', () => {
+        const result = toSqlVariables({ table: 'GarbageCollection' });
+        expect(result.table).toBe('GarbageCollection');
+    });
+
+    it('escapes embedded single quotes in datetime values', () => {
+        // Unlikely in practice but correctness test
+        const result = toSqlVariables({ session_start: "2024-03-15T11:00'" });
+        expect(result.session_start).toBe("'2024-03-15T11:00'''");
+    });
+
+    it('end-to-end: session_start substitutes as quoted SQL literal', () => {
+        const vars = toSqlVariables({ session_start: '2024-03-15T11:00', session_end: '2024-03-15T11:19' });
+        const sql = substituteVariables(
+            "WHERE startTime > $session_start AND startTime < $session_end",
+            vars,
+        );
+        expect(sql).toBe("WHERE startTime > '2024-03-15T11:00' AND startTime < '2024-03-15T11:19'");
     });
 });

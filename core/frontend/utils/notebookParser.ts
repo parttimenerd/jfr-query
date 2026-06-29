@@ -80,7 +80,9 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
                  multilineKey = keyTrimmed;
                  result.customSystemPrompt = '';
             } else if (keyTrimmed) {
-                 (result as any)[keyTrimmed] = value.replace(/^['"]|['"]$/g, '');
+                // Single-quoted YAML scalar: strip outer quotes and unescape '' → '
+                const unquoted = value.replace(/^['"]|['"]$/g, '');
+                (result as any)[keyTrimmed] = value.startsWith("'") ? unquoted.replace(/''/g, "'") : unquoted;
             }
         } else if (multilineKey && !currentSection) { // Top-level multiline (customSystemPrompt)
              result.customSystemPrompt += (result.customSystemPrompt ? '\n' : '') + line.substring(indent);
@@ -101,7 +103,8 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
                         cellConditionMultilineKey = k;
                         result.cellConditions![k] = '';
                     } else if (k) {
-                        result.cellConditions![k] = v.replace(/^['"]|['"]$/g, '');
+                        const unquotedV = v.replace(/^['"]|['"]$/g, '');
+                        result.cellConditions![k] = v.startsWith("'") ? unquotedV.replace(/''/g, "'") : unquotedV;
                     }
                 }
             }
@@ -110,7 +113,9 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
             const [k, ...vParts] = trimmedLine.split(':');
             const kTrim = k.trim();
             if (kTrim) {
-                result.variables![kTrim] = vParts.join(':').trim().replace(/^['"]|['"]$/g, '');
+                const rawV = vParts.join(':').trim();
+                const unquotedV = rawV.replace(/^['"]|['"]$/g, '');
+                result.variables![kTrim] = rawV.startsWith("'") ? unquotedV.replace(/''/g, "'") : unquotedV;
             }
         } else if (currentSection) {
             if (multilineKey && indent > 2) {
@@ -133,10 +138,17 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
                 } else if (value.startsWith('[')) {
                     // Inline YAML-style array: [a, b, c] or [{name: x, type: y}]
                     try {
-                        // Convert YAML-style {k: v} to JSON {k: "v"} by quoting unquoted values
+                        // Convert YAML-style {k: v} to JSON {"k": "v"} by quoting bare keys and
+                        // bare values. All values are treated as strings (matching YAML scalar
+                        // string semantics for the front-matter use-case).
+                        // B-120: uses a replacement function rather than a regex back-reference so
+                        // values with spaces (e.g. `{name: hello world}`) are captured whole before
+                        // being quoted, and already-quoted values and nested structures are skipped.
                         const jsonLike = value
+                            // Quote bare object keys.
                             .replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":')
-                            .replace(/:\s*([^"{\[\],}][^\],}]*?)([,\]}])/g, ':"$1"$2');
+                            // Quote bare values: capture everything after `: ` up to the next `,`, `]`, or `}`.
+                            .replace(/:\s*([^"{\[,\]\}][^,\]\}]*)/g, (_, v) => `:"${v.trimEnd()}"`);
                         currentObject[keyName] = JSON.parse(jsonLike);
                     } catch {
                         currentObject[keyName] = value.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
@@ -423,7 +435,10 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
                 materialized = !!aliasMatchExplicit[2];
                 content = content.substring(aliasMatchExplicit[0].length);
             } else {
-                const aliasMatch = content.match(/^\s*--\s*([a-zA-Z_][\w\s-]*?)\s*\n/);
+                // Legacy: `-- <name>` where name is a single identifier (no spaces).
+                // Restricted to `[\w-]+` to avoid stripping intentional SQL comments
+                // like `-- This query finds all GC pauses` (B-180).
+                const aliasMatch = content.match(/^\s*--\s*([\w-]+)\s*\n/);
                 if (aliasMatch) {
                     alias = aliasMatch[1].trim();
                     content = content.substring(aliasMatch[0].length);

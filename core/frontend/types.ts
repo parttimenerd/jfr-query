@@ -49,6 +49,24 @@ export interface ChatMessage {
   code?: string | null;
   plotConfig?: string;
   isActionable?: boolean;
+  /** Synthetic messages (e.g. plan-execution user turns) that are sent to the
+   * LLM but never rendered in the UI. Filtered out at the renderer. */
+  hidden?: boolean;
+  /** Mode-specific metadata: parsed plans, plan status, predecessors, etc.
+   * See services/ai/chatModes.ts for ParsedPlan shape. Kept as `any` here to
+   * avoid a cyclic import; chatModes.ts re-exports the typed accessor. */
+  meta?: ChatMessageMeta;
+}
+
+export interface ChatMessageMeta {
+  plan?: any;            // ParsedPlan, typed in chatModes.ts
+  planStatus?: 'pending' | 'executing' | 'executed' | 'failed' | 'discarded';
+  planLastError?: string;
+  planExecutedSteps?: number;
+  planExecutedAt?: number;
+  planDiscardedAt?: number;
+  /** When this plan supersedes a prior plan in the same channel, the prior message's id. */
+  planPredecessorMessageId?: string;
 }
 
 export interface ViewParam {

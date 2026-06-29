@@ -9,7 +9,7 @@ import { DataContext } from '../context/DuckDBContext';
 import { useExecutor } from '../context/ExecutorContext';
 import TemplatedMarkdown from './TemplatedMarkdown';
 import { collectPrecedingCellVariables } from '../utils/crossCellVariables';
-import { substituteVariables } from '../utils/variableSubstitution';
+import { substituteVariables, toSqlVariables } from '../utils/variableSubstitution';
 import { expandBrushOperator } from '../services/variableExpander';
 import { parsePlotCall } from '../utils/plotParser';
 import { expandPlotConstants } from '../utils/plotConstants';
@@ -57,6 +57,16 @@ interface NotebookCellProps {
     collapseTrigger: number;
     allCollapsed: boolean;
     isAiFeatureActive: boolean;
+    /**
+     * Incremented each time the user clicks "Clear All Results". When this
+     * changes, the cell cancels all pending auto-run timers so they cannot
+     * repopulate results immediately after the parent clears them.
+     */
+    clearResultsTrigger?: number;
+    /** B-033: initial collapsed state lifted from Notebook.tsx so it survives raw-mode toggle. */
+    initialCellCollapsed?: boolean;
+    /** B-033: callback to persist cell-level collapse changes to the parent ref. */
+    onCellCollapseChange?: (collapsed: boolean) => void;
     onRunQuery: (cellId: string, sql: string, queryIndex: number, allVariables: Record<string, string>) => void;
     onUpdate: (updatedContent: string) => void;
     /** C7 — tool-runtime callbacks forwarded into InlineChat so AI tool calls
@@ -67,6 +77,10 @@ interface NotebookCellProps {
     onDelete: () => void;
     onDeleteQueryBlock: (index: number) => void;
     onMoveCell: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
+    /** Forward to InlineChat so "pop to sidebar" can be triggered from a cell. */
+    onPopChatToSidebar?: (snapshot: import('./ChatPanel').InlineChatSnapshot) => void;
+    /** Forward to InlineChat / chat for reference link navigation. */
+    onNavigateRef?: (ref: string) => void;
     onSuggestPlot: (sql: string, customPromptOverride?: string) => Promise<string | null>;
     onFormatCode: (code: string, type: 'sql' | 'plot') => Promise<string | null>;
     onRunPreviewQuery: (queryToRun: string) => Promise<any[]>;
@@ -83,7 +97,7 @@ function debounce<T extends (...args: any[]) => any>(func: T, delay: number): (.
   };
 }
 
-const MarkdownSectionEditor: React.FC<{ section: MarkdownSection | null; defaultTitle: string; onUpdate: (s: MarkdownSection | null) => void; onAdd: () => void; isEditing: boolean; onSetEditing: (isEditing: boolean) => void; variables?: Record<string, string>; formatSettings?: { timeFormat?: string; decimalPlaces?: number }; }> = ({ section, defaultTitle, onUpdate, onAdd, isEditing, onSetEditing, variables, formatSettings }) => {
+const MarkdownSectionEditor: React.FC<{ section: MarkdownSection | null; defaultTitle: string; onUpdate: (s: MarkdownSection | null) => void; onAdd: () => void; isEditing: boolean; onSetEditing: (isEditing: boolean) => void; variables?: Record<string, string>; formatSettings?: { timeFormat?: string; decimalPlaces?: number }; presenterMode?: boolean; }> = ({ section, defaultTitle, onUpdate, onAdd, isEditing, onSetEditing, variables, formatSettings, presenterMode }) => {
     const [content, setContent] = useState(section?.content || '');
     useEffect(() => { setContent(section?.content || ''); }, [section]);
 
@@ -97,7 +111,7 @@ const MarkdownSectionEditor: React.FC<{ section: MarkdownSection | null; default
         }
     };
 
-    const components = useMemo(() => ({ code: ({ node, inline, className, children, ...props }: any) => { const m = /language-(\w+)/.exec(className||''); return !inline&&(m?.[1]==='sql'||m?.[1]==='plot')?<div className="my-2 border border-gray-700 rounded-md overflow-hidden bg-[#263238]"><StaticCodeHighlighter code={String(children).trim()} language={m[1]}/></div>:<code className="bg-gray-700 text-cyan-300 p-1 rounded-md" {...props}>{children}</code>; } }), []);
+    const components = useMemo(() => ({ code: ({ node, className, children, ...props }: any) => { const m = /language-(\w+)/.exec(className||''); const isBlock = !!className; return isBlock&&(m?.[1]==='sql'||m?.[1]==='plot')?<div className="my-2 border border-gray-700 rounded-md overflow-hidden bg-[#263238]"><StaticCodeHighlighter code={String(children).trim()} language={m[1]}/></div>:<code className="bg-gray-700 text-cyan-300 p-1 rounded-md" {...props}>{children}</code>; } }), []);
 
     // Tokenize the section content so inline `${…}` and `{if …}` regions
     // evaluate at render time. Plain markdown is preserved 1:1 by the tokenizer.
@@ -106,8 +120,8 @@ const MarkdownSectionEditor: React.FC<{ section: MarkdownSection | null; default
         [section?.content],
     );
 
-    if (!section) return <div className="py-1"><button onClick={onAdd} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add {defaultTitle}</button></div>;
-    return <div>{isEditing ? <SQLEditor value={content} onChange={setContent} onBlur={handleBlur} mode="markdown" autoFocus/> : <div className="space-y-1"><div onClick={() => onSetEditing(true)} className="prose prose-invert max-w-none px-2 py-1 rounded-md hover:bg-gray-700/30 cursor-pointer min-h-[2rem]"><TemplatedMarkdown segments={renderSegments} variables={variables ?? {}} formatSettings={formatSettings}/></div></div>}</div>;
+    if (!section) return presenterMode ? null : <div className="py-1"><button onClick={onAdd} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add {defaultTitle}</button></div>;
+    return <div>{isEditing ? <SQLEditor value={content} onChange={setContent} onBlur={handleBlur} mode="markdown" autoFocus/> : <div className="space-y-1"><div onClick={() => { if (!presenterMode) onSetEditing(true); }} className={`prose prose-invert max-w-none px-2 py-1 rounded-md min-h-[2rem] ${presenterMode ? '' : 'hover:bg-gray-700/30 cursor-pointer'}`}><TemplatedMarkdown segments={renderSegments} variables={variables ?? {}} formatSettings={formatSettings}/></div></div>}</div>;
 };
 
 const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: string[]; onChange: (o: string, n: string, v: string) => void; onDelete: (k: string) => void; inputRef: React.RefCallback<HTMLInputElement> }> = ({ varKey, varValue, usedIn, onChange, onDelete, inputRef }) => {
@@ -119,10 +133,10 @@ const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: stri
     return (
         <div className="space-y-0.5">
             <div className="flex items-center gap-2">
-                <input type="text" value={key} onChange={e=>{setKey(e.target.value);}} onBlur={()=>{const valid=key.match(/^\$(?!\$)\w+/);if(!valid){setKey(varKey);}else if(key!==varKey){onChangeRef.current(varKey,key,value);}}} className={`w-1/3 bg-gray-800 border ${key.match(/^\$(?!\$)\w+/)?'border-gray-600':'border-red-500'} rounded-md p-1.5 text-sm font-mono text-cyan-300`} title="Cell-local variable: must start with $ (use $$ prefix in Notebook Settings for global scope)"/>
+                <input type="text" value={key} onChange={e=>{setKey(e.target.value);}} onBlur={()=>{const valid=key.match(/^\$(?!\$)\w+/);if(!valid){setKey(varKey);}else if(key!==varKey){onChangeRef.current(varKey,key,value);}}} className={`w-1/3 bg-gray-800 border ${key.match(/^\$(?!\$)\w+/)?'border-gray-600':'border-red-500'} rounded-md p-1.5 text-sm font-mono text-cyan-300`} title="Cell-local variable: must start with $ (use $$ prefix in Notebook Settings for global scope)" aria-label="Cell-local variable: must start with $ (use $$ prefix in Notebook Settings for global scope)"/>
                 <span className="text-gray-500">=</span>
                 <input type="text" value={value} onChange={e=>{setValue(e.target.value);}} onBlur={()=>{if(value!==varValue)onChangeRef.current(varKey,key,value);}} className="flex-grow bg-gray-800 border border-gray-600 rounded-md p-1.5 text-sm font-mono" ref={inputRef}/>
-                <button onClick={()=>onDelete(varKey)} className="p-1.5 text-gray-500 hover:text-red-400"><TrashIcon className="w-4 h-4"/></button>
+                <button onClick={()=>onDelete(varKey)} className="p-1.5 text-gray-400 hover:text-red-400"><TrashIcon className="w-4 h-4"/></button>
             </div>
             {usedIn && usedIn.length > 0 && (
                 <div className="pl-1 flex items-center gap-1 flex-wrap">
@@ -137,7 +151,7 @@ const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: stri
 };
 
 
-const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, onRunQuery, onUpdate, onUpdateCell, onAddCellFromTool, onDelete, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false }) => {
+const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, initialCellCollapsed, onCellCollapseChange, clearResultsTrigger, onRunQuery, onUpdate, onUpdateCell, onAddCellFromTool, onDelete, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false, onPopChatToSidebar, onNavigateRef }) => {
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [editingTitleValue, setEditingTitleValue] = useState('');
     const [isRawEditing, setIsRawEditing] = useState(false);
@@ -151,6 +165,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const [isDraggingOver, setIsDraggingOver] = useState<'top' | 'bottom' | null>(null);
     const [resultHeight, setResultHeight] = useState(250);
     const resultResizeRef = useRef<{ startY: number; startH: number } | null>(null);
+    const resultHeightUserSet = useRef(false);
     const [copiedSql, setCopiedSql] = useState<number | null>(null);
     const variableInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
     const [focusVarName, setFocusVarName] = useState<string | null>(null);
@@ -160,11 +175,31 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const [aiErrorSuggestions, setAiErrorSuggestions] = useState<Record<number, { text: string; code: string | null } | null>>({});
     const [sparkleLoading, setSparkleLoading] = useState<Record<number, boolean>>({});
     const [editingBlockName, setEditingBlockName] = useState<{ type: 'sql' | 'plot'; idx: number; value: string } | null>(null);
-    
+    const [isCellCollapsed, setIsCellCollapsed] = useState(() => initialCellCollapsed ?? false);
+
     const [segments, setSegments] = useState(() => tokenizeCellContent(cell.content));
     const parsed = useMemo(() => parseCellContent(segments), [segments]);
 
     useEffect(() => { setSegments(tokenizeCellContent(cell.content)); }, [cell.content]);
+
+    useEffect(() => {
+        if (collapseTrigger > 0) {
+            setIsCellCollapsed(allCollapsed);
+            onCellCollapseChange?.(allCollapsed);
+        }
+    }, [collapseTrigger]);
+
+    // Auto-size the result panel to fit small result sets (avoids excess whitespace for 1-row tables).
+    // Skipped once the user has manually dragged the resize handle.
+    useEffect(() => {
+        if (resultHeightUserSet.current) return;
+        const firstResult = results?.[0];
+        if (!firstResult || firstResult.length === 0) return;
+        const rowPx = 36;
+        const overhead = 44 + 44; // search bar + header row
+        const fitted = Math.min(250, overhead + firstResult.length * rowPx + 16);
+        setResultHeight(Math.max(120, fitted));
+    }, [results]);
     
     useEffect(() => { if (focusVarName && variableInputRefs.current[focusVarName]) { variableInputRefs.current[focusVarName]?.focus(); setFocusVarName(null); } }, [focusVarName, parsed.variables]);
 
@@ -176,7 +211,10 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
     const handleIntroUpdate = useCallback((intro: MarkdownSection | null) => {
         const newContent = intro?.content || '';
-        const newIntroSegments: CellSegment[] = (newContent.trim() === '') ? [] : [{ type: 'markdown', content: newContent }];
+        // Re-prepend the ## title heading that parseCellContent strips from intro display content.
+        const titlePrefix = parsed.title ? `## ${parsed.title}\n\n` : '';
+        const fullContent = newContent.trim() === '' ? '' : `${titlePrefix}${newContent}`;
+        const newIntroSegments: CellSegment[] = (fullContent.trim() === '') ? [] : [{ type: 'markdown', content: fullContent }];
         
         let firstNonMarkdownIdx = segments.findIndex(s => s.type !== 'markdown');
         if (firstNonMarkdownIdx === -1) firstNonMarkdownIdx = segments.length;
@@ -190,7 +228,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
         const newSegments = [...newIntroSegments, ...otherSegments];
         handleSegmentsUpdate(newSegments);
-    }, [segments, handleSegmentsUpdate]);
+    }, [segments, handleSegmentsUpdate, parsed.title]);
 
     const handleConclusionUpdate = useCallback((conclusion: MarkdownSection | null) => {
         const newContent = conclusion?.content || '';
@@ -391,6 +429,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
     const handleResultResizeStart = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
+        resultHeightUserSet.current = true;
         resultResizeRef.current = { startY: e.clientY, startH: resultHeight };
         const onMove = (ev: MouseEvent) => {
             if (!resultResizeRef.current) return;
@@ -410,7 +449,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         navigator.clipboard.writeText(sql).then(() => {
             setCopiedSql(index);
             setTimeout(() => setCopiedSql(null), 1500);
-        });
+        }).catch(() => {});
     }, []);
 
     const { registerAlias, unregisterCell } = useCellAliases();
@@ -470,7 +509,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             // before variable substitution so unresolved brushes produce a clear
             // "unresolved variable" skip rather than a DuckDB syntax error.
             const expandedSql = expandBrushOperator(sql, allVariables);
-            const substitutedSql = substituteVariables(expandedSql, allVariables);
+            const substitutedSql = substituteVariables(expandedSql, toSqlVariables(allVariables));
             await onRunQuery(cell.id, substitutedSql, index, allVariables);
             const aliasName = parsed.queryAliases[index] ?? null;
             const materialized = !!parsed.queryAliasMaterialized?.[index];
@@ -562,6 +601,16 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
     useEffect(() => () => { Object.values(runTimersRef.current).forEach(clearTimeout); }, []);
 
+    // Cancel pending auto-run timers when the parent clears all results so the
+    // cleared state is not immediately overwritten by a scheduled re-run.
+    useEffect(() => {
+        if (!clearResultsTrigger) return;
+        Object.values(runTimersRef.current).forEach(clearTimeout);
+        runTimersRef.current = {};
+        setPendingRunStates({});
+        prevSqlBlocksRef.current = [];
+    }, [clearResultsTrigger]);
+
     const toggleCollapse = (key: string) => setCollapsedStates(prev => ({ ...prev, [key]: !prev[key] }));
     
     const handleSqlChange = useCallback((newSql: string, index?: number) => {
@@ -652,7 +701,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const handleFormat = async (code: string, type: 'sql' | 'plot', index: number) => { const f = await onFormatCode(code, type); if (f) { if(type==='sql') handleSqlChange(f, index); else handlePlotChange(f, index); } };
     const handleAddSql = () => handleSegmentsUpdate([...segments, {type: 'markdown', content: '\n\n'}, {type: 'sql', content: '\nSELECT 1;\n'}]);
     const handleInsertAt = useCallback((segmentIndex: number, type: 'sql' | 'plot' | 'markdown') => {
-        const content = type === 'sql' ? '\nSELECT 1;\n' : type === 'plot' ? '\nTABLE()\n' : '\n\n';
+        const content = type === 'sql' ? '\nSELECT 1;\n' : type === 'plot' ? '\nTABLE()\n' : '';
         const newSegments = [...segments];
         newSegments.splice(segmentIndex, 0, { type, content } as CellSegment);
         handleSegmentsUpdate(newSegments);
@@ -663,6 +712,21 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', cell.id); e.dataTransfer.effectAllowed = 'move'; setIsBeingDragged(true); };
     const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); setIsDraggingOver(e.clientY < r.top+r.height/2 ? 'top':'bottom'); };
     const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const id = e.dataTransfer.getData('text/plain'); if(id && id !== cell.id && isDraggingOver) onMoveCell(id, cell.id, isDraggingOver==='top'?'before':'after'); setIsDraggingOver(null); };
+    // B-055: Alt+Up / Alt+Down on the drag handle (or the cell wrapper) moves
+    // the cell one position up or down without requiring mouse drag.
+    const handleCellKeyDown = (e: React.KeyboardEvent) => {
+        if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+        // Don't steal the shortcut from inner inputs/editors (only intercept from the cell wrapper or drag handle).
+        const target = e.target as HTMLElement;
+        if (target.closest('input, textarea, [contenteditable="true"], .cm-editor')) return;
+        e.preventDefault();
+        const idx = allCells.findIndex(c => c.id === cell.id);
+        if (e.key === 'ArrowUp' && idx > 0) {
+            onMoveCell(cell.id, allCells[idx - 1].id, 'before');
+        } else if (e.key === 'ArrowDown' && idx < allCells.length - 1) {
+            onMoveCell(cell.id, allCells[idx + 1].id, 'after');
+        }
+    };
     const handleApplyCode = (newCode: string, type: 'sql' | 'plot', index: number) => { if(type==='sql') handleSqlChange(newCode, index); else handlePlotChange(newCode, index); setActiveChat(null); };
     const handleApplyPlotFix = (newConfig: string, index: number) => handlePlotChange(newConfig, index);
     const handleAddVariable = () => { let newVarName = '$newVar'; const currentVars = parsed.variables || {}; let i=1; while(currentVars[newVarName]) newVarName = `$newVar${i++}`; handleCellVariableChange({ ...currentVars, [newVarName]:''}); setFocusVarName(newVarName); };
@@ -716,26 +780,37 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         if (varName in (parsed.variables || {})) { focusLocalVar(); } else { handleCellVariableChange({...(parsed.variables||{}), [varName]: ''}); setTimeout(focusLocalVar, 100); }
     };
     
+    const cellIdx = allCells.findIndex(c => c.id === cell.id);
+    const cellAlias = computeCellHandle(cell, cellIdx);
+
     return (
-        <div className={`bg-gray-800/40 rounded-lg border border-gray-700/80 shadow-sm relative transition-opacity ${isBeingDragged ? 'opacity-50' : ''}`} onDragOver={handleDragOver} onDragLeave={()=>setIsDraggingOver(null)} onDrop={handleDrop}>
+        <div
+            className={`bg-gray-800/40 rounded-lg border border-gray-700/80 shadow-sm relative transition-opacity ${isBeingDragged ? 'opacity-50' : ''}`}
+            data-cell-id={cell.id}
+            data-cell-idx={cellIdx >= 0 ? String(cellIdx + 1) : undefined}
+            data-cell-alias={cellAlias}
+            onKeyDown={handleCellKeyDown}
+            onDragOver={handleDragOver} onDragLeave={()=>setIsDraggingOver(null)} onDrop={handleDrop}>
             {isDraggingOver === 'top' && <div className="absolute top-0 left-0 right-0 h-1 bg-cyan-400 z-10" />}
             <div className="px-3 py-2 border-b border-gray-700/60 flex items-center justify-between bg-gray-700/20">
                 <div className="flex items-center gap-2 w-full">
-                     <div draggable onDragStart={handleDragStart} onDragEnd={()=>setIsBeingDragged(false)} className="cursor-grab p-1 text-gray-600 hover:text-gray-400"><Bars2Icon className="w-4 h-4"/></div>
-                    {isEditingTitle ? <input type="text" value={editingTitleValue} onChange={e=>setEditingTitleValue(e.target.value)} onBlur={()=>handleTitleBlur(editingTitleValue)} onKeyDown={handleTitleKeyDown} className="text-base font-semibold bg-gray-900 border border-cyan-500 rounded-md px-2 py-0.5 w-full" autoFocus/> : <h2 onClick={()=>{setEditingTitleValue(title||'');setIsEditingTitle(true);}} className="text-base font-semibold cursor-pointer w-full text-gray-100">{title}</h2>}
+                     {!presenterMode && <div draggable onDragStart={handleDragStart} onDragEnd={()=>setIsBeingDragged(false)} title="Drag to reorder (Alt+↑/↓ for keyboard)" aria-label="Drag to reorder cell" role="button" tabIndex={0} className="cursor-grab p-1 text-gray-600 hover:text-gray-400"><Bars2Icon className="w-4 h-4"/></div>}
+                    {!presenterMode && <button onClick={()=>{ const next = !isCellCollapsed; setIsCellCollapsed(next); onCellCollapseChange?.(next); }} className="p-1 text-gray-400 hover:text-gray-300 flex-shrink-0" title={isCellCollapsed ? "Expand cell" : "Collapse cell"}>{isCellCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5"/> : <ChevronUpIcon className="w-3.5 h-3.5"/>}</button>}
+                    {isEditingTitle ? <input type="text" value={editingTitleValue} onChange={e=>setEditingTitleValue(e.target.value)} onBlur={()=>handleTitleBlur(editingTitleValue)} onKeyDown={handleTitleKeyDown} className="text-base font-semibold bg-gray-900 border border-cyan-500 rounded-md px-2 py-0.5 w-full" autoFocus/> : <h2 onClick={()=>{if(!presenterMode){setEditingTitleValue(title||'');setIsEditingTitle(true);}}} className={`text-base font-semibold w-full text-gray-100 ${presenterMode ? '' : 'cursor-pointer'}`}>{title}</h2>}
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0"><button onClick={()=>setIsRawEditing(!isRawEditing)} className="p-1.5 hover:bg-cyan-600/30 rounded-md" title={isRawEditing?"Rich View":"Raw Markdown"}>{isRawEditing ? <EyeIcon className="w-4 h-4 text-cyan-300"/>:<CodeBracketIcon className="w-4 h-4 text-gray-500"/>}</button><button onClick={()=>{if(window.confirm('Delete this cell?'))onDelete();}} className="p-1.5 hover:bg-red-600/50 rounded-md" title="Delete Cell"><TrashIcon className="w-4 h-4 text-gray-500"/></button></div>
+                {!presenterMode && <div className="flex items-center gap-1 flex-shrink-0"><button onClick={()=>setIsRawEditing(!isRawEditing)} className="p-1.5 hover:bg-cyan-600/30 rounded-md" title={isRawEditing?"Rich View":"Raw Markdown"}>{isRawEditing ? <EyeIcon className="w-4 h-4 text-cyan-300"/>:<CodeBracketIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>{if(window.confirm('Delete this cell?'))onDelete();}} className="p-1.5 hover:bg-red-600/50 rounded-md" title="Delete Cell" aria-label="Delete Cell"><TrashIcon className="w-4 h-4 text-gray-400"/></button></div>}
             </div>
-            {isRawEditing ? <div className="p-2"><SQLEditor value={reconstructCellContent(segments)} onChange={handleRawContentChange} mode="markdown"/></div> : <div className="p-3 space-y-3">
+            {!isCellCollapsed && (isRawEditing ? <div className="p-2"><SQLEditor value={reconstructCellContent(segments)} onChange={handleRawContentChange} mode="markdown"/></div> : <div className="p-3 space-y-3">
                  <MarkdownSectionEditor
                     section={parsed.introduction}
                     defaultTitle="Introduction"
                     onUpdate={handleIntroUpdate}
-                    onAdd={()=> handleIntroUpdate({title:'Introduction', content:'## Title\n\n '})}
+                    onAdd={()=> handleIntroUpdate({title:'Introduction', content:'## Title\n\n_Introduction_\n'})}
                     isEditing={editingSection==='intro'}
                     onSetEditing={e=>setEditingSection(e?'intro':null)}
                     variables={allVariables}
                     formatSettings={{ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }}
+                    presenterMode={presenterMode}
                 />
 
                 {Object.keys(parsed.variables||{}).length > 0 || (parsed.variableWarnings?.length ?? 0) > 0
@@ -758,9 +833,14 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 const isLeadingMarkdown = segments.slice(0, segIdx).every(s => s.type === 'markdown' || s.type === 'variables');
                                 const isTrailingMarkdown = segments.slice(segIdx + 1).every(s => s.type === 'markdown');
                             if (!isLeadingMarkdown && !isTrailingMarkdown) {
+                                    const hasContent = seg.content.trim().length > 0;
+                                    if (!hasContent && presenterMode) return;
+                                    // Skip whitespace-only segments (bare \n between fences) in edit mode too —
+                                    // they are formatting noise, not user-added prose blocks.
+                                    if (!hasContent && /^\n+$/.test(seg.content)) return;
                                     items.push(
                                         <div key={`prose-${segIdx}`} className="relative group/prose rounded-md border border-gray-700/40 px-3 py-2 min-h-[2.5rem]">
-                                            {seg.content.trim() ? (
+                                            {hasContent ? (
                                                 <div className="prose prose-invert max-w-none text-sm">
                                                     <TemplatedMarkdown
                                                         segments={[seg]}
@@ -768,16 +848,16 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                         formatSettings={{ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }}
                                                     />
                                                 </div>
-                                            ) : (
+                                            ) : !presenterMode ? (
                                                 <p className="text-gray-600 text-sm italic cursor-pointer hover:text-gray-400" onClick={() => {
                                                     const newSegments = [...segments];
                                                     newSegments[segIdx] = { ...seg, content: '\n' };
                                                     handleSegmentsUpdate(newSegments);
                                                 }}>Empty prose block — click to edit</p>
-                                            )}
+                                            ) : null}
                                             {!presenterMode && (
-                                                <button onClick={() => handleDeleteMarkdown(segIdx)} className="absolute top-1 right-1 opacity-0 group-hover/prose:opacity-100 p-1 rounded hover:bg-red-600/30 transition-all" title="Delete prose block">
-                                                    <TrashIcon className="w-3.5 h-3.5 text-gray-500 hover:text-red-400"/>
+                                                <button onClick={() => handleDeleteMarkdown(segIdx)} className="absolute top-1 right-1 opacity-0 group-hover/prose:opacity-100 p-1 rounded hover:bg-red-600/30 transition-all" title="Delete prose block" aria-label="Delete prose block">
+                                                    <TrashIcon className="w-3.5 h-3.5 text-gray-400 hover:text-red-400"/>
                                                 </button>
                                             )}
                                         </div>
@@ -842,13 +922,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 ) : (
                                     <span
                                         className="cursor-pointer hover:text-cyan-300 transition-colors"
-                                        title="Click to rename"
+                                        title="Click to rename" aria-label="Click to rename"
                                         onClick={e => { e.stopPropagation(); setEditingBlockName({ type: 'sql', idx: i, value: alias ?? '' }); }}
                                     >{alias ? `Query ${i+1} · ${alias}` : `Query ${i+1}`}</span>
                                 );
                                 if (!presenterMode) {
                                     items.push(
-                                        <CollapsibleBlock key={`sql-${i}`} title={sqlTitleNode} preview={sql.replace(/\s+/g,' ').substring(0,60)} isCollapsed={!!collapsedStates[`sql-${i}`]} onToggle={()=>toggleCollapse(`sql-${i}`)} statusIndicator={runningStates[i]?(<div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"/>):pendingRunStates[i]?(<div className="w-4 h-4 text-gray-500 animate-pulse">...</div>):null} controls={<><button onClick={()=>handleRun(sql,i)} disabled={runningStates[i]||pendingRunStates[i]} className="p-1.5 rounded-md disabled:opacity-50"><PlayIcon className="w-4 h-4 text-green-400"/></button><button onClick={()=>handleFormat(sql,'sql',i)} title="Format SQL" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSuggest(sql,i)} className="p-1.5 rounded-md"><SparklesIcon className="w-4 h-4 text-yellow-400"/></button><button onClick={()=>setActiveChat(p=>p===`sql-${i}`?null:`sql-${i}`)} className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>handleCopySql(sql,i)} title="Copy SQL" className="p-1.5 rounded-md">{copiedSql===i ? <CheckCircleIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>onDeleteQueryBlock(i)} className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
+                                        <CollapsibleBlock key={`sql-${i}`} title={sqlTitleNode} preview={sql.replace(/\s+/g,' ').substring(0,60)} isCollapsed={!!collapsedStates[`sql-${i}`]} onToggle={()=>toggleCollapse(`sql-${i}`)} statusIndicator={runningStates[i]?(<div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"/>):pendingRunStates[i]?(<div className="w-4 h-4 text-gray-500 animate-pulse">...</div>):null} controls={<><button onClick={()=>handleRun(sql,i)} disabled={runningStates[i]||pendingRunStates[i]} title="Run query (Cmd+Enter)" aria-label="Run query (Cmd+Enter)" className="p-1.5 rounded-md disabled:opacity-50"><PlayIcon className="w-4 h-4 text-green-400"/></button><button onClick={()=>handleFormat(sql,'sql',i)} title="Format SQL" aria-label="Format SQL" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSuggest(sql,i)} title="Suggest plot with AI" aria-label="Suggest plot with AI" className="p-1.5 rounded-md"><SparklesIcon className="w-4 h-4 text-yellow-400"/></button><button onClick={()=>setActiveChat(p=>p===`sql-${i}`?null:`sql-${i}`)} title="Refine with AI" aria-label="Refine with AI" className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>handleCopySql(sql,i)} title="Copy SQL" aria-label="Copy SQL" className="p-1.5 rounded-md">{copiedSql===i ? <CheckCircleIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>onDeleteQueryBlock(i)} title="Delete query block" aria-label="Delete query block" className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
                                             <SQLEditor value={sql} onChange={handleSqlChange} index={i} variables={allVariables} onVariableClick={handleVariableClick} metadata={metadata} onRun={() => handleRun(sql, i)} error={errSpec} notebookPlotScope={plotScopeView} />
                                             {errSpec && (
                                                 <div className="mt-1 px-2 py-1.5 text-xs text-red-300 bg-red-900/25 border-l-2 border-red-500/60 font-mono whitespace-pre-wrap rounded-r animate-fade-in" title={errSpec.line ? `LINE ${errSpec.line}${errSpec.column ? `:${errSpec.column}` : ''}` : undefined}>
@@ -878,7 +958,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                                 {isAiFeatureActive && aiErrorSuggestions[i] && (
                                                                     <div className="flex items-start gap-2">
                                                                         <p className="flex-1 text-cyan-300/80"><span className="text-gray-500">AI: </span>{aiErrorSuggestions[i]!.text}</p>
-                                                                        {aiErrorSuggestions[i]!.code && <button onClick={() => handleSqlChange(aiErrorSuggestions[i]!.code!, i)} className="flex-shrink-0 px-2 py-0.5 text-[10px] bg-cyan-800/60 hover:bg-cyan-700/80 text-cyan-200 rounded border border-cyan-600/50 transition-colors" title="Apply AI-suggested fix">Apply</button>}
+                                                                        {aiErrorSuggestions[i]!.code && <button onClick={() => handleSqlChange(aiErrorSuggestions[i]!.code!, i)} className="flex-shrink-0 px-2 py-0.5 text-[10px] bg-cyan-800/60 hover:bg-cyan-700/80 text-cyan-200 rounded border border-cyan-600/50 transition-colors" title="Apply AI-suggested fix" aria-label="Apply AI-suggested fix">Apply</button>}
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -886,7 +966,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                     })()}
                                                 </div>
                                             )}
-                                            {isAiFeatureActive && activeChat===`sql-${i}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="sql" targetValue={sql} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} onApplyCode={c=>handleApplyCode(c,'sql',i)} onClose={()=>setActiveChat(null)}/>}
+                                            {isAiFeatureActive && activeChat===`sql-${i}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="sql" targetValue={sql} sql={sql} data={results[i] ?? undefined} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} onApplyCode={c=>handleApplyCode(c,'sql',i)} onClose={()=>setActiveChat(null)} onPopToSidebar={onPopChatToSidebar} onNavigateRef={onNavigateRef}/>}
                                             {settings.autoPlotSuggestionEnabled && plotSuggestions[i] && !dismissedSuggestions[i] && (!parsed.plotBlocks[i] || !parsed.plotBlocks[i].trim()) && (
                                                 <PlotSuggestionChip suggestion={plotSuggestions[i]!} onApply={config => { handlePlotChange(config, i); setDismissedSuggestions(p => ({ ...p, [i]: true })); }} onTryAnother={() => { const rows = results[i] ?? []; const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : []; setPlotSuggestions(prev => ({ ...prev, [i]: null })); runSuggestPlot({ sql, columns, rowCount: rows.length, signal: undefined }, { settings }).then(result => setPlotSuggestions(prev => ({ ...prev, [i]: result }))).catch(() => setPlotSuggestions(prev => ({ ...prev, [i]: null }))); }} onDismiss={() => setDismissedSuggestions(p => ({ ...p, [i]: true }))}/>
                                             )}
@@ -942,7 +1022,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 ) : (
                                     <span
                                         className="cursor-pointer hover:text-cyan-300 transition-colors"
-                                        title="Click to rename"
+                                        title="Click to rename" aria-label="Click to rename"
                                         onClick={e => { e.stopPropagation(); setEditingBlockName({ type: 'plot', idx: pi, value: plotAlias ?? '' }); }}
                                     >{plotAlias ? `Plot ${pi+1} · ${plotAlias}` : `Plot ${pi+1}`}</span>
                                 );
@@ -950,7 +1030,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
                                 if (!presenterMode) {
                                     items.push(
-                                        <CollapsibleBlock key={`plot-${pi}`} title={plotTitleNode} preview={config.replace(/\s+/g,' ').substring(0,60)} isCollapsed={collapsedStates[`plot-${pi}`] !== undefined ? !!collapsedStates[`plot-${pi}`] : !config.trim()} onToggle={()=>toggleCollapse(`plot-${pi}`)} controls={<><button onClick={()=>handleFormat(config,'plot',defaultSqlIndex)} title="Format plot" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSparkle(pi, defaultSqlIndex)} disabled={sparkleLoading[pi]} title="Generate plot config with AI" className="p-1.5 rounded-md disabled:opacity-50">{sparkleLoading[pi] ? <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"/> : <SparklesIcon className="w-4 h-4 text-yellow-400"/>}</button><button onClick={()=>setActiveChat(p=>p===`plot-${pi}`?null:`plot-${pi}`)} className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>setIsPlotHelpModalOpen(true)} title="Plot syntax reference" className="p-1.5 rounded-md"><InformationCircleIcon className="w-4 h-4 text-gray-500"/></button><button onClick={()=>handleDeletePlot(capturedSegIdx)} title="Delete plot block" className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
+                                        <CollapsibleBlock key={`plot-${pi}`} title={plotTitleNode} preview={config.replace(/\s+/g,' ').substring(0,60)} isCollapsed={collapsedStates[`plot-${pi}`] !== undefined ? !!collapsedStates[`plot-${pi}`] : !config.trim()} onToggle={()=>toggleCollapse(`plot-${pi}`)} controls={<><button onClick={()=>handleFormat(config,'plot',defaultSqlIndex)} title="Format plot" aria-label="Format plot" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSparkle(pi, defaultSqlIndex)} disabled={sparkleLoading[pi]} title="Generate plot config with AI" aria-label="Generate plot config with AI" className="p-1.5 rounded-md disabled:opacity-50">{sparkleLoading[pi] ? <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"/> : <SparklesIcon className="w-4 h-4 text-yellow-400"/>}</button><button onClick={()=>setActiveChat(p=>p===`plot-${pi}`?null:`plot-${pi}`)} title="Refine with AI" aria-label="Refine with AI" className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>setIsPlotHelpModalOpen(true)} title="Plot syntax reference" aria-label="Plot syntax reference" className="p-1.5 rounded-md"><InformationCircleIcon className="w-4 h-4 text-gray-400"/></button><button onClick={()=>handleDeletePlot(capturedSegIdx)} title="Delete plot block" aria-label="Delete plot block" className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
                                             {plotDataCols.length > 0 && (
                                                 <div className="px-2 pt-1.5 pb-0.5 flex flex-wrap gap-1 items-center border-b border-gray-700/50">
                                                     <span className="text-[10px] text-gray-600 mr-0.5">columns:</span>
@@ -962,13 +1042,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                 </div>
                                             )}
                                             <PlotConfigEditor value={config} onChange={handlePlotChange} index={defaultSqlIndex} data={results[defaultSqlIndex]} variables={allVariables} onVariableClick={handleVariableClick} cellSql={parsed.sqlBlocks[defaultSqlIndex] ?? null} notebookPlotScope={plotScopeView} currentCellId={cell.id} sqlBlockCount={totalSqlBlockCount}/>
-                                            {isAiFeatureActive && activeChat===`plot-${pi}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="plot" targetValue={config} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} sql={parsed.sqlBlocks[defaultSqlIndex]} data={results[defaultSqlIndex]} onApplyCode={c=>handleApplyCode(c,'plot',defaultSqlIndex)} onClose={()=>setActiveChat(null)} onMetadataChange={onMetadataChange} />}
+                                            {isAiFeatureActive && activeChat===`plot-${pi}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="plot" targetValue={config} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} sql={parsed.sqlBlocks[defaultSqlIndex]} data={results[defaultSqlIndex]} onApplyCode={c=>handleApplyCode(c,'plot',defaultSqlIndex)} onClose={()=>setActiveChat(null)} onMetadataChange={onMetadataChange} onPopToSidebar={onPopChatToSidebar} onNavigateRef={onNavigateRef}/>}
                                         </CollapsibleBlock>
                                     );
                                 }
 
                                 // Inline plot result directly below its editor (or always in presenter mode).
-                                if (resolvedData) {
+                                // Hide result when plot block is collapsed (unless in presenter mode where editor is hidden).
+                                const plotIsCollapsed = !presenterMode && (collapsedStates[`plot-${pi}`] !== undefined ? !!collapsedStates[`plot-${pi}`] : !config.trim());
+                                if (resolvedData && !plotIsCollapsed) {
                                     // B-141/142/143: Build a lookup map so PlotRenderer can route per-leaf
                                     // ON clauses to the correct dataset. Keys are 1-based numeric indices
                                     // (matching `ON #1`, `ON 1`) and alias strings (matching `ON myView`).
@@ -987,7 +1069,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
                                     items.push(
                                         <div key={`result-${pi}`} className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative" style={{ height: `${resultHeight}px` }}>
-                                            <button title="Download as PNG" className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-${pi}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-${pi + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
+                                            <button title="Download as PNG" aria-label="Download as PNG" className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-${pi}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-${pi + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                             </button>
                                             <div id={`result-container-${cell.id}-${pi}`} className="flex-grow overflow-auto">
@@ -1009,20 +1091,21 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     )}
                     {/* Drag handle to resize result panels */}
                     {results && results.some(r => r) && (
-                        <div onMouseDown={handleResultResizeStart} className="h-1.5 mt-0.5 cursor-row-resize rounded-full bg-gray-700 hover:bg-cyan-600/50 transition-colors" title="Drag to resize results" />
+                        <div onMouseDown={handleResultResizeStart} className="h-1.5 mt-0.5 cursor-row-resize rounded-full bg-gray-700 hover:bg-cyan-600/50 transition-colors" title="Drag to resize results" aria-label="Drag to resize results" />
                     )}
                 </div>
                  <MarkdownSectionEditor
                     section={parsed.conclusion}
                     defaultTitle="Conclusion"
                     onUpdate={handleConclusionUpdate}
-                    onAdd={()=> handleConclusionUpdate({title:'Conclusion', content:' '})}
+                    onAdd={()=> handleConclusionUpdate({title:'Conclusion', content:'_Conclusion_\n'})}
                     isEditing={editingSection==='conclusion'}
                     onSetEditing={e=>setEditingSection(e?'conclusion':null)}
                     variables={allVariables}
                     formatSettings={{ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }}
+                    presenterMode={presenterMode}
                 />
-            </div>}
+            </div>)}
             {isDraggingOver === 'bottom' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-cyan-400 z-10" />}
             <PlotHelpModal isOpen={isPlotHelpModalOpen} onClose={() => setIsPlotHelpModalOpen(false)} />
         </div>

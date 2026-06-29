@@ -14,6 +14,7 @@ import type { SourceType } from './context/DuckDBContext';
 import { SettingsContext } from './context/SettingsContext';
 import { DisplaySettingsProvider } from './context/DisplaySettingsContext';
 import { ExecutorProvider } from './context/ExecutorContext';
+import { SkillContextProvider } from './context/SkillContext';
 import { useHistoryState } from './hooks/useHistoryState';
 import { aiService } from './services/AiService';
 import type { NotebookCellData, NotebookMetadata } from './types';
@@ -22,7 +23,10 @@ import { gcAnalysisNotebook } from './data/gcNotebookTemplate';
 import { parseNotebook, reconstructNotebook, tokenizeCellContent, reconstructCellContent, parseCellContent, parseCellDirective } from './utils/notebookParser';
 import { formatPlotCode } from './utils/plotFormatter';
 import { formatSql } from './utils/sqlFormatter';
-import { substituteVariables, findRemainingVariables } from './utils/variableSubstitution';
+import { substituteVariables, findRemainingVariables, toSqlVariables } from './utils/variableSubstitution';
+import { expandBrushOperator } from './services/variableExpander';
+import { computeSessionVariables } from './components/SessionDateChip';
+import SessionDateChip from './components/SessionDateChip';
 
 import { ArrowUturnLeftIcon } from './components/icons/ArrowUturnLeftIcon';
 import { ArrowUturnRightIcon } from './components/icons/ArrowUturnRightIcon';
@@ -91,7 +95,8 @@ function usePersistentState<T>(key: string, defaultValue: T): [T, React.Dispatch
 
 const App: React.FC = () => {
     const {
-        dbState, mode, sourceType, errorMessage, serverProbeError, query, refreshSchema, loadFile, loadDemo
+        dbState, mode, sourceType, errorMessage, serverProbeError, query, refreshSchema, loadFile, loadDemo,
+        recordingStart, recordingEnd,
     } = useContext(DataContext);
     
     const { settings } = useContext(SettingsContext);
@@ -101,8 +106,10 @@ const App: React.FC = () => {
     const [probeToastDismissed, setProbeToastDismissed] = useState(false);
 
     const [isAiEnabled, setIsAiEnabled] = usePersistentState('jfr-notebook-ai-enabled', true);
-    
     const isAiFeatureActive = isAiAvailable && isAiEnabled;
+
+    // Incoming channel snapshot from InlineChat "pop to sidebar". ChatPanel consumes it.
+    const [incomingChannel, setIncomingChannel] = useState<import('./components/ChatPanel').InlineChatSnapshot | null>(null);
 
     useEffect(() => {
         let isMounted = true;
@@ -139,20 +146,29 @@ const App: React.FC = () => {
     }, [settings]);
 
 
-    const [notebookMarkdown, setNotebookMarkdown, undo, redo, canUndo, canRedo] = useHistoryState<string>(initialNotebook, 'jfr-notebook-content');
+    const [notebookMarkdown, setNotebookMarkdown, undo, redo, canUndo, canRedo, flushHistory] = useHistoryState<string>(initialNotebook, 'jfr-notebook-content');
     const [results, setResults] = useState<Record<string, (any[] | null)[]>>({});
+
+    const loadNotebook = useCallback((source: string) => {
+        setNotebookMarkdown(source);
+        setResults({});
+    }, [setNotebookMarkdown]);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = usePersistentState('jfr-ui-sidebarCollapsed', false);
     const [isChatPanelCollapsed, setIsChatPanelCollapsed] = usePersistentState('jfr-ui-chatPanelCollapsed', true);
     const [isAutoRunEnabled, setIsAutoRunEnabled] = usePersistentState('jfr-ui-autoRunEnabled', true);
-    const [isMarkdownMode, setIsMarkdownMode] = usePersistentState('jfr-ui-markdownMode', false);
+    const [isMarkdownMode, setIsMarkdownMode] = useState(false);
     const [collapseTrigger, setCollapseTrigger] = useState(0);
     const [allCollapsed, setAllCollapsed] = useState(false);
+    const [clearResultsTrigger, setClearResultsTrigger] = useState(0);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [isCmdPaletteOpen, setIsCmdPaletteOpen] = useState(false);
     const [isTemplateGalleryOpen, setIsTemplateGalleryOpen] = useState(false);
 
     const notebookFileInputRef = useRef<HTMLInputElement>(null);
     const savedMarkdownRef = useRef<string>(notebookMarkdown);
+    // Always-fresh ref so addCellFromTool reads current markdown without stale closures.
+    const notebookMarkdownRef = useRef<string>(notebookMarkdown);
+    notebookMarkdownRef.current = notebookMarkdown;
 
     // Warn before tab close if the notebook has unsaved changes (not yet downloaded).
     useEffect(() => {
@@ -172,7 +188,7 @@ const App: React.FC = () => {
         reader.onload = (ev) => {
             const text = ev.target?.result;
             if (typeof text === 'string') {
-                setNotebookMarkdown(text);
+                loadNotebook(text);
             }
         };
         reader.readAsText(file);
@@ -204,8 +220,15 @@ const App: React.FC = () => {
             );
         const onDragOver = (e: DragEvent) => {
             if (!e.dataTransfer) return;
-            // Only react if the drag actually has files (avoid blocking text drags within editors).
             const types = Array.from(e.dataTransfer.types || []);
+            // Prevent browser from navigating when a cell drag (text/plain) lands
+            // outside a cell drop-zone — without this the browser treats the cell
+            // ID string as a URL and navigates to about:blank.
+            if (types.includes('text/plain') && !types.includes('Files')) {
+                e.preventDefault();
+                return;
+            }
+            // Only react further if the drag actually has files.
             if (!types.includes('Files')) return;
             e.preventDefault();
             setIsMdDragOver(true);
@@ -215,6 +238,12 @@ const App: React.FC = () => {
             setIsMdDragOver(false);
         };
         const onDrop = (e: DragEvent) => {
+            // Prevent browser navigation when a cell-reorder drag lands outside a cell.
+            const types = Array.from(e.dataTransfer?.types || []);
+            if (types.includes('text/plain') && !types.includes('Files')) {
+                e.preventDefault();
+                return;
+            }
             const files = Array.from(e.dataTransfer?.files || []);
             const md = files.find(f => /\.(md|markdown)$/i.test(f.name) || f.type === 'text/markdown');
             if (!md) return;
@@ -223,7 +252,7 @@ const App: React.FC = () => {
             const reader = new FileReader();
             reader.onload = ev => {
                 const text = ev.target?.result;
-                if (typeof text === 'string') setNotebookMarkdown(text);
+                if (typeof text === 'string') loadNotebook(text);
             };
             reader.readAsText(md);
         };
@@ -235,7 +264,7 @@ const App: React.FC = () => {
             window.removeEventListener('dragleave', onDragLeave);
             window.removeEventListener('drop', onDrop);
         };
-    }, [setNotebookMarkdown]);
+    }, [loadNotebook]);
 
 
     //   ?notebook=<https-url>          fetch markdown notebook
@@ -405,13 +434,14 @@ const App: React.FC = () => {
         let cancelled = false;
         (async () => {
             const vars = metadata.variables || {};
+            const sqlVars = toSqlVariables(vars);
             let changed = false;
 
             // Topo-sort views by includes dependencies (simple DFS).
             const viewsInOrder = topoSort(metadata.views || [], 'views');
             for (const v of viewsInOrder) {
                 if (!v.name || !v.sql) continue;
-                const sql = substituteVariables(v.sql, vars);
+                const sql = substituteVariables(v.sql, sqlVars);
                 try {
                     let stmt: string;
                     if (v.params && v.params.length > 0) {
@@ -430,7 +460,7 @@ const App: React.FC = () => {
             const macrosInOrder = topoSort(metadata.macros || [], 'macros');
             for (const m of macrosInOrder) {
                 if (!m.name || !m.sql) continue;
-                const body = substituteVariables(m.sql, vars);
+                const body = substituteVariables(m.sql, sqlVars);
                 // The macro body must start with a parameter list: "(a, b) AS expr".
                 // Without an explicit param list the macro body has nothing to bind
                 // free identifiers to, so DuckDB will reject it. Skip silently to
@@ -481,7 +511,7 @@ const App: React.FC = () => {
 
     const runQuery = useCallback(async (cellId: string, sql: string, queryIndex: number, allVariables: Record<string,string>) => {
         try {
-            const subSql = substituteVariables(sql, allVariables);
+            const subSql = expandBrushOperator(substituteVariables(sql, toSqlVariables(allVariables)), allVariables);
 
             const remainingVars = findRemainingVariables(subSql);
             if (remainingVars.length > 0) {
@@ -507,6 +537,7 @@ const App: React.FC = () => {
     const updateCellsAndMarkdown = (newCells: NotebookCellData[]) => {
         const newCellsContent = newCells.map(cell => cell.content).join('\n\n---\n\n');
         const newNotebookMarkdown = reconstructNotebook({ metadata, content: newCellsContent });
+        notebookMarkdownRef.current = newNotebookMarkdown;
         setNotebookMarkdown(newNotebookMarkdown);
     };
 
@@ -528,19 +559,34 @@ const App: React.FC = () => {
      * `applyPlot`. Shared between ChatPanel and InlineChat.
      */
     const addCellFromTool = (mut: { type: 'sql' | 'plot' | 'markdown'; content: string; afterCellId?: string }): string => {
+        flushHistory();
         const id = `cell-${Date.now()}`;
         const fence = mut.type === 'sql' ? '```sql' : mut.type === 'plot' ? '```plot' : null;
         const body = fence ? `${fence}\n${mut.content}\n\`\`\`\n` : `${mut.content}\n`;
         const newCell: NotebookCellData = { id, title: '', content: body };
+        // Read the latest markdown via ref so rapid successive calls don't overwrite each other.
+        const latestCells = parseNotebook(notebookMarkdownRef.current).content
+            .split(/\n\n---\n\n/)
+            .map((content, index) => ({ id: `cell-${index}`, title: '', content }));
         let inserted = false;
         const next: NotebookCellData[] = [];
-        for (const c of cells) {
+        for (const c of latestCells) {
             next.push(c);
             if (!inserted && mut.afterCellId && c.id === mut.afterCellId) { next.push(newCell); inserted = true; }
         }
         if (!inserted) next.push(newCell);
         updateCellsAndMarkdown(next);
         return id;
+    };
+
+    const addCellsBatchFromTool = (muts: { type: 'sql' | 'plot' | 'markdown'; content: string }[]): void => {
+        flushHistory();
+        const newCells = muts.map((mut, i) => {
+            const fence = mut.type === 'sql' ? '```sql' : mut.type === 'plot' ? '```plot' : null;
+            const body = fence ? `${fence}\n${mut.content}\n\`\`\`\n` : `${mut.content}\n`;
+            return { id: `cell-${Date.now()}-${i}`, title: '', content: body };
+        });
+        updateCellsAndMarkdown([...cells, ...newCells]);
     };
     
     const addCellFromAI = (sql: string, plotConfig: string, title: string, markdownText: string) => {
@@ -684,7 +730,10 @@ const App: React.FC = () => {
         }
     }, [cells, metadata, runQuery]);
 
-    const handleClearResults = useCallback(() => { setResults({}); }, []);
+    const handleClearResults = useCallback(() => {
+        setResults({});
+        setClearResultsTrigger(t => t + 1);
+    }, []);
 
     const formatAllCells = useCallback(() => {
         const newCells = cells.map(cell => {
@@ -717,6 +766,24 @@ const App: React.FC = () => {
         await refreshSchema();
     };
 
+    // Seed session_start / session_end variables from recording bounds when a
+    // JFR file is loaded and the variables haven't been set yet.
+    useEffect(() => {
+        if (recordingStart == null && recordingEnd == null) return;
+        const current = metadata.variables ?? {};
+        const seeded = computeSessionVariables(current, recordingStart, recordingEnd);
+        if (seeded === current) return; // no-op — already set or no bounds
+        const newNotebookMarkdown = reconstructNotebook({
+            metadata: { ...metadata, variables: seeded },
+            content: cellsContent,
+        });
+        setNotebookMarkdown(newNotebookMarkdown);
+        void refreshSchema();
+    // Run whenever recording bounds first arrive; cellsContent and metadata are
+    // stable until the user edits them, so this only fires on file load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [recordingStart, recordingEnd]);
+
     if (dbState !== DBState.READY) {
         if (mode === 'wasm' && (dbState === DBState.NEEDS_FILE || dbState === DBState.IMPORTING || dbState === DBState.ERROR)) {
             return (
@@ -724,8 +791,8 @@ const App: React.FC = () => {
                     onFileSelected={(bytes, fileName) => { void loadFile(bytes, fileName); }}
                     isImporting={dbState === DBState.IMPORTING}
                     errorMessage={dbState === DBState.ERROR ? errorMessage : null}
-                    onLoadDemo={() => { setNotebookMarkdown(initialNotebook); void loadDemo(); }}
-                    onLoadGcNotebook={() => { setNotebookMarkdown(gcAnalysisNotebook); void loadDemo(); }}
+                    onLoadDemo={() => { loadNotebook(initialNotebook); void loadDemo(); }}
+                    onLoadGcNotebook={() => { loadNotebook(gcAnalysisNotebook); void loadDemo(); }}
                 />
             );
         }
@@ -734,6 +801,7 @@ const App: React.FC = () => {
     
     return (
       <DisplaySettingsProvider value={displaySettings}>
+       <SkillContextProvider>
        <ExecutorProvider cells={cells}>
         <div className="flex flex-col h-screen bg-gray-800 text-gray-200 font-sans">
             {isMdDragOver && (
@@ -750,7 +818,7 @@ const App: React.FC = () => {
                 currentSource={notebookMarkdown}
                 mode={mode}
                 onInsert={(merged, warnings) => {
-                    setNotebookMarkdown(merged);
+                    loadNotebook(merged);
                     if (warnings.length > 0) {
                         console.warn('Template merge warnings:', warnings);
                     }
@@ -758,7 +826,7 @@ const App: React.FC = () => {
             />
             <CommandPalette isOpen={isCmdPaletteOpen} onClose={() => setIsCmdPaletteOpen(false)} actions={cmdActions} />
             {aiFailureMessage && <ToastNotification title="AI Assistant Alert" message={aiFailureMessage} onClose={() => setAiFailureMessage(null)} action={{ label: 'Open Settings →', onClick: () => setIsSettingsModalOpen(true) }} />}
-            {serverProbeError && !probeToastDismissed && <ToastNotification title="Running in WASM mode" message={`Server probe failed: ${serverProbeError}. Drop a .jfr or .duckdb file to get started.`} onClose={() => setProbeToastDismissed(true)} duration={12000} />}
+            {serverProbeError && !probeToastDismissed && <ToastNotification title="Running in WASM mode" message={`Server probe failed: ${serverProbeError}. Drop a .jfr or .duckdb file to get started.`} onClose={() => setProbeToastDismissed(true)} duration={5000} />}
 
             <header className="flex-shrink-0 h-12 bg-gray-900/80 border-b border-gray-700/80 flex items-center justify-between px-4 z-30">
                 <div className="flex items-center gap-3">
@@ -789,43 +857,63 @@ const App: React.FC = () => {
                             {sourceType === 'jfr' ? 'JFR' : 'DuckDB'}
                         </span>
                     )}
+                    {recordingStart != null && (
+                        <>
+                            <div className="w-px h-5 bg-gray-700 mx-1" />
+                            <SessionDateChip
+                                label="$session_start"
+                                value={(metadata.variables ?? {})['session_start'] ?? ''}
+                                onChange={v => void handleMetadataChange({ ...metadata, variables: { ...(metadata.variables ?? {}), session_start: v } })}
+                                min={recordingStart}
+                                max={recordingEnd}
+                                defaultIfEmpty={recordingStart}
+                            />
+                            <SessionDateChip
+                                label="$session_end"
+                                value={(metadata.variables ?? {})['session_end'] ?? ''}
+                                onChange={v => void handleMetadataChange({ ...metadata, variables: { ...(metadata.variables ?? {}), session_end: v } })}
+                                min={recordingStart}
+                                max={recordingEnd}
+                                defaultIfEmpty={recordingEnd}
+                            />
+                        </>
+                    )}
                     <div className="w-px h-5 bg-gray-700 mx-1" />
                     <div className="flex items-center gap-1">
-                        <button onClick={undo} disabled={!canUndo} title="Undo (⌘Z)" className="p-1.5 rounded-md disabled:opacity-30 text-gray-400 disabled:text-gray-600 hover:enabled:bg-gray-700/50"><ArrowUturnLeftIcon className="w-4 h-4"/></button>
-                        <button onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)" className="p-1.5 rounded-md disabled:opacity-30 text-gray-400 disabled:text-gray-600 hover:enabled:bg-gray-700/50"><ArrowUturnRightIcon className="w-4 h-4"/></button>
+                        <button onClick={undo} disabled={!canUndo} title="Undo (⌘Z)" aria-label="Undo" className="p-1.5 rounded-md disabled:opacity-30 text-gray-400 disabled:text-gray-600 hover:enabled:bg-gray-700/50"><ArrowUturnLeftIcon className="w-4 h-4"/></button>
+                        <button onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)" aria-label="Redo" className="p-1.5 rounded-md disabled:opacity-30 text-gray-400 disabled:text-gray-600 hover:enabled:bg-gray-700/50"><ArrowUturnRightIcon className="w-4 h-4"/></button>
                     </div>
-                    <div className="w-px h-5 bg-gray-700 mx-1" />
                     <div className="flex items-center gap-1">
-                        <button onClick={() => setIsAutoRunEnabled(!isAutoRunEnabled)} className={`p-1.5 rounded-md ${isAutoRunEnabled ? 'text-cyan-300' : 'text-gray-400'}`} title={isAutoRunEnabled ? "Disable Auto-Run" : "Enable Auto-Run"}>
+                        <button onClick={() => setIsAutoRunEnabled(!isAutoRunEnabled)} className={`p-1.5 rounded-md ${isAutoRunEnabled ? 'text-cyan-300' : 'text-gray-400'}`} title={isAutoRunEnabled ? "Disable Auto-Run" : "Enable Auto-Run"} aria-label={isAutoRunEnabled ? "Disable Auto-Run" : "Enable Auto-Run"}>
                             {isAutoRunEnabled ? <PauseCircleIcon className="w-4 h-4" /> : <PlayCircleIcon className="w-4 h-4" />}
                         </button>
-                        <button onClick={handleRunAll} disabled={isRunningAll} title="Run All Queries" className={`p-1.5 rounded-md disabled:opacity-50 ${isRunningAll ? 'text-green-400 animate-pulse' : 'text-gray-400 hover:text-green-400'}`}>
+                        <button onClick={handleRunAll} disabled={isRunningAll} title="Run All Queries" aria-label="Run All Queries" className={`p-1.5 rounded-md disabled:opacity-50 ${isRunningAll ? 'text-green-400 animate-pulse' : 'text-gray-400 hover:text-green-400'}`}>
                             {isRunningAll ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"/> : <PlayIcon className="w-4 h-4"/>}
                         </button>
                     </div>
                 </div>
                 <div className="flex items-center gap-1">
-                    <button onClick={() => { setCollapseTrigger(Date.now()); setAllCollapsed(true); }} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Collapse All"><ChevronDoubleUpIcon className="w-4 h-4"/></button>
-                    <button onClick={() => { setCollapseTrigger(Date.now()); setAllCollapsed(false); }} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Expand All"><ChevronDoubleDownIcon className="w-4 h-4"/></button>
-                    <button onClick={handleClearResults} className="p-1.5 rounded-md text-gray-400 hover:text-red-400" title="Clear All Results"><TrashIcon className="w-4 h-4"/></button>
+                    <button onClick={() => { setCollapseTrigger(Date.now()); setAllCollapsed(true); }} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Collapse All" aria-label="Collapse All"><ChevronDoubleUpIcon className="w-4 h-4"/></button>
+                    <button onClick={() => { setCollapseTrigger(Date.now()); setAllCollapsed(false); }} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Expand All" aria-label="Expand All"><ChevronDoubleDownIcon className="w-4 h-4"/></button>
+                    <button onClick={handleClearResults} className="p-1.5 rounded-md text-gray-400 hover:text-red-400" title="Clear All Results" aria-label="Clear All Results"><TrashIcon className="w-4 h-4"/></button>
                     <div className="w-px h-5 bg-gray-700 mx-1" />
                     <input ref={notebookFileInputRef} type="file" accept=".md,.markdown" className="hidden" onChange={handleLoadNotebook} />
-                    <button onClick={() => notebookFileInputRef.current?.click()} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Load Notebook"><ArrowUpTrayIcon className="w-4 h-4"/></button>
-                    <button onClick={() => setIsTemplateGalleryOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-cyan-300" title="New from template"><DocumentTextIcon className="w-4 h-4"/></button>
-                    <button onClick={() => setNotebookMarkdown(gcAnalysisNotebook)} className="p-1.5 rounded-md text-gray-400 hover:text-emerald-400" title="New GC Analysis Notebook"><BeakerIcon className="w-4 h-4"/></button>
-                    <button onClick={handleSaveNotebook} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Save Notebook (⌘S)"><ArrowDownTrayIcon className="w-4 h-4"/></button>
-                    <button onClick={() => setIsMarkdownMode(!isMarkdownMode)} className={`p-1.5 rounded-md ${isMarkdownMode ? 'text-cyan-300' : 'text-gray-400'} hover:text-cyan-300`} title={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown"}><CodeBracketIcon className="w-4 h-4"/></button>
+                    <button onClick={() => notebookFileInputRef.current?.click()} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Load Notebook" aria-label="Load Notebook"><ArrowUpTrayIcon className="w-4 h-4"/></button>
+                    <button onClick={() => setIsTemplateGalleryOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-cyan-300" title="New from template" aria-label="New from template"><DocumentTextIcon className="w-4 h-4"/></button>
+                    <button onClick={() => loadNotebook(gcAnalysisNotebook)} className="p-1.5 rounded-md text-gray-400 hover:text-emerald-400" title="New GC Analysis Notebook" aria-label="New GC Analysis Notebook"><BeakerIcon className="w-4 h-4"/></button>
+                    <button onClick={handleSaveNotebook} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Save Notebook (⌘S)" aria-label="Save Notebook"><ArrowDownTrayIcon className="w-4 h-4"/></button>
+                    <button onClick={() => setIsMarkdownMode(!isMarkdownMode)} className={`p-1.5 rounded-md ${isMarkdownMode ? 'text-cyan-300' : 'text-gray-400'} hover:text-cyan-300`} title={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown"} aria-label={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown"}><CodeBracketIcon className="w-4 h-4"/></button>
                     {isAiAvailable && (
-                        <button onClick={() => setIsAiEnabled(!isAiEnabled)} className={`p-1.5 rounded-md ${isAiEnabled ? 'text-yellow-400' : 'text-gray-400'}`} title={isAiEnabled ? "Disable AI Features" : "Enable AI Features"}>
+                        <button onClick={() => setIsAiEnabled(!isAiEnabled)} className={`p-1.5 rounded-md ${isAiEnabled ? 'text-yellow-400' : 'text-gray-400'}`} title={isAiEnabled ? "Disable AI Features" : "Enable AI Features"} aria-label={isAiEnabled ? "Disable AI Features" : "Enable AI Features"}>
                             <SparklesIcon className="w-4 h-4"/>
                         </button>
                     )}
                     <div className="w-px h-5 bg-gray-700 mx-1" />
-                    <button onClick={() => setPresenterMode(!presenterMode)} className={`p-1.5 rounded-md ${presenterMode ? 'text-cyan-300 bg-cyan-900/30' : 'text-gray-400'} hover:text-cyan-300`} title={presenterMode ? "Exit Presenter Mode" : "Presenter Mode (hide editors)"}>
+                    <button onClick={() => setPresenterMode(!presenterMode)} className={`p-1.5 rounded-md ${presenterMode ? 'text-cyan-300 bg-cyan-900/30' : 'text-gray-400'} hover:text-cyan-300`} title={presenterMode ? "Exit Presenter Mode" : "Presenter Mode (hide editors)"} aria-label={presenterMode ? "Exit Presenter Mode" : "Presenter Mode"}>
                         <EyeIcon className="w-4 h-4"/>
                     </button>
                     <div className="w-px h-5 bg-gray-700 mx-1" />
-                    <button onClick={() => setIsSettingsModalOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Settings"><CogIcon className="w-4 h-4"/></button>
+                    <button onClick={() => setIsSettingsModalOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Settings" aria-label="Settings"><CogIcon className="w-4 h-4"/></button>
                 </div>
             </header>
 
@@ -849,7 +937,8 @@ const App: React.FC = () => {
                     <Sidebar metadata={metadata} />
                 </ResizablePanel>
                 
-                <main className="flex-1 overflow-auto bg-gray-800">
+                <main className={`flex-1 bg-gray-800 ${isMarkdownMode ? 'overflow-hidden flex flex-col' : 'overflow-auto'}`}>
+                    <div className={isMarkdownMode ? 'flex-1 flex flex-col min-h-0' : undefined}>
                     <Notebook
                         notebookMarkdown={notebookMarkdown}
                         setNotebookMarkdown={setNotebookMarkdown}
@@ -860,6 +949,7 @@ const App: React.FC = () => {
                         results={results}
                         collapseTrigger={collapseTrigger}
                         allCollapsed={allCollapsed}
+                        clearResultsTrigger={clearResultsTrigger}
                         isAiFeatureActive={isAiFeatureActive}
                         onRunQuery={runQuery}
                         onUpdateCell={updateCell}
@@ -873,7 +963,19 @@ const App: React.FC = () => {
                         onMetadataChange={handleMetadataChange}
                         onDeleteQueryBlock={(cellId, index) => deleteQueryBlock(cellId, index)}
                         presenterMode={presenterMode}
+                        onPopChatToSidebar={snapshot => {
+                            setIncomingChannel(snapshot);
+                            setIsChatPanelCollapsed(false);
+                        }}
+                        onNavigateRef={ref => {
+                            const idxMatch = /^(?:cell-|plot-)?(\d+)$/.exec(ref);
+                            const el = idxMatch
+                                ? document.querySelector(`[data-cell-idx="${idxMatch[1]}"]`)
+                                : document.querySelector(`[data-cell-alias="${ref}"], [data-cell-alias="${ref.replace(/^@/, '')}"]`);
+                            el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }}
                     />
+                    </div>
                 </main>
 
                 {isAiFeatureActive && (
@@ -889,7 +991,22 @@ const App: React.FC = () => {
                             onAddCellFromAI={addCellFromAI}
                             cells={cells}
                             onAddCell={addCellFromTool}
+                            onAddCellsBatch={addCellsBatchFromTool}
                             onUpdateCell={updateCell}
+                            onDeleteCell={deleteCell}
+                            onMoveCell={moveCell}
+                            onMetadataChange={handleMetadataChange}
+                            onUndoLastAction={canUndo ? undo : undefined}
+                            onBeforeMutate={flushHistory}
+                            incomingChannel={incomingChannel}
+                            onIncomingChannelConsumed={() => setIncomingChannel(null)}
+                            onNavigateRef={ref => {
+                                const idxMatch = /^(?:cell-|plot-)?(\d+)$/.exec(ref);
+                                const el = idxMatch
+                                    ? document.querySelector(`[data-cell-idx="${idxMatch[1]}"]`)
+                                    : document.querySelector(`[data-cell-alias="${ref}"], [data-cell-alias="${ref.replace(/^@/, '')}"]`);
+                                el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }}
                         />
                     </ResizablePanel>
                 )}
@@ -905,6 +1022,7 @@ const App: React.FC = () => {
             </div>
         </div>
        </ExecutorProvider>
+       </SkillContextProvider>
       </DisplaySettingsProvider>
     );
 };
