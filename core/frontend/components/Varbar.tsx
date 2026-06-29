@@ -111,7 +111,7 @@ const VarPillPopover: React.FC<{
         >
             <div className="flex items-center justify-between mb-2">
                 <span className="text-cyan-400 font-semibold">${name}</span>
-                <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-sm">×</button>
+                <button onClick={onClose} className="text-gray-400 hover:text-gray-300 text-sm">×</button>
             </div>
 
             {scalar ? (

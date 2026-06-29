@@ -1,13 +1,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 
 const DEBOUNCE_TIME_MS = 800;
+// B-043: cap the maximum duration of a single undo session so that long
+// uninterrupted typing still produces multiple undo checkpoints.
+const MAX_SESSION_MS = 3000;
 
 type Initializer<T> = () => T;
 
 export const useHistoryState = <T,>(
     initialState: T | Initializer<T>,
     storageKey: string
-): [T, (value: T) => void, () => void, () => void, boolean, boolean] => {
+): [T, (value: T) => void, () => void, () => void, boolean, boolean, () => void] => {
     
     const [state, _setState] = useState(() => {
         try {
@@ -40,10 +43,19 @@ export const useHistoryState = <T,>(
 
     const debounceTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isDebouncing = useRef(false);
+    const sessionStartTime = useRef<number>(0);
 
     const setState = useCallback((value: T) => {
         if (debounceTimeout.current) {
             clearTimeout(debounceTimeout.current);
+        }
+
+        // B-043: force a new history entry if the current session has been running
+        // longer than MAX_SESSION_MS, even if keystrokes are still continuous.
+        const now = Date.now();
+        const sessionExpired = isDebouncing.current && (now - sessionStartTime.current) >= MAX_SESSION_MS;
+        if (sessionExpired) {
+            isDebouncing.current = false;
         }
 
         _setState(prevState => {
@@ -53,7 +65,7 @@ export const useHistoryState = <T,>(
                 newHistory[newHistory.length - 1] = value;
                 return { ...prevState, history: newHistory, currentIndex: newHistory.length - 1 };
             }
-            
+
             // Otherwise, it's a new action. Create a new history entry.
             // This also handles creating a new branch after an undo.
             const newHistory = prevState.history.slice(0, prevState.currentIndex + 1);
@@ -70,6 +82,9 @@ export const useHistoryState = <T,>(
             };
         });
 
+        if (!isDebouncing.current) {
+            sessionStartTime.current = now;
+        }
         isDebouncing.current = true;
         debounceTimeout.current = setTimeout(() => {
             isDebouncing.current = false;
@@ -94,9 +109,21 @@ export const useHistoryState = <T,>(
         }));
     }, []);
 
+    // Close the current debounce window so the *next* setState lands in a new
+    // history entry. Call this just before applying an AI tool mutation so each
+    // tool call becomes its own undo step instead of being merged with the
+    // previous one inside the 800ms window.
+    const flushHistory = useCallback(() => {
+        if (debounceTimeout.current) {
+            clearTimeout(debounceTimeout.current);
+            debounceTimeout.current = null;
+        }
+        isDebouncing.current = false;
+    }, []);
+
     const currentState = state.history[state.currentIndex];
     const canUndo = state.currentIndex > 0;
     const canRedo = state.currentIndex < state.history.length - 1;
 
-    return [currentState, setState, undo, redo, canUndo, canRedo];
+    return [currentState, setState, undo, redo, canUndo, canRedo, flushHistory];
 };

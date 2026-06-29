@@ -145,6 +145,17 @@
   animation: fadeInDown 0.2s ease-out forwards;
 }
 
+@keyframes cellFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.0); outline: 2px solid rgba(251, 191, 36, 0.0); }
+  20%  { box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.45); outline: 2px solid rgba(251, 191, 36, 0.8); }
+  100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.0); outline: 2px solid rgba(251, 191, 36, 0.0); }
+}
+
+.cell-flash {
+  animation: cellFlash 1.2s ease-out;
+  border-radius: 0.5rem;
+}
+
 .cursor-ns-resize {
   cursor: ns-resize;
 }

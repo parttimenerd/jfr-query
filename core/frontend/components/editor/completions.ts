@@ -603,7 +603,33 @@ function buildConstOptions(
 
 // ─── Per-hint dispatchers ────────────────────────────────────────────────────
 
-function completeTopLevel(from: number, _hint: Extract<PlotHoleHint, { kind: 'topLevel' }>): CompletionResult {
+/**
+ * Scan forward past any balanced `(...)` block immediately following `pos`.
+ * Returns the position after the closing `)`, or `pos` if there is none.
+ * Used by `completeTopLevel` so that replacing e.g. `TABLE(x: "col")` with a
+ * new chart name doesn't leave a stray `(...)` suffix.
+ */
+function skipTrailingParens(doc: string, pos: number): number {
+  let i = pos;
+  // Skip whitespace
+  while (i < doc.length && doc[i] === ' ') i++;
+  if (i >= doc.length || doc[i] !== '(') return pos;
+  let depth = 0;
+  while (i < doc.length) {
+    if (doc[i] === '(') depth++;
+    else if (doc[i] === ')') { depth--; if (depth === 0) return i + 1; }
+    i++;
+  }
+  return pos;
+}
+
+function completeTopLevel(
+  from: number,
+  _hint: Extract<PlotHoleHint, { kind: 'topLevel' }>,
+  doc: string,
+  cursorPos: number,
+): CompletionResult {
+  const to = skipTrailingParens(doc, cursorPos);
   const options: Completion[] = Array.from(
     new Map(Object.values(plotRegistry).map(p => [p.name, p])).values()
   ).map(p => ({
@@ -634,7 +660,7 @@ function completeTopLevel(from: number, _hint: Extract<PlotHoleHint, { kind: 'to
     apply: 'LET @name = value',
     boost: 1,
   });
-  return { from, options };
+  return to > cursorPos ? { from, to, options } : { from, options };
 }
 
 function completeClauseKey(
@@ -648,21 +674,51 @@ function completeClauseKey(
   const columnSet = new Set(hint.columnKeys.map(k => k.toLowerCase()));
   const lc = partial.toLowerCase();
 
+  // Grab clauseDefs for this shape so we can surface description + type in info.
+  const shapeDefs = getPlotRegistryAsShapes()[hint.shape]?.clauseDefs ?? [];
+  const defByKey = new Map(shapeDefs.map(d => [d.key.toLowerCase(), d]));
+
   for (const key of hint.availableKeys) {
     const lck = key.toLowerCase();
     if (used.has(lck)) continue;
     if (lc && !lck.startsWith(lc)) continue;
     const isRequired = required.has(lck);
     const isColumn = columnSet.has(lck);
+    const def = defByKey.get(lck);
+    const typeHint = def?.paramType ? ` · ${def.paramType}` : '';
+    const infoText = def?.description ?? null;
     options.push({
       label: key,
-      detail: `${isColumn ? 'column · ' : ''}${isRequired ? 'required' : 'clause'}`,
+      detail: `${isColumn ? 'column' : 'clause'}${typeHint}${isRequired ? ' · required' : ''}`,
+      info: infoText ?? undefined,
       type: 'plotParam',
       apply: `${key}: `,
       // Required clauses + column clauses bubble to the top.
       boost: (isRequired ? 5 : 0) + (isColumn ? 1 : 0),
     });
   }
+
+  // Typo-recovery: when the user typed 3+ chars that don't prefix any clause,
+  // surface the closest match via Levenshtein (≤2 edits).
+  if (options.length === 0 && lc.length >= 3) {
+    const allKeys = hint.availableKeys.filter(k => !used.has(k.toLowerCase()));
+    const m = closestMatch(lc, allKeys.map(k => k.toLowerCase()));
+    if (m) {
+      const original = hint.availableKeys.find(k => k.toLowerCase() === m) ?? m;
+      const isRequired = required.has(m);
+      const isColumn = columnSet.has(m);
+      const def = defByKey.get(m);
+      options.push({
+        label: original,
+        detail: `did you mean? · ${isColumn ? 'column' : 'clause'}${isRequired ? ' · required' : ''}`,
+        info: def?.description ?? undefined,
+        type: 'plotParam',
+        apply: `${original}: `,
+        boost: 4,
+      });
+    }
+  }
+
   return options.length > 0 ? { from, options } : null;
 }
 
@@ -680,6 +736,10 @@ function completeClauseValue(
   const lc = partial.toLowerCase();
   const stripQuote = lc.replace(/^"/, '');
 
+  // Pull the clause description for use in `info` on column completions.
+  const shapeDefs = getPlotRegistryAsShapes()[hint.shape]?.clauseDefs ?? [];
+  const clauseInfo = shapeDefs.find(d => d.key.toLowerCase() === hint.clauseKey.toLowerCase())?.description;
+
   // 1. Column completions when the slot is column-typed (or the registry
   //    couldn't tell — we still offer columns since most clause values accept
   //    them).
@@ -692,6 +752,7 @@ function completeClauseValue(
       options.push({
         label: name,
         detail: detailForColumn(name, cachedColumns),
+        info: clauseInfo ?? undefined,
         type: 'column',
         apply: `"${name}"`,
         boost: 5,
@@ -706,6 +767,7 @@ function completeClauseValue(
       options.push({
         label: opt,
         detail: 'option',
+        info: clauseInfo ?? undefined,
         type: 'atom',
         apply: opt,
         boost: 3,
@@ -736,6 +798,7 @@ function completeTailKey(
     options.push({
       label: kw,
       detail: doc?.signature ?? 'tail',
+      info: doc?.description ?? undefined,
       type: 'keyword',
       apply: `${kw} `,
       boost: 2,
@@ -992,9 +1055,13 @@ function buildPlotNameOptions(scope: PlotScopeView | null, partial: string): Com
   const options: Completion[] = [];
   for (const p of scope.namedPlots) {
     if (lc && !p.plotName.toLowerCase().startsWith(lc)) continue;
+    const colPreview = p.declaredColumns && p.declaredColumns.length > 0
+      ? `Columns: ${p.declaredColumns.slice(0, 4).map(c => c.name).join(', ')}${p.declaredColumns.length > 4 ? ', …' : ''}`
+      : null;
     options.push({
       label: p.plotName,
       detail: `${p.shape} plot`,
+      info: colPreview ?? undefined,
       type: 'variable',
       apply: p.plotName,
       boost: 4,
@@ -1014,6 +1081,7 @@ function buildQueryRefOptions(
   if (scope) {
     for (const q of scope.queryRefs) {
       const idxLabel = `#${q.index}`;
+      const sqlPreview = q.sql ? q.sql.trim().slice(0, 80).replace(/\s+/g, ' ') + (q.sql.trim().length > 80 ? '…' : '') : null;
       if (lc && !String(q.index).startsWith(lc)) {
         // continue, but also check alias prefix below
       } else if (!seen.has(idxLabel)) {
@@ -1021,6 +1089,7 @@ function buildQueryRefOptions(
         options.push({
           label: idxLabel,
           detail: q.alias ? `query · ${q.alias}` : `query in cell ${q.cellId}`,
+          info: sqlPreview ?? undefined,
           type: 'variable',
           apply: idxLabel,
           boost: 4,
@@ -1033,6 +1102,7 @@ function buildQueryRefOptions(
           options.push({
             label: aliasLabel,
             detail: `view alias`,
+            info: sqlPreview ?? undefined,
             type: 'variable',
             apply: aliasLabel,
             boost: 4,
@@ -1218,7 +1288,7 @@ export function plotCompletionSource(deps: PlotCompletionDeps) {
 
     switch (hint.kind) {
       case 'topLevel':
-        return completeTopLevel(from, hint);
+        return completeTopLevel(from, hint, fullValue, ctx.pos);
       case 'clauseKey':
         return completeClauseKey(from, hint, partial.text);
       case 'clauseValue':

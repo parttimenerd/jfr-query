@@ -35,7 +35,7 @@ export const SchemaTooltipContent: React.FC<{ item: TableSchema | ViewSchema | M
 
     const handleCopy = (e: React.MouseEvent, text: string) => {
         e.stopPropagation();
-        navigator.clipboard.writeText(text);
+        navigator.clipboard.writeText(text).catch(() => {});
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };

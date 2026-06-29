@@ -26,7 +26,7 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
     const [body, setBody] = useState<string>('');
     const [search, setSearch] = useState('');
     const [tagFilter, setTagFilter] = useState<string | null>(null);
-    const [insertMode, setInsertMode] = useState<InsertMode>('append');
+    const [insertMode, setInsertMode] = useState<InsertMode>('replace');
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -46,6 +46,13 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
             .catch(e => { if (!cancelled) setError(String(e)); });
         return () => { cancelled = true; };
     }, [selected, mode]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+    }, [isOpen, onClose]);
 
     const allTags = useMemo(() => {
         const set = new Set<string>();
@@ -233,11 +240,13 @@ function stripFrontMatter(body: string): string {
  *   - Other fences fall through to a plain `<code>`.
  */
 const previewMarkdownComponents: any = {
-    code: ({ inline, className, children, ...props }: any) => {
+    code: ({ node, className, children, ...props }: any) => {
         const langMatch = /language-(\S+)/.exec(className || '');
         const lang = langMatch?.[1];
         const code = String(children ?? '').replace(/\n$/, '');
-        if (inline) {
+        // react-markdown v10 removed the `inline` prop; use node type instead.
+        const isInline = node?.type === 'inlineCode' || !className;
+        if (isInline) {
             return <code className="bg-gray-700 text-cyan-300 px-1 rounded" {...props}>{children}</code>;
         }
         if (lang === 'sql' || lang === 'plot') {
@@ -260,7 +269,7 @@ const previewMarkdownComponents: any = {
             );
         }
         return (
-            <pre className="bg-gray-900/60 border border-gray-700 rounded p-2 text-xs overflow-x-auto"><code {...props}>{code}</code></pre>
+            <div className="my-2"><pre className="bg-gray-900/60 border border-gray-700 rounded p-2 text-xs overflow-x-auto"><code {...props}>{code}</code></pre></div>
         );
     },
 };

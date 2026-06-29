@@ -8,7 +8,7 @@ import { Editor, type EditorHandle } from './editor/Editor';
 import type { SchemaForCompletion } from './editor/completions';
 import type { RunErrorSpec } from './editor/diagnostics';
 import { usePlotSchemaDiscovery } from './editor/plot/schemaProvider';
-import type { StreamFn } from './editor/aiAutocomplete';
+import type { StreamFn, AutocompleteSettings } from './editor/aiAutocomplete';
 import type { PlotAutocompleteSettings } from './editor/plot/aiPlotSource';
 import type { ResultColumn } from './editor/aiAutocomplete/contextBuilder';
 import type { PlotScopeView } from './editor/plot/notebookPlotScope';
@@ -41,6 +41,8 @@ interface EditorProps {
   currentCellId?: string | null;
   /** P7 — number of SQL blocks in the notebook (fallback for queryRefTarget hints). */
   sqlBlockCount?: number;
+  /** B-075: called when the plot AI context builder trims prior-cell content to fit the token budget. */
+  onPlotContextTrimmed?: ((trimmed: boolean) => void) | null;
 }
 
 const SQLEditor: React.FC<EditorProps> = ({
@@ -64,6 +66,7 @@ const SQLEditor: React.FC<EditorProps> = ({
   notebookPlotScope,
   currentCellId,
   sqlBlockCount,
+  onPlotContextTrimmed,
 }) => {
   const { schema: dbSchema, query } = useContext(DataContext);
   const { settings } = useContext(SettingsContext);
@@ -83,6 +86,19 @@ const SQLEditor: React.FC<EditorProps> = ({
     settings.plotAiAutocompleteEnabled,
     settings.aiAutocompleteModel,
     settings.plotAiAutocompleteDebounceMs,
+  ]);
+
+  // SQL AI ghost-text settings — mirrors plotAiAutocompleteSettings but for
+  // SQL mode. Enabled when aiAutocompleteModel is not 'off'.
+  const sqlAiAutocompleteSettings = useMemo<AutocompleteSettings>(() => ({
+    aiAutocompleteEnabled: settings.aiAutocompleteModel !== 'off',
+    aiAutocompleteModel: settings.aiAutocompleteModel,
+    autocompleteOfflineOnly: settings.autocompleteOfflineOnly,
+    aiProvider: settings.aiProvider,
+  }), [
+    settings.aiAutocompleteModel,
+    settings.autocompleteOfflineOnly,
+    settings.aiProvider,
   ]);
 
   // P5 — stable adapter that fronts the orchestrator's `StreamFn` shape.
@@ -124,6 +140,53 @@ const SQLEditor: React.FC<EditorProps> = ({
         const resp = await aiService.getAiInlineSuggestion(
           user,
           'plot',
+          '',
+          '',
+          undefined,
+          undefined,
+          undefined,
+          'no-data',
+          null,
+          'basic',
+        );
+        if (signal.aborted) return;
+        const code = resp?.code?.trim();
+        if (code) yield code;
+      } catch (e: any) {
+        if (e?.name === 'AbortError') return;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // SQL AI ghost-text stream. Browser path delegates to BrowserModelProvider
+  // via getAiInlineSuggestion routed through aiService; cloud-tiny path uses
+  // the tiny-tier inline suggestion endpoint. Yields one chunk (no true
+  // streaming for SQL completions — full result at once is acceptable latency).
+  const sqlAiAutocompleteStream = useMemo<StreamFn>(() => {
+    return async function* stream(_system, user, signal, model) {
+      if (model === 'browser') {
+        try {
+          const { generateSqlCompletion, isSqlModelReady } = await import('../services/ml/SqlGenerationService');
+          if (!isSqlModelReady()) return;
+          const { extractPrefix, extractSchema } = await import('../services/ai/browserSqlRules');
+          const prefix = extractPrefix(user);
+          if (!prefix || prefix.trim().length === 0) return;
+          const schema = extractSchema(user);
+          const completion = await generateSqlCompletion(prefix, schema);
+          if (signal.aborted) return;
+          if (completion && completion.trim()) yield completion.trim();
+        } catch (e: any) {
+          if (e?.name === 'AbortError') return;
+        }
+        return;
+      }
+      if (model !== 'cloud-tiny') return;
+      if (!aiService.isInitialized()) return;
+      try {
+        const resp = await aiService.getAiInlineSuggestion(
+          user,
+          'sql',
           '',
           '',
           undefined,
@@ -244,6 +307,9 @@ const SQLEditor: React.FC<EditorProps> = ({
       getPlotPriorCellsContent={mode === 'plot' ? () => priorPlotCellsContent ?? [] : null}
       getPlotCellResultSchema={mode === 'plot' ? () => cellResultSchema ?? null : null}
       getCellAliases={mode === 'markdown' ? () => aliasesRef.current : null}
+      sqlAiAutocompleteSettings={mode === 'sql' ? sqlAiAutocompleteSettings : null}
+      sqlAiAutocompleteStream={mode === 'sql' ? sqlAiAutocompleteStream : null}
+      onPlotContextTrimmed={mode === 'plot' ? onPlotContextTrimmed : null}
     />
   );
 };

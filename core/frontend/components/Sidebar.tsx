@@ -147,8 +147,10 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
   };
 
   const filteredTables = useMemo(() => {
-    const filtered = (schema?.tables || []).filter(table => 
-        table.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const lc = searchTerm.toLowerCase();
+    const filtered = (schema?.tables || []).filter(table =>
+        table.name.toLowerCase().includes(lc) ||
+        table.columns?.some(col => col.name.toLowerCase().includes(lc))
     );
 
     if (tableSort === 'alpha') {
@@ -165,7 +167,9 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
   }, [schema?.tables, searchTerm, tableSort]);
 
   const filteredViews = (schema?.views || []).filter(view => {
-    const searchMatch = view.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const lc = searchTerm.toLowerCase();
+    const searchMatch = view.name.toLowerCase().includes(lc) ||
+        (view.columns?.some(col => col.name.toLowerCase().includes(lc)));
     if (!searchMatch) return false;
     
     if (!showInternalViews && view.internal) {
@@ -378,20 +382,21 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
                 <DatabaseIcon className="w-5 h-5" />
                 Schema Explorer
             </h2>
-            <button onClick={initializeLayout} title="Reset Layout" className="text-gray-500 hover:text-cyan-400 p-1">
+            <button onClick={initializeLayout} title="Reset Layout" aria-label="Reset Layout" className="text-gray-400 hover:text-cyan-400 p-1">
                 <ViewColumnsIcon className="w-4 h-4" />
             </button>
-            <button onClick={() => refreshSchema()} title="Refresh Schema" className="text-gray-500 hover:text-cyan-400 p-1">
+            <button onClick={() => refreshSchema()} title="Refresh Schema" aria-label="Refresh Schema" className="text-gray-400 hover:text-cyan-400 p-1">
                 <ArrowPathIcon className="w-4 h-4" />
             </button>
           </div>
         <div className="relative">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-            <input 
-                type="text" 
-                placeholder="Search schema..." 
+            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+                type="text"
+                placeholder="Search schema..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
                 className="w-full bg-gray-800/50 border border-gray-700 rounded-md py-1.5 pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
         </div>
@@ -437,15 +442,15 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
                                     <>
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); setTableSort('alpha'); }}
-                                            title="Sort alphabetically"
-                                            className={`p-1 rounded-md ${tableSort === 'alpha' ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-500 hover:text-gray-200'}`}
+                                            title="Sort alphabetically" aria-label="Sort alphabetically"
+                                            className={`p-1 rounded-md ${tableSort === 'alpha' ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-400 hover:text-gray-200'}`}
                                         >
                                             <SortAZIcon className="w-4 h-4" />
                                         </button>
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); setTableSort('count'); }}
-                                            title="Sort by row count"
-                                            className={`p-1 rounded-md ${tableSort === 'count' ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-500 hover:text-gray-200'}`}
+                                            title="Sort by row count" aria-label="Sort by row count"
+                                            className={`p-1 rounded-md ${tableSort === 'count' ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-400 hover:text-gray-200'}`}
                                         >
                                             <ChartBarIcon className="w-4 h-4" />
                                         </button>
@@ -456,14 +461,14 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); setIsPreviewSearchVisible(s => !s); }}
                                             title={isPreviewSearchVisible ? "Hide Search" : "Show Search"}
-                                            className={`p-1 rounded-md ${isPreviewSearchVisible ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-500 hover:text-gray-200'}`}
+                                            className={`p-1 rounded-md ${isPreviewSearchVisible ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-400 hover:text-gray-200'}`}
                                         >
                                             <SearchIcon className="w-4 h-4" />
                                         </button>
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); setIsPreviewEditorVisible(s => !s); }}
                                             title={isPreviewEditorVisible ? "Hide Query Editor" : "Show Query Editor"}
-                                            className={`p-1 rounded-md ${isPreviewEditorVisible ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-500 hover:text-gray-200'}`}
+                                            className={`p-1 rounded-md ${isPreviewEditorVisible ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-400 hover:text-gray-200'}`}
                                         >
                                             <PencilIcon className="w-4 h-4" />
                                         </button>
@@ -473,12 +478,12 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); setShowInternalViews(s => !s); }}
                                         title={showInternalViews ? "Hide Internal Views" : "Show Internal Views"}
-                                        className={`p-1 rounded-md ${showInternalViews ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-500 hover:text-gray-200'}`}
+                                        className={`p-1 rounded-md ${showInternalViews ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-400 hover:text-gray-200'}`}
                                     >
                                         <EyeIcon className="w-4 h-4" />
                                     </button>
                                 )}
-                                {isCurrentCollapsed ? <ChevronDownIcon className="w-4 h-4 text-gray-500"/> : <ChevronUpIcon className="w-4 h-4 text-gray-500"/>}
+                                {isCurrentCollapsed ? <ChevronDownIcon className="w-4 h-4 text-gray-400"/> : <ChevronUpIcon className="w-4 h-4 text-gray-400"/>}
                             </div>
                         </div>
                         <div

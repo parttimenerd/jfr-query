@@ -11,7 +11,7 @@ interface ToastNotificationProps {
   action?: { label: string; onClick: () => void };
 }
 
-const ToastNotification: React.FC<ToastNotificationProps> = ({ message, onClose, title = 'Alert', duration = 8000, action }) => {
+const ToastNotification: React.FC<ToastNotificationProps> = ({ message, onClose, title = 'Alert', duration = 5000, action }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();

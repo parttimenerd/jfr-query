@@ -8,7 +8,7 @@ import { CellSegment } from '../utils/notebookParser';
 import { splitInlineExprs } from '../utils/inlineExpr';
 import { evaluateCondition, evaluateScalar } from '../services/templating/evaluators';
 import { formatValue, FormatSettings } from '../services/templating/formatValue';
-import { substituteVariables } from '../utils/variableSubstitution';
+import { substituteVariables, toSqlVariables } from '../utils/variableSubstitution';
 
 interface Props {
     /** Segments from `tokenizeCellContent` — must include 'if' and 'markdown'. */
@@ -101,7 +101,7 @@ const InlineProse: React.FC<InlineProseProps> = ({ text, query, variables, forma
             const next: Record<number, string> = {};
             for (const i of exprIndices) {
                 const p = parts[i] as { type: 'expr'; sql: string; format?: string };
-                const sub = substituteVariables(p.sql, variables);
+                const sub = substituteVariables(p.sql, toSqlVariables(variables));
                 const r = await evaluateScalar(query, sub);
                 if (cancelled) return;
                 if (r.kind === 'ok') {

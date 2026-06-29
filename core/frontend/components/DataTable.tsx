@@ -7,6 +7,8 @@ import { formatTimestamp as formatTimestampUtil } from '../utils/timeFormatter';
 import { formatNumber } from '../utils/numberFormatter';
 import {
     isDurationLike,
+    isByteLike,
+    formatBytes,
     parseIntervalToSeconds,
     compareValues,
     csvValue,
@@ -53,7 +55,7 @@ const isTimestampLike = (key: string, sample: any): boolean => {
         const numValue = Number(value);
         const MIN_EPOCH_MS = 1_000_000_000_000;
         if (numValue > MIN_EPOCH_MS) {
-            const positiveKeywords = ['time', 'date', 'timestamp', 'start', 'end', 'begin', 'finish', 'at', 'since'];
+            const positiveKeywords = ['time', 'date', 'timestamp', 'start', 'end', 'begin', 'finish', 'at', 'since', 'bucket', 'when', 'ts'];
             return positiveKeywords.some(keyword => keyLower.includes(keyword));
         }
     }
@@ -106,6 +108,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
   const sample = data[0];
   const timestampColumns = useMemo(() => new Set(dataHeaders.filter(h => isTimestampLike(h, sample))), [dataHeaders, sample]);
   const durationColumns  = useMemo(() => new Set(dataHeaders.filter(h => !timestampColumns.has(h) && isDurationLike(h, sample))), [dataHeaders, sample, timestampColumns]);
+  const byteColumns      = useMemo(() => new Set(dataHeaders.filter(h => !timestampColumns.has(h) && !durationColumns.has(h) && isByteLike(h, sample))), [dataHeaders, sample, timestampColumns, durationColumns]);
   const numericColumns   = useMemo(() => new Set(dataHeaders.filter(h => isNumericLike(h, sample, timestampColumns.has(h)))), [dataHeaders, sample, timestampColumns]);
 
   const finalHeaders = dataHeaders;
@@ -153,22 +156,29 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
     if (durationColumns.has(header)) {
         const secs = parseIntervalToSeconds(value);
         if (secs !== null) return formatDuration(secs);
-        // Numeric duration — infer unit from column name suffix; default to µs.
+        // Numeric duration — infer unit from column name suffix.
         if (typeof value === 'number' || typeof value === 'bigint') {
             const lc = header.toLowerCase();
             // Match trailing unit: bare suffix (_ms), parenthesised (ms), or bracketed [ms]
             const unitMatch = lc.match(/[\s_([](ns|µs|us|ms|sec(?:onds?)?|s)\s*[)\]]?\s*$/);
             const unit = unitMatch ? unitMatch[1] : '';
-            let divisor = 1_000_000; // default: microseconds
+            let divisor: number;
             if (unit === 'ns') divisor = 1_000_000_000;
             else if (unit === 'ms') divisor = 1_000;
             else if (unit === 's' || unit === 'sec' || unit === 'secs' || unit === 'second' || unit === 'seconds') divisor = 1;
+            else {
+                // No explicit unit suffix. Values < 1000 are almost certainly already in
+                // seconds (e.g. JFR stores duration/sumOfPauses/longestPause as seconds).
+                // Larger integers are assumed to be microseconds (profiler convention).
+                divisor = Number(value) < 1000 ? 1 : 1_000_000;
+            }
             return formatDuration(Number(value) / divisor);
         }
     }
+    if (byteColumns.has(header))      return formatBytes(Number(value));
     if (numericColumns.has(header))   return formatNumber(value, displaySettings.decimalPlaces);
     return String(value);
-  }, [timestampColumns, durationColumns, numericColumns, displaySettings]);
+  }, [timestampColumns, durationColumns, byteColumns, numericColumns, displaySettings]);
 
   const processedData = useMemo(() => {
     let filtered = filterTerm ? data.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(filterTerm.toLowerCase()))) : [...data];
@@ -224,6 +234,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
                       <button onClick={()=>requestSort(h)} className="inline-flex items-center gap-1.5">
                         {h}
                         {durationColumns.has(h) && <span className="text-[10px] text-gray-500 font-normal">⏱</span>}
+                        {byteColumns.has(h) && <span className="text-[10px] text-gray-500 font-normal">💾</span>}
                         {sortConfig.key===h&&(sortConfig.direction==='ascending'?<ChevronUpIcon className="w-3 h-3"/>:<ChevronDownIcon className="w-3 h-3"/>)}
                       </button>
                       <div onMouseDown={e=>handleMouseDown(i,e)} className="resize-handle"/>

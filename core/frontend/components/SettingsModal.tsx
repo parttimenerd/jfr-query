@@ -198,8 +198,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 </div>
             </section>
 
-            {/* Credentials */}
-            <section className="bg-gray-900/30 p-4 rounded-lg border border-gray-700">
+            {/* Credentials — hidden for the browser provider (no API key needed) */}
+            {localSettings.aiProvider !== 'browser' && <section className="bg-gray-900/30 p-4 rounded-lg border border-gray-700">
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Credentials for {currentProviderMeta.name}</h3>
                 <div className="space-y-4">
                     {/* Base URL for local servers */}
@@ -214,7 +214,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                                 className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500"
                                 placeholder="http://localhost:8080"
                                 pattern="https?://.+"
-                                title="Must be a valid http:// or https:// URL"
+                                title="Must be a valid http:// or https:// URL" aria-label="Must be a valid http:// or https:// URL"
                             />
                             {localSettings.localBaseUrl && !/^https?:\/\/.+/.test(localSettings.localBaseUrl) && (
                                 <p className="text-xs text-red-400 mt-1">Must start with http:// or https://</p>
@@ -286,7 +286,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         </div>
                     )}
                 </div>
-            </section>
+            </section>}
 
             {/* Data Source (server mode only) */}
             {mode === 'server' && (
@@ -437,7 +437,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
             {/* Display */}
             <section>
-                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Display</h3>
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Display</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>

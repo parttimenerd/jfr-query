@@ -13,11 +13,13 @@ import { buildHoverTooltip } from './hover';
 import { diagnosticsExtension, plotLinter, pushRunError, type RunErrorSpec } from './diagnostics';
 import { plotRegistry } from '../plots/plotRegistry';
 import { aiGhostTextExtension } from './aiGhostText';
+import { aiAutocompleteExtension } from './aiAutocomplete';
 import {
     aiPlotAutocompleteExtension,
     type AiPlotSourceDeps,
     type PlotAutocompleteSettings,
 } from './plot/aiPlotSource';
+import type { AutocompleteSettings } from './aiAutocomplete';
 import type { PlotScopePlot } from './plot/aiPlotContext';
 import type { PlotScopeView } from './plot/notebookPlotScope';
 import { markdownTemplatingExtension } from './markdownTemplating';
@@ -89,6 +91,15 @@ export interface EditorProps {
    * so completion inside `${…}` / `{if …}` regions can offer alias names.
    */
   getCellAliases?: (() => Record<string, AliasInfo>) | null;
+  /**
+   * SQL-mode AI ghost-text settings and stream. When `sqlAiAutocompleteSettings`
+   * is provided and `aiAutocompleteEnabled` is true, the SQL editor shows
+   * ghost-text completions from the configured model.
+   */
+  sqlAiAutocompleteSettings?: AutocompleteSettings | null;
+  sqlAiAutocompleteStream?: StreamFn | null;
+  /** B-075: called when the plot AI context builder trims prior-cell content to fit the token budget. */
+  onPlotContextTrimmed?: ((trimmed: boolean) => void) | null;
 }
 
 export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Editor(props, ref) {
@@ -121,6 +132,11 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
   const getCurrentCellIdRef = useRef(props.getCurrentCellId ?? null);
   const getSqlBlockCountRef = useRef(props.getSqlBlockCount ?? null);
   const getCellAliasesRef = useRef(props.getCellAliases ?? null);
+  // SQL AI ghost-text refs
+  const sqlAiSettingsRef = useRef(props.sqlAiAutocompleteSettings ?? null);
+  const sqlAiStreamRef = useRef(props.sqlAiAutocompleteStream ?? null);
+  // B-075: plot context trimmed callback ref
+  const onPlotContextTrimmedRef = useRef(props.onPlotContextTrimmed ?? null);
 
   onChangeRef.current = props.onChange;
   onBlurRef.current = props.onBlur;
@@ -143,6 +159,9 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
   getCurrentCellIdRef.current = props.getCurrentCellId ?? null;
   getSqlBlockCountRef.current = props.getSqlBlockCount ?? null;
   getCellAliasesRef.current = props.getCellAliases ?? null;
+  sqlAiSettingsRef.current = props.sqlAiAutocompleteSettings ?? null;
+  sqlAiStreamRef.current = props.sqlAiAutocompleteStream ?? null;
+  onPlotContextTrimmedRef.current = props.onPlotContextTrimmed ?? null;
 
   // Language compartment so we can hot-swap when mode changes (we don't expect
   // mode to change for a given editor instance, but this is cheap insurance).
@@ -156,6 +175,7 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
       drawSelection(),
       dropCursor(),
       EditorView.lineWrapping,
+      ...(props.fullHeight ? [EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto' } })] : []),
       editorTheme,
       editorHighlight,
       // P5 — ghost-text rendering primitives (state field + Tab/Escape keys).
@@ -219,6 +239,24 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
           getVariables: () => variablesRef.current,
         }),
         diagnosticsExtension,
+        // SQL AI ghost-text orchestrator. No-ops when sqlAiAutocompleteSettings
+        // is null or aiAutocompleteEnabled is false.
+        aiAutocompleteExtension({
+          mode: 'sql',
+          getSettings: () =>
+            sqlAiSettingsRef.current ?? {
+              aiAutocompleteEnabled: false,
+              aiAutocompleteModel: 'off',
+            },
+          getPriorCellsContent: () => [],
+          getSchema: () => schemaRef.current,
+          getVariables: () => variablesRef.current,
+          stream: (system, user, signal, model) => {
+            const fn = sqlAiStreamRef.current;
+            if (!fn) return (async function* () { /* empty */ })();
+            return fn(system, user, signal, model);
+          },
+        }),
       );
     } else if (props.mode === 'plot') {
       exts.push(
@@ -275,6 +313,7 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
             if (!fn) return (async function* () { /* empty */ })();
             return fn(system, user, signal, model);
           },
+          onContextTrimmed: (trimmed) => onPlotContextTrimmedRef.current?.(trimmed),
         }),
       );
     } else if (props.mode === 'markdown') {
@@ -288,7 +327,7 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
     }
     return exts;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.mode]);
+  }, [props.mode, props.fullHeight]);
 
   // Pick the language extension for this mode.
   const languageExt = useMemo<Extension>(() => {
