@@ -78,3 +78,48 @@ test.describe.serial('Toolbar: Collapse All / Expand All', () => {
     expect(editorCount, 'editors visible after Expand All').toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 2: Toolbar — Clear All Results
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Toolbar: Clear All Results', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T3. Query results exist before clearing', async () => {
+    // Use `main` area selector to exclude sidebar preview tables.
+    const resultRows = page.locator('main table tbody tr');
+    await resultRows.first().waitFor({ state: 'visible', timeout: 20_000 });
+    // Wait for all in-flight queries to finish (no spinning indicators remain).
+    await page.waitForFunction(
+      () => document.querySelectorAll('.animate-spin').length === 0,
+      { timeout: 30_000 }
+    );
+    const count = await resultRows.count();
+    expect(count, 'at least one result row before clear').toBeGreaterThan(0);
+  });
+
+  test('T4. Clear All Results removes all result tables', async () => {
+    // Ensure no queries are in flight before clearing.
+    await page.waitForFunction(
+      () => document.querySelectorAll('.animate-spin').length === 0,
+      { timeout: 15_000 }
+    );
+    await page.getByRole('button', { name: 'Clear All Results' }).click();
+    await page.waitForTimeout(800);
+
+    // Use `main` area selector to exclude sidebar preview tables.
+    const resultRows = page.locator('main table tbody tr');
+    const count = await resultRows.count();
+    expect(count, 'no result rows after Clear All').toBe(0);
+  });
+});
