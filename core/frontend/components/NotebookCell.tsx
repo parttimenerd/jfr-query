@@ -15,6 +15,10 @@ import { parsePlotCall } from '../utils/plotParser';
 import { expandPlotConstants } from '../utils/plotConstants';
 import { cleanDuckDBError, heuristicTip, parseCandidateBindings } from '../utils/sqlErrorMessage';
 import { aiService } from '../services/AiService';
+
+// Module-level cache so repeated identical errors (same sql + message) skip the
+// API round-trip and show the suggestion instantly.
+const aiErrorSuggestionCache = new Map<string, { text: string; code: string | null }>();
 import { NotebookPlotScope } from './editor/plot/notebookPlotScope';
 import { SettingsContext } from '../context/SettingsContext';
 import PlotSuggestionChip from './PlotSuggestionChip';
@@ -360,6 +364,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             if (aiErrorSuggestions[i] !== undefined) return;
             const sql = parsed.sqlBlocks[i] ?? '';
             const errorText = spec.message;
+            const cacheKey = `${sql}::${errorText}`;
+            // Return cached suggestion immediately — no API call needed.
+            const cached = aiErrorSuggestionCache.get(cacheKey);
+            if (cached) {
+                setAiErrorSuggestions(prev => ({ ...prev, [i]: cached }));
+                return;
+            }
             // Mark inflight.
             setAiErrorSuggestions(prev => ({ ...prev, [i]: null }));
             aiService.getAiInlineSuggestion(
@@ -376,7 +387,9 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             ).then(res => {
                 // Store the explanation text and the fixed code (if any) for "Apply" button.
                 const text = res.text ?? '';
-                setAiErrorSuggestions(prev => ({ ...prev, [i]: text.trim() ? { text: text.trim(), code: res.code ?? null } : null }));
+                const suggestion = text.trim() ? { text: text.trim(), code: res.code ?? null } : null;
+                if (suggestion) aiErrorSuggestionCache.set(cacheKey, suggestion);
+                setAiErrorSuggestions(prev => ({ ...prev, [i]: suggestion }));
             }).catch(() => {
                 setAiErrorSuggestions(prev => ({ ...prev, [i]: null }));
             });
