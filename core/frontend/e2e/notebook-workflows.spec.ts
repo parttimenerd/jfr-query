@@ -37,7 +37,11 @@ async function setCmContent(page: Page, editor: import('@playwright/test').Locat
   await editor.waitFor({ state: 'visible' });
   const content = editor.locator('.cm-content').first();
   await content.click();
-  await page.keyboard.press('Control+a');
+  // CM6 on macOS maps Ctrl+A to Emacs "go to line start", not "select all".
+  const isMac = process.platform === 'darwin';
+  const modKey = isMac ? 'Meta' : 'Control';
+  await page.keyboard.press(`${modKey}+a`);
+  await page.keyboard.press('Delete');
   await page.keyboard.type(text);
 }
 
@@ -373,10 +377,11 @@ test.describe.serial('Per-cell: Format SQL and Copy SQL', () => {
   test('T23. Copy SQL button shows checkmark (visual feedback) after click', async () => {
     const copyBtn = page.getByRole('button', { name: 'Copy SQL' }).first();
     await copyBtn.click();
-    await page.waitForTimeout(400);
-    await copyBtn.waitFor({ state: 'visible' });
-    await page.waitForTimeout(1600);
-    await copyBtn.waitFor({ state: 'visible' });
+    // NotebookCell renders CheckCircleIcon (text-green-400) for ~1.5s after copy.
+    const greenIcon = copyBtn.locator('.text-green-400');
+    await greenIcon.waitFor({ state: 'visible', timeout: 2_000 });
+    // Icon reverts after the timeout.
+    await greenIcon.waitFor({ state: 'hidden', timeout: 3_000 });
   });
 });
 
@@ -408,7 +413,6 @@ test.describe.serial('Cell reorder: Alt+Arrow keyboard shortcut', () => {
     const cells = page.locator('[data-cell-idx]');
     const firstCellTitle = await cells.nth(0).locator('h2').first().innerText().catch(() => '');
     const secondCellTitle = await cells.nth(1).locator('h2').first().innerText().catch(() => '');
-    console.log(`Cell titles before: ["${firstCellTitle}", "${secondCellTitle}"]`);
 
     const firstHandle = page.getByRole('button', { name: 'Drag to reorder cell' }).first();
     await firstHandle.click();
@@ -422,7 +426,6 @@ test.describe.serial('Cell reorder: Alt+Arrow keyboard shortcut', () => {
     const cellsAfter = page.locator('[data-cell-idx]');
     const newFirstTitle = await cellsAfter.nth(0).locator('h2').first().innerText().catch(() => '');
     const newSecondTitle = await cellsAfter.nth(1).locator('h2').first().innerText().catch(() => '');
-    console.log(`Cell titles after: ["${newFirstTitle}", "${newSecondTitle}"]`);
 
     expect(newFirstTitle, 'first cell is now old second').toBe(secondCellTitle);
     expect(newSecondTitle, 'second cell is now old first').toBe(firstCellTitle);
@@ -446,7 +449,6 @@ test.describe.serial('Cell reorder: Alt+Arrow keyboard shortcut', () => {
     const cellsAfter = page.locator('[data-cell-idx]');
     const newFirstTitle = await cellsAfter.nth(0).locator('h2').first().innerText().catch(() => '');
 
-    console.log(`T26 before[0]="${firstTitleBefore}" after[0]="${newFirstTitle}"`);
     expect(newFirstTitle, 'cell moved back up').toBe(secondTitleBefore);
   });
 });
