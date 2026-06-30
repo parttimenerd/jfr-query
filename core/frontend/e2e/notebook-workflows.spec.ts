@@ -223,3 +223,52 @@ test.describe.serial('Toolbar: Undo / Redo', () => {
     expect(contentAfterRedo, 'content changed after Redo').not.toBe(contentBeforeRedo);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 5: Toolbar — Raw Markdown mode
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Toolbar: Raw Markdown mode', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T11. "Edit Raw Markdown" button is visible in notebook view', async () => {
+    const btn = page.getByRole('button', { name: 'Edit Raw Markdown' });
+    await btn.waitFor({ state: 'visible', timeout: 10_000 });
+  });
+
+  test('T12. Clicking it switches to raw editor (single full-page CM6 editor)', async () => {
+    await page.getByRole('button', { name: 'Edit Raw Markdown' }).click();
+    await page.waitForTimeout(400);
+
+    const switchBtn = page.getByRole('button', { name: 'Switch to Notebook View' });
+    await switchBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  });
+
+  test('T13. Raw editor contains markdown text (## headings, SQL fences)', async () => {
+    const rawContent = page.locator('.cm-editor .cm-content').first();
+    await rawContent.waitFor({ state: 'visible', timeout: 5_000 });
+    const text = await rawContent.innerText();
+    expect(text, 'raw content has markdown headings').toMatch(/##/);
+  });
+
+  test('T14. "Switch to Notebook View" restores parsed cells', async () => {
+    await page.getByRole('button', { name: 'Switch to Notebook View' }).click();
+    await page.waitForTimeout(400);
+
+    const editors = page.locator('.cm-jfr-editor .cm-editor');
+    const count = await editors.count();
+    expect(count, 'editors visible after switching back').toBeGreaterThan(0);
+
+    const rawBtn = page.getByRole('button', { name: 'Edit Raw Markdown' });
+    await rawBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  });
+});
