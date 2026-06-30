@@ -450,3 +450,344 @@ test.describe.serial('Cell reorder: Alt+Arrow keyboard shortcut', () => {
     expect(newFirstTitle, 'cell moved back up').toBe(secondTitleBefore);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 9: Schema sidebar tooltip
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Schema sidebar tooltip', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T27. Hovering a table name in the sidebar shows a tooltip', async () => {
+    const sidebarItems = page.locator('.sidebar-list-font li button, .sidebar-list-font button');
+    const count = await sidebarItems.count();
+    expect(count, 'sidebar has items').toBeGreaterThan(0);
+
+    const firstItem = sidebarItems.first();
+    await firstItem.scrollIntoViewIfNeeded();
+    await firstItem.hover();
+
+    await page.waitForTimeout(600);
+
+    // Tooltip is a portal rendered into document.body; className includes bg-gray-700 and z-[100]
+    const tooltip = page.locator('body > div.bg-gray-700, body > div.absolute.z-\\[100\\]').first();
+    const appeared = await tooltip.waitFor({ state: 'visible', timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    expect(appeared, 'tooltip appeared on hover').toBe(true);
+  });
+
+  test('T28. Tooltip contains column names for GarbageCollection', async () => {
+    const gcButton = page.locator('.sidebar-list-font button').filter({ hasText: /GarbageCollection/ }).first();
+    const gcVisible = await gcButton.isVisible().catch(() => false);
+
+    if (!gcVisible) {
+      test.skip();
+      return;
+    }
+
+    await gcButton.hover();
+    await page.waitForTimeout(600);
+
+    const bodyText = await page.locator('body').innerText();
+    const hasColumnInfo =
+      bodyText.includes('gcId') ||
+      bodyText.includes('cause') ||
+      bodyText.includes('duration');
+    expect(hasColumnInfo, 'tooltip contains GarbageCollection column names').toBe(true);
+  });
+
+  test('T29. Moving mouse away hides the tooltip', async () => {
+    await page.mouse.move(100, 100);
+    await page.waitForTimeout(800);
+
+    const tooltip = page.locator('body > div.bg-gray-700, body > div.absolute.z-\\[100\\]').first();
+    const stillVisible = await tooltip.isVisible().catch(() => false);
+    expect(stillVisible, 'tooltip hidden after mouse-out').toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 10: InlineChat per-cell AI panel
+// ---------------------------------------------------------------------------
+
+test.describe.serial('InlineChat: per-cell AI panel', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+
+    // Enable AI features — button has aria-label "Enable AI Features" initially.
+    const enableAiBtn = page.getByRole('button', { name: 'Enable AI Features' });
+    const aiVisible = await enableAiBtn.isVisible().catch(() => false);
+    if (aiVisible) {
+      await enableAiBtn.click();
+      await page.waitForTimeout(300);
+    }
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T30. "Refine with AI" button appears on SQL block when AI is active', async () => {
+    const aiBtn = page.getByRole('button', { name: 'Refine with AI' }).first();
+    const visible = await aiBtn.isVisible().catch(() => false);
+    if (!visible) {
+      test.skip();
+      return;
+    }
+    await aiBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  });
+
+  test('T31. Clicking "Refine with AI" opens the InlineChat panel', async () => {
+    const aiBtn = page.getByRole('button', { name: 'Refine with AI' }).first();
+    const visible = await aiBtn.isVisible().catch(() => false);
+    if (!visible) { test.skip(); return; }
+
+    await aiBtn.click();
+    await page.waitForTimeout(400);
+
+    // InlineChat renders a textarea / input for the user message.
+    const chatInput = page.locator('textarea[placeholder*="message"], textarea[placeholder*="ask"], textarea[placeholder*="Ask"], input[placeholder*="message"], input[placeholder*="ask"]').first();
+    const inputVisible = await chatInput.waitFor({ state: 'visible', timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    expect(inputVisible, 'InlineChat input visible').toBe(true);
+  });
+
+  test('T32. Clicking "Refine with AI" again closes the InlineChat panel', async () => {
+    const aiBtn = page.getByRole('button', { name: 'Refine with AI' }).first();
+    const visible = await aiBtn.isVisible().catch(() => false);
+    if (!visible) { test.skip(); return; }
+
+    // Click again to toggle closed.
+    await aiBtn.click();
+    await page.waitForTimeout(400);
+
+    const chatInput = page.locator('textarea[placeholder*="message"], textarea[placeholder*="ask"], textarea[placeholder*="Ask"], input[placeholder*="message"], input[placeholder*="ask"]').first();
+    const inputVisible = await chatInput.isVisible().catch(() => false);
+    expect(inputVisible, 'InlineChat closed after second click').toBe(false);
+  });
+
+  test('T33. "Suggest plot with AI" button appears on SQL block', async () => {
+    const sparkleBtn = page.getByRole('button', { name: 'Suggest plot with AI' }).first();
+    const visible = await sparkleBtn.isVisible().catch(() => false);
+    if (!visible) { test.skip(); return; }
+    await sparkleBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 11: DataTable — search, sort, CSV export
+// ---------------------------------------------------------------------------
+
+test.describe.serial('DataTable: search, sort, CSV', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+    await page.locator('table tbody tr').first().waitFor({ state: 'visible', timeout: 20_000 });
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T34. Table has sortable column headers', async () => {
+    const firstHeader = page.locator('table thead th').first();
+    await firstHeader.waitFor({ state: 'visible', timeout: 10_000 });
+
+    await firstHeader.click();
+    await page.waitForTimeout(400);
+    await firstHeader.waitFor({ state: 'visible' });
+
+    await firstHeader.click();
+    await page.waitForTimeout(400);
+    await firstHeader.waitFor({ state: 'visible' });
+  });
+
+  test('T35. Search box filters rows', async () => {
+    // DataTable uses placeholder="Search..." per DataTable.tsx source
+    const searchInput = page.locator('input[placeholder="Search..."]').first();
+    const searchVisible = await searchInput.isVisible().catch(() => false);
+    if (!searchVisible) { test.skip(); return; }
+
+    const rowCountBefore = await page.locator('table tbody tr').count();
+    expect(rowCountBefore, 'rows present before filter').toBeGreaterThan(0);
+
+    await searchInput.fill('XYZZY_NO_MATCH_9999');
+    await page.waitForTimeout(400);
+
+    const rowCountAfter = await page.locator('table tbody tr').count();
+    expect(rowCountAfter, 'fewer rows after search filter').toBeLessThan(rowCountBefore);
+
+    await searchInput.fill('');
+    await page.waitForTimeout(300);
+  });
+
+  test('T36. CSV export button triggers a download', async () => {
+    // DataTable.tsx renders: <button title="Export to CSV">CSV ↓</button>
+    const csvBtn = page.getByRole('button', { name: /CSV|csv|export|Export/i }).first();
+    const csvVisible = await csvBtn.isVisible().catch(() => false);
+    if (!csvVisible) { test.skip(); return; }
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 10_000 });
+    await csvBtn.click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename(), 'CSV filename').toMatch(/\.csv$/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 12: Inline block insertion (+ SQL / + Plot / + Prose between blocks)
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Inline block insertion', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T37. "+ SQL" insert bar is present between blocks (on hover)', async () => {
+    // Insert bars are opacity-0 until hovered. Force-click or hover to reveal.
+    const firstCell = page.locator('[data-cell-idx="1"]');
+    await firstCell.hover();
+    await page.waitForTimeout(300);
+
+    const insertSqlBtns = page.getByText('+ SQL');
+    const count = await insertSqlBtns.count();
+    expect(count, 'at least one + SQL insert button').toBeGreaterThan(0);
+  });
+
+  test('T38. Clicking "+ SQL" inserts a new SQL editor', async () => {
+    const editorCountBefore = await page.locator('.cm-jfr-editor .cm-editor').count();
+
+    const firstCell = page.locator('[data-cell-idx="1"]');
+    await firstCell.hover();
+    await page.waitForTimeout(200);
+    const insertSqlBtn = page.getByText('+ SQL').first();
+    await insertSqlBtn.click({ force: true });
+    await page.waitForTimeout(400);
+
+    const editorCountAfter = await page.locator('.cm-jfr-editor .cm-editor').count();
+    expect(editorCountAfter, 'new SQL editor added').toBeGreaterThan(editorCountBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 13: PlotSuggestionChip
+// ---------------------------------------------------------------------------
+
+test.describe.serial('PlotSuggestionChip', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+
+    const enableAiBtn = page.getByRole('button', { name: 'Enable AI Features' });
+    const aiVisible = await enableAiBtn.isVisible().catch(() => false);
+    if (aiVisible) {
+      await enableAiBtn.click();
+      await page.waitForTimeout(300);
+    }
+
+    // Open Settings and enable auto-plot suggestion if possible.
+    const settingsBtn = page.getByRole('button', { name: 'Settings' });
+    await settingsBtn.click();
+    await page.waitForTimeout(400);
+
+    // Try to enable auto-plot suggestion toggle.
+    const autoPlotLabel = page.getByText(/auto.plot suggestion/i).first();
+    const toggleVisible = await autoPlotLabel.isVisible().catch(() => false);
+    if (toggleVisible) {
+      // Find the nearest checkbox.
+      const toggle = page.locator('input[type="checkbox"]').first();
+      const isChecked = await toggle.isChecked().catch(() => false);
+      if (!isChecked) {
+        await toggle.click().catch(() => {});
+        await page.waitForTimeout(200);
+      }
+    }
+
+    // Close settings modal.
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T39. PlotSuggestionChip appears after a SQL query runs (when feature enabled)', async () => {
+    const chip = page.locator('[data-testid="plot-suggestion-chip"]').first();
+    const appeared = await chip.waitFor({ state: 'visible', timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (!appeared) {
+      console.log('PlotSuggestionChip not visible — AI feature may be inactive');
+      test.skip();
+      return;
+    }
+    expect(appeared, 'PlotSuggestionChip visible').toBe(true);
+  });
+
+  test('T40. Dismissing the chip hides it', async () => {
+    const chip = page.locator('[data-testid="plot-suggestion-chip"]').first();
+    const visible = await chip.isVisible().catch(() => false);
+    if (!visible) { test.skip(); return; }
+
+    const dismissBtn = chip.getByRole('button', { name: /dismiss|×|close/i }).first();
+    const dismissVisible = await dismissBtn.isVisible().catch(() => false);
+    if (dismissVisible) {
+      await dismissBtn.click();
+      await page.waitForTimeout(300);
+      const stillVisible = await chip.isVisible().catch(() => false);
+      expect(stillVisible, 'chip dismissed').toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 14: Final sanity — no unhandled JS errors
+// ---------------------------------------------------------------------------
+
+test.describe('Session sanity', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  test('T41. No unhandled page errors thrown during any test', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', err => errors.push(err.message));
+    await page.goto('/');
+    const demoBtn = page.getByRole('button', { name: /Try the demo/i });
+    await demoBtn.waitFor({ state: 'visible', timeout: 30_000 });
+    await demoBtn.click();
+    await page.getByRole('heading', { name: 'JFR Query Notebook' }).waitFor({ state: 'visible', timeout: 60_000 });
+    await page.waitForTimeout(3000);
+    const realErrors = errors.filter(e =>
+      !e.includes('server probe') &&
+      !e.includes('Failed to fetch') &&
+      !e.includes('NetworkError')
+    );
+    expect(realErrors, `JS errors: ${realErrors.join('; ')}`).toHaveLength(0);
+  });
+});

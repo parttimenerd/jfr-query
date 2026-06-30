@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "test:e2e": "node tests/e2e/run.mjs",
     "test:workflows": "node tests/e2e/test-workflows.mjs",
+    "test:notebook-workflows": "npx playwright test e2e/notebook-workflows.spec.ts",
     "bench": "vite --config vite.bench.config.ts",
     "dataset:plot": "tsx scripts/training/generatePlotDataset.ts",
     "train:plot": "python scripts/training/python/train.py",
