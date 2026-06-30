@@ -272,3 +272,58 @@ test.describe.serial('Toolbar: Raw Markdown mode', () => {
     await rawBtn.waitFor({ state: 'visible', timeout: 5_000 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 6: Toolbar — Presenter Mode
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Toolbar: Presenter Mode', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+    await page.locator('main table tbody tr').first().waitFor({ state: 'visible', timeout: 20_000 });
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T15. "Presenter Mode" button is visible', async () => {
+    const btn = page.getByRole('button', { name: 'Presenter Mode' });
+    await btn.waitFor({ state: 'visible', timeout: 5_000 });
+  });
+
+  test('T16. Entering presenter mode hides SQL editors', async () => {
+    const editorsBefore = await page.locator('.cm-jfr-editor .cm-editor').count();
+    expect(editorsBefore, 'editors present before presenter mode').toBeGreaterThan(0);
+
+    await page.getByRole('button', { name: 'Presenter Mode' }).click();
+    await page.waitForTimeout(400);
+
+    const editorsAfter = await page.locator('.cm-jfr-editor .cm-editor').count();
+    expect(editorsAfter, 'no SQL editors in presenter mode').toBe(0);
+  });
+
+  test('T17. Result tables remain visible in presenter mode', async () => {
+    const rows = page.locator('main table tbody tr');
+    const count = await rows.count();
+    expect(count, 'result rows still visible in presenter mode').toBeGreaterThan(0);
+  });
+
+  test('T18. Drag handles are not visible in presenter mode', async () => {
+    const handles = page.getByRole('button', { name: 'Drag to reorder cell' });
+    const count = await handles.count();
+    expect(count, 'no drag handles in presenter mode').toBe(0);
+  });
+
+  test('T19. "Exit Presenter Mode" button restores editors', async () => {
+    await page.getByRole('button', { name: 'Exit Presenter Mode' }).click();
+    await page.waitForTimeout(400);
+
+    const editors = page.locator('.cm-jfr-editor .cm-editor');
+    const count = await editors.count();
+    expect(count, 'editors restored after exiting presenter mode').toBeGreaterThan(0);
+  });
+});
