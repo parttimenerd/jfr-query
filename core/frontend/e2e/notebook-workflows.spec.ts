@@ -379,3 +379,74 @@ test.describe.serial('Per-cell: Format SQL and Copy SQL', () => {
     await copyBtn.waitFor({ state: 'visible' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 8: Cell reorder — keyboard shortcut (Alt+Up/Down)
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Cell reorder: Alt+Arrow keyboard shortcut', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T24. Drag handle is visible on each cell', async () => {
+    const handles = page.getByRole('button', { name: 'Drag to reorder cell' });
+    await handles.first().waitFor({ state: 'visible', timeout: 10_000 });
+    const count = await handles.count();
+    expect(count, 'at least one drag handle').toBeGreaterThan(0);
+  });
+
+  test('T25. Alt+ArrowDown on drag handle moves cell down', async () => {
+    // Cells are re-indexed after every move, so we track identity by content (cell title text).
+    const cells = page.locator('[data-cell-idx]');
+    const firstCellTitle = await cells.nth(0).locator('h2').first().innerText().catch(() => '');
+    const secondCellTitle = await cells.nth(1).locator('h2').first().innerText().catch(() => '');
+    console.log(`Cell titles before: ["${firstCellTitle}", "${secondCellTitle}"]`);
+
+    const firstHandle = page.getByRole('button', { name: 'Drag to reorder cell' }).first();
+    await firstHandle.click();
+    await page.waitForTimeout(200);
+
+    await page.keyboard.down('Alt');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.up('Alt');
+    await page.waitForTimeout(1500);
+
+    const cellsAfter = page.locator('[data-cell-idx]');
+    const newFirstTitle = await cellsAfter.nth(0).locator('h2').first().innerText().catch(() => '');
+    const newSecondTitle = await cellsAfter.nth(1).locator('h2').first().innerText().catch(() => '');
+    console.log(`Cell titles after: ["${newFirstTitle}", "${newSecondTitle}"]`);
+
+    expect(newFirstTitle, 'first cell is now old second').toBe(secondCellTitle);
+    expect(newSecondTitle, 'second cell is now old first').toBe(firstCellTitle);
+  });
+
+  test('T26. Alt+ArrowUp on drag handle moves cell back up', async () => {
+    // After T25, "Step 1 — Your first query" is at index 0, "" (intro) at index 1.
+    // Move index-1 cell back up so the intro returns to position 0.
+    const cells = page.locator('[data-cell-idx]');
+    const firstTitleBefore = await cells.nth(0).locator('h2').first().innerText().catch(() => '');
+    const secondTitleBefore = await cells.nth(1).locator('h2').first().innerText().catch(() => '');
+
+    const secondHandle = page.getByRole('button', { name: 'Drag to reorder cell' }).nth(1);
+    await secondHandle.click();
+    await page.waitForTimeout(200);
+    await page.keyboard.down('Alt');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.up('Alt');
+    await page.waitForTimeout(1500);
+
+    const cellsAfter = page.locator('[data-cell-idx]');
+    const newFirstTitle = await cellsAfter.nth(0).locator('h2').first().innerText().catch(() => '');
+
+    console.log(`T26 before[0]="${firstTitleBefore}" after[0]="${newFirstTitle}"`);
+    expect(newFirstTitle, 'cell moved back up').toBe(secondTitleBefore);
+  });
+});
