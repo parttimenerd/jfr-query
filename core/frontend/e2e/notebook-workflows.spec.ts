@@ -155,3 +155,71 @@ test.describe.serial('Toolbar: Run All Queries', () => {
     expect(countAfterRun, 'rows present after Run All').toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 4: Toolbar — Undo / Redo
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Toolbar: Undo / Redo', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T6. Undo button is visible in toolbar', async () => {
+    // Note: Undo may already be enabled because loading the demo notebook
+    // registers a history entry via useHistoryState. We only verify it's visible.
+    const undoBtn = page.getByRole('button', { name: 'Undo' });
+    await undoBtn.waitFor({ state: 'visible' });
+    expect(await undoBtn.isVisible(), 'Undo button is visible').toBe(true);
+  });
+
+  test('T7. Making a cell edit enables Undo', async () => {
+    const editors = page.locator('.cm-jfr-editor .cm-editor');
+    const firstEditor = editors.first();
+    await setCmContent(page, firstEditor, 'SELECT 42 AS answer');
+
+    await page.waitForTimeout(1200);
+
+    const undoBtn = page.getByRole('button', { name: 'Undo' });
+    const isDisabled = await undoBtn.isDisabled();
+    expect(isDisabled, 'Undo enabled after edit').toBe(false);
+  });
+
+  test('T8. Clicking Undo reverts the edit', async () => {
+    const editors = page.locator('.cm-jfr-editor .cm-editor');
+    const firstEditor = editors.first();
+
+    const contentBefore = await firstEditor.locator('.cm-content').first().innerText();
+
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await page.waitForTimeout(600);
+
+    const contentAfter = await firstEditor.locator('.cm-content').first().innerText();
+    expect(contentAfter, 'content changed after Undo').not.toBe(contentBefore);
+  });
+
+  test('T9. Redo button is enabled after Undo', async () => {
+    const redoBtn = page.getByRole('button', { name: 'Redo' });
+    const isDisabled = await redoBtn.isDisabled();
+    expect(isDisabled, 'Redo enabled after Undo').toBe(false);
+  });
+
+  test('T10. Clicking Redo re-applies the edit', async () => {
+    const editors = page.locator('.cm-jfr-editor .cm-editor');
+    const firstEditor = editors.first();
+    const contentBeforeRedo = await firstEditor.locator('.cm-content').first().innerText();
+
+    await page.getByRole('button', { name: 'Redo' }).click();
+    await page.waitForTimeout(600);
+
+    const contentAfterRedo = await firstEditor.locator('.cm-content').first().innerText();
+    expect(contentAfterRedo, 'content changed after Redo').not.toBe(contentBeforeRedo);
+  });
+});
