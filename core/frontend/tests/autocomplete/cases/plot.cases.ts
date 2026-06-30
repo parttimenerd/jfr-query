@@ -436,4 +436,198 @@ export const plotCases: AutocompleteCase[] = [
         input: 'LINE_CHART(x: "ts", y: "cpu") NAME |',
         expected: {},
     },
+
+    // --- Tier: plot-options ---
+    // Verify enumerated option values from plotRegistry params appear in completion.
+    {
+        name: 'yscale-offers-linear-log',
+        kind: 'plot',
+        tier: 'plot-options',
+        input: 'LINE_CHART(x: "ts", y: "cpu", yScale: |)',
+        expected: { contains: ['linear', 'log'] },
+    },
+    {
+        name: 'yscale-partial-filters',
+        kind: 'plot',
+        tier: 'plot-options',
+        input: 'LINE_CHART(x: "ts", y: "cpu", yScale: li|)',
+        expected: { contains: ['linear'], excludes: ['log'] },
+    },
+    {
+        name: 'bar-layout-offers-stacked-grouped',
+        kind: 'plot',
+        tier: 'plot-options',
+        input: 'BAR_CHART(x: "host", y: ["cpu"], layout: |)',
+        expected: { contains: ['stacked', 'grouped'] },
+    },
+    {
+        name: 'pie-slicelabel-offers-positions',
+        kind: 'plot',
+        tier: 'plot-options',
+        input: 'PIE_CHART(category: "host", value: "cpu", sliceLabel: |)',
+        expected: { contains: ['inside', 'outside', 'none'] },
+    },
+    {
+        name: 'linetype-offers-line-dots',
+        kind: 'plot',
+        tier: 'plot-options',
+        input: 'LINE_CHART(x: "ts", y: "cpu", lineType: |)',
+        expected: { contains: ['line', 'dots'] },
+    },
+    {
+        name: 'area-layout-offers-stacked-overlay',
+        kind: 'plot',
+        tier: 'plot-options',
+        input: 'AREA_CHART(x: "ts", y: ["cpu"], layout: |)',
+        expected: { contains: ['stacked', 'overlay'] },
+    },
+    {
+        name: 'flamegraph-direction-offers-up-down',
+        kind: 'plot',
+        tier: 'plot-options',
+        input: 'FLAMEGRAPH(frame: "host", value: "cpu", direction: |)',
+        expected: { contains: ['up', 'down'] },
+    },
+
+    // --- Tier: plot-tail-complex ---
+    // Test tail keys that interact with scope (BRUSH, LINK_X with master/clamp,
+    // ON with aliased query refs).
+    {
+        name: 'brush-tail-key-appears',
+        kind: 'plot',
+        tier: 'plot-tail-complex',
+        input: 'LINE_CHART(x: "ts", y: "cpu") B|',
+        expected: { contains: ['BRUSH'] },
+    },
+    {
+        name: 'link-x-offers-master-clamp-after-two-vars',
+        kind: 'plot',
+        tier: 'plot-tail-complex',
+        // After two variable args, LINK_X should offer 'master' and 'clamp'.
+        input: 'LINE_CHART(x: "ts", y: "cpu") LINK_X($lo, $hi, |)',
+        plotScope: {
+            namedPlots: [],
+            queryRefs: [],
+            variables: new Map([
+                ['lo', { name: 'lo', scope: 'cellLocal', value: '0', dataType: 'number' }],
+                ['hi', { name: 'hi', scope: 'cellLocal', value: '100', dataType: 'number' }],
+            ]),
+            brushes: new Map(),
+        },
+        expected: { matchesRegex: /master|clamp/i },
+    },
+    {
+        name: 'on-arg-query-alias',
+        kind: 'plot',
+        tier: 'plot-tail-complex',
+        // ON should offer #alias labels when the scope has them.
+        input: 'LINE_CHART(x: "ts", y: "cpu") ON |',
+        plotScope: {
+            namedPlots: [],
+            queryRefs: [
+                { index: 1, cellId: 'c0', sql: 'SELECT ts, cpu FROM events', alias: 'base' },
+                { index: 2, cellId: 'c0', sql: 'SELECT ts, cpu FROM requests', alias: undefined },
+            ],
+            variables: new Map(),
+            brushes: new Map(),
+        },
+        expected: { contains: ['#1', '#base', '#2'] },
+    },
+    {
+        name: 'on-arg-alias-label',
+        kind: 'plot',
+        tier: 'plot-tail-complex',
+        // Partial `#b` should filter to #base.
+        input: 'LINE_CHART(x: "ts", y: "cpu") ON #b|',
+        plotScope: {
+            namedPlots: [],
+            queryRefs: [
+                { index: 1, cellId: 'c0', sql: 'SELECT ts, cpu FROM events', alias: 'base' },
+                { index: 2, cellId: 'c0', sql: 'SELECT ts FROM requests', alias: 'raw' },
+            ],
+            variables: new Map(),
+            brushes: new Map(),
+        },
+        expected: { contains: ['#base'], excludes: ['#raw'] },
+    },
+
+    // --- Tier: plot-scope-workflow ---
+    // End-to-end "workflow" cases: multiple tail clauses, cross-plot brush refs,
+    // workspace variables, named-plot completions.
+    {
+        name: 'workspace-variable-in-tail-value',
+        kind: 'plot',
+        tier: 'plot-scope-workflow',
+        // HEIGHT should accept constants and variables; $$global is a workspace var.
+        input: 'LINE_CHART(x: "ts", y: "cpu") HEIGHT $$|',
+        plotScope: {
+            namedPlots: [],
+            queryRefs: [],
+            variables: new Map([
+                ['global_height', { name: 'global_height', scope: 'workspace', value: '400', dataType: 'number' }],
+            ]),
+            brushes: new Map(),
+        },
+        expected: { contains: ['$$global_height'] },
+    },
+    {
+        name: 'named-plot-in-link-y-scope',
+        kind: 'plot',
+        tier: 'plot-scope-workflow',
+        // LINK_Y should offer brush var names of named sibling plots.
+        input: 'BAR_CHART(x: "host", y: ["cpu"]) LINK_Y(|)',
+        plotScope: {
+            namedPlots: [
+                { plotName: 'overview', cellId: 'c0', plotIndexInCell: 0, shape: 'line', hasBrush: true, brushVarName: 'overviewBrush' },
+                { plotName: 'detail', cellId: 'c0', plotIndexInCell: 1, shape: 'bar', hasBrush: false },
+            ],
+            queryRefs: [],
+            variables: new Map(),
+            brushes: new Map([
+                ['overview', { plotName: 'overview', cellId: 'c0', xType: 'timestamp', yType: 'number' }],
+            ]),
+        },
+        expected: { contains: ['$overviewBrush'] },
+    },
+    {
+        name: 'brush-ref-in-link-x-two-brushes',
+        kind: 'plot',
+        tier: 'plot-scope-workflow',
+        // With two brushes declared, LINK_X should offer both sets of .lo/.hi.
+        input: 'LINE_CHART(x: "ts", y: "cpu") LINK_X(|)',
+        plotScope: {
+            namedPlots: [],
+            queryRefs: [],
+            variables: new Map(),
+            brushes: new Map([
+                ['gcPause', { plotName: 'gcPause', cellId: 'c0', xType: 'timestamp', yType: 'number' }],
+                ['alloc', { plotName: 'alloc', cellId: 'c0', xType: 'timestamp', yType: 'number' }],
+            ]),
+        },
+        expected: { contains: ['$gcPause.brush.lo', '$gcPause.brush.hi', '$alloc.brush.lo', '$alloc.brush.hi'] },
+    },
+    {
+        name: 'const-ref-in-clause-value',
+        kind: 'plot',
+        tier: 'plot-scope-workflow',
+        // A @const defined via LET should appear in clause value position.
+        input: 'LET @cap = 100\nBAR_CHART(x: "host", y: ["@|"])',
+        expected: { contains: ['@cap'] },
+    },
+    {
+        name: 'const-ref-in-height-tail',
+        kind: 'plot',
+        tier: 'plot-scope-workflow',
+        input: 'LET @h = 300\nLINE_CHART(x: "ts", y: "cpu") HEIGHT @|',
+        expected: { contains: ['@h'] },
+    },
+    {
+        name: 'multi-tail-second-key-excludes-used',
+        kind: 'plot',
+        tier: 'plot-scope-workflow',
+        // After TITLE is used, typing W should offer WIDTH/HEIGHT but NOT TITLE again.
+        input: 'LINE_CHART(x: "ts", y: "cpu") TITLE "Overview" W|',
+        expected: { contains: ['WIDTH'], excludes: ['TITLE'] },
+    },
 ];
+

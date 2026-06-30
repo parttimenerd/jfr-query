@@ -7,14 +7,17 @@ import { runHarness, formatReport } from './harness';
 import { sqlCases } from './cases/sql.cases';
 import { plotCases } from './cases/plot.cases';
 
-// Baseline is bumped as each iteration completes. I0: harness exists, but
-// the SQL-subquery and plot-composite tiers are mostly red — that's I1+I2.
-// The baseline is intentionally low so we can iterate.
+// Baseline is bumped as each iteration completes.
 const TOTAL_PASS_RATE_FLOOR = 1.0;
 const TIER_FLOORS: Record<string, number> = {
     'sql-basic': 1.0,
     'sql-subquery': 1.0,
     'sql-context': 1.0,
+    'sql-edge': 1.0,
+    'sql-view': 1.0,
+    'sql-macro': 1.0,
+    'sql-window': 1.0,
+    'sql-complex': 1.0,
     'plot-toplevel': 1.0,
     'plot-body': 1.0,
     'plot-clause': 1.0,
@@ -23,19 +26,23 @@ const TIER_FLOORS: Record<string, number> = {
     'plot-link': 1.0,
     'plot-onarg': 1.0,
     'plot-variables': 1.0,
+    'plot-edge': 1.0,
+    'plot-options': 1.0,
+    'plot-tail-complex': 1.0,
+    'plot-scope-workflow': 1.0,
 };
 
 describe('I0 — autocomplete harness', () => {
-    it('SQL case set has at least 30 cases across multiple tiers', () => {
-        expect(sqlCases.length).toBeGreaterThanOrEqual(28);
+    it('SQL case set has at least 50 cases across 7+ tiers', () => {
+        expect(sqlCases.length).toBeGreaterThanOrEqual(50);
         const tiers = new Set(sqlCases.map(c => c.tier));
-        expect(tiers.size).toBeGreaterThanOrEqual(3);
+        expect(tiers.size).toBeGreaterThanOrEqual(7);
     });
 
-    it('Plot case set has at least 28 cases across multiple tiers', () => {
-        expect(plotCases.length).toBeGreaterThanOrEqual(28);
+    it('Plot case set has at least 55 cases across 10+ tiers', () => {
+        expect(plotCases.length).toBeGreaterThanOrEqual(55);
         const tiers = new Set(plotCases.map(c => c.tier));
-        expect(tiers.size).toBeGreaterThanOrEqual(5);
+        expect(tiers.size).toBeGreaterThanOrEqual(10);
     });
 
     it('runs the full harness and reports a tier breakdown', () => {

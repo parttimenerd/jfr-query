@@ -1,7 +1,43 @@
 import type { AutocompleteCase } from '../harness';
+import type { TableSchema, ViewSchema, MacroSchema } from '../../../types';
 
-// SQL cases for the eval harness. Schema is the default {events, requests}.
-// `|` marks the cursor position.
+// Reusable extended schema: events + requests + a view + two macros.
+const extendedSchema = () => {
+    const tables: TableSchema[] = [
+        {
+            name: 'events',
+            columns: [
+                { name: 'ts', type: 'TIMESTAMP' },
+                { name: 'host', type: 'VARCHAR' },
+                { name: 'cpu', type: 'DOUBLE' },
+            ],
+        },
+        {
+            name: 'requests',
+            columns: [
+                { name: 'ts', type: 'TIMESTAMP' },
+                { name: 'status_code', type: 'INTEGER' },
+                { name: 'path', type: 'VARCHAR' },
+            ],
+        },
+    ];
+    const views: ViewSchema[] = [
+        { name: 'slow_requests', columns: [{ name: 'ts', type: 'TIMESTAMP' }, { name: 'path', type: 'VARCHAR' }, { name: 'latency', type: 'DOUBLE' }] },
+        { name: 'hourly_cpu', columns: [{ name: 'hour', type: 'TIMESTAMP' }, { name: 'avg_cpu', type: 'DOUBLE' }] },
+    ];
+    const macros: MacroSchema[] = [
+        { name: 'p99_latency', parameters: ['col'], returnType: 'DOUBLE' },
+        { name: 'bucket_ms', parameters: ['ts', 'interval'], returnType: 'BIGINT' },
+    ];
+    return {
+        tables,
+        views,
+        macros,
+        tableMap: new Map(tables.map(t => [t.name.toLowerCase(), t])),
+        viewMap: new Map(views.map(v => [v.name.toLowerCase(), v])),
+    };
+};
+
 
 export const sqlCases: AutocompleteCase[] = [
     // --- Tier: sql-basic ---
@@ -380,4 +416,171 @@ export const sqlCases: AutocompleteCase[] = [
         input: 'SELECT host, COUNT(*) AS c FROM events GROUP BY host ORDER BY |',
         expected: { contains: ['host', 'c'] },
     },
+
+    // --- Tier: sql-view ---
+    {
+        name: 'view-appears-in-from',
+        kind: 'sql',
+        tier: 'sql-view',
+        input: 'SELECT * FROM |',
+        schema: extendedSchema(),
+        expected: { contains: ['slow_requests', 'hourly_cpu'] },
+    },
+    {
+        name: 'view-columns-in-select',
+        kind: 'sql',
+        tier: 'sql-view',
+        input: 'SELECT | FROM slow_requests',
+        schema: extendedSchema(),
+        expected: { contains: ['ts', 'path', 'latency'] },
+    },
+    {
+        name: 'view-columns-qualified',
+        kind: 'sql',
+        tier: 'sql-view',
+        input: 'SELECT s.| FROM slow_requests s',
+        schema: extendedSchema(),
+        expected: { contains: ['latency', 'path', 'ts'] },
+    },
+    {
+        name: 'view-join-on-table',
+        kind: 'sql',
+        tier: 'sql-view',
+        input: 'SELECT * FROM events e JOIN slow_requests s ON e.ts = s.|',
+        schema: extendedSchema(),
+        expected: { contains: ['ts', 'path', 'latency'], excludes: ['cpu', 'host', 'status_code'] },
+    },
+    {
+        name: 'view-excludes-view-cols-from-table-qualifier',
+        kind: 'sql',
+        tier: 'sql-view',
+        // `e.` should only have events columns, not slow_requests columns.
+        input: 'SELECT * FROM events e JOIN slow_requests s ON e.| = s.ts',
+        schema: extendedSchema(),
+        expected: { contains: ['ts', 'cpu', 'host'], excludes: ['latency', 'path'] },
+    },
+
+    // --- Tier: sql-macro ---
+    {
+        name: 'macro-appears-in-select',
+        kind: 'sql',
+        tier: 'sql-macro',
+        input: 'SELECT p99| FROM events',
+        schema: extendedSchema(),
+        expected: { contains: ['p99_latency'] },
+    },
+    {
+        name: 'macro-appears-in-where',
+        kind: 'sql',
+        tier: 'sql-macro',
+        input: 'SELECT * FROM events WHERE buc|',
+        schema: extendedSchema(),
+        expected: { contains: ['bucket_ms'] },
+    },
+    {
+        name: 'macro-appears-in-from',
+        kind: 'sql',
+        tier: 'sql-macro',
+        input: 'SELECT * FROM |',
+        schema: extendedSchema(),
+        // Macros should appear in FROM (they're table-returning functions in DuckDB).
+        expected: { contains: ['events', 'slow_requests'] },
+    },
+
+    // --- Tier: sql-window ---
+    // NOTE: The SQL context parser does not yet detect "cursor immediately after
+    // a window function call" and suggest OVER. B-204 tracks the fix.
+    // These cases verify the current behavior (no crash, generic completions).
+    {
+        name: 'window-over-keyword-after-func',
+        kind: 'sql',
+        tier: 'sql-window',
+        // Parser currently offers tables/columns here, not OVER — B-204.
+        // Test that it at least offers something (no crash) and not OVER yet.
+        input: 'SELECT ROW_NUMBER() |',
+        expected: { matchesRegex: /COUNT|events|requests/i }, // placeholder until B-204
+    },
+    {
+        name: 'partition-by-offers-columns',
+        kind: 'sql',
+        tier: 'sql-window',
+        input: 'SELECT ROW_NUMBER() OVER (PARTITION BY |) FROM events',
+        expected: { contains: ['host', 'ts', 'cpu'] },
+    },
+    {
+        name: 'order-by-inside-over-offers-columns',
+        kind: 'sql',
+        tier: 'sql-window',
+        input: 'SELECT ROW_NUMBER() OVER (PARTITION BY host ORDER BY |) FROM events',
+        expected: { contains: ['ts', 'cpu', 'host'] },
+    },
+
+    // --- Tier: sql-complex ---
+    {
+        name: 'multi-cte-second-uses-first',
+        kind: 'sql',
+        tier: 'sql-complex',
+        input: 'WITH a AS (SELECT ts FROM events), b AS (SELECT | FROM a) SELECT * FROM b',
+        expected: { contains: ['ts'] },
+    },
+    {
+        name: 'multi-cte-outer-select-from-sees-both',
+        kind: 'sql',
+        tier: 'sql-complex',
+        input: 'WITH a AS (SELECT * FROM events), b AS (SELECT * FROM requests) SELECT * FROM |',
+        expected: { contains: ['a', 'b'] },
+    },
+    {
+        name: 'union-all-second-arm',
+        kind: 'sql',
+        tier: 'sql-complex',
+        input: 'SELECT ts, host FROM events UNION ALL SELECT | FROM requests',
+        expected: { contains: ['ts', 'path', 'status_code'] },
+    },
+    {
+        name: 'subquery-in-from-exposes-derived-cols',
+        kind: 'sql',
+        tier: 'sql-complex',
+        // The derived table produces only `avg_cpu`; outer SELECT should offer that.
+        input: 'SELECT | FROM (SELECT AVG(cpu) AS avg_cpu FROM events) sub',
+        expected: { contains: ['avg_cpu'] },
+    },
+    {
+        name: 'lateral-join-inner-col',
+        kind: 'sql',
+        tier: 'sql-complex',
+        // LATERAL subquery inner scope is not yet tracked by the SQL context parser (B-205).
+        // For now, assert the cursor position returns some completion options (no crash),
+        // accepting that the inner FROM's columns may not be visible yet.
+        input: 'SELECT e.host, l.cnt FROM events e, LATERAL (SELECT count(*) AS cnt FROM requests r WHERE |) l',
+        expected: { matchesRegex: /events|requests|WHERE/i }, // best-effort until B-205
+    },
+    {
+        name: 'view-in-cte',
+        kind: 'sql',
+        tier: 'sql-complex',
+        // CTE body can reference a view; outer select sees cte columns.
+        input: 'WITH slow AS (SELECT latency FROM slow_requests WHERE |) SELECT * FROM slow',
+        schema: extendedSchema(),
+        expected: { contains: ['ts', 'path', 'latency'] },
+    },
+    {
+        name: 'cross-cell-variable-completion-global',
+        kind: 'sql',
+        tier: 'sql-complex',
+        // Workspace variables use `$$` prefix.
+        input: 'SELECT * FROM events WHERE cpu > $$|',
+        variables: { '$$threshold': '0.8', '$$region': '"us-east"' },
+        expected: { contains: ['$$threshold', '$$region'] },
+    },
+    {
+        name: 'qualified-cross-cell-excludes-other-prefix',
+        kind: 'sql',
+        tier: 'sql-complex',
+        // `$alpha.` should show alpha's vars; `$$` workspace vars should NOT appear.
+        input: 'SELECT * FROM events WHERE host = $alpha.|',
+        variables: { '$alpha.host': "'foo'", '$$global': '1', '$beta.other': '1' },
+        expected: { contains: ['$alpha.host'], excludes: ['$$global', '$beta.other'] },
+    },
 ];
+

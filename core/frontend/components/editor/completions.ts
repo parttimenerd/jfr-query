@@ -789,7 +789,14 @@ function completeTailKey(
   hint: Extract<PlotHoleHint, { kind: 'tailKey' }>,
   partial: string,
 ): CompletionResult | null {
-  const allowed = hint.allowedTails.length > 0 ? hint.allowedTails : [...UPPERCASE_TAILS_DEFAULT];
+  // Merge parser-known tails with the full completion set so that tails parsed
+  // as generic values (BRUSH, AXIS-X, PALETTE, etc.) still appear as suggestions.
+  const parserKnown = new Set(hint.allowedTails.map(t => t.toUpperCase()));
+  const merged = [
+    ...hint.allowedTails,
+    ...UPPERCASE_TAILS_DEFAULT.filter(t => !parserKnown.has(t.toUpperCase())),
+  ];
+  const allowed = merged.length > 0 ? merged : [...UPPERCASE_TAILS_DEFAULT];
   const lc = partial.toLowerCase();
   const options: Completion[] = [];
   for (const kw of allowed) {
@@ -1208,6 +1215,12 @@ export function plotCompletionSource(deps: PlotCompletionDeps) {
         return options.length > 0
           ? { from: partial.from, options, validFor: /^\$\$?\w*$/ }
           : null;
+      }
+      // Partial `#name` typed inside an ON arg — the parser consumed the ident
+      // as a complete queryRef so no hole was emitted. Offer query-ref completions.
+      if (partial.text.startsWith('#')) {
+        const opts = buildQueryRefOptions(deps, scope, partial.text);
+        return opts.length > 0 ? { from: partial.from, options: opts, validFor: /^#[\w]*$/ } : null;
       }
       // Top-level / composite-body fallback: when the cursor sits at a position
       // where a fresh statement can start (start-of-doc, after `{`, `}`, `;`,

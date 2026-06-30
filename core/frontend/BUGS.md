@@ -1219,3 +1219,25 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Where:** `utils/dataTableUtils.ts:11-22`
 **Observed:** DuckDB returns INTERVAL values as `[microseconds, days, months]` arrays (or comma-separated strings). `parseIntervalToSeconds` only read `value[0]` (µs), silently discarding `value[1]` (days) and `value[2]` (months). A 1-day interval `[0, 1, 0]` returned `0` instead of `86400`. A 30-min + 1-day interval `[1_800_000_000, 1, 0]` returned `1800` instead of `88200`. This caused duration columns with day/month-scale values to display as near-zero in the DataTable and sort incorrectly.
 **Fix:** Sum all three components — `µs / 1_000_000 + days * 86_400 + months * 30 * 86_400`. Months approximated as 30 days (standard calendar approximation used throughout DuckDB SQL). Same fix applied to the comma-string branch. Added 4 regression tests in `tests/dataTable.test.ts`.
+
+### 🟡 [B-204] `components/editor/completions.ts` + `sqlContext.ts`: `OVER` keyword not suggested after window-function call
+**Where:** `components/editor/completions.ts`, `components/editor/sqlContext.ts`
+**Observed:** After `SELECT ROW_NUMBER() `, the SQL completion popup does not suggest `OVER`. The `parseSqlContext` parser does not track "cursor is immediately after a function call argument list" to suggest `OVER` as the required next keyword. Instead the popup offers table names and generic keywords.
+**Impact:** User cannot autocomplete `ROW_NUMBER() OVER (...)` — must type `OVER` manually.
+**Status:** Known gap, not yet fixed. Regression guard added in `tests/autocomplete/cases/sql.cases.ts` (`sql-window` tier, `window-over-keyword-after-func`) with a placeholder assertion.
+
+### 🟡 [B-205] `components/editor/completions.ts` + `sqlContext.ts`: LATERAL join inner-subquery scope not tracked
+**Where:** `components/editor/completions.ts`, `components/editor/sqlContext.ts`
+**Observed:** Inside a LATERAL subquery `LATERAL (SELECT ... FROM requests r WHERE |)`, the completion popup shows the outer FROM's context (outer tables/joins) instead of the inner FROM's columns (`ts`, `status_code`, `path` from `requests`). The `parseSqlContext` parser does not isolate LATERAL subquery scope as a separate scope block.
+**Impact:** Column completions inside LATERAL are inaccurate (outer-scope columns shown instead of inner-scope).
+**Status:** Known gap, not yet fixed. Regression guard in `tests/autocomplete/cases/sql.cases.ts` (`sql-complex` tier) with a placeholder assertion.
+
+### 🟡 [B-206] `components/editor/completions.ts`: BRUSH / AXIS-X / AXIS-Y / PALETTE / LEGEND not suggested in plot tail-key position
+**Where:** `components/editor/completions.ts:completeTailKey`, `components/editor/plot/parser.ts:UPPERCASE_TAIL_KEYWORDS`
+**Observed:** When typing `LINE_CHART(...) B|`, the tail-key completion did not suggest `BRUSH` (or `AXIS-X`, `AXIS-Y`, `PALETTE`, `LEGEND`, `DATASET`). Root cause: `completeTailKey` used `hint.allowedTails` verbatim, which was populated from `UPPERCASE_TAIL_KEYWORDS` — a strict subset that excludes BRUSH/AXIS*/PALETTE/LEGEND/DATASET.
+**Fix:** `completeTailKey` now merges `hint.allowedTails` with `UPPERCASE_TAILS_DEFAULT` so all documented tail keywords appear as suggestions even when the parser doesn't recognise them as first-class tail tokens. Added regression test in `tests/autocomplete/cases/plot.cases.ts` (`plot-tail-complex` tier, `brush-tail-key-appears`).
+
+### 🟡 [B-207] `components/editor/completions.ts`: Partial `#alias` typed inside `ON` arg not completed
+**Where:** `components/editor/completions.ts:plotCompletionSource` (no-hint fallback)
+**Observed:** Typing `ON #b` when the scope has a query with alias `base` produced no completion suggestions. The parser consumes the ident after `#` as a complete `queryRef` node, so no `queryRefTarget` hole is emitted, and the hint-dispatch code had no fallback for a `#`-prefixed partial.
+**Fix:** Added a `#` prefix fallback in the no-hint path that calls `buildQueryRefOptions` to offer `#index` / `#alias` completions. Added regression test `on-arg-alias-label` in `tests/autocomplete/cases/plot.cases.ts` (`plot-tail-complex` tier).
