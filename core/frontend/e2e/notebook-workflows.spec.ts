@@ -40,3 +40,41 @@ async function setCmContent(page: Page, editor: import('@playwright/test').Locat
   await page.keyboard.press('Control+a');
   await page.keyboard.type(text);
 }
+
+// ---------------------------------------------------------------------------
+// Section 1: Toolbar — Collapse / Expand All
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Toolbar: Collapse All / Expand All', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T1. Collapse All hides all cell bodies', async () => {
+    const editors = page.locator('.cm-jfr-editor .cm-editor');
+    const editorCountBefore = await editors.count();
+    expect(editorCountBefore).toBeGreaterThan(0);
+
+    await page.getByRole('button', { name: 'Collapse All' }).click();
+    await page.waitForTimeout(400);
+
+    const editorsAfter = await editors.count();
+    expect(editorsAfter, 'editors hidden after Collapse All').toBe(0);
+  });
+
+  test('T2. Expand All reveals all cell bodies again', async () => {
+    await page.getByRole('button', { name: 'Expand All' }).click();
+    await page.waitForTimeout(400);
+
+    const editors = page.locator('.cm-jfr-editor .cm-editor');
+    const editorCount = await editors.count();
+    expect(editorCount, 'editors visible after Expand All').toBeGreaterThan(0);
+  });
+});
