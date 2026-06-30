@@ -327,3 +327,55 @@ test.describe.serial('Toolbar: Presenter Mode', () => {
     expect(count, 'editors restored after exiting presenter mode').toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 7: Per-cell SQL buttons — Format SQL, Copy SQL
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Per-cell: Format SQL and Copy SQL', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T20. Format SQL button is visible on first SQL block', async () => {
+    const formatBtn = page.getByRole('button', { name: 'Format SQL' }).first();
+    await formatBtn.waitFor({ state: 'visible', timeout: 10_000 });
+  });
+
+  test('T21. Format SQL reformats an unformatted query', async () => {
+    const editors = page.locator('.cm-jfr-editor .cm-editor');
+    const firstSqlEditor = editors.first();
+
+    await setCmContent(page, firstSqlEditor, 'select gcId,cause,duration from GarbageCollection where duration>0 limit 5');
+    await page.waitForTimeout(300);
+
+    const formatBtn = page.getByRole('button', { name: 'Format SQL' }).first();
+    await formatBtn.click();
+    await page.waitForTimeout(1000);
+
+    const content = await firstSqlEditor.locator('.cm-content').first().innerText();
+    expect(content, 'formatted SQL has newlines').toMatch(/\n/);
+    expect(content.toUpperCase(), 'formatted SQL contains SELECT').toContain('SELECT');
+  });
+
+  test('T22. Copy SQL button is visible on first SQL block', async () => {
+    const copyBtn = page.getByRole('button', { name: 'Copy SQL' }).first();
+    await copyBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  });
+
+  test('T23. Copy SQL button shows checkmark (visual feedback) after click', async () => {
+    const copyBtn = page.getByRole('button', { name: 'Copy SQL' }).first();
+    await copyBtn.click();
+    await page.waitForTimeout(400);
+    await copyBtn.waitFor({ state: 'visible' });
+    await page.waitForTimeout(1600);
+    await copyBtn.waitFor({ state: 'visible' });
+  });
+});
