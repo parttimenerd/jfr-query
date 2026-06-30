@@ -123,3 +123,35 @@ test.describe.serial('Toolbar: Clear All Results', () => {
     expect(count, 'no result rows after Clear All').toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 3: Toolbar — Run All Queries
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Toolbar: Run All Queries', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T5. Clear results then Run All re-populates tables', async () => {
+    await page.getByRole('button', { name: 'Clear All Results' }).click();
+    await page.waitForTimeout(400);
+
+    const rows = page.locator('main table tbody tr');
+    const countAfterClear = await rows.count();
+    expect(countAfterClear, 'no rows after clear').toBe(0);
+
+    await page.getByRole('button', { name: 'Run All Queries' }).click();
+
+    await rows.first().waitFor({ state: 'visible', timeout: 30_000 });
+    const countAfterRun = await rows.count();
+    expect(countAfterRun, 'rows present after Run All').toBeGreaterThan(0);
+  });
+});
