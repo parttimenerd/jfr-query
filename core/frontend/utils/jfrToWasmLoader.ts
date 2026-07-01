@@ -625,9 +625,13 @@ export async function loadJfrIntoWasm(
   const jfrByteLength = source instanceof File ? source.size : source.byteLength;
 
   // Parse chunk boundaries without materializing the full file.
-  const chunks = source instanceof File
+  // Sort chunks largest-first so big chunks start processing in the earliest batches,
+  // reducing the chance that a single outlier chunk bottlenecks a late batch when
+  // workers are already warm.
+  const rawChunks = source instanceof File
     ? await discoverJfrChunks(source)
     : parseJfrChunks(source);
+  const chunks = rawChunks.slice().sort((a, b) => (b.end - b.start) - (a.end - a.start));
   const numChunks = chunks.length;
   const useParallel = numChunks > 1;
   const maxWorkers = getMaxWorkers();

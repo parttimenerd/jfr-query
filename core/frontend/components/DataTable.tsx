@@ -72,7 +72,7 @@ const isNumericLike = (key: string, sample: any, isTimestamp: boolean): boolean 
 
 // ─── CSV export ──────────────────────────────────────────────────────────────
 
-const exportToCsv = (headers: string[], rows: any[]) => {
+const exportToCsv = (headers: string[], rows: any[], filename: string) => {
     const escape = (s: string) => `"${s.replace(/"/g, '""')}"`;
     const lines = [
         headers.map(escape).join(','),
@@ -82,7 +82,7 @@ const exportToCsv = (headers: string[], rows: any[]) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'data.csv';
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
 };
@@ -94,9 +94,10 @@ interface DataTableProps {
     showSearch?: boolean;
     headers?: string[];
     columnWidths?: (string | number | undefined)[];
+    csvFilename?: string;
 }
 
-const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers, columnWidths }) => {
+const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers, columnWidths, csvFilename = 'data.csv' }) => {
   const displaySettings = useDisplaySettings();
   const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const [filterTerm, setFilterTerm] = useState('');
@@ -203,6 +204,8 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
   const rowCountLabel = filterTerm && shownRows !== totalRows
     ? `${shownRows.toLocaleString()} of ${totalRows.toLocaleString()} rows`
     : `${totalRows.toLocaleString()} ${totalRows === 1 ? 'row' : 'rows'}`;
+  // Hint when the result looks like it was auto-truncated at the safety cap.
+  const looksAutoTruncated = totalRows === 50_000;
 
   return (
     <div className="flex flex-col h-full bg-gray-800">
@@ -210,11 +213,16 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
         <div className="px-4 py-2 flex-shrink-0 flex items-center gap-2">
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"/>
-            <input type="text" placeholder="Search..." value={filterTerm} onChange={e=>setFilterTerm(e.target.value)} className="w-full bg-gray-900/50 border border-gray-700 rounded-md py-1.5 pl-9 pr-3 text-sm"/>
+            <input type="text" placeholder="Search..." value={filterTerm} onChange={e=>setFilterTerm(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); setFilterTerm(''); } }}
+              className="w-full bg-gray-900/50 border border-gray-700 rounded-md py-1.5 pl-9 pr-3 text-sm"/>
           </div>
-          <span className="text-xs text-gray-500 whitespace-nowrap">{rowCountLabel}</span>
+          <span
+            className="text-xs text-gray-500 whitespace-nowrap"
+            title={looksAutoTruncated ? 'Result capped at 50,000 rows to prevent browser OOM. Add LIMIT to your query or append -- no-limit to bypass.' : undefined}
+          >{rowCountLabel}{looksAutoTruncated ? ' ⚠' : ''}</span>
           <button
-            onClick={() => exportToCsv(finalHeaders, processedData)}
+            onClick={() => exportToCsv(finalHeaders, processedData, csvFilename)}
             title="Export to CSV"
             className="flex-shrink-0 px-2 py-1.5 text-xs rounded-md bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white transition-colors"
           >
