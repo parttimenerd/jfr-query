@@ -537,6 +537,10 @@ GUIDELINES:
             `    • applyPlot(cellId, plotConfig, plotBlockIndex?) — replace a plot block inside an existing cell.\n` +
             `    • deleteCell(cellId), moveCell(cellId, targetCellId, position).\n` +
             `    • setVariable(name, value), deleteVariable(name).\n` +
+            `  Session memory (lightweight key/value store, max 10 facts, visible to user as chips):\n` +
+            `    • rememberFact(key, value) — store a short fact that persists across turns (user prefs, constraints, findings).\n` +
+            `    • recallMemory() — list all stored facts.\n` +
+            `    • updateTaskList(tasks) — show a task checklist to the user. Pass [] to clear. Use at start of multi-step work.\n` +
             `\n` +
             `WORKING RULES:\n` +
             `  1. Explore before you act: describeTable → maybe sampleRows → runQuery. Do not invent columns; if unsure, call describeTable first.\n` +

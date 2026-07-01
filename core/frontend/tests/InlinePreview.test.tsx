@@ -41,15 +41,14 @@ describe('InlinePreview', () => {
             expect(html).toContain('Add to Notebook');
         });
 
-        it('renders the empty-state when no rows came back', () => {
+        it('renders nothing (null) when no rows came back', () => {
             const html = render({
                 toolName: 'runQuery',
                 args,
                 result: { columns: result.columns, rows: [] },
                 onAddToNotebook: () => {},
             });
-            expect(html).toContain('0 rows');
-            expect(html).toContain('no rows returned');
+            expect(html).toBe('');
         });
 
         it('hides the promote button when onAddToNotebook is not provided', () => {

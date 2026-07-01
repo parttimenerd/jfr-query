@@ -163,10 +163,13 @@ describe('TOOLS metadata sanity (consumed by ChatPanel)', () => {
             'moveCell',
             'previewPlot',
             'readCell',
+            'recallMemory',
+            'rememberFact',
             'runQuery',
             'sampleRows',
             'screenshotPlot',
             'setVariable',
+            'updateTaskList',
         ]);
     });
 

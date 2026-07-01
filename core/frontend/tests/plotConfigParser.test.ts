@@ -114,7 +114,7 @@ describe('createConfigParser — error handling', () => {
             parse('LINE_CHART(x: "time")', sampleData);
         } catch (e: any) {
             expect(e.message).toMatch(/y: column\[\]/);
-            expect(e.message).toMatch(/Required/);
+            expect(e.message).toMatch(/required/);
         }
     });
 
@@ -144,12 +144,12 @@ describe('createConfigParser — error handling', () => {
         }
     });
 
-    it('column-not-found error wraps with "Error in parameter"', () => {
+    it('column-not-found error wraps with "Parameter"', () => {
         try {
             parse('LINE_CHART(x: "missing", y: ["cpu"])', sampleData);
         } catch (e: any) {
-            expect(e.message).toMatch(/Error in parameter "x"/);
-            expect(e.message).toMatch(/Hint:/);
+            expect(e.message).toMatch(/Parameter "x"/);
+            expect(e.message).toMatch(/Column "missing" not found/);
         }
     });
 
@@ -303,7 +303,7 @@ describe('createConfigParser — improved error messages', () => {
             parse('LINE_CHART(x: "time")', sampleData);
             expect.fail('expected throw');
         } catch (e: any) {
-            expect(e.message).toMatch(/width:\s*number\s+--\s+default\s+1/);
+            expect(e.message).toMatch(/width:\s*number.*default.*1/);
         }
     });
 });

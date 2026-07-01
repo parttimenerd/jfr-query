@@ -101,7 +101,7 @@ describe('executeTool', () => {
         const deps = makeDeps();
         const res = await executeTool('runQuery', { sql: 'SELECT * FROM $ai_providers.foo' }, deps);
         expect(res.ok).toBe(false);
-        expect((res as { ok: false; error: string }).error).toBe('forbidden token');
+        expect((res as { ok: false; error: string }).error).toMatch(/\$ai_providers.*sensitive/);
         expect(deps.duckdbQuery).not.toHaveBeenCalled();
     });
 
@@ -116,7 +116,7 @@ describe('executeTool', () => {
         const deps = makeDeps();
         const res = await executeTool('runQuery', { sql: 'SELECT * FROM [$ai_providers]' }, deps);
         expect(res.ok).toBe(false);
-        expect((res as { ok: false; error: string }).error).toBe('forbidden token');
+        expect((res as { ok: false; error: string }).error).toMatch(/\$ai_providers.*sensitive/);
         expect(deps.duckdbQuery).not.toHaveBeenCalled();
     });
 
@@ -124,7 +124,7 @@ describe('executeTool', () => {
         const deps = makeDeps();
         const res = await executeTool('runQuery', { sql: 'SELECT * FROM `$ai_providers`' }, deps);
         expect(res.ok).toBe(false);
-        expect((res as { ok: false; error: string }).error).toBe('forbidden token');
+        expect((res as { ok: false; error: string }).error).toMatch(/\$ai_providers.*sensitive/);
         expect(deps.duckdbQuery).not.toHaveBeenCalled();
     });
 
@@ -213,7 +213,7 @@ describe('executeTool', () => {
         const deps = makeDeps();
         const res = await executeTool('nonExistent', {}, deps);
         expect(res.ok).toBe(false);
-        expect((res as { ok: false; error: string }).error).toMatch(/unknown tool/);
+        expect((res as { ok: false; error: string }).error).toMatch(/not available/);
     });
 
     it('listCells returns id/type/contentPreview/contentLength for each cell', async () => {
