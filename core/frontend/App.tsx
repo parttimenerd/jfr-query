@@ -599,7 +599,7 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const addCell = () => {
+    const addCell = useCallback(() => {
         const newCell: NotebookCellData = {
             id: `cell-${Date.now()}`,
             title: ``,
@@ -607,7 +607,7 @@ const App: React.FC = () => {
         };
         const newCells = [...cells, newCell];
         updateCellsAndMarkdown(newCells);
-    };
+    }, [cells, updateCellsAndMarkdown]);
 
     /**
      * C7 — Tool-runtime variant of addCell. The AI tool runtime emits
@@ -616,7 +616,7 @@ const App: React.FC = () => {
      * id so the model can subsequently reference it via `editCell` /
      * `applyPlot`. Shared between ChatPanel and InlineChat.
      */
-    const addCellFromTool = (mut: { type: 'sql' | 'plot' | 'markdown'; content: string; afterCellId?: string }): string => {
+    const addCellFromTool = useCallback((mut: { type: 'sql' | 'plot' | 'markdown'; content: string; afterCellId?: string }): string => {
         flushHistory();
         const id = `cell-${Date.now()}`;
         const fence = mut.type === 'sql' ? '```sql' : mut.type === 'plot' ? '```plot' : null;
@@ -635,7 +635,8 @@ const App: React.FC = () => {
         if (!inserted) next.push(newCell);
         updateCellsAndMarkdown(next);
         return id;
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [updateCellsAndMarkdown]);
 
     const addCellsBatchFromTool = (muts: { type: 'sql' | 'plot' | 'markdown'; content: string }[]): void => {
         flushHistory();
@@ -723,7 +724,7 @@ const App: React.FC = () => {
         });
     }, [cells, updateCell]);
 
-    const moveCell = (draggedId: string, targetId: string, position: 'before' | 'after') => {
+    const moveCell = useCallback((draggedId: string, targetId: string, position: 'before' | 'after') => {
         const draggedIndex = cells.findIndex(c => c.id === draggedId);
         const targetIndex = cells.findIndex(c => c.id === targetId);
         if (draggedIndex === -1 || targetIndex === -1) return;
@@ -734,12 +735,12 @@ const App: React.FC = () => {
         const insertionIndex = position === 'before'
             ? (draggedIndex < targetIndex ? targetIndex - 1 : targetIndex)
             : (draggedIndex < targetIndex ? targetIndex : targetIndex + 1);
-        
+
         newCells.splice(insertionIndex, 0, draggedItem);
         updateCellsAndMarkdown(newCells);
-    };
+    }, [cells, updateCellsAndMarkdown]);
 
-    const suggestPlot = async (sql: string, customPromptOverride?: string): Promise<string | null> => {
+    const suggestPlot = useCallback(async (sql: string, customPromptOverride?: string): Promise<string | null> => {
         if (!isAiFeatureActive) return null;
         try {
             return await aiService.getAiSuggestPlot(sql, customPromptOverride);
@@ -747,14 +748,14 @@ const App: React.FC = () => {
             console.error("Error suggesting plot:", error);
             return null;
         }
-    };
+    }, [isAiFeatureActive]);
 
-    const formatCode = async (code: string, type: 'sql' | 'plot'): Promise<string | null> => {
+    const formatCode = useCallback(async (code: string, type: 'sql' | 'plot'): Promise<string | null> => {
         if (type === 'plot') return formatPlotCode(code);
         return formatSql(code);
-    };
+    }, []);
     
-    const runPreviewQuery = async (queryToRun: string): Promise<any[]> => {
+    const runPreviewQuery = useCallback(async (queryToRun: string): Promise<any[]> => {
         try {
             return await query(queryToRun);
         } catch (error) {
@@ -764,7 +765,7 @@ const App: React.FC = () => {
             }
             return [{ error: String(error) }];
         }
-    };
+    }, [query]);
     
     const [isRunningAll, setIsRunningAll] = useState(false);
     const [presenterMode, setPresenterMode] = useState(false);
@@ -862,11 +863,11 @@ const App: React.FC = () => {
         }
     }, [addCellFromTool]);
 
-    const handleMetadataChange = async (newMetadata: NotebookMetadata) => {
+    const handleMetadataChange = useCallback(async (newMetadata: NotebookMetadata) => {
         const newNotebookMarkdown = reconstructNotebook({ metadata: newMetadata, content: cellsContent });
         setNotebookMarkdown(newNotebookMarkdown);
         await refreshSchema();
-    };
+    }, [cellsContent, refreshSchema]);
 
     // Seed session_start / session_end variables from recording bounds when a
     // JFR file is loaded and the variables haven't been set yet.
