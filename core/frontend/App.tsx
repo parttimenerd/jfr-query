@@ -172,6 +172,8 @@ const App: React.FC = () => {
     // Always-fresh ref so addCellFromTool reads current markdown without stale closures.
     const notebookMarkdownRef = useRef<string>(notebookMarkdown);
     notebookMarkdownRef.current = notebookMarkdown;
+    // Cell-title parse cache: same cell object → same title (no re-parse on unrelated cell edits).
+    const cellTitleCacheRef = useRef<WeakMap<object, string>>(new WeakMap());
 
     // Warn before tab close if the notebook has unsaved changes (not yet downloaded).
     useEffect(() => {
@@ -562,7 +564,7 @@ const App: React.FC = () => {
             // Attempt AI-assisted fix for parse/syntax errors (not for variable errors).
             const looksLikeSyntaxError = /syntax|parse|unexpected|token|unrecognized/i.test(errMsg);
             if (looksLikeSyntaxError && isAiEnabled) {
-                const schemaHint = (schema?.tables ?? []).map(t =>
+                const schemaHint = (schemaRef.current?.tables ?? []).map(t =>
                     `${t.name}(${t.columns.map(c => c.name).join(', ')})`
                 ).join('\n');
                 const fixedSql = await aiService.fixBrokenSql(sql, errMsg, schemaHint);
@@ -596,8 +598,10 @@ const App: React.FC = () => {
                 return { ...prev, [cellId]: newCellResults };
             });
         }
-    }, [query, isAiEnabled, schema]);
+    }, [query, isAiEnabled]);
 
+    const schemaRef = useRef(schema);
+    schemaRef.current = schema;
     const metadataRef = useRef(metadata);
     metadataRef.current = metadata;
 
@@ -836,8 +840,12 @@ const App: React.FC = () => {
 
     const cmdCells: CellEntry[] = useMemo(() =>
         cells.map((c, i) => {
-            const parsed = parseCellContent(tokenizeCellContent(c.content));
-            return { id: c.id, title: parsed.title ?? '', index: i };
+            let title = cellTitleCacheRef.current.get(c);
+            if (title === undefined) {
+                title = parseCellContent(tokenizeCellContent(c.content)).title ?? '';
+                cellTitleCacheRef.current.set(c, title);
+            }
+            return { id: c.id, title, index: i };
         }),
     [cells]);
 
@@ -848,9 +856,9 @@ const App: React.FC = () => {
     }, [query]);
 
     const cmdAiAddCell = useCallback(async (description: string) => {
-        const tables = schema?.tables ?? [];
-        const views = schema?.views ?? [];
-        const macros = schema?.macros ?? [];
+        const tables = schemaRef.current?.tables ?? [];
+        const views = schemaRef.current?.views ?? [];
+        const macros = schemaRef.current?.macros ?? [];
         const res = await aiService.getAiAgentResponse(
             [{ role: 'user', parts: [{ text: `Create a notebook cell that shows: ${description}` }] }] as any,
             tables, views, macros, undefined, 'no-data', null,
@@ -864,7 +872,7 @@ const App: React.FC = () => {
         if (!res.code && !res.plotConfig) {
             throw new Error(res.text || 'AI did not return any cell content.');
         }
-    }, [schema, addCellFromTool]);
+    }, [addCellFromTool]);
 
     const cmdAddSqlCell = useCallback((sql: string, plotConfig: string | null) => {
         addCellFromTool({ type: 'sql', content: sql });

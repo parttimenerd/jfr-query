@@ -66,11 +66,18 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     //
     // Split into two memos: parsed aliases only re-compute when cell content changes;
     // the final map re-computes when any result changes (but parse is already cached).
+    // Per-cell parse cache keyed by cell object reference (same object = same content).
+    const aliasCacheRef = useRef<WeakMap<object, (string | null)[]>>(new WeakMap());
     const cellAliasesByCell = useMemo((): Map<string, (string | null)[]> => {
         const out = new Map<string, (string | null)[]>();
         for (const cell of cells) {
-            const parsed = parseCellContent(tokenizeCellContent(cell.content));
-            out.set(cell.id, parsed.queryAliases as (string | null)[]);
+            let aliases = aliasCacheRef.current.get(cell);
+            if (!aliases) {
+                const parsed = parseCellContent(tokenizeCellContent(cell.content));
+                aliases = parsed.queryAliases as (string | null)[];
+                aliasCacheRef.current.set(cell, aliases);
+            }
+            out.set(cell.id, aliases);
         }
         return out;
     }, [cells]);
