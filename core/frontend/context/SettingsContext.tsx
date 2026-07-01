@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { AiProviderType } from '../services/ai/IAiProvider';
 import { providerMetadataRegistry } from '../services/AiService';
 import { DEFAULT_MODEL_ID } from '../services/ml/candidates';
@@ -173,7 +173,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     }, [settings.suppressDeprecationWarnings]);
 
     return (
-        <SettingsContext.Provider value={{ settings, saveSettings }}>
+        <SettingsContext.Provider value={useMemo(() => ({ settings, saveSettings }), [settings, saveSettings])}>
             {children}
         </SettingsContext.Provider>
     );
