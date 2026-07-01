@@ -510,16 +510,18 @@ const App: React.FC = () => {
     }, [cellsContent]);
 
     const runQuery = useCallback(async (cellId: string, sql: string, queryIndex: number, allVariables: Record<string,string>) => {
-        try {
-            const subSql = expandBrushOperator(substituteVariables(sql, toSqlVariables(allVariables)), allVariables);
-
+        const runOnce = async (sqlToRun: string) => {
+            const subSql = expandBrushOperator(substituteVariables(sqlToRun, toSqlVariables(allVariables)), allVariables);
             const remainingVars = findRemainingVariables(subSql);
             if (remainingVars.length > 0) {
-                 const varList = remainingVars.join(', ');
-                 throw new Error(`Undefined variable(s) found: ${varList}. Please define them in the cell's 'variables' block or in the notebook settings.`);
+                const varList = remainingVars.join(', ');
+                throw new Error(`Undefined variable(s) found: ${varList}. Please define them in the cell's 'variables' block or in the notebook settings.`);
             }
+            return query(subSql);
+        };
 
-            const data = await query(subSql);
+        try {
+            const data = await runOnce(sql);
             setResults(prev => {
                 const existing = prev[cellId] || [];
                 // Ensure dense array: fill any gap before queryIndex with null so
@@ -530,15 +532,43 @@ const App: React.FC = () => {
                 return { ...prev, [cellId]: newCellResults };
             });
         } catch (error: any) {
+            const errMsg: string = error.message || String(error);
+            // Attempt AI-assisted fix for parse/syntax errors (not for variable errors).
+            const looksLikeSyntaxError = /syntax|parse|unexpected|token|unrecognized/i.test(errMsg);
+            if (looksLikeSyntaxError && isAiEnabled) {
+                const schemaHint = (schema?.tables ?? []).map(t =>
+                    `${t.name}(${t.columns.map(c => c.name).join(', ')})`
+                ).join('\n');
+                const fixedSql = await aiService.fixBrokenSql(sql, errMsg, schemaHint);
+                if (fixedSql && fixedSql !== sql) {
+                    // Patch the notebook markdown so the fix persists in the cell.
+                    const current = notebookMarkdownRef.current;
+                    const patched = current.replace(sql, fixedSql);
+                    if (patched !== current) setNotebookMarkdown(patched);
+                    try {
+                        const data = await runOnce(fixedSql);
+                        setResults(prev => {
+                            const existing = prev[cellId] || [];
+                            const newCellResults: (any[] | null)[] = [...existing];
+                            while (newCellResults.length <= queryIndex) newCellResults.push(null);
+                            newCellResults[queryIndex] = data;
+                            return { ...prev, [cellId]: newCellResults };
+                        });
+                        return;
+                    } catch {
+                        // Fixed SQL also failed — fall through to show original error.
+                    }
+                }
+            }
             setResults(prev => {
                 const existing = prev[cellId] || [];
                 const newCellResults: (any[] | null)[] = [...existing];
                 while (newCellResults.length <= queryIndex) newCellResults.push(null);
-                newCellResults[queryIndex] = [{ error: error.message || String(error) }];
+                newCellResults[queryIndex] = [{ error: errMsg }];
                 return { ...prev, [cellId]: newCellResults };
             });
         }
-    }, [query]);
+    }, [query, isAiEnabled, schema]);
 
     const updateCellsAndMarkdown = (newCells: NotebookCellData[]) => {
         const newCellsContent = newCells.map(cell => cell.content).join('\n\n---\n\n');

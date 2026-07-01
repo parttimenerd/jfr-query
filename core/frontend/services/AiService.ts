@@ -140,7 +140,7 @@ class AiService {
 
     private async handleApiCall<T>(apiCall: () => Promise<T>): Promise<T> {
         if (!this.provider) {
-            throw new Error("AI Service not initialized.");
+            throw new Error("AI Service not initialized — configure an API key in ⚙ Settings first.");
         }
         try {
             return await apiCall();
@@ -344,6 +344,39 @@ GUIDELINES:
         return this.handleApiCall(() => this.provider!.getInlineSuggestion(systemInstruction, request, model));
     }
 
+    /**
+     * Given a SQL query that produced a parse/execution error, ask the AI to
+     * return a corrected version. Returns the fixed SQL string, or null if the
+     * AI is unavailable or returns nothing useful.
+     */
+    async fixBrokenSql(brokenSql: string, errorMessage: string, schemaHint: string): Promise<string | null> {
+        if (!this.settings) return null;
+        if (!this.isInitialized()) return null;
+        const model = this.getModelFor('basic');
+        const systemInstruction = `You are an expert DuckDB SQL assistant. A SQL query failed with a parse or execution error. Fix it and return ONLY the corrected SQL — no explanation, no markdown fences, no extra text.
+Schema context:
+${schemaHint}
+Rules:
+- Return exactly one corrected SELECT/WITH statement
+- Do not wrap in markdown code fences
+- Do not add any explanation text`;
+        const request = `The following SQL failed with error: ${errorMessage}
+
+SQL:
+${brokenSql}
+
+Return the fixed SQL only.`;
+        try {
+            const resp = await this.handleApiCall(() => this.provider!.getInlineSuggestion(systemInstruction, request, model));
+            const fixed = (resp.code ?? resp.text ?? '').trim();
+            // Strip accidental markdown fences the model might add despite instructions
+            const stripped = fixed.replace(/^```(?:sql)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+            return stripped || null;
+        } catch {
+            return null;
+        }
+    }
+
     async getAiCodeFormat(code: string): Promise<string | null> {
         if (!this.settings) throw new Error("AI Service not initialized with settings.");
         const model = this.getModelFor('basic');
@@ -397,7 +430,6 @@ Return ONLY the plot configuration string, with no explanation or markdown backt
         const columns = data && data.length > 0 ? Object.keys(data[0]) : [];
         const dataSample = data ? `The SQL query returned these available columns: [${columns.join(', ')}]` : '';
         let systemInstruction = `You are an expert data visualization assistant. A user's plot configuration has failed. Your task is to analyze the context and provide a corrected plot configuration.
-The most common error is using a column name in the plot config that does not exist in the SQL query's result set.
 CONTEXT:
 - The error message was: "${errorMessage}"
 - The user's SQL query is: \`\`\`sql\n${sqlQuery}\n\`\`\`
@@ -405,10 +437,11 @@ CONTEXT:
 - ${dataSample}
 - The full content of the notebook cell is: \`\`\`markdown\n${cellContext}\n\`\`\`
 GUIDELINES:
-1.  Analyze the error, the SQL query, and the available columns.
-2.  Rewrite the plot configuration to be valid for the data.
-3.  Provide a brief, helpful explanation of what was wrong and how you fixed it.
-4.  Return the response in JSON format. The 'fixedCode' field must contain ONLY the new, corrected plot configuration code.`;
+1.  Read the error message carefully — it describes exactly what is wrong.
+2.  Common causes: wrong column name, missing required parameter, unknown plot type name, wrong parameter value.
+3.  Rewrite the plot configuration to be valid for the data and fix the specific error.
+4.  Provide a brief, helpful explanation of what was wrong and how you fixed it.
+5.  Return the response in JSON format. The 'fixedCode' field must contain ONLY the new, corrected plot configuration code.`;
 
         const finalCustomPrompt = customPromptOverride ?? this.settings.customSystemPrompt;
         if (finalCustomPrompt) {
@@ -451,7 +484,7 @@ GUIDELINES:
             customSystemPrompt?: string;
         },
     ): AsyncIterable<ToolStreamChunk> {
-        if (!this.provider) throw new Error('AI Service not initialized.');
+        if (!this.provider) throw new Error('AI Service not initialized — configure an API key in ⚙ Settings first.');
         const feature: AiFeature = opts.feature ?? 'chat';
         const tier: AiTier = opts.tier ?? 'advanced';
 
