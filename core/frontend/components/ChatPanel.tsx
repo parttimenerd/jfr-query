@@ -1570,4 +1570,4 @@ function shallowEqualArgs(a: any, b: any): boolean {
     return true;
 }
 
-export default ChatPanel;
+export default React.memo(ChatPanel);
