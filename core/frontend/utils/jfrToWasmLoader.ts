@@ -5,13 +5,17 @@ import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL } from '../data/builtinSql';
 const PERF_KEY = 'jfr_import_ms_per_byte';
 
 // Determine maximum workers based on available device memory.
-// Each worker uses ~200MB WASM heap. Browser renderer processes are sandboxed
-// to ~1-2 GB regardless of physical RAM, so we cap at 3 workers max:
-// - 3 workers = ~600MB (safe on 8GB+)
-// - 2 workers = ~400MB (safe on all devices)
+// Each worker allocates a GraalVM WebAssembly linear memory that grows with
+// chunk size — typically 300–600 MB per worker for real JFR files.
+// Browser renderer processes are capped at ~1–2 GB total (OS sandbox), so
+// 3 workers risk OOM on larger files. Cap at 2 workers as the safe default;
+// allow 3 only on machines with ≥16 GB where the OS may grant a larger cap.
+// Override via URL: ?maxWorkers=N
 function getMaxWorkers(): number {
+  const override = new URLSearchParams(location.search).get('maxWorkers');
+  if (override) return Math.max(1, Math.min(4, parseInt(override, 10)));
   const mem = (navigator as any).deviceMemory as number | undefined;
-  if (mem !== undefined && mem >= 8) return 3;
+  if (mem !== undefined && mem >= 16) return 3;
   return 2;
 }
 
@@ -32,6 +36,31 @@ function getPrecompiledModule(): Promise<WebAssembly.Module | null> {
   }
   return _precompiledModulePromise;
 }
+
+/**
+ * Semaphore that limits concurrent insertArrowTable calls across all workers.
+ * Without backpressure, fire-and-forget inserts for a 200+ chunk file accumulate
+ * all in-flight Arrow IPC buffers simultaneously, causing OOM crashes.
+ */
+class InsertSemaphore {
+  private slots: number;
+  private queue: Array<() => void> = [];
+
+  constructor(concurrency: number) { this.slots = concurrency; }
+
+  async acquire(): Promise<void> {
+    if (this.slots > 0) { this.slots--; return; }
+    await new Promise<void>(resolve => this.queue.push(resolve));
+  }
+
+  release(): void {
+    const next = this.queue.shift();
+    if (next) { next(); } else { this.slots++; }
+  }
+}
+
+// Shared across all workers for this import session; re-created per import.
+let insertSemaphore = new InsertSemaphore(4);
 
 /** A ready-to-use worker and its associated DuckDB connection. */
 interface PooledWorker {
@@ -105,18 +134,23 @@ function parseJfrChunks(bytes: Uint8Array): Array<{ start: number; end: number }
 
 /**
  * Dispatch one import job to an existing pooled worker.
- * The worker is marked busy for the duration and released on completion.
- * Uses the worker's own dedicated DuckDB connection for all queries/inserts.
+ * Returns a Promise that resolves when the WASM parse phase is done (all
+ * `insert` messages have been *sent back* — not necessarily flushed to DuckDB).
+ * Each insert acquires a semaphore slot before calling insertArrowTable and
+ * releases it in .finally() — this bounds concurrent in-flight Arrow buffers.
+ *
+ * Returns the array of in-flight insert Promises so the caller can drain them
+ * before starting the next batch (per-batch drain = bounded peak memory).
  */
 async function dispatchToPooledWorker(
   pooled: PooledWorker,
   slice: Uint8Array,
   tablePrefix: string,
   stacktraceDepth: number,
-  onInsert?: () => void,
-  onInsertDone?: () => void,
-): Promise<void> {
+  onChunkDone?: () => void,
+): Promise<Promise<void>[]> {
   pooled.busy = true;
+  const insertPromises: Promise<void>[] = [];
   try {
     await new Promise<void>((resolve, reject) => {
       const { worker, conn } = pooled;
@@ -135,12 +169,14 @@ async function dispatchToPooledWorker(
         }
 
         if (msg.type === 'insert') {
-          onInsert?.();
-          conn.insertArrowTable(
-            tableFromIPC(new Uint8Array(msg.ipcBytes as ArrayBuffer)),
-            { name: msg.tableName as string, create: false },
-          ).catch((err) => console.warn(`[jfr-worker ${tablePrefix}] insert failed for`, msg.tableName, err))
-            .finally(() => { onInsertDone?.(); });
+          const p = insertSemaphore.acquire().then(() =>
+            conn.insertArrowTable(
+              tableFromIPC(new Uint8Array(msg.ipcBytes as ArrayBuffer)),
+              { name: msg.tableName as string, create: false },
+            ).catch((err) => console.warn(`[jfr-worker ${tablePrefix}] insert failed for`, msg.tableName, err))
+              .finally(() => insertSemaphore.release())
+          );
+          insertPromises.push(p);
           worker.postMessage({ type: 'insert-result', reqId: msg.reqId });
           return;
         }
@@ -160,7 +196,9 @@ async function dispatchToPooledWorker(
     });
   } finally {
     pooled.busy = false;
+    onChunkDone?.();
   }
+  return insertPromises;
 }
 
 /**
@@ -448,64 +486,103 @@ export async function loadJfrIntoWasm(
 
   console.log(`[jfr-import] ${numChunks} chunk(s), using up to ${numWorkers} parallel worker(s)`);
 
+  // Reset semaphore for this import session.
+  insertSemaphore = new InsertSemaphore(4);
+
+  // Progress phases:
+  //   0–5%:  initialization / pool warm
+  //   5–70%: Java parse (each completed chunk advances evenly)
+  //   70–85%: drain remaining inserts
+  //   85–95%: merge pass
+  //   95–100%: SQL registration
+  let chunksCompleted = 0;
+  const parseProgressPerChunk = 0.65 / numChunks;
+  const reportParseProgress = () => {
+    chunksCompleted++;
+    onProgress?.(0.05 + chunksCompleted * parseProgressPerChunk);
+  };
+
+  onProgress?.(0.01);
+
   const tJava0 = performance.now();
-  let pendingInserts = 0;
-  let peakPending = 0;
 
   // Pre-warm pool in parallel with chunk boundary parsing.
-  // We need exactly numWorkers pooled entries.
-  // getPrecompiledModule() was already called above; it may still be compiling — that's fine.
   const wasmModule = await getPrecompiledModule();
   const tWasmCompile = performance.now();
   console.log(`[jfr-perf] WASM compile: ${(tWasmCompile - tJava0).toFixed(0)}ms`);
 
-  // Ensure pool has enough workers for this import.
-  // Reuse existing idle workers; create new ones as needed — in parallel.
-  const toCreate = numWorkers - workerPool.length;
-  if (toCreate > 0) {
-    const newWorkers = await Promise.all(
-      Array.from({ length: toCreate }, () => createPooledWorker(db, wasmModule)),
-    );
-    workerPool.push(...newWorkers);
+  onProgress?.(0.03);
+
+  // For single-chunk files, warm a persistent pool worker (reused across re-imports).
+  // For multi-chunk files, workers are created fresh per-batch (see below).
+  if (!useParallel) {
+    const toCreate = 1 - workerPool.length;
+    if (toCreate > 0) {
+      const newWorkers = await Promise.all(
+        Array.from({ length: toCreate }, () => createPooledWorker(db, wasmModule)),
+      );
+      workerPool.push(...newWorkers);
+    }
   }
   const tPoolReady = performance.now();
-  console.log(`[jfr-perf] pool ready (${numWorkers} workers): ${(tPoolReady - tWasmCompile).toFixed(0)}ms`);
+  console.log(`[jfr-perf] pool ready: ${(tPoolReady - tWasmCompile).toFixed(0)}ms`);
+
+  onProgress?.(0.05);
+
+  // All insert promises collected across all batches, for final drain accounting.
+  let allInsertPromises: Promise<void>[] = [];
 
   if (!useParallel) {
-    // Single-chunk: use pool worker 0 with empty prefix
+    // Single-chunk path — reuse persistent pool worker
     const pooled = workerPool[0];
     const buf = jfrBytes.buffer.byteLength === jfrBytes.byteLength ? jfrBytes.buffer : jfrBytes.slice().buffer;
-    await dispatchToPooledWorker(
-      pooled,
-      new Uint8Array(buf),
-      '',
-      stacktraceDepth,
-      () => { pendingInserts++; peakPending = Math.max(peakPending, pendingInserts); },
-      () => { pendingInserts--; },
-    );
+    const insertPs = await dispatchToPooledWorker(pooled, new Uint8Array(buf), '', stacktraceDepth, reportParseProgress);
+    allInsertPromises = insertPs;
+    await Promise.all(insertPs);
   } else {
-    // Multi-chunk parallel path: dispatch chunks to pool workers round-robin.
-    // Process in batches of maxWorkers; wait for each batch before advancing
-    // so we don't enqueue more work than the pool has capacity for.
+    // Multi-chunk parallel path.
+    //
+    // Workers are EPHEMERAL: created fresh for each batch and terminated after
+    // the batch drains. This releases the GraalVM WASM linear memory (~300–600 MB
+    // per worker) between batches, preventing the renderer process OOM that
+    // occurs when all workers stay alive for the full duration of a large import.
+    //
+    // WASM compilation cost is paid once at module load (getPrecompiledModule()),
+    // so recreation only costs ~300 ms for WASM instantiation — acceptable vs
+    // the memory savings for large files (18 chunks × 13 MB = 242 MB).
     let globalWorkerIdx = 0;
     for (let batchStart = 0; batchStart < chunks.length; batchStart += maxWorkers) {
       const batchChunks = chunks.slice(batchStart, batchStart + maxWorkers);
 
-      const batchPromises = batchChunks.map((chunk, i) => {
-        const workerIdx = globalWorkerIdx + i;
-        const pooled = workerPool[i % workerPool.length];
-        const slice = jfrBytes.slice(chunk.start, chunk.end);
-        return dispatchToPooledWorker(
-          pooled,
-          slice,
-          `chunk${workerIdx}_`,
-          stacktraceDepth,
-          () => { pendingInserts++; peakPending = Math.max(peakPending, pendingInserts); },
-          () => { pendingInserts--; },
-        );
+      // Spin up fresh workers for this batch in parallel
+      const tBatchStart = performance.now();
+      const batchWorkers = await Promise.all(
+        batchChunks.map(() => createPooledWorker(db, wasmModule)),
+      );
+
+      // Parse chunks in parallel, collect insert-promise arrays.
+      // Terminate workers immediately when parse finishes — this releases the
+      // GraalVM WASM linear memory (300–600 MB per worker) before we drain inserts.
+      const batchInsertArrays = await Promise.all(
+        batchChunks.map((chunk, i) => {
+          const workerIdx = globalWorkerIdx + i;
+          const slice = jfrBytes.slice(chunk.start, chunk.end);
+          return dispatchToPooledWorker(batchWorkers[i], slice, `chunk${workerIdx}_`, stacktraceDepth, reportParseProgress);
+        }),
+      ).finally(() => {
+        batchWorkers.forEach(pw => pw.worker.terminate());
       });
 
-      await Promise.all(batchPromises);
+      // Drain inserts (Arrow IPC → DuckDB) for this batch before allocating the next.
+      const batchInserts = batchInsertArrays.flat();
+      allInsertPromises.push(...batchInserts);
+      await Promise.all(batchInserts);
+
+      // Close DuckDB connections from this batch (no longer needed).
+      await Promise.all(batchWorkers.map(pw => pw.conn.close().catch(() => {})));
+
+      const batchIdx = batchStart / maxWorkers;
+      console.log(`[jfr-perf] batch ${batchIdx + 1}/${Math.ceil(chunks.length / maxWorkers)}: ${(performance.now() - tBatchStart).toFixed(0)}ms`);
       globalWorkerIdx += batchChunks.length;
     }
   }
@@ -513,16 +590,12 @@ export async function loadJfrIntoWasm(
   const tJavaDone = performance.now();
   const actualJavaMs = tJavaDone - tJava0;
 
-  onProgress?.(0.75);
+  onProgress?.(0.70);
 
-  // Drain: wait for all pending insertArrowTable calls to complete
+  // Final drain: wait for any remaining inserts (single-chunk path already drained,
+  // parallel path drained per-batch — this is a safety net).
   const tDrainStart = performance.now();
-  while (pendingInserts > 0) {
-    await new Promise(r => setTimeout(r, 10));
-    if (peakPending > 0) {
-      onProgress?.(0.75 + 0.10 * (1 - pendingInserts / peakPending));
-    }
-  }
+  await Promise.all(allInsertPromises);
   const tDrainDone = performance.now();
 
   onProgress?.(0.85);
@@ -536,7 +609,7 @@ export async function loadJfrIntoWasm(
     console.log(`[jfr-perf] merge pass: ${mergeMs.toFixed(0)}ms`);
   }
 
-  onProgress?.(0.90);
+  onProgress?.(0.95);
 
   console.log(`[jfr-perf] Java+drain: ${actualJavaMs.toFixed(0)}ms | drain: ${(tDrainDone - tDrainStart).toFixed(0)}ms | merge: ${mergeMs.toFixed(0)}ms`);
   (window as any).__lastJfrPerf = {
@@ -581,6 +654,7 @@ export async function loadJfrIntoWasm(
   }
   const sqlMs = performance.now() - tSqlStart;
   console.log(`[jfr-perf] SQL reg (parallel×${PARALLELISM}): ${sqlMs.toFixed(0)}ms`);
+  onProgress?.(1.0);
   (window as any).__lastJfrPerf = {
     ...(window as any).__lastJfrPerf,
     sqlRegMs: sqlMs,

@@ -7,7 +7,7 @@ import FileLoader from './components/FileLoader';
 import JFRDropZone from './components/JFRDropZone';
 import SettingsModal from './components/SettingsModal';
 import TemplateGalleryModal from './components/TemplateGalleryModal';
-import CommandPalette, { type CommandAction } from './components/CommandPalette';
+import CommandPalette, { type CommandAction, type CellEntry } from './components/CommandPalette';
 import ToastNotification from './components/ToastNotification';
 import { DataContext, DBState } from './context/DuckDBContext';
 import type { SourceType } from './context/DuckDBContext';
@@ -96,7 +96,7 @@ function usePersistentState<T>(key: string, defaultValue: T): [T, React.Dispatch
 const App: React.FC = () => {
     const {
         dbState, mode, sourceType, errorMessage, serverProbeError, query, refreshSchema, loadFile, loadDemo,
-        recordingStart, recordingEnd,
+        recordingStart, recordingEnd, schema, importProgress,
     } = useContext(DataContext);
     
     const { settings } = useContext(SettingsContext);
@@ -521,13 +521,19 @@ const App: React.FC = () => {
 
             const data = await query(subSql);
             setResults(prev => {
-                const newCellResults = [...(prev[cellId] || [])];
+                const existing = prev[cellId] || [];
+                // Ensure dense array: fill any gap before queryIndex with null so
+                // downstream code that iterates by index never sees `undefined` holes.
+                const newCellResults: (any[] | null)[] = [...existing];
+                while (newCellResults.length <= queryIndex) newCellResults.push(null);
                 newCellResults[queryIndex] = data;
                 return { ...prev, [cellId]: newCellResults };
             });
         } catch (error: any) {
             setResults(prev => {
-                const newCellResults = [...(prev[cellId] || [])];
+                const existing = prev[cellId] || [];
+                const newCellResults: (any[] | null)[] = [...existing];
+                while (newCellResults.length <= queryIndex) newCellResults.push(null);
                 newCellResults[queryIndex] = [{ error: error.message || String(error) }];
                 return { ...prev, [cellId]: newCellResults };
             });
@@ -751,14 +757,58 @@ const App: React.FC = () => {
     const cmdActions: CommandAction[] = useMemo(() => [
         { id: 'format-all', label: 'Format all cells', hint: '⇧⇧ then "format"', keywords: 'beautify pretty indent', run: () => formatAllCells() },
         { id: 'run-all', label: 'Run all queries', hint: 'run every SQL block', keywords: 'execute', run: () => { void handleRunAll(); } },
-        { id: 'add-cell', label: 'Add new cell', keywords: 'new insert', run: () => addCell() },
-        { id: 'settings', label: 'Open settings', keywords: 'preferences config', run: () => setIsSettingsModalOpen(true) },
+        { id: 'add-cell', label: 'Add new cell', keywords: 'new insert create', run: () => addCell() },
+        { id: 'collapse-all', label: 'Collapse all cells', keywords: 'hide fold', run: () => { setCollapseTrigger(Date.now()); setAllCollapsed(true); } },
+        { id: 'expand-all', label: 'Expand all cells', keywords: 'show unfold open', run: () => { setCollapseTrigger(Date.now()); setAllCollapsed(false); } },
+        { id: 'clear-results', label: 'Clear all results', keywords: 'reset', run: () => handleClearResults() },
+        { id: 'save', label: 'Save notebook', keywords: 'download export', run: () => handleSaveNotebook() },
+        { id: 'templates', label: 'Open template gallery', keywords: 'new template load', run: () => setIsTemplateGalleryOpen(true) },
+        { id: 'undo', label: 'Undo', keywords: 'revert back', hint: canUndo ? '⌘Z' : '(nothing to undo)', run: () => { if (canUndo) undo(); } },
+        { id: 'redo', label: 'Redo', keywords: 'forward', hint: canRedo ? '⇧⌘Z' : '(nothing to redo)', run: () => { if (canRedo) redo(); } },
+        { id: 'settings', label: 'Open settings', keywords: 'preferences config api key', run: () => setIsSettingsModalOpen(true) },
         { id: 'toggle-ai', label: `${isAiEnabled ? 'Disable' : 'Enable'} AI features`, keywords: 'llm assistant', run: () => setIsAiEnabled(!isAiEnabled) },
         { id: 'toggle-autorun', label: `${isAutoRunEnabled ? 'Disable' : 'Enable'} auto-run on load`, keywords: 'autorun', run: () => setIsAutoRunEnabled(!isAutoRunEnabled) },
         { id: 'toggle-md', label: `${isMarkdownMode ? 'Exit' : 'Enter'} raw markdown view`, keywords: 'markdown raw', run: () => setIsMarkdownMode(!isMarkdownMode) },
-        { id: 'clear-results', label: 'Clear all results', keywords: 'reset', run: () => handleClearResults() },
-        { id: 'save', label: 'Save notebook', keywords: 'download export', run: () => handleSaveNotebook() },
-    ], [formatAllCells, handleRunAll, addCell, isAiEnabled, setIsAiEnabled, isAutoRunEnabled, setIsAutoRunEnabled, isMarkdownMode, setIsMarkdownMode, handleClearResults]);
+    ], [formatAllCells, handleRunAll, addCell, isAiEnabled, setIsAiEnabled, isAutoRunEnabled, setIsAutoRunEnabled, isMarkdownMode, setIsMarkdownMode, handleClearResults, handleSaveNotebook, canUndo, canRedo, undo, redo, setCollapseTrigger, setAllCollapsed, setIsTemplateGalleryOpen]);
+
+    const cmdCells: CellEntry[] = useMemo(() =>
+        cells.map((c, i) => {
+            const parsed = parseCellContent(tokenizeCellContent(c.content));
+            return { id: c.id, title: parsed.title ?? '', index: i };
+        }),
+    [cells]);
+
+    const cmdRunQuery = useCallback(async (sql: string) => {
+        const rows = await query(sql);
+        const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+        return { columns, rows };
+    }, [query]);
+
+    const cmdAiAddCell = useCallback(async (description: string) => {
+        const tables = schema?.tables ?? [];
+        const views = schema?.views ?? [];
+        const macros = schema?.macros ?? [];
+        const res = await aiService.getAiAgentResponse(
+            [{ role: 'user', parts: [{ text: `Create a notebook cell that shows: ${description}` }] }] as any,
+            tables, views, macros, undefined, 'no-data', null,
+        );
+        if (res.code) {
+            addCellFromTool({ type: 'sql', content: res.code });
+        }
+        if (res.plotConfig) {
+            addCellFromTool({ type: 'plot', content: res.plotConfig });
+        }
+        if (!res.code && !res.plotConfig) {
+            throw new Error(res.text || 'AI did not return any cell content.');
+        }
+    }, [schema, addCellFromTool]);
+
+    const cmdAddSqlCell = useCallback((sql: string, plotConfig: string | null) => {
+        addCellFromTool({ type: 'sql', content: sql });
+        if (plotConfig) {
+            addCellFromTool({ type: 'plot', content: plotConfig });
+        }
+    }, [addCellFromTool]);
 
     const handleMetadataChange = async (newMetadata: NotebookMetadata) => {
         const newNotebookMarkdown = reconstructNotebook({ metadata: newMetadata, content: cellsContent });
@@ -785,11 +835,18 @@ const App: React.FC = () => {
     }, [recordingStart, recordingEnd]);
 
     if (dbState !== DBState.READY) {
-        if (mode === 'wasm' && (dbState === DBState.NEEDS_FILE || dbState === DBState.IMPORTING || dbState === DBState.ERROR)) {
+        if (mode === 'wasm' && (dbState === DBState.NEEDS_FILE || dbState === DBState.IMPORTING || dbState === DBState.SCHEMA_LOADING || dbState === DBState.ERROR)) {
             return (
                 <JFRDropZone
-                    onFileSelected={(bytes, fileName) => { void loadFile(bytes, fileName); }}
-                    isImporting={dbState === DBState.IMPORTING}
+                    onFileSelected={(bytes, fileName, stacktraceDepth) => { void loadFile(bytes, fileName, stacktraceDepth); }}
+                    isImporting={dbState === DBState.IMPORTING || dbState === DBState.SCHEMA_LOADING}
+                    importPhase={dbState === DBState.SCHEMA_LOADING ? 'Building schema…' :
+                        (importProgress ?? 0) < 0.05 ? 'Warming up…' :
+                        (importProgress ?? 0) < 0.70 ? `Parsing chunks… ${Math.round((importProgress ?? 0) * 100)}%` :
+                        (importProgress ?? 0) < 0.85 ? 'Flushing inserts…' :
+                        (importProgress ?? 0) < 0.95 ? 'Merging tables…' :
+                        'Registering views…'}
+                    importProgress={importProgress}
                     errorMessage={dbState === DBState.ERROR ? errorMessage : null}
                     onLoadDemo={() => { loadNotebook(initialNotebook); void loadDemo(); }}
                     onLoadGcNotebook={() => { loadNotebook(gcAnalysisNotebook); void loadDemo(); }}
@@ -824,7 +881,7 @@ const App: React.FC = () => {
                     }
                 }}
             />
-            <CommandPalette isOpen={isCmdPaletteOpen} onClose={() => setIsCmdPaletteOpen(false)} actions={cmdActions} />
+            <CommandPalette isOpen={isCmdPaletteOpen} onClose={() => setIsCmdPaletteOpen(false)} actions={cmdActions} cells={cmdCells} onRunQuery={cmdRunQuery} onAiAddCell={cmdAiAddCell} onAddSqlCell={cmdAddSqlCell} isAiAvailable={isAiFeatureActive} />
             {aiFailureMessage && <ToastNotification title="AI Assistant Alert" message={aiFailureMessage} onClose={() => setAiFailureMessage(null)} action={{ label: 'Open Settings →', onClick: () => setIsSettingsModalOpen(true) }} />}
             {serverProbeError && !probeToastDismissed && <ToastNotification title="Running in WASM mode" message={`Server probe failed: ${serverProbeError}. Drop a .jfr or .duckdb file to get started.`} onClose={() => setProbeToastDismissed(true)} duration={5000} />}
 
