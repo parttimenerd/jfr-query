@@ -295,9 +295,25 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         return next;
     }, [precedingCells, cell.id]);
 
+    // Stabilize parsed.variables reference: when variable values are unchanged
+    // (e.g. user typed in the SQL block), reuse the previous object so allVariables
+    // and handleRun don't rebuild.
+    const parsedVariablesRef = useRef<Record<string, string>>(parsed.variables ?? {});
+    const parsedVariables = useMemo(() => {
+        const next = parsed.variables ?? {};
+        const prev = parsedVariablesRef.current;
+        const prevKeys = Object.keys(prev);
+        const nextKeys = Object.keys(next);
+        if (prevKeys.length === nextKeys.length && prevKeys.every(k => prev[k] === next[k])) {
+            return prev;
+        }
+        parsedVariablesRef.current = next;
+        return next;
+    }, [parsed.variables]);
+
     const allVariables = useMemo(
-        () => ({ ...metadata.variables, ...precedingCellVariables, ...parsed.variables }),
-        [metadata.variables, precedingCellVariables, parsed.variables],
+        () => ({ ...metadata.variables, ...precedingCellVariables, ...parsedVariables }),
+        [metadata.variables, precedingCellVariables, parsedVariables],
     );
 
     // P7 — Notebook-wide plot scope (named plots, query refs, variables, brushes).
@@ -439,7 +455,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     // For each cell-local variable, compute which SQL/plot blocks reference it.
     const variableUsage = useMemo<Record<string, string[]>>(() => {
         const usage: Record<string, string[]> = {};
-        for (const varKey of Object.keys(parsed.variables || {})) {
+        for (const varKey of Object.keys(parsedVariables)) {
             const refs: string[] = [];
             const pattern = new RegExp(`\\${varKey.replace(/\$/g, '\\$')}\\b`);
             parsed.sqlBlocks.forEach((sql, i) => { if (pattern.test(sql)) refs.push(`Query ${i + 1}`); });
@@ -449,7 +465,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             usage[varKey] = refs;
         }
         return usage;
-    }, [parsed.variables, parsed.sqlBlocks, parsed.plotBlocksWithSqlIndex]);
+    }, [parsedVariables, parsed.sqlBlocks, parsed.plotBlocksWithSqlIndex]);
 
     const formatSettings = useMemo(
         () => ({ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }),
@@ -873,8 +889,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const handleVariableClick = useCallback((varName: string) => {
         if (varName.startsWith('$$')) { onGlobalVariableClick(varName); return; }
         const focusLocalVar = () => { if (isVariablesCollapsed) { setIsVariablesCollapsed(false); setTimeout(() => variableInputRefs.current[varName]?.focus(), 100); } else { variableInputRefs.current[varName]?.focus(); } };
-        if (varName in (parsed.variables || {})) { focusLocalVar(); } else { handleCellVariableChange({...(parsed.variables||{}), [varName]: ''}); setTimeout(focusLocalVar, 100); }
-    }, [onGlobalVariableClick, isVariablesCollapsed, parsed.variables, handleCellVariableChange]);
+        if (varName in parsedVariables) { focusLocalVar(); } else { handleCellVariableChange({...parsedVariables, [varName]: ''}); setTimeout(focusLocalVar, 100); }
+    }, [onGlobalVariableClick, isVariablesCollapsed, parsedVariables, handleCellVariableChange]);
     
     const cellIdx = allCells.findIndex(c => c.id === cell.id);
     const cellAlias = computeCellHandle(cell, cellIdx);
