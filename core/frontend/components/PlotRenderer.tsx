@@ -807,4 +807,4 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
     );
 };
 
-export default PlotRenderer;
+export default React.memo(PlotRenderer);

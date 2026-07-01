@@ -304,4 +304,4 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
   );
 };
 
-export default DataTable;
+export default React.memo(DataTable);
