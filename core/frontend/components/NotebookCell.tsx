@@ -51,6 +51,8 @@ interface NotebookCellProps {
     allCells: NotebookCellData[];
     metadata: NotebookMetadata;
     results: (any[] | null)[];
+    /** Parallel timing array — queryTimings[i] = elapsed ms for results[i], or null if not yet run / errored. */
+    queryTimings?: (number | null)[];
     /**
      * Cross-cell query results keyed by SQL alias name. Populated by Notebook.tsx
      * from all sibling cells' named query blocks. Used to resolve plot ON-clause
@@ -155,7 +157,7 @@ const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: stri
 };
 
 
-const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, initialCellCollapsed, onCellCollapseChange, clearResultsTrigger, onRunQuery, onUpdate, onUpdateCell, onAddCellFromTool, onDelete, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false, onPopChatToSidebar, onNavigateRef }) => {
+const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, queryTimings, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, initialCellCollapsed, onCellCollapseChange, clearResultsTrigger, onRunQuery, onUpdate, onUpdateCell, onAddCellFromTool, onDelete, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false, onPopChatToSidebar, onNavigateRef }) => {
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [editingTitleValue, setEditingTitleValue] = useState('');
     const [isRawEditing, setIsRawEditing] = useState(false);
@@ -920,6 +922,12 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 const errSpec = errSpecs[i] ?? null;
                                 const alias = parsed.queryAliases[i];
                                 const isEditingSqlName = editingBlockName?.type === 'sql' && editingBlockName.idx === i;
+                                const queryElapsedMs = queryTimings?.[i];
+                                const timingChip = queryElapsedMs != null ? (
+                                    <span className="ml-1.5 text-[10px] text-gray-500 font-normal font-mono" title="Query execution time">
+                                        {queryElapsedMs >= 1000 ? `${(queryElapsedMs / 1000).toFixed(2)}s` : `${Math.round(queryElapsedMs)}ms`}
+                                    </span>
+                                ) : null;
                                 const sqlTitleNode = isEditingSqlName ? (
                                     <input
                                         autoFocus
@@ -933,11 +941,14 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                         placeholder="Query name…"
                                     />
                                 ) : (
-                                    <span
-                                        className="cursor-pointer hover:text-cyan-300 transition-colors"
-                                        title="Click to rename" aria-label="Click to rename"
-                                        onClick={e => { e.stopPropagation(); setEditingBlockName({ type: 'sql', idx: i, value: alias ?? '' }); }}
-                                    >{alias ? `Query ${i+1} · ${alias}` : `Query ${i+1}`}</span>
+                                    <span className="flex items-center gap-0">
+                                        <span
+                                            className="cursor-pointer hover:text-cyan-300 transition-colors"
+                                            title="Click to rename" aria-label="Click to rename"
+                                            onClick={e => { e.stopPropagation(); setEditingBlockName({ type: 'sql', idx: i, value: alias ?? '' }); }}
+                                        >{alias ? `Query ${i+1} · ${alias}` : `Query ${i+1}`}</span>
+                                        {timingChip}
+                                    </span>
                                 );
                                 if (!presenterMode) {
                                     items.push(

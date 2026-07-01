@@ -15,6 +15,7 @@ interface NotebookProps {
     cells: NotebookCellData[];
     metadata: NotebookMetadata;
     results: Record<string, (any[] | null)[]>;
+    queryTimings?: Record<string, (number | null)[]>;
     collapseTrigger: number;
     allCollapsed: boolean;
     isAiFeatureActive: boolean;
@@ -41,7 +42,7 @@ interface NotebookProps {
 
 const Notebook: React.FC<NotebookProps> = (props) => {
     const {
-        notebookMarkdown, setNotebookMarkdown, isMarkdownMode, isAutoRunEnabled, cells, metadata, results,
+        notebookMarkdown, setNotebookMarkdown, isMarkdownMode, isAutoRunEnabled, cells, metadata, results, queryTimings,
         collapseTrigger, allCollapsed, isAiFeatureActive, clearResultsTrigger, onRunQuery, onUpdateCell, onDeleteCell, onDeleteQueryBlock,
         onAddCell, onAddCellFromTool, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange,
         presenterMode = false, onPopChatToSidebar, onNavigateRef,
@@ -110,6 +111,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                                 allCells={cells}
                                 metadata={metadata}
                                 results={results[cell.id] ?? emptyResults}
+                                queryTimings={queryTimings?.[cell.id]}
                                 crossCellQueryRefs={crossCellQueryRefs}
                                 isAutoRunEnabled={isAutoRunEnabled}
                                 collapseTrigger={collapseTrigger}
@@ -140,10 +142,10 @@ const Notebook: React.FC<NotebookProps> = (props) => {
             </div>
         );
     }
-    
+
     return (
         <div className="p-4 md:p-6 space-y-4">
-            <SettingsPanel 
+            <SettingsPanel
                 ref={settingsPanelRef}
                 metadata={metadata}
                 onMetadataChange={onMetadataChange}
@@ -157,6 +159,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     allCells={cells}
                     metadata={metadata}
                     results={results[cell.id] ?? emptyResults}
+                    queryTimings={queryTimings?.[cell.id] ?? emptyResults as any}
                     crossCellQueryRefs={crossCellQueryRefs}
                     isAutoRunEnabled={isAutoRunEnabled}
                     collapseTrigger={collapseTrigger}

@@ -148,10 +148,13 @@ const App: React.FC = () => {
 
     const [notebookMarkdown, setNotebookMarkdown, undo, redo, canUndo, canRedo, flushHistory] = useHistoryState<string>(initialNotebook, 'jfr-notebook-content');
     const [results, setResults] = useState<Record<string, (any[] | null)[]>>({});
+    // Parallel timing state: [cellId][queryIndex] = elapsed ms for the last successful run.
+    const [queryTimings, setQueryTimings] = useState<Record<string, (number | null)[]>>({});
 
     const loadNotebook = useCallback((source: string) => {
         setNotebookMarkdown(source);
         setResults({});
+        setQueryTimings({});
     }, [setNotebookMarkdown]);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = usePersistentState('jfr-ui-sidebarCollapsed', false);
     const [isChatPanelCollapsed, setIsChatPanelCollapsed] = usePersistentState('jfr-ui-chatPanelCollapsed', true);
@@ -520,8 +523,20 @@ const App: React.FC = () => {
             return query(subSql);
         };
 
+        const setTiming = (ms: number | null) => {
+            setQueryTimings(prev => {
+                const existing = prev[cellId] || [];
+                const next: (number | null)[] = [...existing];
+                while (next.length <= queryIndex) next.push(null);
+                next[queryIndex] = ms;
+                return { ...prev, [cellId]: next };
+            });
+        };
+
+        const t0 = performance.now();
         try {
             const data = await runOnce(sql);
+            setTiming(performance.now() - t0);
             setResults(prev => {
                 const existing = prev[cellId] || [];
                 // Ensure dense array: fill any gap before queryIndex with null so
@@ -532,6 +547,7 @@ const App: React.FC = () => {
                 return { ...prev, [cellId]: newCellResults };
             });
         } catch (error: any) {
+            setTiming(null);
             const errMsg: string = error.message || String(error);
             // Attempt AI-assisted fix for parse/syntax errors (not for variable errors).
             const looksLikeSyntaxError = /syntax|parse|unexpected|token|unrecognized/i.test(errMsg);
@@ -546,7 +562,9 @@ const App: React.FC = () => {
                     const patched = current.replace(sql, fixedSql);
                     if (patched !== current) setNotebookMarkdown(patched);
                     try {
+                        const t1 = performance.now();
                         const data = await runOnce(fixedSql);
+                        setTiming(performance.now() - t1);
                         setResults(prev => {
                             const existing = prev[cellId] || [];
                             const newCellResults: (any[] | null)[] = [...existing];
@@ -1034,6 +1052,7 @@ const App: React.FC = () => {
                         cells={cells}
                         metadata={metadata}
                         results={results}
+                        queryTimings={queryTimings}
                         collapseTrigger={collapseTrigger}
                         allCollapsed={allCollapsed}
                         clearResultsTrigger={clearResultsTrigger}
