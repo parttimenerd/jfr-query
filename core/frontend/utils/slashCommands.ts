@@ -52,6 +52,13 @@ export function parseSlashCommand(input: string, availableSkillNames?: string[])
                     '- `/skill-name off` — deactivate a skill',
                     '- `/skill-name [sub-command]` — run a skill sub-command (e.g. `/gc-analysis pauses`)',
                     '- `/help` — show this message',
+                    '',
+                    '### Troubleshooting',
+                    '- **Chart is blank?** Run the SQL query first. Check the column names match your results.',
+                    '- **"Undefined variable" error?** Define the variable in the cell\'s Variables block or in Notebook Settings.',
+                    '- **Plot config error?** Start with `TABLE()` to see your data, then build the config from there.',
+                    '- **AI not responding?** Check your API key in ⚙ Settings. Use `/provider` to switch providers.',
+                    '- **What plot types are available?** Ask me: "what plot types can I use?" or click the 📈 chart icon.',
                 ].join('\n'),
             };
         case 'model':

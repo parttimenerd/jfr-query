@@ -224,6 +224,44 @@ export const TOOLS: Tool[] = [
             required: ['name'],
         },
     },
+    {
+        name: 'rememberFact',
+        kind: 'read',
+        description: 'Store a short fact about this session (max 10 facts, LRU). Use for user preferences, constraints, or findings that should persist across turns.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                key: { type: 'string', description: 'Short identifier, e.g. "cpu_count".' },
+                value: { type: 'string', description: 'The fact to remember (max 200 chars).' },
+            },
+            required: ['key', 'value'],
+        },
+    },
+    {
+        name: 'recallMemory',
+        kind: 'read',
+        description: 'List all stored facts for this session.',
+        inputSchema: {
+            type: 'object',
+            properties: {},
+        },
+    },
+    {
+        name: 'updateTaskList',
+        kind: 'read',
+        description: 'Set the visible task checklist shown to the user. Call at the start of multi-step work and after each step to tick off completed tasks. Pass an empty array to clear.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                tasks: {
+                    type: 'array',
+                    description: 'Array of { id: string, text: string, done: boolean }.',
+                    items: { type: 'object' },
+                },
+            },
+            required: ['tasks'],
+        },
+    },
 ];
 
 export function getTool(name: string): Tool | undefined {

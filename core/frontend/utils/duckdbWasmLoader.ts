@@ -7,8 +7,11 @@ export async function loadDuckDbFileIntoWasm(
   conn: AsyncDuckDBConnection,
   bytes: Uint8Array
 ): Promise<void> {
+  const t0 = performance.now();
   await db.registerFileBuffer('input.db', bytes);
+  const t1 = performance.now();
   await conn.query("ATTACH 'input.db' AS src (READ_ONLY)");
+  const t2 = performance.now();
   try {
     // duckdb_tables() is a global function — filter by database_name to get
     // only the attached db's tables, not the in-memory default catalog.
@@ -30,11 +33,14 @@ export async function loadDuckDbFileIntoWasm(
   } finally {
     await conn.query("DETACH src");
   }
+  const t3 = performance.now();
   // Re-register builtin macros — DuckDB WASM doesn't support ATTACH for
   // function/macro objects, so they must be recreated in the in-memory catalog.
   for (const sql of BUILTIN_MACROS_SQL) {
     try { await conn.query(sql); } catch { /* skip macros that depend on missing tables */ }
   }
+  const t4 = performance.now();
+  console.log(`[duckdb-load] register: ${(t1-t0).toFixed(0)}ms attach+copy: ${(t3-t2).toFixed(0)}ms macros: ${(t4-t3).toFixed(0)}ms total: ${(t4-t0).toFixed(0)}ms`);
 }
 
 /**

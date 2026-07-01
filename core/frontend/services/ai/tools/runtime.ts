@@ -95,6 +95,7 @@ function detectMultipleSqlStatements(sql: string): string | null {
 }
 
 
+export async function executeTool(name: string, args: any, deps: ToolDeps): Promise<ToolResult> {
     const tool = getTool(name);
     if (!tool) return { ok: false, error: `Tool "${name}" is not available. The available tools are: ${TOOLS.map(t => t.name).join(', ')}.` };
 

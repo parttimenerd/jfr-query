@@ -110,7 +110,7 @@ const AiErrorFixer: React.FC<AiErrorFixerProps> = ({ error, config, data, sql, c
     useEffect(() => {
         if (!aiService.isInitialized()) {
             setIsLoading(false);
-            setApiError('AI feature not configured');
+            setApiError('Configure an AI provider in ⚙ Settings to get fix suggestions');
             return;
         }
         let isMounted = true;
@@ -120,7 +120,7 @@ const AiErrorFixer: React.FC<AiErrorFixerProps> = ({ error, config, data, sql, c
             setIsLoading(true);
             setApiError(null);
             timeoutId = setTimeout(() => {
-                if (isMounted) { setIsLoading(false); setApiError('AI suggestion timed out'); }
+                if (isMounted) { setIsLoading(false); setApiError('AI suggestion timed out — check your API key or try again'); }
             }, 10_000);
             aiService.getAiPlotFixSuggestion(error, sql, data, config, cellContext.content, metadata.customSystemPrompt)
                 .then(res => { if (isMounted) setSuggestion(res); })
@@ -133,10 +133,10 @@ const AiErrorFixer: React.FC<AiErrorFixerProps> = ({ error, config, data, sql, c
 
     return (
         <div className="p-4 text-sm text-yellow-400 bg-gray-800 border border-yellow-500/50 rounded-lg space-y-3 w-full max-w-md shadow-lg">
-            <div><p className="font-semibold text-base text-yellow-300">Plot Error</p><p className="font-mono text-xs mt-1">{error}</p></div>
+            <div><p className="font-semibold text-base text-yellow-300">Plot Error</p><p className="font-mono text-xs mt-1 whitespace-pre-wrap">{error}</p></div>
             <div className="border-t border-yellow-500/30 pt-3">
                 {isLoading && <div className="flex items-center gap-2 text-yellow-300/80"><div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div><span>Getting AI suggestion...</span></div>}
-                {apiError && <p>Could not get AI suggestion: {apiError}</p>}
+                {apiError && <p>AI suggestion unavailable: {apiError}</p>}
                 {suggestion && (<div className="space-y-2"><p className="flex items-center gap-2 font-semibold text-yellow-300"><WandSparklesIcon className="w-4 h-4"/> AI Fix Suggestion</p><p className="text-xs text-yellow-300/90">{suggestion.explanation}</p><pre className="bg-gray-900/50 p-2 rounded-md text-xs font-mono text-cyan-300 overflow-x-auto">{suggestion.fixedCode}</pre><button onClick={() => onApplyFix(suggestion.fixedCode)} className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-green-600/30 hover:bg-green-600/50 text-green-300 rounded-md font-semibold"><CheckCircleIcon className="w-4 h-4"/>Apply Fix</button></div>)}
             </div>
         </div>
@@ -607,7 +607,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                             const leafMain = leaf.mainConfig;
                             const leafTypeName = normalizePlotName(leafMain.match(/^(\w+)/)?.[1] || 'TABLE');
                             const leafReg = plotRegistry[leafTypeName];
-                            if (!leafReg) throw new Error(`Unknown plot type "${leafTypeName}".`);
+                            if (!leafReg) throw new Error(`Unknown plot type "${leafTypeName}". Available types: ${Object.keys(plotRegistry).filter(k => k !== 'FLAME_GRAPH').join(', ')}.`);
                             // B-141/142/143: use leaf's ON clause to select the correct dataset.
                             const leafData = resolveLeafData(leaf.on);
                             const leafCfg = leafReg.parseConfig(leafMain, leafData);
@@ -692,7 +692,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                         const { width, height, zoom, title, linkX, linkXClamp, linkScroll } = parsedCall;
                         const plotTypeName = normalizePlotName(mainConfig.match(/^(\w+)/)?.[1] || 'TABLE');
                         const reg = plotRegistry[plotTypeName];
-                        if (!reg) throw new Error(`Unknown plot type "${plotTypeName}".`);
+                        if (!reg) throw new Error(`Unknown plot type "${plotTypeName}". Available types: ${Object.keys(plotRegistry).filter(k => k !== 'FLAME_GRAPH').join(', ')}.`);
 
                         // B-141/142/143: resolve dataset via ON clause for the single-plot path too.
                         const singlePlotData = resolveLeafData(parsedCall.on);
@@ -784,7 +784,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
         const errorMessage: string = (e instanceof Error ? e.message : typeof e === 'string' ? e : String(e ?? 'Unknown error'));
         const errorInfo = { error: e, failedConfig: fixContext?.failedConfig || config, onFix: fixContext?.onFix || onApplyFix };
 
-        const ErrorDisplay = isAiFeatureActive && (errorMessage.includes("column") || errorMessage.includes("parameter"))
+        const ErrorDisplay = isAiFeatureActive
             ? <AiErrorFixer error={errorMessage} config={errorInfo.failedConfig} data={data!} sql={sql} cellContext={cellContext} onApplyFix={errorInfo.onFix} metadata={metadata} />
             : <div className="p-3 text-sm text-red-400 bg-red-900/30 font-mono whitespace-pre-wrap">{errorMessage}</div>;
 

@@ -125,6 +125,8 @@ interface Channel {
     fromInline?: boolean;
 }
 
+interface TaskItem { id: string; text: string; done: boolean; }
+
 /**
  * Compact conversation history when it grows beyond MAX_HISTORY_TURNS turns.
  * Older turns beyond the keep window are replaced with a single summary message
@@ -290,7 +292,22 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     // the id of the channel being renamed; `renameDraft` is the in-progress text.
     const [renamingChannelId, setRenamingChannelId] = useState<string | null>(null);
     const [renameDraft, setRenameDraft] = useState('');
+    const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
     const [chatVisibility, setChatVisibility] = useState<VisibilityMode>(settings.aiDefaultVisibility);
+
+    // Per-channel AI memory (key/value facts) and task checklists.
+    const [channelMemory, setChannelMemory] = useState<Record<string, Record<string, string>>>({});
+    const [channelTasks, setChannelTasks] = useState<Record<string, TaskItem[]>>({});
+    const activeMemory: Record<string, string> = channelMemory[activeChannelId] ?? {};
+    const activeTasks: TaskItem[] = channelTasks[activeChannelId] ?? [];
+
+    const clearMemoryKey = useCallback((key: string) => {
+        setChannelMemory(prev => {
+            const cur = { ...(prev[activeChannelId] ?? {}) };
+            delete cur[key];
+            return { ...prev, [activeChannelId]: cur };
+        });
+    }, [activeChannelId]);
 
     // Slash-command autocomplete
     const [cmdSuggestions, setCmdSuggestions] = useState<string[]>([]);
@@ -365,7 +382,22 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         approvalResolvers.current.clear();
         setIsLoading(false);
         cancelledRef.current = false;
+        setChannelMemory(prev => ({ ...prev, [activeChannelId]: {} }));
+        setChannelTasks(prev => ({ ...prev, [activeChannelId]: [] }));
     };
+
+    const handleRewindTo = useCallback((keepUpToOriginalIdx: number) => {
+        if (isLoading) {
+            cancelledRef.current = true;
+            approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
+            approvalResolvers.current.clear();
+            setIsLoading(false);
+        }
+        setStreamingText(null);
+        setProposals([]);
+        setApproveAllReads(false);
+        setMessages(prev => prev.slice(0, keepUpToOriginalIdx + 1));
+    }, [isLoading]);
 
     const handleCancel = () => {
         cancelledRef.current = true;
@@ -502,6 +534,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
             },
             getVisibility: () => chatVisibilityRef.current,
             providerSupportsImages: () => providerSupportsImagesRef.current,
+            getMemory: () => channelMemory[activeChannelId] ?? {},
+            setMemory: (key, value) => setChannelMemory(prev => {
+                const cur = { ...(prev[activeChannelId] ?? {}) };
+                if (!(key in cur) && Object.keys(cur).length >= 10) {
+                    delete cur[Object.keys(cur)[0]]; // LRU: drop oldest
+                }
+                cur[key] = value;
+                return { ...prev, [activeChannelId]: cur };
+            }),
+            setTaskList: (tasks) => setChannelTasks(prev => ({ ...prev, [activeChannelId]: tasks })),
             screenshotPreview: async (previewId: string) => {
                 if (typeof document === 'undefined' || !previewId) return null;
                 const escaped = typeof CSS !== 'undefined' && CSS.escape
@@ -539,7 +581,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                 approvalResolvers.current.set(pending.id, { resolve, reject });
             }),
         };
-    }, [onAddCell, onUpdateCell, onDeleteCell, onMoveCell, onMetadataChange, onBeforeMutate, metadata, query]);
+    }, [onAddCell, onUpdateCell, onDeleteCell, onMoveCell, onMetadataChange, onBeforeMutate, metadata, query, activeChannelId, channelMemory]);
 
     const handleSendLegacy = async () => {
         // Fallback path when the active provider has no tool support (browser).
@@ -859,7 +901,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         let errorMsg: string | undefined;
         const activeMode = override?.forceMode ?? chatMode.state.mode;
         try {
-            const baseSystemPrompt = [metadata?.customSystemPrompt, mergedSystemPrompt, variablesSystemPromptLine(metadata?.variables)].filter(Boolean).join('\n\n');
+            const memoryLine = Object.keys(activeMemory).length > 0
+                ? `Session memory:\n${Object.entries(activeMemory).map(([k, v]) => `- ${k}: ${v}`).join('\n')}\n\n`
+                : '';
+            const baseSystemPrompt = [memoryLine + (metadata?.customSystemPrompt ?? ''), mergedSystemPrompt, variablesSystemPromptLine(metadata?.variables)].filter(Boolean).join('\n\n');
             const stream = aiService.streamChatWithTools(
                 toolHistory,
                 { tables: schema.tables, views: schema.views, macros: schema.macros },
@@ -1157,6 +1202,21 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         ))}
                     </div>
                 )}
+                {/* ── Memory chips ── */}
+                {Object.keys(activeMemory).length > 0 && (
+                    <div className="flex flex-wrap gap-1 items-center">
+                        <span className="text-[10px] uppercase tracking-wider text-gray-500 mr-1">Memory</span>
+                        {Object.entries(activeMemory).map(([k, v]) => (
+                            <span key={k} title={`${k}: ${v}`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full bg-gray-700/60 text-gray-400 border border-gray-600/50">
+                                <span className="text-cyan-500 font-mono">{k}</span>
+                                <span className="text-gray-600 mx-0.5">·</span>
+                                <span className="truncate max-w-[80px]">{v}</span>
+                                <button onClick={() => clearMemoryKey(k)} title={`Forget ${k}`} aria-label={`Forget ${k}`}><XMarkIcon className="w-2.5 h-2.5"/></button>
+                            </span>
+                        ))}
+                    </div>
+                )}
             </div>
             {/* ── Messages ── */}
             <div className="flex-grow p-4 overflow-y-auto space-y-4">
@@ -1164,7 +1224,86 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     { code, plotConfig } as a single suggestion without auto-applying.
                     This button is the user's explicit accept. Tool-calling providers
                     bypass it by writing cells via the addCell tool + approval flow. */}
-                {messages.filter(m => !m.hidden).map(msg => { const addArgs = buildAddCellArgs(msg); return (<div key={msg.id} className={`flex ${msg.sender === MessageSender.User ? 'justify-end' : 'justify-start'}`}><div className={`relative group/msg max-w-[85%] rounded-lg p-3 ${msg.sender === MessageSender.User ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-200'}`}><div className="text-sm leading-relaxed">{msg.sender === MessageSender.AI ? renderMarkdown(msg.text, onNavigateRef) : <span className="whitespace-pre-wrap">{msg.text}</span>}</div>{msg.meta?.plan && (<ChatPlanCard plan={msg.meta.plan} meta={msg.meta} getCellContent={getCellContent} onExecute={executePlanFor(msg.id)} onDiscard={discardPlanFor(msg.id)}/>)}{msg.code && <CodeBlock code={msg.code}/>}{addArgs && (<button data-testid="add-to-notebook" onClick={() => onAddCellFromAI(addArgs.code, addArgs.plotConfig, addArgs.title, addArgs.markdownText)} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-md text-sm font-semibold"><PlusIcon className="w-4 h-4"/>Add to Notebook</button>)}{msg.sender === MessageSender.AI && <button onClick={() => navigator.clipboard.writeText(msg.code || msg.text).catch(() => {})} className="absolute -top-1 -right-1 opacity-0 group-hover/msg:opacity-100 p-1 bg-gray-600 hover:bg-gray-500 rounded transition-all" title="Copy response" aria-label="Copy response"><ClipboardIcon className="w-3 h-3 text-gray-300"/></button>}</div></div>); })}
+                {(() => {
+                    const visibleMsgs = messages.filter(m => !m.hidden);
+                    const onlyGreeting = visibleMsgs.length === 1 && visibleMsgs[0].id === '1';
+                    const lastUserIdx = [...visibleMsgs].map((m, i) => m.sender === MessageSender.User ? i : -1).filter(i => i !== -1).pop() ?? -1;
+                    const QUICK_STARTS = [
+                        'What GC events are in this recording?',
+                        'Show me the longest GC pauses',
+                        'Which threads are using the most CPU?',
+                        'Summarize memory allocation hotspots',
+                    ];
+                    return (
+                        <>
+                            {visibleMsgs.map((msg, msgIdx) => {
+                                const addArgs = buildAddCellArgs(msg);
+                                const isLastUser = msgIdx === lastUserIdx;
+                                // Index of this visible message in the full messages array.
+                                const originalIdx = messages.indexOf(msg);
+                                return (
+                                    <React.Fragment key={msg.id}>
+                                        <div className={`flex ${msg.sender === MessageSender.User ? 'justify-end' : 'justify-start'}`}>
+                                            <div className={`relative group/msg max-w-[85%] rounded-lg p-3 ${msg.sender === MessageSender.User ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
+                                                <div className="text-sm leading-relaxed">
+                                                    {msg.sender === MessageSender.AI ? renderMarkdown(msg.text, onNavigateRef) : <span className="whitespace-pre-wrap">{msg.text}</span>}
+                                                </div>
+                                                {msg.meta?.plan && (<ChatPlanCard plan={msg.meta.plan} meta={msg.meta} getCellContent={getCellContent} onExecute={executePlanFor(msg.id)} onDiscard={discardPlanFor(msg.id)}/>)}
+                                                {msg.code && <CodeBlock code={msg.code}/>}
+                                                {addArgs && (<button data-testid="add-to-notebook" onClick={() => onAddCellFromAI(addArgs.code, addArgs.plotConfig, addArgs.title, addArgs.markdownText)} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-md text-sm font-semibold"><PlusIcon className="w-4 h-4"/>Add to Notebook</button>)}
+                                                {msg.sender === MessageSender.AI && (
+                                                    <button
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(msg.code || msg.text).then(() => {
+                                                                setCopiedMsgId(msg.id);
+                                                                setTimeout(() => setCopiedMsgId(c => c === msg.id ? null : c), 1500);
+                                                            }).catch(() => {});
+                                                        }}
+                                                        className="absolute -top-1 -right-1 opacity-0 group-hover/msg:opacity-100 p-1 bg-gray-600 hover:bg-gray-500 rounded transition-all"
+                                                        title="Copy response" aria-label="Copy response"
+                                                    >
+                                                        <ClipboardIcon className={`w-3 h-3 ${copiedMsgId === msg.id ? 'text-green-400' : 'text-gray-300'}`}/>
+                                                    </button>
+                                                )}
+                                                {msg.sender === MessageSender.User && isLastUser && !isLoading && (
+                                                    <button
+                                                        onClick={() => handleSend({ text: msg.text })}
+                                                        className="absolute -top-1 -left-1 opacity-0 group-hover/msg:opacity-100 p-1 bg-gray-600 hover:bg-gray-500 rounded transition-all"
+                                                        title="Retry this message" aria-label="Retry"
+                                                    >
+                                                        <ArrowCounterclockwiseIcon className="w-3 h-3 text-gray-300"/>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {/* Rewind bar — shown between messages, not after the last one */}
+                                        {msgIdx < visibleMsgs.length - 1 && (
+                                            <div className="group/rewind relative h-3 flex items-center -mx-4 px-4">
+                                                <div className="absolute inset-x-4 h-px bg-transparent group-hover/rewind:bg-gray-700/60 transition-colors"/>
+                                                <button
+                                                    onClick={() => handleRewindTo(originalIdx)}
+                                                    className="absolute left-1/2 -translate-x-1/2 opacity-0 group-hover/rewind:opacity-100 text-[10px] text-gray-500 hover:text-amber-300 bg-gray-900 px-2 py-0.5 rounded border border-gray-700/60 hover:border-amber-600/40 whitespace-nowrap transition-all"
+                                                >
+                                                    ↩ rewind to here
+                                                </button>
+                                            </div>
+                                        )}
+                                    </React.Fragment>
+                                );
+                            })}
+                            {onlyGreeting && !isLoading && (
+                                <div className="flex flex-wrap gap-2 justify-center pt-1">
+                                    {QUICK_STARTS.map(q => (
+                                        <button key={q} onClick={() => handleSend({ text: q })}
+                                            className="text-xs px-3 py-1.5 rounded-full bg-gray-800 border border-gray-600 text-gray-400 hover:border-cyan-600/60 hover:text-cyan-300 transition-colors">
+                                            {q}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    );
+                })()}
                 {streamingText !== null && (
                     <div className="flex justify-start">
                         <div className="max-w-[85%] rounded-lg p-3 bg-gray-700 text-gray-200">
@@ -1276,6 +1415,22 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
             </div>
             {/* ── Input ── */}
             <div className="p-3 border-t border-gray-700 flex-shrink-0 space-y-2">
+                {/* Task checklist */}
+                {activeTasks.length > 0 && (
+                    <div className="rounded-md border border-gray-700 bg-gray-900/60 px-3 py-2 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                            <span className="text-[10px] uppercase tracking-wider text-gray-500">Tasks</span>
+                            <button onClick={() => setChannelTasks(p => ({ ...p, [activeChannelId]: [] }))}
+                                className="text-[10px] text-gray-600 hover:text-red-400">clear</button>
+                        </div>
+                        {activeTasks.map(t => (
+                            <div key={t.id} className="flex items-center gap-2 text-xs">
+                                <span className={t.done ? 'text-green-400' : 'text-gray-600'}>{t.done ? '✓' : '○'}</span>
+                                <span className={t.done ? 'text-gray-500 line-through' : 'text-gray-300'}>{t.text}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 {chatMode.state.btwHints.length > 0 && (
                     <div className="space-y-1">
                         {chatMode.state.btwHints.map(hint => (
@@ -1382,7 +1537,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                             }
                         }}
                         onKeyDown={handleKeyDown}
-                        placeholder={`Ask for a query… or type / for commands`}
+                        placeholder={`Ask for a query… or type / for commands, @ to mention a cell`}
                         className="w-full bg-gray-800 border border-gray-600 rounded-lg py-2 pl-4 pr-20 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200 resize-none overflow-hidden"
                         style={{ minHeight: '38px' }}
                         disabled={isLoading || !schema}

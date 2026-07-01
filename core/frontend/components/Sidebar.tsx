@@ -396,7 +396,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
                 placeholder="Search schema..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); setSearchTerm(''); } }}
                 className="w-full bg-gray-800/50 border border-gray-700 rounded-md py-1.5 pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
         </div>

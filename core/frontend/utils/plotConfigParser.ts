@@ -154,9 +154,15 @@ function splitParams(paramsStr: string): string[] {
 }
 
 function buildUsage(funcName: string, spec: ParserSpec): string {
-    const lines = Object.entries(spec)
-        .map(([name, p]) => `  ${name}: ${p.type}${p.required ? ' -- Required' : p.defaultValue !== undefined ? `  -- default ${JSON.stringify(p.defaultValue)}` : ''}`);
-    return `${funcName}(\n${lines.join(',\n')}\n)`;
+    const required = Object.entries(spec).filter(([, p]) => p.required && !p.aliasFor && !p.deprecated);
+    const optional = Object.entries(spec).filter(([, p]) => !p.required && !p.aliasFor && !p.deprecated);
+    const fmt = ([name, p]: [string, any]) =>
+        `  ${name}: ${p.type}${p.required ? '  (required)' : p.defaultValue !== undefined ? `  (default: ${JSON.stringify(p.defaultValue)})` : ''}`;
+    const lines = [
+        ...required.map(fmt),
+        ...(optional.length ? ['  ---', ...optional.map(fmt)] : []),
+    ];
+    return `${funcName}(\n${lines.join('\n')}\n)`;
 }
 
 export const createConfigParser = <TConfig extends object>(spec: ParserSpec) => {
@@ -224,8 +230,8 @@ export const createConfigParser = <TConfig extends object>(spec: ParserSpec) => 
                 }
                 const paramSpec = specKey ? spec[specKey] : undefined;
                 if (!paramSpec) {
-                    const knownParams = Object.keys(spec).filter(k => !spec[k].aliasFor);
-                    const suggestion = closestMatch(key, Object.keys(spec));
+                    const knownParams = Object.keys(spec).filter(k => !spec[k].aliasFor && !spec[k].deprecated);
+                    const suggestion = closestMatch(key, knownParams);
                     const didYouMean = suggestion ? `\nDid you mean "${suggestion}"?` : '';
                     throw new Error(
                         `Unknown parameter "${key}".\nAvailable parameters for ${funcName}: ${knownParams.join(', ')}.${didYouMean}`
@@ -258,7 +264,7 @@ export const createConfigParser = <TConfig extends object>(spec: ParserSpec) => 
                     result[canonicalKey as keyof TConfig] = parsed;
                 } catch (e: any) {
                     throw new Error(
-                        `Error in parameter "${canonicalKey}":\n${e.message}\n\nHint: ${canonicalSpec.description}`
+                        `Parameter "${canonicalKey}": ${e.message}\n\n${canonicalSpec.description}`
                     );
                 }
             }
