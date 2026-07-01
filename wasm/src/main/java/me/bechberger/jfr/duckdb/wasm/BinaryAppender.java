@@ -645,9 +645,12 @@ final class BinaryAppender implements Appender {
             if (objData != null && objData[c] != null) {
                 if (colTypes[c] == TYPE_INT_ARRAY) {
                     // Keep the list's int[] objects alive for reuse next chunk (avoids 256K GC objects).
-                    // listSet() will overwrite slots 0..numRows-1 without allocating.
+                    // listSetIntArray() will overwrite slots via list.set() using the preserved hwm.
+                    // Do NOT reset objDataHwm[c] here — it marks how many pooled int[] slots exist.
                 } else {
                     ((List<?>) objData[c]).clear();
+                    // List is now empty; reset hwm so listSet() uses list.add() (not list.set()).
+                    objDataHwm[c] = 0;
                 }
             }
         }
@@ -809,8 +812,8 @@ final class BinaryAppender implements Appender {
                         // LE: align or copy then wrap as typed array view
                         const aligned = (off & 1) === 0
                             ? raw.buffer.slice(off, off + numRows * 2)
-                            : new Int16Array(numRows).buffer;
-                        if ((off & 1) !== 0) new Int16Array(aligned).set(new Int16Array(raw.buffer, off, numRows));
+                            : new ArrayBuffer(numRows * 2);
+                        if ((off & 1) !== 0) new Uint8Array(aligned).set(raw.subarray(off, off + numRows * 2));
                         off += numRows * 2;
                         arrowVectors.push(makeVector({ data: new Int16Array(aligned), nullBitmap, type: new Int16() }));
                     } else if (t === TYPE_INT) {
