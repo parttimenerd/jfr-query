@@ -314,4 +314,31 @@ const SQLEditor: React.FC<EditorProps> = ({
   );
 };
 
-export default React.memo(SQLEditor);
+function areSQLEditorPropsEqual(prev: EditorProps, next: EditorProps): boolean {
+    return (
+        prev.value === next.value &&
+        prev.onChange === next.onChange &&
+        prev.index === next.index &&
+        prev.mode === next.mode &&
+        prev.fullHeight === next.fullHeight &&
+        prev.onBlur === next.onBlur &&
+        prev.onRun === next.onRun &&
+        prev.autoFocus === next.autoFocus &&
+        prev.variables === next.variables &&
+        prev.onVariableClick === next.onVariableClick &&
+        prev.metadata?.views === next.metadata?.views &&
+        prev.metadata?.macros === next.metadata?.macros &&
+        prev.focusTrigger === next.focusTrigger &&
+        prev.hintData === next.hintData &&
+        prev.error === next.error &&
+        prev.cellSql === next.cellSql &&
+        prev.priorPlotCellsContent === next.priorPlotCellsContent &&
+        prev.cellResultSchema === next.cellResultSchema &&
+        prev.notebookPlotScope === next.notebookPlotScope &&
+        prev.currentCellId === next.currentCellId &&
+        prev.sqlBlockCount === next.sqlBlockCount &&
+        prev.onPlotContextTrimmed === next.onPlotContextTrimmed
+    );
+}
+
+export default React.memo(SQLEditor, areSQLEditorPropsEqual);
