@@ -1,67 +1,28 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
+import { tableFromIPC } from 'apache-arrow';
 import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL } from '../data/builtinSql';
 
 const PERF_KEY = 'jfr_import_ms_per_byte';
 
 /**
- * Bridge to the GraalVM Web Image module that wraps `BasicParallelImporter`.
+ * Imports `jfrBytes` into the given DuckDB WASM connection via a Web Worker.
  *
- * The WASM bundle, when loaded, attaches a global named `JFRImporter` (see
- * {@code WasmMain.registerEntry}). Calling its single method imports a JFR
- * recording's bytes into the provided DuckDB connection, materializing all
- * tables/macros/views the same way the CLI/server path does.
- */
-declare global {
-  interface Window {
-    JFRImporter?: {
-      importJfrIntoDuckDB(bytes: Uint8Array, conn: unknown, db: unknown, stacktraceDepth: number): void;
-    };
-    _jfrCsvPending?: number;
-  }
-}
-
-let importerLoadPromise: Promise<void> | null = null;
-
-/**
- * Lazily injects `wasm/jfr-importer.js` once. Subsequent calls reuse the same
- * promise so we don't duplicate `<script>` tags or re-init the runtime.
- */
-function loadJfrImporterScript(): Promise<void> {
-  if (window.JFRImporter) return Promise.resolve();
-  if (importerLoadPromise) return importerLoadPromise;
-
-  importerLoadPromise = new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = '/wasm/jfr-importer.js';
-    script.async = true;
-    script.onload = () => {
-      const start = Date.now();
-      const wait = () => {
-        if (window.JFRImporter) return resolve();
-        if (Date.now() - start > 10_000) {
-          return reject(new Error('JFRImporter global never appeared after loading jfr-importer.js'));
-        }
-        setTimeout(wait, 50);
-      };
-      wait();
-    };
-    script.onerror = () => reject(new Error('Failed to load /wasm/jfr-importer.js — was the wasm module built (mvn -Pwasm package) and copied to frontend/public/wasm/?'));
-    document.head.appendChild(script);
-  });
-  return importerLoadPromise;
-}
-
-/**
- * Imports `jfrBytes` into the given DuckDB WASM connection. After this call
- * returns, the connection contains all JFR tables, macros, and views that the
- * server path would have created.
+ * The GraalVM WASM bundle runs entirely in the worker so the main thread — and
+ * therefore the UI — stays responsive during the 30-60 s Java parse phase on
+ * large recordings.
  *
- * @param stacktraceDepth Max stack frames stored in the `$methods` array column
- *   per event (default 10). Pass a lower value (e.g. 3) for large recordings to
- *   significantly reduce import time; pass 0 to skip the methods array entirely.
- * @param onProgress Optional callback (0–1) called at key checkpoints. The Java
- *   phase blocks the JS thread so no updates fire during that window; progress
- *   jumps to ~0.80 once Java returns, then tracks the Arrow-drain phase.
+ * Worker protocol:
+ *   main → worker  { type:'import', bytes:Uint8Array, stacktraceDepth:number }
+ *   worker → main  { type:'query',  reqId, sql }
+ *   worker → main  { type:'insert', reqId, tableName, ipcBytes:ArrayBuffer }
+ *   worker → main  { type:'done' }
+ *   worker → main  { type:'error', message }
+ *   main → worker  { type:'query-result',  reqId, rows }
+ *   main → worker  { type:'insert-result', reqId }
+ *
+ * @param stacktraceDepth Max stack frames per event (default 10). Lower values
+ *   significantly reduce import time on sampling-heavy recordings.
+ * @param onProgress Optional callback (0–1) called at key checkpoints.
  */
 export async function loadJfrIntoWasm(
   jfrBytes: Uint8Array,
@@ -70,85 +31,127 @@ export async function loadJfrIntoWasm(
   stacktraceDepth = 10,
   onProgress?: (pct: number) => void,
 ): Promise<void> {
-  await loadJfrImporterScript();
-  if (!window.JFRImporter) {
-    throw new Error('JFRImporter global is missing after script load');
-  }
-
-  // Stage the Arrow module on globalThis so BinaryAppender's @JS code can use typed
-  // vectors without a dynamic import() inside the GraalVM bridge context.
+  // Stage Arrow module on globalThis — needed for main-thread insertArrowTable calls.
   if (!(window as any).__arrow) {
-    const arrow = await import('apache-arrow');
-    (window as any).__arrow = arrow;
+    (window as any).__arrow = await import('apache-arrow');
   }
-
-  // Reset the pending counter tracked by BinaryAppender.loadColumnarData
-  window._jfrCsvPending = 0;
-
-  // Estimate Java-phase duration from stored calibration (ms per byte).
-  // Default: 1.2 µs/byte based on benchmarks (6.2MB=1.5s, 19MB=22s).
-  const storedMsPerByte = (() => {
-    try { return parseFloat(localStorage.getItem(PERF_KEY) ?? '') || 0; } catch { return 0; }
-  })();
-  const msPerByte = storedMsPerByte > 0 ? storedMsPerByte : 0.0012;
-  const estimatedJavaMs = jfrBytes.byteLength * msPerByte;
 
   onProgress?.(0.01);
 
+  const storedMsPerByte = (() => {
+    try { return parseFloat(localStorage.getItem(PERF_KEY) ?? '') || 0; } catch { return 0; }
+  })();
+
+  // Record byte count before transfer (buffer becomes detached after postMessage).
+  const jfrByteLength = jfrBytes.byteLength;
+
   const tJava0 = performance.now();
-  // The importer is synchronous from Java's perspective; offload to a microtask
-  // so the UI gets a chance to repaint the "importing" state.
+
+  // Track in-flight insertArrowTable calls on the main thread for drain + progress.
+  let pendingInserts = 0;
+  let peakPending = 0;
+
   await new Promise<void>((resolve, reject) => {
-    setTimeout(() => {
-      try {
-        window.JFRImporter!.importJfrIntoDuckDB(jfrBytes, conn, db, stacktraceDepth);
-        resolve();
-      } catch (e) {
-        reject(e);
+    const worker = new Worker(
+      new URL('../workers/jfrImport.worker.ts', import.meta.url),
+      // Must be 'module' for Vite to bundle the worker with its imports.
+      // The jfr-importer.js WASM bundle is loaded inside the worker via fetch+eval
+      // (see jfrImport.worker.ts) rather than importScripts to stay compatible
+      // with module workers.
+      { type: 'module' },
+    );
+
+    worker.onmessage = async (e: MessageEvent) => {
+      const msg = e.data;
+
+      if (msg.type === 'query') {
+        // DDL from JsDuckDBSink.jsExecute — fire on real conn, return value ignored.
+        try {
+          await conn.query(msg.sql as string);
+        } catch (err) {
+          console.warn('[jfr-worker] query failed:', err);
+        }
+        worker.postMessage({ type: 'query-result', reqId: msg.reqId, rows: [] });
+        return;
       }
-    }, 0);
+
+      if (msg.type === 'insert') {
+        // Arrow IPC bytes from BinaryAppender — deserialise and insert into real conn.
+        pendingInserts++;
+        peakPending = Math.max(peakPending, pendingInserts);
+        // Don't await before replying — let the worker continue processing events
+        // while we insert. Track completion locally for drain.
+        conn.insertArrowTable(
+          tableFromIPC(new Uint8Array(msg.ipcBytes as ArrayBuffer)),
+          { name: msg.tableName as string, create: false },
+        ).catch((err) => console.warn('[jfr-worker] insert failed for', msg.tableName, err))
+          .finally(() => { pendingInserts--; });
+        // Reply immediately so the worker's pending counter decrements and Java continues.
+        worker.postMessage({ type: 'insert-result', reqId: msg.reqId });
+        return;
+      }
+
+      if (msg.type === 'done') {
+        worker.terminate();
+        resolve();
+        return;
+      }
+
+      if (msg.type === 'error') {
+        worker.terminate();
+        reject(new Error(msg.message as string));
+        return;
+      }
+    };
+
+    worker.onerror = (e) => {
+      worker.terminate();
+      reject(new Error(`JFR import worker error: ${e.message}`));
+    };
+
+    // Transfer the bytes zero-copy — worker takes ownership of the buffer.
+    const buf = jfrBytes.buffer.byteLength === jfrBytes.byteLength
+      ? jfrBytes.buffer
+      : jfrBytes.slice().buffer;
+
+    worker.postMessage(
+      { type: 'import', bytes: new Uint8Array(buf), stacktraceDepth },
+      [buf],
+    );
   });
+
   const tJavaDone = performance.now();
   const actualJavaMs = tJavaDone - tJava0;
 
-  // Java phase complete — jump to 80%, drain from there.
   onProgress?.(0.80);
 
-  // Capture peak pending count to track drain fraction.
-  const peakPending = window._jfrCsvPending ?? 0;
-
-  // Drain: wait for all pending insertArrowTable promises.
+  // Drain: wait for all main-thread insertArrowTable calls to complete.
   const tDrainStart = performance.now();
-  while ((window._jfrCsvPending ?? 0) > 0) {
+  while (pendingInserts > 0) {
     await new Promise(r => setTimeout(r, 10));
     if (peakPending > 0) {
-      const drained = peakPending - (window._jfrCsvPending ?? 0);
-      onProgress?.(0.80 + 0.15 * (drained / peakPending));
+      onProgress?.(0.80 + 0.15 * (1 - pendingInserts / peakPending));
     }
   }
   const tDrainDone = performance.now();
 
-  // Drain complete — 95%, schema loading takes it to 100%.
   onProgress?.(0.95);
 
-  const jfrPerfMsg = `[jfr-perf] Java sync: ${(tJavaDone - tJava0).toFixed(0)}ms | CSV drain: ${(tDrainDone - tDrainStart).toFixed(0)}ms`;
-  console.log(jfrPerfMsg);
-  (window as any).__lastJfrPerf = { javaSyncMs: tJavaDone - tJava0, drainMs: tDrainDone - tDrainStart, bytes: jfrBytes.byteLength };
+  console.log(`[jfr-perf] Java+drain: ${actualJavaMs.toFixed(0)}ms | main-thread drain: ${(tDrainDone - tDrainStart).toFixed(0)}ms`);
+  (window as any).__lastJfrPerf = {
+    javaSyncMs: actualJavaMs,
+    drainMs: tDrainDone - tDrainStart,
+    bytes: jfrByteLength,
+  };
 
   // Update calibration: smooth toward actual observed ms/byte.
-  if (jfrBytes.byteLength > 0 && actualJavaMs > 500) {
-    const observed = actualJavaMs / jfrBytes.byteLength;
-    // Exponential smoothing: weight new observation at 30%.
+  if (jfrByteLength > 0 && actualJavaMs > 500) {
+    const observed = actualJavaMs / jfrByteLength;
     const updated = storedMsPerByte > 0 ? 0.7 * storedMsPerByte + 0.3 * observed : observed;
     try { localStorage.setItem(PERF_KEY, String(updated)); } catch { /* storage full */ }
   }
 
-  // Register built-in macros and views — the Java WASM path skips these because
-  // they require a JDBC connection. Run them client-side instead.
-  //
-  // Strategy: open PARALLELISM extra connections and distribute the ~134 SQL
-  // statements across them so they execute concurrently. DuckDB WASM serialises
-  // per-connection but allows multiple connections to overlap.
+  // Register built-in macros and views in parallel across 4 connections.
   const tSqlStart = performance.now();
   const PARALLELISM = new URL(location.href).searchParams.has('sqlSerial') ? 1 : 4;
   const allSql = [...BUILTIN_MACROS_SQL, ...BUILTIN_VIEWS_SQL];
@@ -181,4 +184,3 @@ export async function loadJfrIntoWasm(
     sqlParallelism: PARALLELISM,
   };
 }
-

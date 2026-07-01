@@ -96,6 +96,7 @@ async function measureFile(browser, appUrl, file, repeatIdx) {
 
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
+  page.setDefaultTimeout(timeout);
 
   const consoleLines = [];
   page.on('console', m => {
