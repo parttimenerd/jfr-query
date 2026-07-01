@@ -419,12 +419,34 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [fetchSchemaFor]);
 
+  // Maximum rows returned by a user-facing query.
+  // Prevents OOM when querying large JFR tables (e.g. 5M ExecutionSample rows) in WASM mode.
+  // Append "-- no-limit" to a query to bypass this cap.
+  const MAX_QUERY_ROWS = 50_000;
+
   const query = useCallback(async (sql: string): Promise<any[]> => {
     if (dbState !== DBState.READY) {
       throw new Error(`Cannot run query: database is in state "${dbState}". Wait for it to finish loading or reload the page if it appears stuck.`);
     }
-    return executeQuery(sql);
-  }, [dbState, executeQuery]);
+    // In WASM mode, guard against runaway queries: inject LIMIT if the SQL doesn't have one.
+    // This prevents materializing millions of Arrow rows into JS objects and crashing the tab.
+    // The check is intentionally simple (no full parser) — it looks for LIMIT at the end of the
+    // cleaned SQL text (comments stripped) since that's where a top-level LIMIT always appears.
+    // Users can add "-- no-limit" anywhere in their query to bypass this guard.
+    let safeSql = sql;
+    if (mode === 'wasm') {
+      const noLimitBypass = /--\s*no-limit/i.test(sql);
+      if (!noLimitBypass) {
+        const cleaned = sql.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+        const isSelect = /^(select|with)\b/i.test(cleaned);
+        const hasLimit = /\blimit\s+\d/i.test(cleaned);
+        if (isSelect && !hasLimit) {
+          safeSql = `SELECT * FROM (\n${sql}\n) __q LIMIT ${MAX_QUERY_ROWS}`;
+        }
+      }
+    }
+    return executeQuery(safeSql);
+  }, [dbState, executeQuery, mode]);
 
   const refreshSchema = useCallback(async () => {
     if (mode === 'wasm') {
