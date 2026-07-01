@@ -40,6 +40,8 @@ interface ProviderProps {
 export const ExecutorProvider: React.FC<ProviderProps> = ({ cells, children }) => {
     const runFns = useRef<Map<string, () => Promise<void>>>(new Map());
     const executorRef = useRef<Executor | null>(null);
+    // Per-cell parse cache for execution graph construction.
+    const graphCellCacheRef = useRef<WeakMap<object, GraphCell>>(new WeakMap());
 
     // Build graph cells from the live notebook cells.
     // Derive a stable structural key from cell id+content so that changes that
@@ -51,6 +53,8 @@ export const ExecutorProvider: React.FC<ProviderProps> = ({ cells, children }) =
     );
     const graphCells: GraphCell[] = useMemo(() => {
         return cells.map((c, idx) => {
+            const cached = graphCellCacheRef.current.get(c);
+            if (cached) return cached;
             const handle = cellHandle(c, idx);
             const parsed = parseCellContent(tokenizeCellContent(c.content));
             const aliases = parsed.queryAliases.filter((a): a is string => !!a);
@@ -70,7 +74,9 @@ export const ExecutorProvider: React.FC<ProviderProps> = ({ cells, children }) =
                     }
                 } catch { /* ignore malformed plot configs */ }
             }
-            return { id: c.id, handle, producedBareAliases: aliases, referencedSql, plotOnRefs };
+            const cell: GraphCell = { id: c.id, handle, producedBareAliases: aliases, referencedSql, plotOnRefs };
+            graphCellCacheRef.current.set(c, cell);
+            return cell;
         });
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [graphStructKey]);
