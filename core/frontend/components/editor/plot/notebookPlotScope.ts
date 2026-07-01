@@ -117,6 +117,7 @@ export interface CellParseSummary {
 interface CacheEntry {
     cellsRef: ReadonlyArray<NotebookCellData>;
     currentCellId: string;
+    workspaceVariables: Readonly<Record<string, string>> | undefined;
     view: PlotScopeView;
 }
 
@@ -124,19 +125,35 @@ export class NotebookPlotScope {
     private cache: CacheEntry | null = null;
 
     /**
-     * Build (or return cached) a scope view. Caller is responsible for keeping
-     * a stable `cells` array reference across rerenders to maximize cache hits.
+     * Build (or return cached) a scope view. When the cells array reference
+     * changes but all individual cell objects are the same (e.g. a downstream
+     * cell was edited), the cached view is returned without rebuilding.
      */
     build(args: BuildArgs): PlotScopeView {
-        if (
-            this.cache &&
-            this.cache.cellsRef === args.cells &&
-            this.cache.currentCellId === args.currentCellId
-        ) {
-            return this.cache.view;
+        if (this.cache && this.cache.currentCellId === args.currentCellId &&
+                this.cache.workspaceVariables === args.workspaceVariables) {
+            if (this.cache.cellsRef === args.cells) return this.cache.view;
+            // Structural equality: same length + same cell objects in order.
+            const prev = this.cache.cellsRef;
+            const next = args.cells;
+            if (prev.length === next.length) {
+                let same = true;
+                for (let i = 0; i < prev.length; i++) {
+                    if (prev[i] !== next[i]) { same = false; break; }
+                }
+                if (same) {
+                    this.cache = { ...this.cache, cellsRef: next };
+                    return this.cache.view;
+                }
+            }
         }
         const view = buildScopeView(args);
-        this.cache = { cellsRef: args.cells, currentCellId: args.currentCellId, view };
+        this.cache = {
+            cellsRef: args.cells,
+            currentCellId: args.currentCellId,
+            workspaceVariables: args.workspaceVariables,
+            view,
+        };
         return view;
     }
 
