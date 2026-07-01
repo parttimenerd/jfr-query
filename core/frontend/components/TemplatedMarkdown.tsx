@@ -168,4 +168,4 @@ const IfBlock: React.FC<IfBlockProps> = ({ condition, body, query, variables, fo
     );
 };
 
-export default TemplatedMarkdown;
+export default React.memo(TemplatedMarkdown);

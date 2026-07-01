@@ -16,4 +16,4 @@ const StaticCodeHighlighter: React.FC<StaticCodeHighlighterProps> = ({ code, lan
   );
 };
 
-export default StaticCodeHighlighter;
+export default React.memo(StaticCodeHighlighter);

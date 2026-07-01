@@ -96,4 +96,4 @@ const PlotSuggestionChip: React.FC<PlotSuggestionChipProps> = ({
     );
 };
 
-export default PlotSuggestionChip;
+export default React.memo(PlotSuggestionChip);
