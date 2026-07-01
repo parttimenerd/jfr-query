@@ -155,6 +155,10 @@ const App: React.FC = () => {
     // id+content+name are unchanged. This ensures arePropsEqual in React.memo'd
     // NotebookCell components short-circuits for cells the user did NOT edit.
     const cellIdentityCacheRef = useRef<Map<string, NotebookCellData>>(new Map());
+    // Stable array identity: when no cell object changed (all cache hits), reuse
+    // the previous cells array so consumers that check allCells === allCells
+    // (arePropsEqual, useMemo deps) short-circuit without any work.
+    const prevCellsRef = useRef<NotebookCellData[]>([]);
 
     const loadNotebook = useCallback((source: string) => {
         setNotebookMarkdown(source);
@@ -523,6 +527,7 @@ const App: React.FC = () => {
         // and was costing one remount per keystroke (see BUGS.md B-026).
         const cache = cellIdentityCacheRef.current;
         const nextCache = new Map<string, NotebookCellData>();
+        let anyNew = false;
         const result = cellContents.map((content, index) => {
             const id = `cell-${index}`;
             const name = finalNames[index];
@@ -532,11 +537,19 @@ const App: React.FC = () => {
                 nextCache.set(cacheKey, existing);
                 return existing;
             }
+            anyNew = true;
             const cell: NotebookCellData = { id, title: '', content, name };
             nextCache.set(cacheKey, cell);
             return cell;
         });
         cellIdentityCacheRef.current = nextCache;
+        // If every cell is a cache hit AND count matches, reuse the previous array
+        // so useMemo([cells]) and allCells === allCells checks short-circuit.
+        const prev = prevCellsRef.current;
+        if (!anyNew && result.length === prev.length) {
+            return prev;
+        }
+        prevCellsRef.current = result;
         return result;
     }, [cellsContent]);
 
