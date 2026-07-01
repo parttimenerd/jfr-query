@@ -130,22 +130,23 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
     const cellOwnership = useRef<Record<string, Set<string>>>({});
     const versionRef = useRef(0);
 
+    /** Pre-computed set of all table/view names — rebuilt only when schema changes. */
+    const shadowedNames = useMemo(() => {
+        const s = new Set<string>();
+        for (const t of schema?.tables ?? []) s.add(t.name);
+        for (const v of schema?.views ?? []) s.add(v.name);
+        return s;
+    }, [schema?.tables, schema?.views]);
+
     /** Check `information_schema.tables` (i.e. real JFR/user tables, not temp). */
     const isShadowed = useCallback((name: string): boolean => {
-        // Cheap path: consult cached schema first.
-        if (schema?.tables?.some(t => t.name === name)) return true;
-        if (schema?.views?.some(v => v.name === name)) return true;
-        return false;
-    }, [schema]);
+        return shadowedNames.has(name);
+    }, [shadowedNames]);
 
     const registerAlias = useCallback(async (args: RegisterArgs): Promise<AliasInfo | null> => {
         if (dbState !== 4 /* DBState.READY */) return null;
         const { cellId, cellHandle: rawHandle, cellIndex, sqlIndex, alias, sql, materialized } = args;
         if (!sql.trim()) return null;
-
-        const shadowedNames = new Set<string>();
-        for (const t of schema?.tables ?? []) shadowedNames.add(t.name);
-        for (const v of schema?.views ?? []) shadowedNames.add(v.name);
 
         const built = buildAliasSql({
             cellHandle: rawHandle,
@@ -213,7 +214,7 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
         });
 
         return info;
-    }, [query, dbState, schema]);
+    }, [query, dbState, shadowedNames]);
 
     const unregisterCell = useCallback(async (cellId: string) => {
         const owned = cellOwnership.current[cellId];

@@ -557,7 +557,16 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             return;
         }
 
-        const variablesChanged = JSON.stringify(prevVars) !== JSON.stringify(allVariables);
+        const variablesChanged = (() => {
+            if (prevVars === allVariables) return false;
+            const prevKeys = Object.keys(prevVars ?? {});
+            const nextKeys = Object.keys(allVariables);
+            if (prevKeys.length !== nextKeys.length) return true;
+            for (const k of nextKeys) {
+                if ((prevVars as any)?.[k] !== (allVariables as any)[k]) return true;
+            }
+            return false;
+        })();
         // Build a set of custom view/macro names so we can detect when a cell's SQL
         // uses a view whose body references a metadata variable (B-012).
         const customNames = new Set([
