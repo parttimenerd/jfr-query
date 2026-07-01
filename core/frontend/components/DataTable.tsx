@@ -101,6 +101,11 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
   const displaySettings = useDisplaySettings();
   const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const [filterTerm, setFilterTerm] = useState('');
+  const [debouncedFilter, setDebouncedFilter] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedFilter(filterTerm), 150);
+    return () => clearTimeout(t);
+  }, [filterTerm]);
   const [widths, setWidths] = useState<(string | number | undefined)[]>([]);
   const resizingColumn = useRef<{index: number; startX: number; startWidth: number} | null>(null);
   const tableRef = useRef<HTMLTableElement>(null);
@@ -182,14 +187,14 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
   }, [timestampColumns, durationColumns, byteColumns, numericColumns, displaySettings]);
 
   const processedData = useMemo(() => {
-    let filtered = filterTerm ? data.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(filterTerm.toLowerCase()))) : [...data];
+    let filtered = debouncedFilter ? data.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(debouncedFilter.toLowerCase()))) : data;
     if (sortConfig.key) {
       const { key, direction } = sortConfig;
       const asc = direction === 'ascending';
-      filtered.sort((a, b) => compareValues(a[key], b[key], asc));
+      filtered = filtered.slice().sort((a, b) => compareValues(a[key], b[key], asc));
     }
     return filtered;
-  }, [data, filterTerm, sortConfig]);
+  }, [data, debouncedFilter, sortConfig]);
 
   // B-051: cap rendered rows to avoid rendering 100k+ DOM nodes.
   const DISPLAY_CAP = 2000;
@@ -201,7 +206,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
 
   const totalRows = data.length;
   const shownRows = processedData.length;
-  const rowCountLabel = filterTerm && shownRows !== totalRows
+  const rowCountLabel = debouncedFilter && shownRows !== totalRows
     ? `${shownRows.toLocaleString()} of ${totalRows.toLocaleString()} rows`
     : `${totalRows.toLocaleString()} ${totalRows === 1 ? 'row' : 'rows'}`;
   // Hint when the result looks like it was auto-truncated at the safety cap.
