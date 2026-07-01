@@ -173,6 +173,18 @@ export const BUILTIN_MACROS_SQL: string[] = [
   `CREATE OR REPLACE MACRO EVENT_TYPE_LABEL(et) AS (SELECT label FROM EventLabels WHERE name = et LIMIT 1)`,
   `CREATE OR REPLACE MACRO EVENT_NAME_FOR_ID(_id) AS (SELECT name FROM EventIDs event WHERE id = _id LIMIT 1)`,
 
+  // Stack trace reconstruction: converts the stackTrace$methods UINTEGER[] column
+  // produced by the JFR importer into a semicolon-separated "ClassName.methodName"
+  // string suitable for FLAMEGRAPH(frames: ...).
+  // Returns NULL when Method/Class tables are absent (non-JFR DuckDB files).
+  `CREATE OR REPLACE MACRO stack_frames(methods) AS (
+    (SELECT string_agg(c.javaName || '.' || m.name, ';' ORDER BY idx)
+     FROM (SELECT unnest(methods) AS method_id, generate_subscripts(methods, 1) AS idx) AS t
+     JOIN Method m ON m._id = t.method_id
+     JOIN Class c ON c._id = m.type
+     WHERE t.method_id != 0)
+)`,
+
   // Misc database utility functions
   `CREATE OR REPLACE MACRO macro_sql(macro_name) AS (SELECT macro_definition FROM duckdb_functions() WHERE function_name = macro_name AND function_type = 'macro' AND NOT internal LIMIT 1)`,
   `CREATE OR REPLACE MACRO view_sql(name) AS (SELECT sql FROM duckdb_views() WHERE view_name = name LIMIT 1)`,
@@ -1363,4 +1375,57 @@ SELECT
 FROM ExecuteVMOperation
 GROUP BY operation
 ORDER BY SUM(duration) DESC`,
+
+  // ── Flamegraph data views ─────────────────────────────────────────────────
+  // Each view produces (frame VARCHAR, value DOUBLE) ready for FLAMEGRAPH().
+  // stack_frames() converts stackTrace$methods int[] → "ClassName.method;..." string.
+
+  `CREATE OR REPLACE VIEW "cpu-flamegraph" AS
+SELECT
+  stack_frames(es."stackTrace$methods") AS frame,
+  COUNT(*)::DOUBLE AS value
+FROM ExecutionSample es
+WHERE es.state = 'STATE_RUNNABLE'
+  AND es."stackTrace$methods" IS NOT NULL
+GROUP BY es."stackTrace$methods"
+ORDER BY value DESC`,
+
+  `CREATE OR REPLACE VIEW "alloc-flamegraph" AS
+SELECT
+  stack_frames(oas."stackTrace$methods") AS frame,
+  ROUND(SUM(oas.weight) / 1048576.0, 4) AS value
+FROM ObjectAllocationSample oas
+WHERE oas."stackTrace$methods" IS NOT NULL
+GROUP BY oas."stackTrace$methods"
+ORDER BY value DESC`,
+
+  `CREATE OR REPLACE VIEW "lock-flamegraph" AS
+SELECT
+  stack_frames(jme."stackTrace$methods") AS frame,
+  ROUND(SUM(epoch_ms(jme.duration)) / 1000.0, 4) AS value
+FROM JavaMonitorEnter jme
+WHERE jme."stackTrace$methods" IS NOT NULL
+GROUP BY jme."stackTrace$methods"
+ORDER BY value DESC`,
+
+  `CREATE OR REPLACE VIEW "native-flamegraph" AS
+SELECT
+  stack_frames(nms."stackTrace$methods") AS frame,
+  COUNT(*)::DOUBLE AS value
+FROM NativeMethodSample nms
+WHERE nms."stackTrace$methods" IS NOT NULL
+GROUP BY nms."stackTrace$methods"
+ORDER BY value DESC`,
+
+  `CREATE OR REPLACE VIEW "exception-flamegraph" AS
+SELECT
+  stack_frames(t."stackTrace$methods") AS frame,
+  COUNT(*)::DOUBLE AS value
+FROM (
+  SELECT "stackTrace$methods" FROM JavaExceptionThrow WHERE "stackTrace$methods" IS NOT NULL
+  UNION ALL
+  SELECT "stackTrace$methods" FROM JavaErrorThrow WHERE "stackTrace$methods" IS NOT NULL
+) t
+GROUP BY t."stackTrace$methods"
+ORDER BY value DESC`,
 ];

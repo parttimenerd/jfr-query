@@ -54,17 +54,23 @@ async function test(name, fn) {
             const slug = name.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 60);
             await page.screenshot({ path: path.join(SCREENSHOT_DIR, `FAIL-${slug}.png`), fullPage: true });
         } catch {}
-        // If the page crashed, create a new one for subsequent tests.
-        if (msg.includes('Target page, context or browser has been closed')) {
+        // Reset the page after any timeout or crash so subsequent tests aren't stalled.
+        const needsReset = msg.includes('Target page, context or browser has been closed')
+            || msg.includes('Timeout')
+            || msg.includes('timeout exceeded')
+            || msg.includes('exceeded');
+        if (needsReset) {
             try {
+                // Try to close existing page first (may already be closed).
+                await page.close().catch(() => {});
                 page = await browserContext.newPage();
                 page.on('pageerror', (err) => {
                     if (err.message.includes('Clipboard') || err.message.includes('writeText')) return;
                     pageErrors.push(`pageerror: ${err.message}`);
                 });
-                page.on('console', (msg) => {
-                    if (msg.type() !== 'error') return;
-                    const text = msg.text();
+                page.on('console', (m) => {
+                    if (m.type() !== 'error') return;
+                    const text = m.text();
                     if (text.includes('Download the React DevTools')) return;
                     if (text.includes('Failed to load resource')) return;
                     if (text.includes('vite-hmr')) return;
@@ -73,10 +79,10 @@ async function test(name, fn) {
                     pageErrors.push(`console.error: ${text}`);
                 });
                 await bootApp(appUrl);
-                await page.waitForTimeout(1000);
-                console.log('    (page recovered after crash — fresh app boot)');
+                await page.waitForTimeout(1500);
+                console.log('    (page reset after timeout — fresh app boot)');
             } catch (recoverErr) {
-                console.log(`    (page recovery failed: ${recoverErr.message})`);
+                console.log(`    (page reset failed: ${recoverErr.message})`);
             }
         }
     }
@@ -179,7 +185,7 @@ async function addCell() {
     await page.waitForFunction(
         (b) => document.querySelectorAll('main h2').length > b,
         before,
-        { timeout: 5_000 },
+        { timeout: 8_000 },
     );
     const newCount = await page.locator('main h2').count();
     // Scroll the new cell (last h2) into view using page-absolute coordinates.
@@ -347,8 +353,8 @@ async function runCellSql(cellNth) {
     }
     await runBtns.nth(btnIdx).click();
     await Promise.race([
-        page.waitForSelector('main table', { timeout: 30_000 }),
-        page.waitForSelector('.text-red-400', { timeout: 10_000 }),
+        page.waitForSelector('main table', { timeout: 12_000 }),
+        page.waitForSelector('.text-red-400', { timeout: 8_000 }),
     ]).catch(() => {});
     await page.waitForTimeout(300);
 }

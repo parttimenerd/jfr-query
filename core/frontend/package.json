@@ -17,6 +17,8 @@
     "test:variable-workflows": "npx playwright test e2e/variable-workflows.spec.ts",
     "test:composite-layouts":  "npx playwright test e2e/composite-layouts.spec.ts",
     "test:plot-dsl-clauses":   "npx playwright test e2e/plot-dsl-clauses.spec.ts",
+    "test:renaissance":        "node tests/e2e/test-renaissance.mjs",
+    "test:large-plots":        "node tests/e2e/test-large-and-plots.mjs",
     "test:e2e:all":            "npx playwright test e2e/",
     "bench": "vite --config vite.bench.config.ts",
     "dataset:plot": "tsx scripts/training/generatePlotDataset.ts",
