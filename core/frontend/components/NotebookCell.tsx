@@ -189,6 +189,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const [isCellCollapsed, setIsCellCollapsed] = useState(() => initialCellCollapsed ?? false);
 
     const [segments, setSegments] = useState(() => tokenizeCellContent(cell.content));
+    const segmentsRef = useRef(segments);
+    segmentsRef.current = segments;
     const parsed = useMemo(() => parseCellContent(segments), [segments]);
 
     useEffect(() => { setSegments(tokenizeCellContent(cell.content)); }, [cell.content]);
@@ -527,7 +529,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
     const handleCellVariableChange = useCallback((newVars: Record<string, string>) => {
         const content = '\n' + Object.entries(newVars).map(([k, v]) => `${k} = ${v}`).join('\n') + '\n';
-        const newSegments = [...segments];
+        const newSegments = [...segmentsRef.current];
         const varIndex = newSegments.findIndex(s => s.type === 'variables');
         if (varIndex !== -1) {
             if (Object.keys(newVars).length > 0) {
@@ -542,7 +544,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             newSegments.unshift({ type: 'variables', content }, { type: 'markdown', content: '\n\n' });
         }
         handleSegmentsUpdate(newSegments);
-    }, [segments, handleSegmentsUpdate]);
+    }, [handleSegmentsUpdate]);
 
     useEffect(() => { if (Object.keys(parsed.variables || {}).length === 0) setIsVariablesCollapsed(true); }, [parsed.variables]);
     useEffect(() => { if (collapseTrigger > 0) { const newStates: Record<string, boolean> = {}; parsed.sqlBlocks.forEach((_, i) => newStates[`sql-${i}`] = allCollapsed); parsed.plotBlocks.forEach((_, i) => newStates[`plot-${i}`] = allCollapsed); setCollapsedStates(newStates); setIsVariablesCollapsed(allCollapsed); } }, [collapseTrigger, allCollapsed, parsed.sqlBlocks, parsed.plotBlocks]);
