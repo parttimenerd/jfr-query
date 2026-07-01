@@ -206,9 +206,12 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
 
   // B-051: cap rendered rows to avoid rendering 100k+ DOM nodes.
   const DISPLAY_CAP = 2000;
-  const [showAll, setShowAll] = useState(false);
-  const displayData = showAll ? processedData : processedData.slice(0, DISPLAY_CAP);
-  const isCapped = !showAll && processedData.length > DISPLAY_CAP;
+  const PAGE_SIZE = 5000;
+  const [displayLimit, setDisplayLimit] = useState(DISPLAY_CAP);
+  const displayData = processedData.slice(0, displayLimit);
+  const isCapped = displayLimit < processedData.length;
+  // Reset display limit when underlying data or filter changes.
+  useEffect(() => { setDisplayLimit(DISPLAY_CAP); }, [data, debouncedFilter]);
 
   if (!data || data.length === 0) return <div className="text-center text-gray-500 p-8">No data to display.</div>;
 
@@ -278,13 +281,23 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
       </div>
       {isCapped && (
         <div className="flex-shrink-0 px-4 py-2 border-t border-gray-700 flex items-center justify-between text-xs text-gray-400">
-          <span>Showing {DISPLAY_CAP.toLocaleString()} of {processedData.length.toLocaleString()} rows</span>
-          <button
-            onClick={() => setShowAll(true)}
-            className="text-cyan-400 hover:text-cyan-300 underline"
-          >
-            Show all {processedData.length.toLocaleString()} rows
-          </button>
+          <span>Showing {displayLimit.toLocaleString()} of {processedData.length.toLocaleString()} rows</span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setDisplayLimit(l => Math.min(l + PAGE_SIZE, processedData.length))}
+              className="text-cyan-400 hover:text-cyan-300 underline"
+            >
+              Show {Math.min(PAGE_SIZE, processedData.length - displayLimit).toLocaleString()} more
+            </button>
+            {processedData.length - displayLimit > PAGE_SIZE && (
+              <button
+                onClick={() => setDisplayLimit(processedData.length)}
+                className="text-gray-500 hover:text-gray-300 underline"
+              >
+                Show all {processedData.length.toLocaleString()}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
