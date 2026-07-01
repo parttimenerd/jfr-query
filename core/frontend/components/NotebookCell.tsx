@@ -1134,4 +1134,54 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     );
 };
 
-export default React.memo(NotebookCell);
+function areCrossCellRefsEqual(
+    a: Record<string, any[]> | undefined,
+    b: Record<string, any[]> | undefined,
+): boolean {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    for (const k of aKeys) {
+        if (a[k] !== b[k]) return false;
+    }
+    return true;
+}
+
+function arePropsEqual(prev: NotebookCellProps, next: NotebookCellProps): boolean {
+    // Fast path: same reference for most props (callbacks, primitives).
+    // Only deep-check crossCellQueryRefs which always gets a new object on result updates.
+    if (prev === next) return true;
+    return (
+        prev.cell === next.cell &&
+        prev.allCells === next.allCells &&
+        prev.metadata === next.metadata &&
+        prev.results === next.results &&
+        prev.queryTimings === next.queryTimings &&
+        areCrossCellRefsEqual(prev.crossCellQueryRefs, next.crossCellQueryRefs) &&
+        prev.isAutoRunEnabled === next.isAutoRunEnabled &&
+        prev.collapseTrigger === next.collapseTrigger &&
+        prev.allCollapsed === next.allCollapsed &&
+        prev.isAiFeatureActive === next.isAiFeatureActive &&
+        prev.initialCellCollapsed === next.initialCellCollapsed &&
+        prev.clearResultsTrigger === next.clearResultsTrigger &&
+        prev.onCellCollapseChange === next.onCellCollapseChange &&
+        prev.onRunQuery === next.onRunQuery &&
+        prev.onUpdateCell === next.onUpdateCell &&
+        prev.onDeleteCell === next.onDeleteCell &&
+        prev.onDeleteQueryBlock === next.onDeleteQueryBlock &&
+        prev.onAddCellFromTool === next.onAddCellFromTool &&
+        prev.onMoveCell === next.onMoveCell &&
+        prev.onSuggestPlot === next.onSuggestPlot &&
+        prev.onFormatCode === next.onFormatCode &&
+        prev.onRunPreviewQuery === next.onRunPreviewQuery &&
+        prev.onGlobalVariableClick === next.onGlobalVariableClick &&
+        prev.onMetadataChange === next.onMetadataChange &&
+        prev.presenterMode === next.presenterMode &&
+        prev.onPopChatToSidebar === next.onPopChatToSidebar &&
+        prev.onNavigateRef === next.onNavigateRef
+    );
+}
+
+export default React.memo(NotebookCell, arePropsEqual);
