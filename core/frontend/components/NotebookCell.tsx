@@ -176,6 +176,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const variableInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
     const [focusVarName, setFocusVarName] = useState<string | null>(null);
     const { settings } = useContext(SettingsContext);
+    // Keep a ref so event-handler callbacks (runSuggestPlot, onTryAnother) can
+    // read the latest settings without being listed as useCallback deps.
+    const settingsRef = useRef(settings);
+    settingsRef.current = settings;
+    const autoPlotSuggestionEnabled = settings.autoPlotSuggestionEnabled;
     const [plotSuggestions, setPlotSuggestions] = useState<Record<number, PlotSuggestionResult | null>>({});
     const [dismissedSuggestions, setDismissedSuggestions] = useState<Record<number, boolean>>({});
     const [aiErrorSuggestions, setAiErrorSuggestions] = useState<Record<number, { text: string; code: string | null } | null>>({});
@@ -353,7 +358,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     // Auto-plot suggestion: when an SQL block completes with non-empty rows AND
     // doesn't yet have a plot block, ask the configured plot model to suggest one.
     useEffect(() => {
-        if (!settings.autoPlotSuggestionEnabled) return;
+        if (!autoPlotSuggestionEnabled) return;
         parsed.sqlBlocks.forEach((sql, i) => {
             const rows = results[i];
             if (!rows || rows.length === 0) return;
@@ -365,12 +370,12 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             if (columns.length === 0) return;
             // Mark inflight to avoid re-firing every render.
             setPlotSuggestions(prev => ({ ...prev, [i]: null }));
-            runSuggestPlot({ sql, columns, rowCount: rows.length }, { settings })
+            runSuggestPlot({ sql, columns, rowCount: rows.length }, { settings: settingsRef.current })
                 .then(result => setPlotSuggestions(prev => ({ ...prev, [i]: result })))
                 .catch(() => setPlotSuggestions(prev => ({ ...prev, [i]: null })));
         });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [settings.autoPlotSuggestionEnabled, parsed.sqlBlocks.length, parsed.plotBlocks.join(' '), results]);
+    }, [autoPlotSuggestionEnabled, parsed.sqlBlocks.length, parsed.plotBlocks.join(' '), results]);
 
     useEffect(() => () => cancelSuggestPlot(), []);
 
@@ -1059,8 +1064,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                 </div>
                                             )}
                                             {isAiFeatureActive && activeChat===`sql-${i}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="sql" targetValue={sql} sql={sql} data={results[i] ?? undefined} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} onApplyCode={c=>handleApplyCode(c,'sql',i)} onClose={()=>setActiveChat(null)} onPopToSidebar={onPopChatToSidebar} onNavigateRef={onNavigateRef}/>}
-                                            {settings.autoPlotSuggestionEnabled && plotSuggestions[i] && !dismissedSuggestions[i] && (!parsed.plotBlocks[i] || !parsed.plotBlocks[i].trim()) && (
-                                                <PlotSuggestionChip suggestion={plotSuggestions[i]!} onApply={config => { handlePlotChange(config, i); setDismissedSuggestions(p => ({ ...p, [i]: true })); }} onTryAnother={() => { const rows = results[i] ?? []; const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : []; setPlotSuggestions(prev => ({ ...prev, [i]: null })); runSuggestPlot({ sql, columns, rowCount: rows.length, signal: undefined }, { settings }).then(result => setPlotSuggestions(prev => ({ ...prev, [i]: result }))).catch(() => setPlotSuggestions(prev => ({ ...prev, [i]: null }))); }} onDismiss={() => setDismissedSuggestions(p => ({ ...p, [i]: true }))}/>
+                                            {autoPlotSuggestionEnabled && plotSuggestions[i] && !dismissedSuggestions[i] && (!parsed.plotBlocks[i] || !parsed.plotBlocks[i].trim()) && (
+                                                <PlotSuggestionChip suggestion={plotSuggestions[i]!} onApply={config => { handlePlotChange(config, i); setDismissedSuggestions(p => ({ ...p, [i]: true })); }} onTryAnother={() => { const rows = results[i] ?? []; const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : []; setPlotSuggestions(prev => ({ ...prev, [i]: null })); runSuggestPlot({ sql, columns, rowCount: rows.length, signal: undefined }, { settings: settingsRef.current }).then(result => setPlotSuggestions(prev => ({ ...prev, [i]: result }))).catch(() => setPlotSuggestions(prev => ({ ...prev, [i]: null }))); }} onDismiss={() => setDismissedSuggestions(p => ({ ...p, [i]: true }))}/>
                                             )}
                                         </CollapsibleBlock>
                                     );
