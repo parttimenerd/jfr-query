@@ -151,6 +151,11 @@ const App: React.FC = () => {
     // Parallel timing state: [cellId][queryIndex] = elapsed ms for the last successful run.
     const [queryTimings, setQueryTimings] = useState<Record<string, (number | null)[]>>({});
 
+    // Per-cell identity cache: reuse the same cell object across renders when
+    // id+content+name are unchanged. This ensures arePropsEqual in React.memo'd
+    // NotebookCell components short-circuits for cells the user did NOT edit.
+    const cellIdentityCacheRef = useRef<Map<string, NotebookCellData>>(new Map());
+
     const loadNotebook = useCallback((source: string) => {
         setNotebookMarkdown(source);
         setResults({});
@@ -516,12 +521,23 @@ const App: React.FC = () => {
         // re-key the React subtree and orphan its results. This still misaligns
         // on insert/delete/reorder, but content-edit churn is the common case
         // and was costing one remount per keystroke (see BUGS.md B-026).
-        return cellContents.map((content, index) => ({
-            id: `cell-${index}`,
-            title: '',
-            content,
-            name: finalNames[index],
-        }));
+        const cache = cellIdentityCacheRef.current;
+        const nextCache = new Map<string, NotebookCellData>();
+        const result = cellContents.map((content, index) => {
+            const id = `cell-${index}`;
+            const name = finalNames[index];
+            const cacheKey = `${id}:${name ?? ''}:${content}`;
+            const existing = cache.get(cacheKey);
+            if (existing) {
+                nextCache.set(cacheKey, existing);
+                return existing;
+            }
+            const cell: NotebookCellData = { id, title: '', content, name };
+            nextCache.set(cacheKey, cell);
+            return cell;
+        });
+        cellIdentityCacheRef.current = nextCache;
+        return result;
     }, [cellsContent]);
 
     const runQuery = useCallback(async (cellId: string, sql: string, queryIndex: number, allVariables: Record<string,string>) => {
