@@ -59,13 +59,13 @@ public class WasmMain {
             clearStagedBytes();
             log("JFR bytes received: " + len);
 
-            // Short-circuit the VFS round-trip: instead of writing to a temp file and
-            // re-reading it, wire the bytes straight into CustomByteBuffer.map().
-            // This eliminates two O(len) copies (write + readAllBytes) and the associated
-            // temporary byte[] allocation in the VFS layer.
-            io.jafar.utils.CustomByteBuffer.INLINE_BYTES.set(bytes);
-            Path tmp = java.nio.file.Paths.get("/inline.jfr"); // ignored by map() when INLINE_BYTES is set
-            log("JFR bytes staged for inline read: " + len);
+            // Write bytes to the VFS so jafar's MappedRecordingStreamReader can call Files.size(path).
+            // Set InlineHolder.bytes so CustomByteBuffer.map() returns a ByteBuffer wrapping these
+            // bytes directly, skipping the Files.readAllBytes() call (saves one full O(n) copy).
+            Path tmp = Files.createTempFile("upload", ".jfr");
+            Files.write(tmp, bytes);
+            io.jafar.utils.CustomByteBuffer.InlineHolder.bytes = bytes;
+            log("JFR bytes written and staged for inline read: " + len);
 
             JsDuckDBSink rootSink = new JsDuckDBSink(jsConn, jsDb, tablePrefix);
             // Redirect stdout so [jfr-timing]/[flush] lines land in globalThis._jfrLog (JS-readable).
@@ -94,7 +94,7 @@ public class WasmMain {
             capture.flush();
             System.setOut(origOut);
 
-            Files.deleteIfExists(tmp); // no-op for the inline path (file was never created)
+            Files.deleteIfExists(tmp);
             log("JFR import complete: " + bytes.length + " bytes in " + (t1 - t0) + "ms");
         } catch (Throwable t) {
             clearStagedBytes();

@@ -33,9 +33,12 @@ import java.nio.file.Path;
  * (chunked import); not supported in WASM mode today.
  */
 public interface CustomByteBuffer {
-    // Short-circuit for WasmMain: set bytes here before calling map(dummyPath) to
-    // skip Files.createTempFile + Files.write + Files.readAllBytes entirely.
-    ThreadLocal<byte[]> INLINE_BYTES = new ThreadLocal<>();
+
+    /** Holds bytes to be injected directly into map() without going through the VFS. */
+    final class InlineHolder {
+        public static byte[] bytes = null;
+        private InlineHolder() {}
+    }
 
     static CustomByteBuffer wrap(byte[] bytes) {
         return new ByteBufferWrapper(ByteBuffer.wrap(bytes));
@@ -46,9 +49,9 @@ public interface CustomByteBuffer {
     }
 
     static CustomByteBuffer map(Path path, int spliceSize) throws IOException {
-        byte[] inline = INLINE_BYTES.get();
+        byte[] inline = InlineHolder.bytes;
         if (inline != null) {
-            INLINE_BYTES.remove();
+            InlineHolder.bytes = null;
             return new ByteBufferWrapper(ByteBuffer.wrap(inline));
         }
         long size = Files.size(path);
