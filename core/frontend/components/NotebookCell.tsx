@@ -838,11 +838,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         }
     };
     
-    const handleVariableClick = (varName: string) => {
+    const handleVariableClick = useCallback((varName: string) => {
         if (varName.startsWith('$$')) { onGlobalVariableClick(varName); return; }
         const focusLocalVar = () => { if (isVariablesCollapsed) { setIsVariablesCollapsed(false); setTimeout(() => variableInputRefs.current[varName]?.focus(), 100); } else { variableInputRefs.current[varName]?.focus(); } };
         if (varName in (parsed.variables || {})) { focusLocalVar(); } else { handleCellVariableChange({...(parsed.variables||{}), [varName]: ''}); setTimeout(focusLocalVar, 100); }
-    };
+    }, [onGlobalVariableClick, isVariablesCollapsed, parsed.variables, handleCellVariableChange]);
     
     const cellIdx = allCells.findIndex(c => c.id === cell.id);
     const cellAlias = computeCellHandle(cell, cellIdx);
