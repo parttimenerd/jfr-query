@@ -321,8 +321,7 @@ function areSQLEditorPropsEqual(prev: EditorProps, next: EditorProps): boolean {
         prev.index === next.index &&
         prev.mode === next.mode &&
         prev.fullHeight === next.fullHeight &&
-        prev.onBlur === next.onBlur &&
-        prev.onRun === next.onRun &&
+        // onBlur and onRun are stored in refs inside Editor — identity changes are safe to ignore.
         prev.autoFocus === next.autoFocus &&
         prev.variables === next.variables &&
         prev.onVariableClick === next.onVariableClick &&
