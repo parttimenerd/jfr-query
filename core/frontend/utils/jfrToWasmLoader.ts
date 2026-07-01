@@ -390,15 +390,49 @@ async function mergeChunkTables(
     // remap scalar FKs via a LEFT JOIN and array FKs via unnest+list_agg+JOIN.
     const refPattern = /Column "([^"]+)": (Array of references to|references) "([^"]+)"\(_id\)/g;
 
+    // Pre-fetch all event table comments and column lists in two batch queries
+    // instead of N+N sequential round-trips inside the Promise.all.
+    const eventReprTables = eventTables.map(base => {
+      const firstWorker = baseToWorkers.get(base)![0];
+      return { base, reprTable: `chunk${firstWorker}_${base}` };
+    });
+
+    const commentMap = new Map<string, string>();
+    {
+      const commentPattern = eventReprTables.map(({ reprTable: t }) => `table_name='${t.replace(/'/g, "''")}'`).join(' OR ');
+      const commentResult = await conn.query(
+        `SELECT table_name, comment FROM duckdb_tables() WHERE ${commentPattern}`
+      ).catch(() => null);
+      if (commentResult) {
+        for (const row of commentResult.toArray()) {
+          commentMap.set(String((row as any).table_name), String((row as any).comment ?? ''));
+        }
+      }
+    }
+
+    const colsMap = new Map<string, string[]>();
+    {
+      const colsPattern = eventReprTables.map(({ reprTable: t }) => `table_name='${t.replace(/'/g, "''")}'`).join(' OR ');
+      const colsResult = await conn.query(
+        `SELECT table_name, column_name FROM information_schema.columns
+         WHERE table_schema='main' AND (${colsPattern}) ORDER BY table_name, ordinal_position`
+      ).catch(() => null);
+      if (colsResult) {
+        for (const row of colsResult.toArray()) {
+          const tname = String((row as any).table_name);
+          if (!colsMap.has(tname)) colsMap.set(tname, []);
+          colsMap.get(tname)!.push(String((row as any).column_name));
+        }
+      }
+    }
+
     await Promise.all(eventTables.map(async (base, idx) => {
       const c = getConn(idx);
       const workers = baseToWorkers.get(base)!;
       const firstWorker = workers[0];
+      const reprTable = `chunk${firstWorker}_${base}`;
 
-      const commentResult = await c.query(
-        `SELECT comment FROM duckdb_tables() WHERE table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}'`
-      ).catch(() => null);
-      const comment = commentResult?.toArray()[0] ? String((commentResult.toArray()[0] as any).comment ?? '') : '';
+      const comment = commentMap.get(reprTable) ?? '';
 
       const colRemap = new Map<string, { structTable: string; isArray: boolean }>();
       let m: RegExpExecArray | null;
@@ -413,10 +447,7 @@ async function mergeChunkTables(
         }
       }
 
-      const colsResult = await c.query(
-        `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}' ORDER BY ordinal_position`
-      );
-      const allCols = colsResult.toArray().map((r: any) => String((r as any).column_name));
+      const allCols = colsMap.get(reprTable) ?? [];
 
       // Separate scalar-FK and array-FK columns
       const arrayFkCols = allCols.filter(col => colRemap.get(col)?.isArray);
