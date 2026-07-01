@@ -4,10 +4,16 @@ import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL } from '../data/builtinSql';
 
 const PERF_KEY = 'jfr_import_ms_per_byte';
 
-// Maximum workers to run in parallel.
-// Kept at 2: each worker instantiates its own 11 MB GraalVM WASM binary;
-// beyond 2 the combined heap can exhaust browser tab memory on large files.
-const MAX_CHUNK_WORKERS = 2;
+// Determine maximum workers based on available device memory.
+// Each worker uses ~200MB WASM heap. Browser renderer processes are sandboxed
+// to ~1-2 GB regardless of physical RAM, so we cap at 3 workers max:
+// - 3 workers = ~600MB (safe on 8GB+)
+// - 2 workers = ~400MB (safe on all devices)
+function getMaxWorkers(): number {
+  const mem = (navigator as any).deviceMemory as number | undefined;
+  if (mem !== undefined && mem >= 8) return 3;
+  return 2;
+}
 
 // ── WASM worker pool ──────────────────────────────────────────────────────────
 //
@@ -167,9 +173,15 @@ async function dispatchToPooledWorker(
  *
  * For event tables (no _id primary key):
  *   - Simple UNION ALL insert from all chunk prefixes
+ *
+ * Phases 3 (struct) and 4 (event) each run their per-table work in parallel
+ * using up to MERGE_PARALLELISM DuckDB connections. Phase 3 fully completes
+ * before phase 4 starts because event tables reference the _idmap tables
+ * produced in phase 3.
  */
 async function mergeChunkTables(
   conn: AsyncDuckDBConnection,
+  db: AsyncDuckDB,
   numChunks: number,
 ): Promise<void> {
   // 1. Collect all base table names across ALL chunks (not just chunk0)
@@ -219,172 +231,182 @@ async function mergeChunkTables(
     }
   }
 
-  // 3. For each struct table: deduplicate by natural key, build idmap
-  for (const base of structTables) {
-    const workers = baseToWorkers.get(base)!;
-    const firstWorker = workers[0];
-    const colsResult = await conn.query(
-      `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}' AND column_name != '_id' ORDER BY ordinal_position`
-    );
-    const naturalCols = colsResult.toArray().map((r: any) => `"${String((r as any).column_name)}"`);
-    const naturalKey = naturalCols.join(', ');
-
-    // Union only chunks that have this table
-    const unionParts = workers.map((i) =>
-      `SELECT ${i} AS _worker, * FROM "chunk${i}_${base}"`
-    ).join(' UNION ALL ');
-
-    await conn.query(
-      `CREATE TEMP TABLE "_stage_${base}" AS ${unionParts}`
-    ).catch((e) => console.warn(`merge stage failed for ${base}:`, e));
-
-    await conn.query(
-      `CREATE TEMP TABLE "_idmap_${base}" AS
-       SELECT _worker, _id AS old_id,
-         CASE WHEN _id = 0 THEN 0
-              ELSE DENSE_RANK() OVER (ORDER BY ${naturalKey}) END AS new_id
-       FROM "_stage_${base}"`
-    ).catch((e) => console.warn(`merge idmap failed for ${base}:`, e));
-
-    const selectCols = naturalCols.join(', ');
-    await conn.query(
-      `CREATE TABLE "${base}" AS
-       SELECT DISTINCT m.new_id AS _id, ${selectCols}
-       FROM "_stage_${base}" s
-       JOIN "_idmap_${base}" m ON s._worker = m._worker AND s._id = m.old_id
-       ORDER BY _id`
-    ).catch((e) => console.warn(`merge create ${base} failed:`, e));
-  }
-
-  // 4. For event tables: UNION ALL from chunks that have the table, remapping FK columns.
-  // DuckDB WASM doesn't support correlated subqueries in lambda/list_transform, so we
-  // remap scalar FKs via a LEFT JOIN and array FKs via unnest+list_agg+JOIN.
-  const refPattern = /Column "([^"]+)": (Array of references to|references) "([^"]+)"\(_id\)/g;
-
-  for (const base of eventTables) {
-    const workers = baseToWorkers.get(base)!;
-    const firstWorker = workers[0];
-
-    const commentResult = await conn.query(
-      `SELECT comment FROM duckdb_tables() WHERE table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}'`
-    ).catch(() => null);
-    const comment = commentResult?.toArray()[0] ? String((commentResult.toArray()[0] as any).comment ?? '') : '';
-
-    const colRemap = new Map<string, { structTable: string; isArray: boolean }>();
-    let m: RegExpExecArray | null;
-    refPattern.lastIndex = 0;
-    while ((m = refPattern.exec(comment)) !== null) {
-      const colName = m[1];
-      const isArray = m[2] === 'Array of references to';
-      const structTable = m[3];
-      if (structTables.includes(structTable)) {
-        colRemap.set(colName, { structTable, isArray });
-      }
+  // Open MERGE_PARALLELISM-1 extra connections for parallel merge queries.
+  // All extra connections are closed in the finally block regardless of errors.
+  const MERGE_PARALLELISM = 4;
+  const extraConns: AsyncDuckDBConnection[] = [];
+  try {
+    for (let i = 0; i < MERGE_PARALLELISM - 1; i++) {
+      extraConns.push(await db.connect());
     }
+    const allConns = [conn, ...extraConns];
+    const getConn = (i: number) => allConns[i % allConns.length];
 
-    const colsResult = await conn.query(
-      `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}' ORDER BY ordinal_position`
-    );
-    const allCols = colsResult.toArray().map((r: any) => String((r as any).column_name));
+    // 3. Struct tables in parallel (each table's 3 queries stay sequential within that table).
+    await Promise.all(structTables.map(async (base, idx) => {
+      const c = getConn(idx);
+      const workers = baseToWorkers.get(base)!;
+      const firstWorker = workers[0];
+      const colsResult = await c.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}' AND column_name != '_id' ORDER BY ordinal_position`
+      );
+      const naturalCols = colsResult.toArray().map((r: any) => `"${String((r as any).column_name)}"`);
+      const naturalKey = naturalCols.join(', ');
 
-    // Separate scalar-FK and array-FK columns
-    const arrayFkCols = allCols.filter(col => colRemap.get(col)?.isArray);
-    const scalarFkCols = allCols.filter(col => colRemap.get(col) && !colRemap.get(col)!.isArray);
-
-    if (arrayFkCols.length > 0) {
-      // Array-FK remapping: for each chunk, expand arrays via unnest, join idmap, re-aggregate.
-      // We build the final table chunk by chunk to avoid cross-chunk unnest complexity.
-      const nonArrayCols = allCols.filter(c => !arrayFkCols.includes(c));
-
-      // Create the table structure from the first chunk first
-      const firstChunkCols = allCols.map(col => {
-        const remap = colRemap.get(col);
-        if (!remap) return `"${col}"`;
-        if (remap.isArray) return `"${col}"`;
-        return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
-      });
-
-      // Build from first available chunk
-      let created = false;
-      for (const wi of workers) {
-        const prefix = `chunk${wi}_`;
-        // For scalar FKs use JOIN, for array FKs remap inline per-row using a CTE
-        let sql: string;
-        if (arrayFkCols.length === 0) {
-          const joins = scalarFkCols.map(col => {
-            const { structTable } = colRemap.get(col)!;
-            return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=${wi} AND idmap_${col}.old_id=e."${col}"`;
-          }).join('\n');
-          const selectExprs2 = allCols.map(col => {
-            const remap = colRemap.get(col);
-            if (!remap) return `e."${col}"`;
-            return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
-          });
-          sql = `SELECT ${selectExprs2.join(', ')} FROM "${prefix}${base}" e\n${joins}`;
-        } else {
-          // Use array_transform with idmap lookup via join on unnested values
-          // Strategy: build a lookup list from idmap, then use list_transform with list indexing
-          // Simpler: remap each array column via a subquery that builds a replacement array
-          const selectExprs2 = allCols.map(col => {
-            const remap = colRemap.get(col);
-            if (!remap) return `e."${col}"`;
-            const { structTable, isArray } = remap;
-            if (!isArray) {
-              return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
-            }
-            // Array FK: use list_transform with a precomputed map
-            // DuckDB supports list_transform with a non-correlated lambda
-            // Build map as: map(old_ids, new_ids) from idmap filtered to this worker
-            return `(SELECT list(m.new_id ORDER BY pos)
-                     FROM (SELECT unnest(e."${col}") AS oid, generate_subscripts(e."${col}", 1) AS pos) t
-                     JOIN "_idmap_${structTable}" m ON m._worker=${wi} AND m.old_id=t.oid
-                    ) AS "${col}"`;
-          });
-          const scalarJoins = scalarFkCols.map(col => {
-            const { structTable } = colRemap.get(col)!;
-            return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=${wi} AND idmap_${col}.old_id=e."${col}"`;
-          }).join('\n');
-          sql = `SELECT ${selectExprs2.join(', ')} FROM "${prefix}${base}" e\n${scalarJoins}`;
-        }
-        if (!created) {
-          await conn.query(`CREATE TABLE "${base}" AS ${sql}`).catch((e) => console.warn(`merge event ${base} (w${wi}) create failed:`, e));
-          created = true;
-        } else {
-          await conn.query(`INSERT INTO "${base}" ${sql}`).catch((e) => console.warn(`merge event ${base} (w${wi}) insert failed:`, e));
-        }
-      }
-    } else {
-      // No array FKs — simpler path with JOIN for scalar FKs
-      const selectExprs = allCols.map(col => {
-        const remap = colRemap.get(col);
-        if (!remap) return `e."${col}"`;
-        return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
-      });
-      const joins = scalarFkCols.map(col => {
-        const { structTable } = colRemap.get(col)!;
-        return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=e._w AND idmap_${col}.old_id=e."${col}"`;
-      }).join('\n');
-
+      // Union only chunks that have this table
       const unionParts = workers.map((i) =>
-        `SELECT ${i} AS _w, ${allCols.map(c => `"${c}"`).join(', ')} FROM "chunk${i}_${base}"`
+        `SELECT ${i} AS _worker, * FROM "chunk${i}_${base}"`
       ).join(' UNION ALL ');
 
-      const selectList = ['_w', ...selectExprs].join(', ');
-      await conn.query(
-        `CREATE TABLE "${base}" AS SELECT ${allCols.map(c => `"${c}"`).join(', ')} FROM (SELECT ${selectList} FROM (${unionParts}) e\n${joins})`
-      ).catch((e) => console.warn(`merge event ${base} failed:`, e));
-    }
+      await c.query(
+        `CREATE TEMP TABLE "_stage_${base}" AS ${unionParts}`
+      ).catch((e) => console.warn(`merge stage failed for ${base}:`, e));
+
+      await c.query(
+        `CREATE TEMP TABLE "_idmap_${base}" AS
+         SELECT _worker, _id AS old_id,
+           CASE WHEN _id = 0 THEN 0
+                ELSE DENSE_RANK() OVER (ORDER BY ${naturalKey}) END AS new_id
+         FROM "_stage_${base}"`
+      ).catch((e) => console.warn(`merge idmap failed for ${base}:`, e));
+
+      const selectCols = naturalCols.join(', ');
+      await c.query(
+        `CREATE TABLE "${base}" AS
+         SELECT DISTINCT m.new_id AS _id, ${selectCols}
+         FROM "_stage_${base}" s
+         JOIN "_idmap_${base}" m ON s._worker = m._worker AND s._id = m.old_id
+         ORDER BY _id`
+      ).catch((e) => console.warn(`merge create ${base} failed:`, e));
+    }));
+
+    // 4. Event tables in parallel — runs only after all struct tables are done
+    // (event tables reference _idmap tables produced in step 3).
+    // DuckDB WASM doesn't support correlated subqueries in lambda/list_transform, so we
+    // remap scalar FKs via a LEFT JOIN and array FKs via unnest+list_agg+JOIN.
+    const refPattern = /Column "([^"]+)": (Array of references to|references) "([^"]+)"\(_id\)/g;
+
+    await Promise.all(eventTables.map(async (base, idx) => {
+      const c = getConn(idx);
+      const workers = baseToWorkers.get(base)!;
+      const firstWorker = workers[0];
+
+      const commentResult = await c.query(
+        `SELECT comment FROM duckdb_tables() WHERE table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}'`
+      ).catch(() => null);
+      const comment = commentResult?.toArray()[0] ? String((commentResult.toArray()[0] as any).comment ?? '') : '';
+
+      const colRemap = new Map<string, { structTable: string; isArray: boolean }>();
+      let m: RegExpExecArray | null;
+      // Each async task gets its own regex instance to avoid shared lastIndex state.
+      const localRefPattern = /Column "([^"]+)": (Array of references to|references) "([^"]+)"\(_id\)/g;
+      while ((m = localRefPattern.exec(comment)) !== null) {
+        const colName = m[1];
+        const isArray = m[2] === 'Array of references to';
+        const structTable = m[3];
+        if (structTables.includes(structTable)) {
+          colRemap.set(colName, { structTable, isArray });
+        }
+      }
+
+      const colsResult = await c.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}' ORDER BY ordinal_position`
+      );
+      const allCols = colsResult.toArray().map((r: any) => String((r as any).column_name));
+
+      // Separate scalar-FK and array-FK columns
+      const arrayFkCols = allCols.filter(col => colRemap.get(col)?.isArray);
+      const scalarFkCols = allCols.filter(col => colRemap.get(col) && !colRemap.get(col)!.isArray);
+
+      if (arrayFkCols.length > 0) {
+        // Array-FK remapping: for each chunk, expand arrays via unnest, join idmap, re-aggregate.
+        // We build the final table chunk by chunk to avoid cross-chunk unnest complexity.
+
+        // Build from first available chunk
+        let created = false;
+        for (const wi of workers) {
+          const prefix = `chunk${wi}_`;
+          // For scalar FKs use JOIN, for array FKs remap inline per-row using a CTE
+          let sql: string;
+          if (arrayFkCols.length === 0) {
+            const joins = scalarFkCols.map(col => {
+              const { structTable } = colRemap.get(col)!;
+              return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=${wi} AND idmap_${col}.old_id=e."${col}"`;
+            }).join('\n');
+            const selectExprs2 = allCols.map(col => {
+              const remap = colRemap.get(col);
+              if (!remap) return `e."${col}"`;
+              return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
+            });
+            sql = `SELECT ${selectExprs2.join(', ')} FROM "${prefix}${base}" e\n${joins}`;
+          } else {
+            // Use array_transform with idmap lookup via join on unnested values
+            // Strategy: build a lookup list from idmap, then use list_transform with list indexing
+            // Simpler: remap each array column via a subquery that builds a replacement array
+            const selectExprs2 = allCols.map(col => {
+              const remap = colRemap.get(col);
+              if (!remap) return `e."${col}"`;
+              const { structTable, isArray } = remap;
+              if (!isArray) {
+                return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
+              }
+              // Array FK: use list_transform with a precomputed map
+              // DuckDB supports list_transform with a non-correlated lambda
+              // Build map as: map(old_ids, new_ids) from idmap filtered to this worker
+              return `(SELECT list(m.new_id ORDER BY pos)
+                       FROM (SELECT unnest(e."${col}") AS oid, generate_subscripts(e."${col}", 1) AS pos) t
+                       JOIN "_idmap_${structTable}" m ON m._worker=${wi} AND m.old_id=t.oid
+                      ) AS "${col}"`;
+            });
+            const scalarJoins = scalarFkCols.map(col => {
+              const { structTable } = colRemap.get(col)!;
+              return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=${wi} AND idmap_${col}.old_id=e."${col}"`;
+            }).join('\n');
+            sql = `SELECT ${selectExprs2.join(', ')} FROM "${prefix}${base}" e\n${scalarJoins}`;
+          }
+          if (!created) {
+            await c.query(`CREATE TABLE "${base}" AS ${sql}`).catch((e) => console.warn(`merge event ${base} (w${wi}) create failed:`, e));
+            created = true;
+          } else {
+            await c.query(`INSERT INTO "${base}" ${sql}`).catch((e) => console.warn(`merge event ${base} (w${wi}) insert failed:`, e));
+          }
+        }
+      } else {
+        // No array FKs — simpler path with JOIN for scalar FKs
+        const selectExprs = allCols.map(col => {
+          const remap = colRemap.get(col);
+          if (!remap) return `e."${col}"`;
+          return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
+        });
+        const joins = scalarFkCols.map(col => {
+          const { structTable } = colRemap.get(col)!;
+          return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=e._w AND idmap_${col}.old_id=e."${col}"`;
+        }).join('\n');
+
+        const unionParts = workers.map((i) =>
+          `SELECT ${i} AS _w, ${allCols.map(col => `"${col}"`).join(', ')} FROM "chunk${i}_${base}"`
+        ).join(' UNION ALL ');
+
+        const selectList = ['_w', ...selectExprs].join(', ');
+        await c.query(
+          `CREATE TABLE "${base}" AS SELECT ${allCols.map(col => `"${col}"`).join(', ')} FROM (SELECT ${selectList} FROM (${unionParts}) e\n${joins})`
+        ).catch((e) => console.warn(`merge event ${base} failed:`, e));
+      }
+    }));
+
+  } finally {
+    for (const c of extraConns) c.close().catch(() => {});
   }
 
-  // 5. Drop all chunk-prefixed and staging tables
-  for (const base of allBaseNames) {
+  // 5. Drop all chunk-prefixed and staging tables in parallel
+  await Promise.all(allBaseNames.map(async (base) => {
     const workers = baseToWorkers.get(base)!;
-    for (const i of workers) {
-      await conn.query(`DROP TABLE IF EXISTS "chunk${i}_${base}"`).catch(() => {});
-    }
-    await conn.query(`DROP TABLE IF EXISTS "_stage_${base}"`).catch(() => {});
-    await conn.query(`DROP TABLE IF EXISTS "_idmap_${base}"`).catch(() => {});
-  }
+    await Promise.all([
+      ...workers.map(i => conn.query(`DROP TABLE IF EXISTS "chunk${i}_${base}"`).catch(() => {})),
+      conn.query(`DROP TABLE IF EXISTS "_stage_${base}"`).catch(() => {}),
+      conn.query(`DROP TABLE IF EXISTS "_idmap_${base}"`).catch(() => {}),
+    ]);
+  }));
 }
 
 /**
@@ -392,7 +414,7 @@ async function mergeChunkTables(
  *
  * Multi-chunk JFR files (common for recordings >~5 MB) are parsed into their
  * constituent chunks and imported in parallel — one worker per chunk (up to
- * MAX_CHUNK_WORKERS). Struct tables (Method, Class, etc.) are deduplicated by
+ * the max returned by getMaxWorkers()). Struct tables (Method, Class, etc.) are deduplicated by
  * natural key and merged; event tables are union-appended with ID remapping.
  *
  * @param stacktraceDepth Max stack frames per event (default 10).
@@ -421,7 +443,8 @@ export async function loadJfrIntoWasm(
   const chunks = parseJfrChunks(jfrBytes);
   const numChunks = chunks.length;
   const useParallel = numChunks > 1;
-  const numWorkers = Math.min(numChunks, MAX_CHUNK_WORKERS);
+  const maxWorkers = getMaxWorkers();
+  const numWorkers = Math.min(numChunks, maxWorkers);
 
   console.log(`[jfr-import] ${numChunks} chunk(s), using up to ${numWorkers} parallel worker(s)`);
 
@@ -462,11 +485,11 @@ export async function loadJfrIntoWasm(
     );
   } else {
     // Multi-chunk parallel path: dispatch chunks to pool workers round-robin.
-    // Process in batches of MAX_CHUNK_WORKERS; wait for each batch before advancing
+    // Process in batches of maxWorkers; wait for each batch before advancing
     // so we don't enqueue more work than the pool has capacity for.
     let globalWorkerIdx = 0;
-    for (let batchStart = 0; batchStart < chunks.length; batchStart += MAX_CHUNK_WORKERS) {
-      const batchChunks = chunks.slice(batchStart, batchStart + MAX_CHUNK_WORKERS);
+    for (let batchStart = 0; batchStart < chunks.length; batchStart += maxWorkers) {
+      const batchChunks = chunks.slice(batchStart, batchStart + maxWorkers);
 
       const batchPromises = batchChunks.map((chunk, i) => {
         const workerIdx = globalWorkerIdx + i;
@@ -508,7 +531,7 @@ export async function loadJfrIntoWasm(
   let mergeMs = 0;
   if (useParallel) {
     const tMergeStart = performance.now();
-    await mergeChunkTables(conn, numChunks);
+    await mergeChunkTables(conn, db, numChunks);
     mergeMs = performance.now() - tMergeStart;
     console.log(`[jfr-perf] merge pass: ${mergeMs.toFixed(0)}ms`);
   }
