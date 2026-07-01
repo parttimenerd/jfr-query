@@ -60,8 +60,12 @@ export const SkillContextProvider: React.FC<{ children: React.ReactNode }> = ({ 
         return activeSkills.map(s => s.systemPrompt).filter(Boolean).join('\n\n---\n\n');
     }, [activeSkills]);
 
+    const ctxValue = useMemo(() => ({
+        activeSkills, activateSkill, deactivateSkill, toggleSkill, isActive, mergedSystemPrompt, availableSkills,
+    }), [activeSkills, activateSkill, deactivateSkill, toggleSkill, isActive, mergedSystemPrompt, availableSkills]);
+
     return (
-        <SkillContext.Provider value={{ activeSkills, activateSkill, deactivateSkill, toggleSkill, isActive, mergedSystemPrompt, availableSkills }}>
+        <SkillContext.Provider value={ctxValue}>
             {children}
         </SkillContext.Provider>
     );
