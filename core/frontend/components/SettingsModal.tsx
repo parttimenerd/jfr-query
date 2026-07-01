@@ -740,4 +740,4 @@ const BrowserModelPicker: React.FC<{ modelId: string; onChange: (id: string) => 
     );
 };
 
-export default SettingsModal;
+export default React.memo(SettingsModal);

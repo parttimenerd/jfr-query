@@ -274,4 +274,4 @@ const previewMarkdownComponents: any = {
     },
 };
 
-export default TemplateGalleryModal;
+export default React.memo(TemplateGalleryModal);

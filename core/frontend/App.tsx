@@ -905,6 +905,14 @@ const App: React.FC = () => {
     const handleToggleSidebar = useCallback(() => setIsSidebarCollapsed(v => !v), [setIsSidebarCollapsed]);
     const handleToggleChatPanel = useCallback(() => setIsChatPanelCollapsed(v => !v), [setIsChatPanelCollapsed]);
 
+    const handleCloseSettingsModal = useCallback(() => setIsSettingsModalOpen(false), []);
+    const handleCloseTemplateGallery = useCallback(() => setIsTemplateGalleryOpen(false), []);
+    const handleCloseCommandPalette = useCallback(() => setIsCmdPaletteOpen(false), []);
+    const handleTemplateInsert = useCallback((merged: string, warnings: string[]) => {
+        loadNotebook(merged);
+        if (warnings.length > 0) console.warn('Template merge warnings:', warnings);
+    }, [loadNotebook]);
+
     // Seed session_start / session_end variables from recording bounds when a
     // JFR file is loaded and the variables haven't been set yet.
     useEffect(() => {
@@ -957,20 +965,15 @@ const App: React.FC = () => {
                     </div>
                 </div>
             )}
-            <SettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} />
+            <SettingsModal isOpen={isSettingsModalOpen} onClose={handleCloseSettingsModal} />
             <TemplateGalleryModal
                 isOpen={isTemplateGalleryOpen}
-                onClose={() => setIsTemplateGalleryOpen(false)}
+                onClose={handleCloseTemplateGallery}
                 currentSource={notebookMarkdown}
                 mode={mode}
-                onInsert={(merged, warnings) => {
-                    loadNotebook(merged);
-                    if (warnings.length > 0) {
-                        console.warn('Template merge warnings:', warnings);
-                    }
-                }}
+                onInsert={handleTemplateInsert}
             />
-            <CommandPalette isOpen={isCmdPaletteOpen} onClose={() => setIsCmdPaletteOpen(false)} actions={cmdActions} cells={cmdCells} onRunQuery={cmdRunQuery} onAiAddCell={cmdAiAddCell} onAddSqlCell={cmdAddSqlCell} isAiAvailable={isAiFeatureActive} />
+            <CommandPalette isOpen={isCmdPaletteOpen} onClose={handleCloseCommandPalette} actions={cmdActions} cells={cmdCells} onRunQuery={cmdRunQuery} onAiAddCell={cmdAiAddCell} onAddSqlCell={cmdAddSqlCell} isAiAvailable={isAiFeatureActive} />
             {aiFailureMessage && <ToastNotification title="AI Assistant Alert" message={aiFailureMessage} onClose={() => setAiFailureMessage(null)} action={{ label: 'Open Settings →', onClick: () => setIsSettingsModalOpen(true) }} />}
             {serverProbeError && !probeToastDismissed && <ToastNotification title="Running in WASM mode" message={`Server probe failed: ${serverProbeError}. Drop a .jfr or .duckdb file to get started.`} onClose={() => setProbeToastDismissed(true)} duration={5000} />}
 
