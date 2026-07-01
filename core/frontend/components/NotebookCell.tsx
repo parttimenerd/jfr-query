@@ -266,18 +266,37 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         [metadata.variables, precedingCellVariables, parsed.variables],
     );
 
+    // Stable slice of cells up to and including the current cell. The scope
+    // builder only reads cells before the current one, so changes to cells after
+    // this cell should not trigger a rebuild. We reuse the previous slice when
+    // no cell at or before this position changed.
+    const precedingCellsRef = useRef<ReadonlyArray<NotebookCellData>>([]);
+    const precedingCells = useMemo(() => {
+        const idx = allCells.findIndex(c => c.id === cell.id);
+        const slice = idx >= 0 ? allCells.slice(0, idx + 1) : allCells;
+        const prev = precedingCellsRef.current;
+        if (prev.length === slice.length) {
+            let same = true;
+            for (let i = 0; i < slice.length; i++) {
+                if (prev[i] !== slice[i]) { same = false; break; }
+            }
+            if (same) return prev;
+        }
+        precedingCellsRef.current = slice;
+        return slice;
+    }, [allCells, cell.id]);
+
     // P7 — Notebook-wide plot scope (named plots, query refs, variables, brushes).
-    // The scope is rebuilt only when the cells array reference changes or the
-    // current cell id changes; the internal `NotebookPlotScope` cache short-
-    // circuits identical inputs.
+    // The scope is rebuilt only when cells BEFORE the current cell change or
+    // allVariables changes. Changes to cells after this cell are invisible here.
     const plotScopeRef = useRef(new NotebookPlotScope());
     const plotScopeView = useMemo(
         () => plotScopeRef.current.build({
-            cells: allCells,
+            cells: precedingCells,
             currentCellId: cell.id,
             workspaceVariables: allVariables,
         }),
-        [allCells, cell.id, allVariables],
+        [precedingCells, cell.id, allVariables],
     );
     // Aggregate SQL block count across all cells (fallback used by `#N` hints
     // when the rich scope is unavailable).
