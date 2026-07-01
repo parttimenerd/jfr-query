@@ -316,6 +316,27 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         [metadata.variables, precedingCellVariables, parsedVariables],
     );
 
+    // Stabilize parsed.queryAliases reference: aliases only change when the user
+    // edits a CREATE VIEW statement. Prevents handleRun and dataByQueryRef from
+    // rebuilding on every SQL keystroke.
+    const parsedQueryAliasesRef = useRef<(string | null)[]>(parsed.queryAliases);
+    const parsedQueryAliases = useMemo(() => {
+        const next = parsed.queryAliases;
+        const prev = parsedQueryAliasesRef.current;
+        if (prev.length === next.length && prev.every((v, i) => v === next[i])) return prev;
+        parsedQueryAliasesRef.current = next;
+        return next;
+    }, [parsed.queryAliases]);
+
+    const parsedQueryAliasMaterializedRef = useRef<boolean[]>(parsed.queryAliasMaterialized ?? []);
+    const parsedQueryAliasMaterialized = useMemo(() => {
+        const next = parsed.queryAliasMaterialized ?? [];
+        const prev = parsedQueryAliasMaterializedRef.current;
+        if (prev.length === next.length && prev.every((v, i) => v === next[i])) return prev;
+        parsedQueryAliasMaterializedRef.current = next;
+        return next;
+    }, [parsed.queryAliasMaterialized]);
+
     // P7 — Notebook-wide plot scope (named plots, query refs, variables, brushes).
     // The scope is rebuilt only when cells BEFORE the current cell change or
     // allVariables changes. Changes to cells after this cell are invisible here.
@@ -367,7 +388,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             }
             // The `-- alias` line is stripped before DuckDB sees the query,
             // so DuckDB's LINE N is offset by 1 from what the editor shows.
-            const aliasOffset = parsed.queryAliases[i] ? 1 : 0;
+            const aliasOffset = parsedQueryAliases[i] ? 1 : 0;
             return {
                 message: cleanDuckDBError(msg),
                 line: lineM ? Number(lineM[1]) + aliasOffset : undefined,
@@ -377,7 +398,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         // Depend on a stable serialization of the error strings to avoid
         // variable-length spread in the deps array (rules-of-hooks violation).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [parsed.sqlBlocks.length, parsed.queryAliases, results]);
+    }, [parsed.sqlBlocks.length, parsedQueryAliases, results]);
 
     // Auto-plot suggestion: when an SQL block completes with non-empty rows AND
     // doesn't yet have a plot block, ask the configured plot model to suggest one.
@@ -486,12 +507,12 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         results.forEach((r, idx) => {
             if (r) {
                 out[idx + 1] = r;
-                const alias = parsed.queryAliases[idx];
+                const alias = parsedQueryAliases[idx];
                 if (alias) out[alias] = r;
             }
         });
         return out;
-    }, [results, crossCellQueryRefs, parsed.queryAliases]);
+    }, [results, crossCellQueryRefs, parsedQueryAliases]);
 
     const handleAddIntro = useCallback(() =>
         handleIntroUpdate({ title: 'Introduction', content: '## Title\n\n_Introduction_\n' }),
@@ -614,8 +635,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             const expandedSql = expandBrushOperator(sql, allVariables);
             const substitutedSql = substituteVariables(expandedSql, toSqlVariables(allVariables));
             await onRunQuery(cell.id, substitutedSql, index, allVariables);
-            const aliasName = parsed.queryAliases[index] ?? null;
-            const materialized = !!parsed.queryAliasMaterialized?.[index];
+            const aliasName = parsedQueryAliases[index] ?? null;
+            const materialized = !!parsedQueryAliasMaterialized?.[index];
             // Fire-and-forget: don't block the UI, and don't surface alias
             // registration errors into the cell's result panel (the result
             // panel still shows the actual query output via onRunQuery).
@@ -633,7 +654,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         } finally {
             setRunningStates(s => ({ ...s, [index]: false }));
         }
-    }, [onRunQuery, cell.id, allVariables, parsed.queryAliases, parsed.queryAliasMaterialized, registerAlias, refreshSchema, handleStr, cellIndex, awaitUpstream]);
+    }, [onRunQuery, cell.id, allVariables, parsedQueryAliases, parsedQueryAliasMaterialized, registerAlias, refreshSchema, handleStr, cellIndex, awaitUpstream]);
 
     useEffect(() => () => { unregisterCell(cell.id).catch(() => {}); }, [cell.id, unregisterCell]);
 
