@@ -149,13 +149,14 @@ const runWasmQuery = async (conn: AsyncDuckDBConnection, sql: string): Promise<a
             const col = result.getChildAt(c);
             const name = colNames[c];
             const scale = decimalScales.get(name);
-            const raw = col ? Array.from(col) : [];
+            if (!col) { colArrays[c] = []; continue; }
+
             if (scale !== undefined && scale > 0) {
                 const divisor = Math.pow(10, scale);
+                const raw = Array.from(col);
                 colArrays[c] = raw.map(v => {
                     if (v == null) return v;
                     if (typeof v === 'number') return v / divisor;
-                    // Int32Array view from HUGEINT/Decimal128
                     if (ArrayBuffer.isView(v) && !(v instanceof DataView)) {
                         const arr = v as unknown as { [i: number]: number; length: number };
                         if (arr.length === 4 && arr[1] === 0 && arr[2] === 0 && arr[3] === 0) return arr[0] / divisor;
@@ -164,20 +165,35 @@ const runWasmQuery = async (conn: AsyncDuckDBConnection, sql: string): Promise<a
                     return v;
                 });
             } else {
-                colArrays[c] = raw.map(v => {
-                    if (v == null) return v;
-                    if (typeof v === 'bigint') {
-                        // B-133: keep BigInt precision for values that exceed Number.MAX_SAFE_INTEGER.
-                        const abs = v < 0n ? -v : v;
-                        return abs <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : v;
+                // Fast path: scan for values needing transformation. If none found,
+                // use the raw typed array directly (avoids a second pass + map).
+                const raw = Array.from(col);
+                let needsTransform = false;
+                for (let r = 0; r < raw.length; r++) {
+                    const v = raw[r];
+                    if (v != null && (typeof v === 'bigint' || (ArrayBuffer.isView(v) && !(v instanceof DataView)))) {
+                        needsTransform = true;
+                        break;
                     }
-                    if (ArrayBuffer.isView(v) && !(v instanceof DataView)) {
-                        const arr = v as unknown as { [i: number]: number; length: number };
-                        if (arr.length === 4 && arr[1] === 0 && arr[2] === 0 && arr[3] === 0) return arr[0];
-                        return Array.from(v as unknown as ArrayLike<unknown>);
-                    }
-                    return v;
-                });
+                }
+                if (!needsTransform) {
+                    colArrays[c] = raw;
+                } else {
+                    colArrays[c] = raw.map(v => {
+                        if (v == null) return v;
+                        if (typeof v === 'bigint') {
+                            // B-133: keep BigInt precision for values that exceed Number.MAX_SAFE_INTEGER.
+                            const abs = v < 0n ? -v : v;
+                            return abs <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : v;
+                        }
+                        if (ArrayBuffer.isView(v) && !(v instanceof DataView)) {
+                            const arr = v as unknown as { [i: number]: number; length: number };
+                            if (arr.length === 4 && arr[1] === 0 && arr[2] === 0 && arr[3] === 0) return arr[0];
+                            return Array.from(v as unknown as ArrayLike<unknown>);
+                        }
+                        return v;
+                    });
+                }
             }
         }
 
