@@ -423,6 +423,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         [metadata?.timeFormat, metadata?.decimalPlaces],
     );
 
+    const handleAddIntro = useCallback(() =>
+        handleIntroUpdate({ title: 'Introduction', content: '## Title\n\n_Introduction_\n' }),
+    [handleIntroUpdate]);
+    const handleSetEditingIntro = useCallback((e: boolean) => setEditingSection(e ? 'intro' : null), []);
+    const handleAddConclusion = useCallback(() =>
+        handleConclusionUpdate({ title: 'Conclusion', content: '_Conclusion_\n' }),
+    [handleConclusionUpdate]);
+    const handleSetEditingConclusion = useCallback((e: boolean) => setEditingSection(e ? 'conclusion' : null), []);
+
     const [isVariablesCollapsed, setIsVariablesCollapsed] = useState(Object.keys(parsed.variables || {}).length === 0);
 
     const handleCellVariableChange = useCallback((newVars: Record<string, string>) => {
@@ -838,9 +847,9 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     section={parsed.introduction}
                     defaultTitle="Introduction"
                     onUpdate={handleIntroUpdate}
-                    onAdd={()=> handleIntroUpdate({title:'Introduction', content:'## Title\n\n_Introduction_\n'})}
+                    onAdd={handleAddIntro}
                     isEditing={editingSection==='intro'}
-                    onSetEditing={e=>setEditingSection(e?'intro':null)}
+                    onSetEditing={handleSetEditingIntro}
                     variables={allVariables}
                     formatSettings={formatSettings}
                     presenterMode={presenterMode}
@@ -1140,9 +1149,9 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     section={parsed.conclusion}
                     defaultTitle="Conclusion"
                     onUpdate={handleConclusionUpdate}
-                    onAdd={()=> handleConclusionUpdate({title:'Conclusion', content:'_Conclusion_\n'})}
+                    onAdd={handleAddConclusion}
                     isEditing={editingSection==='conclusion'}
-                    onSetEditing={e=>setEditingSection(e?'conclusion':null)}
+                    onSetEditing={handleSetEditingConclusion}
                     variables={allVariables}
                     formatSettings={formatSettings}
                     presenterMode={presenterMode}
