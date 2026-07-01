@@ -588,7 +588,7 @@ async function mergeEventTablesForBatch(
   db: AsyncDuckDB,
   workerIndices: number[],
 ): Promise<void> {
-  if (workerIndices.length === 0) return;
+  if (workerIndices.length <= 1) return; // nothing to collapse for a single-worker batch
 
   // Discover all table names for this batch's workers.
   const chunkNames = workerIndices.map(i => `chunk${i}_`);

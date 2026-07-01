@@ -166,22 +166,21 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
     return filtered;
   }, [schema?.tables, searchTerm, tableSort]);
 
-  const filteredViews = (schema?.views || []).filter(view => {
+  const filteredViews = useMemo(() => {
     const lc = searchTerm.toLowerCase();
-    const searchMatch = view.name.toLowerCase().includes(lc) ||
-        (view.columns?.some(col => col.name.toLowerCase().includes(lc)));
-    if (!searchMatch) return false;
-    
-    if (!showInternalViews && view.internal) {
-        return false;
-    }
-    
-    return true;
-  });
+    return (schema?.views || []).filter(view => {
+      const searchMatch = view.name.toLowerCase().includes(lc) ||
+          (view.columns?.some(col => col.name.toLowerCase().includes(lc)));
+      if (!searchMatch) return false;
+      if (!showInternalViews && view.internal) return false;
+      return true;
+    });
+  }, [schema?.views, searchTerm, showInternalViews]);
 
-  const filteredMacros = (schema?.macros || []).filter(macro => 
-    macro.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredMacros = useMemo(() => {
+    const lc = searchTerm.toLowerCase();
+    return (schema?.macros || []).filter(macro => macro.name.toLowerCase().includes(lc));
+  }, [schema?.macros, searchTerm]);
 
   const handleItemSelect = (name: string, type: 'table' | 'view' | 'macro', userInitiated: boolean = false) => {
     setSelectedItem({ name, type });
