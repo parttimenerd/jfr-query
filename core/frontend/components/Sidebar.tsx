@@ -517,4 +517,4 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
   );
 };
 
-export default Sidebar;
+export default React.memo(Sidebar);

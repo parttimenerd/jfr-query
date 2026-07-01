@@ -419,7 +419,17 @@ const App: React.FC = () => {
         return () => window.removeEventListener('keydown', onKeyDown);
     }, []);
 
-    const { metadata, content: cellsContent } = useMemo(() => parseNotebook(notebookMarkdown), [notebookMarkdown]);
+    const { metadata: parsedMetadata, content: cellsContent } = useMemo(() => parseNotebook(notebookMarkdown), [notebookMarkdown]);
+
+    // Stabilize `metadata` identity: only update the reference when the YAML
+    // front-matter actually changes, not on every cell keystroke.
+    // Comparing the raw front-matter slice of the markdown is cheaper than
+    // deep-comparing the parsed object, and sufficient — parseNotebook only
+    // produces different metadata when the front-matter text changes.
+    const fmEndIdx = notebookMarkdown.indexOf('\n---\n');
+    const frontMatterSlice = fmEndIdx === -1 ? '' : notebookMarkdown.slice(0, fmEndIdx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const metadata = useMemo(() => parsedMetadata, [frontMatterSlice]);
 
     const displaySettings = useMemo(() => ({
         timeFormat: metadata.timeFormat || settings.timeFormat,
