@@ -52,9 +52,10 @@ interface DataContextType {
   serverCurrentFile: string | null;
   recordingStart: number | null;
   recordingEnd: number | null;
+  importProgress: number | null;
   query: (sql: string) => Promise<any[]>;
   refreshSchema: () => Promise<void>;
-  loadFile: (bytes: Uint8Array, fileName: string) => Promise<void>;
+  loadFile: (source: File | Uint8Array, fileName: string, stacktraceDepth?: number) => Promise<void>;
   loadServerFile: (path: string) => Promise<void>;
   loadDemo: () => Promise<void>;
 }
@@ -69,6 +70,7 @@ export const DataContext = createContext<DataContextType>({
   serverCurrentFile: null,
   recordingStart: null,
   recordingEnd: null,
+  importProgress: null,
   query: async () => { throw new Error('DataContext not initialized'); },
   refreshSchema: async () => { throw new Error('DataContext not initialized'); },
   loadFile: async () => { throw new Error('DataContext not initialized'); },
@@ -200,6 +202,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [serverCurrentFile, setServerCurrentFile] = useState<string | null>(null);
   const [recordingStart, setRecordingStart] = useState<number | null>(null);
   const [recordingEnd, setRecordingEnd] = useState<number | null>(null);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
 
   const wasmDbRef = useRef<AsyncDuckDB | null>(null);
   const wasmConnRef = useRef<AsyncDuckDBConnection | null>(null);
@@ -331,8 +334,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => { cancelled = true; };
   }, [fetchSchemaFor]);
 
-  const loadFile = useCallback(async (bytes: Uint8Array, fileName: string) => {
+  const loadFile = useCallback(async (source: File | Uint8Array, fileName: string, stacktraceDepth = 10) => {
     setDbState(DBState.IMPORTING);
+    setImportProgress(0.01);
     setErrorMessage(null);
     try {
       if (!wasmDbRef.current) {
@@ -342,18 +346,22 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const conn = wasmConnRef.current!;
       const isJfr = fileName.toLowerCase().endsWith('.jfr');
       if (isJfr) {
-        await loadJfrIntoWasm(bytes, conn);
+        await loadJfrIntoWasm(source, conn, wasmDbRef.current!, stacktraceDepth, setImportProgress);
       } else {
+        const bytes = source instanceof File ? new Uint8Array(await source.arrayBuffer()) : source;
         await loadDuckDbFileIntoWasm(wasmDbRef.current!, conn, bytes);
       }
       const type = await detectSourceType((sql) => runWasmQuery(conn, sql));
       setSourceType(type);
       setDbState(DBState.SCHEMA_LOADING);
+      setImportProgress(0.97);
       await fetchSchemaFor((sql) => runWasmQuery(conn, sql), true);
+      setImportProgress(null);
       setDbState(DBState.READY);
     } catch (err: any) {
       console.error('File import failed', err);
       setErrorMessage(err.message || String(err));
+      setImportProgress(null);
       setDbState(DBState.ERROR);
     }
   }, [fetchSchemaFor]);
@@ -413,7 +421,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const query = useCallback(async (sql: string): Promise<any[]> => {
     if (dbState !== DBState.READY) {
-      throw new Error('DB not ready.');
+      throw new Error(`Cannot run query: database is in state "${dbState}". Wait for it to finish loading or reload the page if it appears stuck.`);
     }
     return executeQuery(sql);
   }, [dbState, executeQuery]);
@@ -430,9 +438,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const contextValue = useMemo(() => ({
     dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
-    recordingStart, recordingEnd, refreshSchema, loadFile, loadServerFile, loadDemo,
+    recordingStart, recordingEnd, importProgress, refreshSchema, loadFile, loadServerFile, loadDemo,
   }), [dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
-    recordingStart, recordingEnd, refreshSchema, loadFile, loadServerFile, loadDemo]);
+    recordingStart, recordingEnd, importProgress, refreshSchema, loadFile, loadServerFile, loadDemo]);
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;
 };

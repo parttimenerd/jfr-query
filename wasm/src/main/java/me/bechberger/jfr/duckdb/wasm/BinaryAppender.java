@@ -65,7 +65,7 @@ final class BinaryAppender implements Appender {
     private final JSObject db;
     private final String tableName;
 
-    private static final int CHUNK_SIZE = 262_144; // flush every 256K rows
+    private static final int CHUNK_SIZE = 65_536;  // flush every 64K rows (reduced from 256K to cut per-worker memory ~4×)
     private static final int INITIAL_CAPACITY = 64;
 
     // Column names provided by setColumnNames; embedded in every flush so the JS side
@@ -568,7 +568,6 @@ final class BinaryAppender implements Appender {
     }
 
     private static long totalSerializeNs = 0;
-    private static long totalTransferNs = 0;
     private static long totalJsCallNs = 0;
     private static int flushCount = 0;
 
@@ -601,28 +600,21 @@ final class BinaryAppender implements Appender {
         }
         long t1 = System.nanoTime();
 
-        // Pass raw bytes as a latin-1 String (charCode == byte value, 0-255).
-        // This replaces base64 encode+decode (~4/3× data) with a direct 1:1 char mapping,
-        // saving ~1/3 allocation on the Java side and the atob() decode on the JS side.
-        String rawStr = new String(buf.b, 0, buf.pos, java.nio.charset.StandardCharsets.ISO_8859_1);
+        // Pass raw bytes directly as a byte[] — GraalVM @JS.Coerce bridges this as an
+        // Int8Array view into WASM linear memory (zero-copy, no String allocation).
+        loadColumnarData(conn, db, tableName, buf.b, buf.pos);
         long t2 = System.nanoTime();
 
-        loadColumnarData(conn, db, tableName, rawStr);
-        long t3 = System.nanoTime();
-
         totalSerializeNs += t1 - t0;
-        totalTransferNs  += t2 - t1;
-        totalJsCallNs    += t3 - t2;
+        totalJsCallNs    += t2 - t1;
         flushCount++;
 
         // Store timing in a JS-readable global so it survives the opaque console bridge.
         String line = "flush#" + flushCount + " rows=" + n + " cols=" + numCols
                 + " bytes=" + buf.pos
                 + " ser=" + (t1-t0)/1_000_000 + "ms"
-                + " latin1=" + (t2-t1)/1_000_000 + "ms"
-                + " jsCall=" + (t3-t2)/1_000_000 + "ms"
+                + " jsCall=" + (t2-t1)/1_000_000 + "ms"
                 + " | cumSer=" + totalSerializeNs/1_000_000 + "ms"
-                + " cumLatin1=" + totalTransferNs/1_000_000 + "ms"
                 + " cumJsCall=" + totalJsCallNs/1_000_000 + "ms";
         appendFlushLog(line);
 
@@ -758,10 +750,11 @@ final class BinaryAppender implements Appender {
                         List, Field, TimestampMicrosecond } = globalThis.__arrow;
                 if (!tableFromArrays) throw new Error('globalThis.__arrow not set');
 
-                // Decode latin-1 string to raw bytes (charCode == byte value, no base64 overhead).
-                const byteLen = b64.length;
+                // b64 is an Int8Array bridged from Java byte[] via GraalVM @JS.Coerce.
+                // Copy into a fresh Uint8Array (one typed-array copy, no charCodeAt loop)
+                // so that all offset arithmetic below works correctly against offset 0.
                 const raw = new Uint8Array(byteLen);
-                for (let i = 0; i < byteLen; i++) raw[i] = b64.charCodeAt(i);
+                raw.set(new Uint8Array(b64.buffer, b64.byteOffset, byteLen));
 
                 const dv = new DataView(raw.buffer);
                 let off = 0;
@@ -896,5 +889,5 @@ final class BinaryAppender implements Appender {
             }
         })();
         """)
-    static native void loadColumnarData(JSObject conn, JSObject db, String tableName, String b64);
+    static native void loadColumnarData(JSObject conn, JSObject db, String tableName, byte[] b64, int byteLen);
 }

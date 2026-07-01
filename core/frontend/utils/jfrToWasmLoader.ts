@@ -143,6 +143,40 @@ function parseJfrChunks(bytes: Uint8Array): Array<{ start: number; end: number }
 }
 
 /**
+ * Discovers JFR chunk boundaries from a File by reading only 16-byte headers.
+ * Avoids materializing the entire file into memory — each chunk is read on demand.
+ */
+async function discoverJfrChunks(source: File): Promise<Array<{ start: number; end: number }>> {
+  const chunks: Array<{ start: number; end: number }> = [];
+  const size = source.size;
+  let offset = 0;
+  while (offset + 16 <= size) {
+    const head = new Uint8Array(await source.slice(offset, offset + 16).arrayBuffer());
+    if (head[0] !== 0x46 || head[1] !== 0x4C || head[2] !== 0x52 || head[3] !== 0x00) break;
+    const dv = new DataView(head.buffer);
+    const hi = dv.getUint32(8, false);
+    const lo = dv.getUint32(12, false);
+    const chunkSize = hi * 4294967296 + lo;
+    if (chunkSize <= 0 || offset + chunkSize > size + 1) break;
+    chunks.push({ start: offset, end: offset + chunkSize });
+    offset += chunkSize;
+  }
+  return chunks.length > 0 ? chunks : [{ start: 0, end: size }];
+}
+
+/**
+ * Loads a byte slice from a File or Uint8Array source.
+ * For File: uses File.slice().arrayBuffer() — no full-file materialization.
+ * For Uint8Array: uses subarray view (zero-copy).
+ */
+async function loadChunkBytes(source: File | Uint8Array, start: number, end: number): Promise<Uint8Array> {
+  if (source instanceof File) {
+    return new Uint8Array(await source.slice(start, end).arrayBuffer());
+  }
+  return source.subarray(start, end);
+}
+
+/**
  * Dispatch one import job to an existing pooled worker.
  * Returns a Promise that resolves when the WASM parse phase is done (all
  * `insert` messages have been *sent back* — not necessarily flushed to DuckDB).
@@ -222,10 +256,15 @@ async function dispatchToPooledWorker(
  * For event tables (no _id primary key):
  *   - Simple UNION ALL insert from all chunk prefixes
  *
- * Phases 3 (struct) and 4 (event) each run their per-table work in parallel
- * using up to MERGE_PARALLELISM DuckDB connections. Phase 3 fully completes
- * before phase 4 starts because event tables reference the _idmap tables
- * produced in phase 3.
+ * Can be called per-batch (with workerIndices = just this batch's indices) or once
+ * after all batches with workerIndices = all indices. When called per-batch, canonical
+ * tables are created on the first call and appended to on subsequent calls (for event
+ * tables). Struct tables always rebuild from all remaining chunk-prefixed tables, so
+ * they must be merged all at once (pass all indices) or the final merge must be a full
+ * re-merge; for per-batch use, event tables are merged per-batch and struct tables are
+ * merged once at the end.
+ *
+ * @param workerIndices - which chunkN_ prefixes to consider (pass empty to auto-discover all)
  */
 async function mergeChunkTables(
   conn: AsyncDuckDBConnection,
@@ -467,7 +506,96 @@ async function mergeChunkTables(
 }
 
 /**
- * Imports `jfrBytes` into the given DuckDB WASM connection via Web Workers.
+ * Immediately merges event tables (non-struct tables) for a completed batch of workers
+ * into staging tables, then drops the chunk-prefixed event tables to free DuckDB memory.
+ *
+ * Struct tables (Method, Class, etc.) require global dedup and are left as chunk-prefixed
+ * until the final mergeChunkTables call that handles all batches at once.
+ *
+ * This is called after each batch drains so we never hold more than one batch-worth of
+ * event table data in chunk-prefixed form simultaneously.
+ */
+async function mergeEventTablesForBatch(
+  conn: AsyncDuckDBConnection,
+  db: AsyncDuckDB,
+  workerIndices: number[],
+): Promise<void> {
+  if (workerIndices.length === 0) return;
+
+  // Discover all table names for this batch's workers.
+  const chunkNames = workerIndices.map(i => `chunk${i}_`);
+  const likePattern = chunkNames.map(p => `table_name LIKE '${p}%'`).join(' OR ');
+  const tablesResult = await conn.query(
+    `SELECT table_name FROM information_schema.tables WHERE table_schema='main' AND (${likePattern})`
+  ).catch(() => null);
+  if (!tablesResult) return;
+
+  const allTableNames = tablesResult.toArray().map((r: any) => String(r.table_name));
+  if (allTableNames.length === 0) return;
+
+  // Classify event vs struct tables by checking if _id is the first column.
+  const eventTables: Array<{ base: string; workerIdx: number }> = [];
+  for (const tableName of allTableNames) {
+    const workerIdx = workerIndices.find(i => tableName.startsWith(`chunk${i}_`));
+    if (workerIdx === undefined) continue;
+    const base = tableName.slice(`chunk${workerIdx}_`.length);
+
+    const colResult = await conn.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='${tableName.replace(/'/g, "''")}' ORDER BY ordinal_position LIMIT 1`
+    ).catch(() => null);
+    const firstCol = colResult?.toArray()[0];
+    if (!firstCol || String((firstCol as any).column_name) !== '_id') {
+      eventTables.push({ base, workerIdx });
+    }
+  }
+
+  if (eventTables.length === 0) return;
+
+  // For each event table in this batch, append raw rows into a staging table.
+  // The staging table uses the same prefix-less name but with a "_raw" suffix to
+  // distinguish it from the final ID-remapped table (which is created during the
+  // final mergeChunkTables pass). We just INSERT the raw rows and drop the prefix.
+  // Note: the actual ID remapping (scalar FK, array FK) still happens in mergeChunkTables
+  // using the _idmap tables — so we cannot fully finalize event tables here.
+  // Instead, we INSERT into intermediate "_batch_raw_<base>" tables and rename them
+  // to chunk-prefixed names so mergeChunkTables still finds them but as a single merged batch.
+  //
+  // Simpler approach: aggregate all batch workers' event rows into a single chunk0-equivalent
+  // so mergeChunkTables sees one row source per base instead of N.
+
+  const MERGE_PARALLELISM = 4;
+  const extraConns: AsyncDuckDBConnection[] = [];
+  try {
+    for (let i = 0; i < MERGE_PARALLELISM - 1; i++) {
+      extraConns.push(await db.connect());
+    }
+    const allConns = [conn, ...extraConns];
+
+    // Group by base table name.
+    const baseToWorkers = new Map<string, number[]>();
+    for (const { base, workerIdx } of eventTables) {
+      if (!baseToWorkers.has(base)) baseToWorkers.set(base, []);
+      baseToWorkers.get(base)!.push(workerIdx);
+    }
+
+    await Promise.all(Array.from(baseToWorkers.entries()).map(async ([base, workers], idx) => {
+      const c = allConns[idx % allConns.length];
+      if (workers.length <= 1) return; // nothing to collapse
+
+      // Merge all workers' rows for this base into worker[0]'s table, then drop the rest.
+      const target = `"chunk${workers[0]}_${base}"`;
+      for (const wi of workers.slice(1)) {
+        await c.query(`INSERT INTO ${target} SELECT * FROM "chunk${wi}_${base}"`).catch(() => {});
+        await c.query(`DROP TABLE IF EXISTS "chunk${wi}_${base}"`).catch(() => {});
+      }
+    }));
+  } finally {
+    for (const c of extraConns) c.close().catch(() => {});
+  }
+}
+
+/**
+ * Imports a JFR file or byte array into the given DuckDB WASM connection via Web Workers.
  *
  * Multi-chunk JFR files (common for recordings >~5 MB) are parsed into their
  * constituent chunks and imported in parallel — one worker per chunk (up to
@@ -478,7 +606,7 @@ async function mergeChunkTables(
  * @param onProgress Optional callback (0–1) called at key checkpoints.
  */
 export async function loadJfrIntoWasm(
-  jfrBytes: Uint8Array,
+  source: File | Uint8Array,
   conn: AsyncDuckDBConnection,
   db: AsyncDuckDB,
   stacktraceDepth = 10,
@@ -494,10 +622,12 @@ export async function loadJfrIntoWasm(
     try { return parseFloat(localStorage.getItem(PERF_KEY) ?? '') || 0; } catch { return 0; }
   })();
 
-  const jfrByteLength = jfrBytes.byteLength;
+  const jfrByteLength = source instanceof File ? source.size : source.byteLength;
 
-  // Parse chunk boundaries before any transfer (buffer stays valid here)
-  const chunks = parseJfrChunks(jfrBytes);
+  // Parse chunk boundaries without materializing the full file.
+  const chunks = source instanceof File
+    ? await discoverJfrChunks(source)
+    : parseJfrChunks(source);
   const numChunks = chunks.length;
   const useParallel = numChunks > 1;
   const maxWorkers = getMaxWorkers();
@@ -555,7 +685,8 @@ export async function loadJfrIntoWasm(
   if (!useParallel) {
     // Single-chunk path — reuse persistent pool worker
     const pooled = workerPool[0];
-    const buf = jfrBytes.buffer.byteLength === jfrBytes.byteLength ? jfrBytes.buffer : jfrBytes.slice().buffer;
+    const chunkBytes = await loadChunkBytes(source, chunks[0].start, chunks[0].end);
+    const buf = chunkBytes.buffer.byteLength === chunkBytes.byteLength ? chunkBytes.buffer : chunkBytes.slice().buffer;
     const insertPs = await dispatchToPooledWorker(pooled, new Uint8Array(buf), '', stacktraceDepth, reportParseProgress);
     allInsertPromises = insertPs;
     await Promise.all(insertPs);
@@ -599,13 +730,14 @@ export async function loadJfrIntoWasm(
         );
       }
 
-      // Parse chunks in parallel. Terminate workers immediately when parse finishes
-      // to release WASM linear memory before drain starts.
+      // Parse chunks in parallel. Load each chunk's bytes on demand (File.slice)
+      // so the main thread never holds the full file buffer. Terminate workers
+      // immediately when parse finishes to release WASM linear memory before drain starts.
       const tParse0 = performance.now();
       const batchInsertArrays = await Promise.all(
-        batchChunks.map((chunk, i) => {
+        batchChunks.map(async (chunk, i) => {
           const workerIdx = globalWorkerIdx + i;
-          const slice = jfrBytes.slice(chunk.start, chunk.end);
+          const slice = await loadChunkBytes(source, chunk.start, chunk.end);
           return dispatchToPooledWorker(batchWorkers[i], slice, `chunk${workerIdx}_`, stacktraceDepth, reportParseProgress);
         }),
       ).finally(() => {
@@ -624,8 +756,16 @@ export async function loadJfrIntoWasm(
 
       await Promise.all(batchWorkers.map(pw => pw.conn.close().catch(() => {})));
 
+      // Per-batch merge: consolidate this batch's event tables into the lowest-indexed
+      // worker slot and drop the others. This caps event-table DuckDB storage to
+      // one-worker's-worth per base table during the parse phase instead of all-batches.
+      const batchWorkerIndices = batchChunks.map((_, i) => globalWorkerIdx + i);
+      const tMergeBatch0 = performance.now();
+      await mergeEventTablesForBatch(conn, db, batchWorkerIndices);
+      const tMergeBatchMs = performance.now() - tMergeBatch0;
+
       const chunkSizes = batchChunks.map(c => `${((c.end - c.start)/1024/1024).toFixed(1)}MB`).join('+');
-      console.log(`[jfr-perf] batch ${batchIdx + 1}/${totalBatches} (${chunkSizes}): parse=${tParseMs.toFixed(0)}ms drain=${tDrainMs.toFixed(0)}ms`);
+      console.log(`[jfr-perf] batch ${batchIdx + 1}/${totalBatches} (${chunkSizes}): parse=${tParseMs.toFixed(0)}ms drain=${tDrainMs.toFixed(0)}ms batchMerge=${tMergeBatchMs.toFixed(0)}ms`);
       globalWorkerIdx += batchChunks.length;
     }
   }

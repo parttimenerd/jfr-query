@@ -2,9 +2,13 @@ import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { NotebookIcon } from './icons/NotebookIcon';
 
+const PERF_KEY = 'jfr_import_ms_per_byte';
+
 interface JFRDropZoneProps {
-    onFileSelected: (bytes: Uint8Array, name: string) => void;
+    onFileSelected: (file: File, name: string, stacktraceDepth: number) => void;
     isImporting: boolean;
+    importPhase?: string;
+    importProgress?: number | null;
     errorMessage: string | null;
     onLoadDemo?: () => void;
     onLoadGcNotebook?: () => void;
@@ -17,23 +21,120 @@ const FEATURE_HINTS = [
     { icon: '📓', text: 'Shareable notebooks saved as plain Markdown' },
 ];
 
-const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, errorMessage, onLoadDemo, onLoadGcNotebook }) => {
+// Files larger than this threshold show the depth selector before importing.
+const LARGE_FILE_THRESHOLD_MB = 20;
+
+const DEPTH_OPTIONS = [
+    { value: 50, label: '50 frames', description: 'Full depth — slowest' },
+    { value: 10, label: '10 frames', description: 'Default' },
+    { value: 5,  label: '5 frames',  description: 'Faster' },
+    { value: 0,  label: 'Skip',      description: 'No call stack — fastest' },
+];
+
+interface PendingFile {
+    file: File;
+    name: string;
+    sizeMb: number;
+}
+
+const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, importPhase, importProgress, errorMessage, onLoadDemo, onLoadGcNotebook }) => {
     const [fileName, setFileName] = useState<string | null>(null);
+    const [fileBytes, setFileBytes] = useState<number | null>(null);
+    const [pending, setPending] = useState<PendingFile | null>(null);
+    const [selectedDepth, setSelectedDepth] = useState(10);
+
+    // Estimated total duration, shown as "~Xs" hint below the bar.
+    const estimatedSeconds = fileBytes != null ? (() => {
+        try {
+            const msPerByte = parseFloat(localStorage.getItem(PERF_KEY) ?? '') || 0.0012;
+            return Math.round(fileBytes * msPerByte / 1000);
+        } catch { return null; }
+    })() : null;
 
     const onDrop = useCallback(async (accepted: File[]) => {
         const file = accepted[0];
         if (!file) return;
         setFileName(file.name);
-        const buf = await file.arrayBuffer();
-        onFileSelected(new Uint8Array(buf), file.name);
+        setFileBytes(file.size);
+        const isJfr = file.name.toLowerCase().endsWith('.jfr');
+        const sizeMb = file.size / (1024 * 1024);
+
+        if (isJfr && sizeMb > LARGE_FILE_THRESHOLD_MB) {
+            setPending({ file, name: file.name, sizeMb });
+        } else {
+            onFileSelected(file, file.name, 10);
+        }
     }, [onFileSelected]);
+
+    const confirmImport = useCallback(() => {
+        if (!pending) return;
+        const { file, name } = pending;
+        setPending(null);
+        onFileSelected(file, name, selectedDepth);
+    }, [pending, selectedDepth, onFileSelected]);
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
         accept: { 'application/octet-stream': ['.jfr', '.duckdb', '.db'] },
         multiple: false,
-        disabled: isImporting,
+        disabled: isImporting || !!pending,
     });
+
+    if (pending) {
+        return (
+            <div className="w-screen h-screen flex items-center justify-center bg-gray-900">
+                <div className="text-center p-8 max-w-md w-full">
+                    <div className="flex items-center justify-center gap-4 mb-6">
+                        <NotebookIcon className="w-10 h-10 text-cyan-400" />
+                        <h1 className="text-2xl font-bold text-white">JFR SQL Notebook</h1>
+                    </div>
+                    <div className="bg-gray-800 border border-amber-500/40 rounded-lg p-5 text-left">
+                        <p className="text-amber-300 font-semibold text-sm mb-1">Large file detected</p>
+                        <p className="text-gray-400 text-xs mb-4">
+                            <span className="text-white font-medium">{pending.name}</span> is{' '}
+                            {pending.sizeMb.toFixed(0)} MB. In-browser import can be slow for large files.
+                            Choose how many stack frames to store per event — fewer frames import faster.
+                        </p>
+                        <p className="text-gray-300 text-xs font-medium mb-2">Stack trace depth</p>
+                        <div className="flex flex-col gap-2">
+                            {DEPTH_OPTIONS.map(opt => (
+                                <label key={opt.value} className={`flex items-center gap-3 p-2.5 rounded border cursor-pointer transition-colors ${
+                                    selectedDepth === opt.value
+                                        ? 'border-cyan-500 bg-cyan-900/20 text-white'
+                                        : 'border-gray-600 bg-gray-700/30 text-gray-400 hover:border-gray-500'
+                                }`}>
+                                    <input
+                                        type="radio"
+                                        name="depth"
+                                        value={opt.value}
+                                        checked={selectedDepth === opt.value}
+                                        onChange={() => setSelectedDepth(opt.value)}
+                                        className="accent-cyan-400"
+                                    />
+                                    <span className="text-sm font-medium w-20">{opt.label}</span>
+                                    <span className="text-xs text-gray-500">{opt.description}</span>
+                                </label>
+                            ))}
+                        </div>
+                        <div className="mt-4 flex gap-3">
+                            <button
+                                onClick={confirmImport}
+                                className="flex-1 py-2 px-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm font-medium transition-colors"
+                            >
+                                Import
+                            </button>
+                            <button
+                                onClick={() => { setPending(null); setFileName(null); }}
+                                className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-sm transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="w-screen h-screen flex items-center justify-center bg-gray-900">
@@ -54,10 +155,26 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                 >
                     <input {...getInputProps()} />
                     {isImporting ? (
-                        <div className="flex flex-col items-center gap-4 text-gray-300">
-                            <div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" role="status" />
-                            <p>Importing {fileName ?? 'file'}…</p>
-                            <p className="text-xs text-gray-500">Loading into in-browser DuckDB — runs entirely locally, nothing leaves your machine.</p>
+                        <div className="flex flex-col items-center gap-3 text-gray-300">
+                            <p className="font-medium">Importing {fileName ?? 'file'}…</p>
+                            <p className="text-sm text-gray-400">{importPhase ?? 'Parsing events…'}</p>
+                            <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                                {importProgress != null ? (
+                                    <div
+                                        className="bg-cyan-400 h-2 rounded-full transition-[width] duration-500 ease-out"
+                                        style={{ width: `${Math.round(importProgress * 100)}%` }}
+                                    />
+                                ) : (
+                                    // Indeterminate pulse while no progress signal yet
+                                    <div className="bg-cyan-400 h-2 rounded-full animate-pulse w-1/3" />
+                                )}
+                            </div>
+                            {estimatedSeconds != null && estimatedSeconds > 2 && (importProgress ?? 0) < 0.8 && (
+                                <p className="text-xs text-gray-500">~{estimatedSeconds}s estimated</p>
+                            )}
+                            {((importProgress ?? 0) < 0.05) && (
+                                <p className="text-xs text-gray-500">Runs entirely locally — nothing leaves your machine.</p>
+                            )}
                         </div>
                     ) : (
                         <div className="text-gray-300">
