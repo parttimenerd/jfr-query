@@ -418,6 +418,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         return usage;
     }, [parsed.variables, parsed.sqlBlocks, parsed.plotBlocksWithSqlIndex]);
 
+    const formatSettings = useMemo(
+        () => ({ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }),
+        [metadata?.timeFormat, metadata?.decimalPlaces],
+    );
+
     const [isVariablesCollapsed, setIsVariablesCollapsed] = useState(Object.keys(parsed.variables || {}).length === 0);
 
     const handleCellVariableChange = useCallback((newVars: Record<string, string>) => {
@@ -837,7 +842,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     isEditing={editingSection==='intro'}
                     onSetEditing={e=>setEditingSection(e?'intro':null)}
                     variables={allVariables}
-                    formatSettings={{ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }}
+                    formatSettings={formatSettings}
                     presenterMode={presenterMode}
                 />
 
@@ -873,7 +878,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                     <TemplatedMarkdown
                                                         segments={[seg]}
                                                         variables={allVariables}
-                                                        formatSettings={{ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }}
+                                                        formatSettings={formatSettings}
                                                     />
                                                 </div>
                                             ) : !presenterMode ? (
@@ -906,7 +911,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                         <TemplatedMarkdown
                                             segments={[seg]}
                                             variables={allVariables}
-                                            formatSettings={{ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }}
+                                            formatSettings={formatSettings}
                                         />
                                     </div>
                                 );
@@ -1139,7 +1144,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     isEditing={editingSection==='conclusion'}
                     onSetEditing={e=>setEditingSection(e?'conclusion':null)}
                     variables={allVariables}
-                    formatSettings={{ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }}
+                    formatSettings={formatSettings}
                     presenterMode={presenterMode}
                 />
             </div>)}
