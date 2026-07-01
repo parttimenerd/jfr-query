@@ -807,4 +807,21 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
     );
 };
 
-export default React.memo(PlotRenderer);
+function arePlotRendererPropsEqual(prev: PlotRendererProps, next: PlotRendererProps): boolean {
+    return (
+        prev.config === next.config &&
+        prev.data === next.data &&
+        prev.dataByQueryRef === next.dataByQueryRef &&
+        prev.sql === next.sql &&
+        prev.cellContext === next.cellContext &&
+        prev.onApplyFix === next.onApplyFix &&
+        prev.isAiFeatureActive === next.isAiFeatureActive &&
+        prev.metadata?.customSystemPrompt === next.metadata?.customSystemPrompt &&
+        prev.metadata?.variables === next.metadata?.variables &&
+        prev.onMetadataChange === next.onMetadataChange &&
+        prev.onCellVariableChange === next.onCellVariableChange &&
+        prev.allVariables === next.allVariables
+    );
+}
+
+export default React.memo(PlotRenderer, arePlotRendererPropsEqual);
