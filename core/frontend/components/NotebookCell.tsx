@@ -256,20 +256,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
     const title = parsed.title || cell.title;
 
-    const precedingCellVariables = useMemo(
-        () => collectPrecedingCellVariables(allCells, cell.id),
-        [allCells, cell.id],
-    );
-
-    const allVariables = useMemo(
-        () => ({ ...metadata.variables, ...precedingCellVariables, ...parsed.variables }),
-        [metadata.variables, precedingCellVariables, parsed.variables],
-    );
-
-    // Stable slice of cells up to and including the current cell. The scope
-    // builder only reads cells before the current one, so changes to cells after
-    // this cell should not trigger a rebuild. We reuse the previous slice when
-    // no cell at or before this position changed.
+    // Stable slice of cells up to and including the current cell. Both
+    // cross-cell variable collection and plot-scope building only read cells
+    // before the current one, so changes to cells AFTER this cell must not
+    // invalidate those memos. We reuse the previous slice when no cell at or
+    // before this position changed.
     const precedingCellsRef = useRef<ReadonlyArray<NotebookCellData>>([]);
     const precedingCells = useMemo(() => {
         const idx = allCells.findIndex(c => c.id === cell.id);
@@ -285,6 +276,16 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         precedingCellsRef.current = slice;
         return slice;
     }, [allCells, cell.id]);
+
+    const precedingCellVariables = useMemo(
+        () => collectPrecedingCellVariables(precedingCells, cell.id),
+        [precedingCells, cell.id],
+    );
+
+    const allVariables = useMemo(
+        () => ({ ...metadata.variables, ...precedingCellVariables, ...parsed.variables }),
+        [metadata.variables, precedingCellVariables, parsed.variables],
+    );
 
     // P7 — Notebook-wide plot scope (named plots, query refs, variables, brushes).
     // The scope is rebuilt only when cells BEFORE the current cell change or
