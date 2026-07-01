@@ -55,8 +55,9 @@ self.addEventListener('message', (e: MessageEvent) => {
 
   if (msg.type === 'init') {
     // Pre-warm: load WASM now so it's ready before 'import' arrives.
-    // Accept an optional pre-compiled WebAssembly.Module to skip compilation.
-    wasmInitPromise = loadWasm(msg.wasmModule ?? null);
+    // Accept an optional pre-compiled WebAssembly.Module to skip compilation,
+    // and an optional importerSrc string to skip the fetch of jfr-importer.js.
+    wasmInitPromise = loadWasm(msg.wasmModule ?? null, msg.importerSrc ?? null);
     wasmInitPromise
       .then(() => self.postMessage({ type: 'ready' }))
       .catch(err => self.postMessage({ type: 'error', message: String(err) }));
@@ -68,7 +69,7 @@ self.addEventListener('message', (e: MessageEvent) => {
   }
 });
 
-async function loadWasm(precompiledModule: WebAssembly.Module | null): Promise<void> {
+async function loadWasm(precompiledModule: WebAssembly.Module | null, importerSrc: string | null): Promise<void> {
   if ((self as any).__jfrWasmReady) return; // already loaded
 
   if (!(self as any).__arrow) {
@@ -76,28 +77,33 @@ async function loadWasm(precompiledModule: WebAssembly.Module | null): Promise<v
   }
 
   await new Promise<void>((resolve, reject) => {
-    fetch('/wasm/jfr-importer.js')
-      .then(r => r.text())
-      .then(src => {
-        // Patch GraalVM bootstrap:
-        // 1. Override wasm_path so the loader finds the .wasm file by absolute URL.
-        // 2. If a pre-compiled WebAssembly.Module was provided, inject it into the
-        //    GraalVM config so it skips the compile step (~10× faster instantiation).
-        let patch = 'const config = new GraalVM.Config(); config.wasm_path = "/wasm/jfr-importer.js.wasm";';
-        if (precompiledModule) {
-          // GraalVM Web Image config accepts a pre-compiled module via config.wasm_module.
-          // Stage the module in a global so the eval'd code can read it.
-          (self as any).__jfrPrecompiledModule = precompiledModule;
-          patch = `const config = new GraalVM.Config();
+    const applyPatch = (src: string) => {
+      // Patch GraalVM bootstrap:
+      // 1. Override wasm_path so the loader finds the .wasm file by absolute URL.
+      // 2. If a pre-compiled WebAssembly.Module was provided, inject it into the
+      //    GraalVM config so it skips the compile step (~10× faster instantiation).
+      let patch = 'const config = new GraalVM.Config(); config.wasm_path = "/wasm/jfr-importer.js.wasm";';
+      if (precompiledModule) {
+        (self as any).__jfrPrecompiledModule = precompiledModule;
+        patch = `const config = new GraalVM.Config();
 config.wasm_path = "/wasm/jfr-importer.js.wasm";
 if (globalThis.__jfrPrecompiledModule) { try { config.wasm_module = globalThis.__jfrPrecompiledModule; } catch(_){} }`;
-        }
-        const patchedSrc = src.replace('const config = new GraalVM.Config();', patch);
-        // eslint-disable-next-line no-eval
-        (0, eval)(patchedSrc);
-        resolve();
-      })
-      .catch(reject);
+      }
+      const patchedSrc = src.replace('const config = new GraalVM.Config();', patch);
+      // eslint-disable-next-line no-eval
+      (0, eval)(patchedSrc);
+      resolve();
+    };
+
+    if (importerSrc) {
+      // Source was pre-fetched by main thread — skip the network round-trip.
+      try { applyPatch(importerSrc); } catch (e) { reject(e); }
+    } else {
+      fetch('/wasm/jfr-importer.js')
+        .then(r => r.text())
+        .then(applyPatch)
+        .catch(reject);
+    }
   });
 
   // Wait for JFRImporter global
@@ -118,7 +124,7 @@ async function handleImport(bytes: Uint8Array, stacktraceDepth: number, tablePre
   try {
     // Ensure WASM is loaded (may already be in progress from 'init' message)
     if (!wasmInitPromise) {
-      wasmInitPromise = loadWasm(null);
+      wasmInitPromise = loadWasm(null, null);
     }
     await wasmInitPromise;
 
