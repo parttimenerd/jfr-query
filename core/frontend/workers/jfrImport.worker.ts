@@ -53,11 +53,11 @@ self.addEventListener('message', (e: MessageEvent) => {
     return;
   }
   if (msg.type === 'import') {
-    handleImport(msg.bytes as Uint8Array, msg.stacktraceDepth as number);
+    handleImport(msg.bytes as Uint8Array, msg.stacktraceDepth as number, (msg.tablePrefix as string) ?? '');
   }
 });
 
-async function handleImport(bytes: Uint8Array, stacktraceDepth: number) {
+async function handleImport(bytes: Uint8Array, stacktraceDepth: number, tablePrefix = '') {
   try {
     // Load the GraalVM WASM bundle into this worker context.
     // In a module worker, importScripts() is unavailable, and self.location.href
@@ -153,7 +153,7 @@ async function handleImport(bytes: Uint8Array, stacktraceDepth: number) {
 
     // The Java WASM call — blocks this worker thread for the full parse duration.
     // Main thread stays responsive throughout.
-    (self as any).JFRImporter.importJfrIntoDuckDB(bytes, fakeConn, fakeDb, stacktraceDepth);
+    (self as any).JFRImporter.importJfrIntoDuckDB(bytes, fakeConn, fakeDb, stacktraceDepth, tablePrefix);
 
     // Drain: wait for all insertArrowTable round-trips to complete.
     while (((self as any).__jfrPendingValue ?? 0) > 0) {

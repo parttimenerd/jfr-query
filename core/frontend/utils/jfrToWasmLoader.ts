@@ -4,24 +4,333 @@ import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL } from '../data/builtinSql';
 
 const PERF_KEY = 'jfr_import_ms_per_byte';
 
+// Maximum workers to spawn for chunk-parallel import.
+// Kept at 2 to balance parallelism against per-worker WASM heap cost.
+// Each worker instantiates its own 11 MB GraalVM WASM binary; beyond 2
+// workers the combined heap may exhaust browser tab memory on large files.
+const MAX_CHUNK_WORKERS = 2;
+
 /**
- * Imports `jfrBytes` into the given DuckDB WASM connection via a Web Worker.
+ * Parses JFR chunk boundaries from raw bytes.
+ * JFR format: each chunk starts with magic FLR\0 (4 bytes), then 4 bytes version,
+ * then chunk size as big-endian int64 at offset 8.
+ * Returns array of {start, end} byte offsets for each chunk.
+ */
+function parseJfrChunks(bytes: Uint8Array): Array<{ start: number; end: number }> {
+  const chunks: Array<{ start: number; end: number }> = [];
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 0;
+  while (offset + 16 <= bytes.byteLength) {
+    // Verify magic FLR\0
+    if (bytes[offset] !== 0x46 || bytes[offset + 1] !== 0x4C ||
+        bytes[offset + 2] !== 0x52 || bytes[offset + 3] !== 0x00) {
+      break;
+    }
+    // Chunk size is big-endian int64 at offset+8 (split into two uint32 since JS BigInt is slow)
+    const hi = dv.getUint32(offset + 8, false);
+    const lo = dv.getUint32(offset + 12, false);
+    // Safe for files up to ~4GB (hi is almost always 0 in practice)
+    const chunkSize = hi * 4294967296 + lo;
+    if (chunkSize <= 0 || offset + chunkSize > bytes.byteLength + 1) break;
+    chunks.push({ start: offset, end: offset + chunkSize });
+    offset += chunkSize;
+  }
+  return chunks.length > 0 ? chunks : [{ start: 0, end: bytes.byteLength }];
+}
+
+/**
+ * Runs one JFR import worker for a single byte slice.
+ * Returns when the worker posts {type:'done'} or rejects on {type:'error'}.
+ * Relays query/insert messages to the shared DuckDB connection.
+ */
+async function runImportWorker(
+  slice: Uint8Array,
+  tablePrefix: string,
+  conn: AsyncDuckDBConnection,
+  stacktraceDepth: number,
+  onInsert?: () => void,
+  onInsertDone?: () => void,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const worker = new Worker(
+      new URL('../workers/jfrImport.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
+
+    worker.onmessage = async (e: MessageEvent) => {
+      const msg = e.data;
+
+      if (msg.type === 'query') {
+        try {
+          await conn.query(msg.sql as string);
+        } catch (err) {
+          console.warn(`[jfr-worker ${tablePrefix}] query failed:`, err);
+        }
+        worker.postMessage({ type: 'query-result', reqId: msg.reqId, rows: [] });
+        return;
+      }
+
+      if (msg.type === 'insert') {
+        onInsert?.();
+        conn.insertArrowTable(
+          tableFromIPC(new Uint8Array(msg.ipcBytes as ArrayBuffer)),
+          { name: msg.tableName as string, create: false },
+        ).catch((err) => console.warn(`[jfr-worker ${tablePrefix}] insert failed for`, msg.tableName, err))
+          .finally(() => { onInsertDone?.(); });
+        worker.postMessage({ type: 'insert-result', reqId: msg.reqId });
+        return;
+      }
+
+      if (msg.type === 'done') { worker.terminate(); resolve(); return; }
+      if (msg.type === 'error') { worker.terminate(); reject(new Error(msg.message as string)); return; }
+    };
+
+    worker.onerror = (e) => {
+      worker.terminate();
+      reject(new Error(`JFR import worker error (${tablePrefix}): ${e.message}`));
+    };
+
+    const buf = slice.buffer.byteLength === slice.byteLength ? slice.buffer : slice.slice().buffer;
+    worker.postMessage({ type: 'import', bytes: new Uint8Array(buf), stacktraceDepth, tablePrefix }, [buf]);
+  });
+}
+
+/**
+ * Merges chunk-prefixed tables (`chunk0_T`, `chunk1_T`, ...) into final tables.
  *
- * The GraalVM WASM bundle runs entirely in the worker so the main thread — and
- * therefore the UI — stays responsive during the 30-60 s Java parse phase on
- * large recordings.
+ * For struct tables (those with `_id UINTEGER PRIMARY KEY`):
+ *   - Dedup rows across workers by natural key using DENSE_RANK
+ *   - Build old_id→new_id mapping tables
+ *   - Rewrite UINTEGER and UINTEGER[] columns in event tables that reference struct tables
  *
- * Worker protocol:
- *   main → worker  { type:'import', bytes:Uint8Array, stacktraceDepth:number }
- *   worker → main  { type:'query',  reqId, sql }
- *   worker → main  { type:'insert', reqId, tableName, ipcBytes:ArrayBuffer }
- *   worker → main  { type:'done' }
- *   worker → main  { type:'error', message }
- *   main → worker  { type:'query-result',  reqId, rows }
- *   main → worker  { type:'insert-result', reqId }
+ * For event tables (no _id primary key):
+ *   - Simple UNION ALL insert from all chunk prefixes
+ */
+async function mergeChunkTables(
+  conn: AsyncDuckDBConnection,
+  numChunks: number,
+): Promise<void> {
+  const prefixes = Array.from({ length: numChunks }, (_, i) => `chunk${i}_`);
+
+  // 1. Collect all base table names across ALL chunks (not just chunk0)
+  const allTablesResult = await conn.query(
+    `SELECT DISTINCT regexp_replace(table_name, '^chunk\\d+_', '') AS base_name
+     FROM information_schema.tables
+     WHERE table_schema='main' AND regexp_matches(table_name, '^chunk\\d+_')
+     ORDER BY base_name`
+  );
+  const allBaseNames = allTablesResult.toArray().map((r: any) => String(r.base_name));
+
+  if (allBaseNames.length === 0) return;
+
+  // Build a map: baseName → array of worker indices that have it
+  const baseToWorkers = new Map<string, number[]>();
+  for (const base of allBaseNames) {
+    const workers: number[] = [];
+    for (let i = 0; i < numChunks; i++) {
+      const exists = await conn.query(
+        `SELECT 1 FROM information_schema.tables WHERE table_schema='main' AND table_name='chunk${i}_${base.replace(/'/g, "''")}'`
+      );
+      if (exists.toArray().length > 0) workers.push(i);
+    }
+    baseToWorkers.set(base, workers);
+  }
+
+  // 2. Classify tables: struct (has _id as first column) vs event
+  const structTables: string[] = [];
+  const eventTables: string[] = [];
+
+  for (const base of allBaseNames) {
+    const workers = baseToWorkers.get(base)!;
+    const firstWorker = workers[0];
+    const colsResult = await conn.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}' ORDER BY ordinal_position LIMIT 1`
+    );
+    const firstCol = colsResult.toArray()[0];
+    if (firstCol && String((firstCol as any).column_name) === '_id') {
+      structTables.push(base);
+    } else {
+      eventTables.push(base);
+    }
+  }
+
+  // 3. For each struct table: deduplicate by natural key, build idmap
+  for (const base of structTables) {
+    const workers = baseToWorkers.get(base)!;
+    const firstWorker = workers[0];
+    const colsResult = await conn.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}' AND column_name != '_id' ORDER BY ordinal_position`
+    );
+    const naturalCols = colsResult.toArray().map((r: any) => `"${String((r as any).column_name)}"`);
+    const naturalKey = naturalCols.join(', ');
+
+    // Union only chunks that have this table
+    const unionParts = workers.map((i) =>
+      `SELECT ${i} AS _worker, * FROM "chunk${i}_${base}"`
+    ).join(' UNION ALL ');
+
+    await conn.query(
+      `CREATE TEMP TABLE "_stage_${base}" AS ${unionParts}`
+    ).catch((e) => console.warn(`merge stage failed for ${base}:`, e));
+
+    await conn.query(
+      `CREATE TEMP TABLE "_idmap_${base}" AS
+       SELECT _worker, _id AS old_id,
+         CASE WHEN _id = 0 THEN 0
+              ELSE DENSE_RANK() OVER (ORDER BY ${naturalKey}) END AS new_id
+       FROM "_stage_${base}"`
+    ).catch((e) => console.warn(`merge idmap failed for ${base}:`, e));
+
+    const selectCols = naturalCols.join(', ');
+    await conn.query(
+      `CREATE TABLE "${base}" AS
+       SELECT DISTINCT m.new_id AS _id, ${selectCols}
+       FROM "_stage_${base}" s
+       JOIN "_idmap_${base}" m ON s._worker = m._worker AND s._id = m.old_id
+       ORDER BY _id`
+    ).catch((e) => console.warn(`merge create ${base} failed:`, e));
+  }
+
+  // 4. For event tables: UNION ALL from chunks that have the table, remapping FK columns.
+  // DuckDB WASM doesn't support correlated subqueries in lambda/list_transform, so we
+  // remap scalar FKs via a LEFT JOIN and array FKs via unnest+list_agg+JOIN.
+  const refPattern = /Column "([^"]+)": (Array of references to|references) "([^"]+)"\(_id\)/g;
+
+  for (const base of eventTables) {
+    const workers = baseToWorkers.get(base)!;
+    const firstWorker = workers[0];
+
+    const commentResult = await conn.query(
+      `SELECT comment FROM duckdb_tables() WHERE table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}'`
+    ).catch(() => null);
+    const comment = commentResult?.toArray()[0] ? String((commentResult.toArray()[0] as any).comment ?? '') : '';
+
+    const colRemap = new Map<string, { structTable: string; isArray: boolean }>();
+    let m: RegExpExecArray | null;
+    refPattern.lastIndex = 0;
+    while ((m = refPattern.exec(comment)) !== null) {
+      const colName = m[1];
+      const isArray = m[2] === 'Array of references to';
+      const structTable = m[3];
+      if (structTables.includes(structTable)) {
+        colRemap.set(colName, { structTable, isArray });
+      }
+    }
+
+    const colsResult = await conn.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}' ORDER BY ordinal_position`
+    );
+    const allCols = colsResult.toArray().map((r: any) => String((r as any).column_name));
+
+    // Separate scalar-FK and array-FK columns
+    const arrayFkCols = allCols.filter(col => colRemap.get(col)?.isArray);
+    const scalarFkCols = allCols.filter(col => colRemap.get(col) && !colRemap.get(col)!.isArray);
+
+    if (arrayFkCols.length > 0) {
+      // Array-FK remapping: for each chunk, expand arrays via unnest, join idmap, re-aggregate.
+      // We build the final table chunk by chunk to avoid cross-chunk unnest complexity.
+      const nonArrayCols = allCols.filter(c => !arrayFkCols.includes(c));
+
+      // Create the table structure from the first chunk first
+      const firstChunkCols = allCols.map(col => {
+        const remap = colRemap.get(col);
+        if (!remap) return `"${col}"`;
+        if (remap.isArray) return `"${col}"`;
+        return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
+      });
+
+      // Build from first available chunk
+      let created = false;
+      for (const wi of workers) {
+        const prefix = `chunk${wi}_`;
+        // For scalar FKs use JOIN, for array FKs remap inline per-row using a CTE
+        let sql: string;
+        if (arrayFkCols.length === 0) {
+          const joins = scalarFkCols.map(col => {
+            const { structTable } = colRemap.get(col)!;
+            return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=${wi} AND idmap_${col}.old_id=e."${col}"`;
+          }).join('\n');
+          const selectExprs2 = allCols.map(col => {
+            const remap = colRemap.get(col);
+            if (!remap) return `e."${col}"`;
+            return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
+          });
+          sql = `SELECT ${selectExprs2.join(', ')} FROM "${prefix}${base}" e\n${joins}`;
+        } else {
+          // Use array_transform with idmap lookup via join on unnested values
+          // Strategy: build a lookup list from idmap, then use list_transform with list indexing
+          // Simpler: remap each array column via a subquery that builds a replacement array
+          const selectExprs2 = allCols.map(col => {
+            const remap = colRemap.get(col);
+            if (!remap) return `e."${col}"`;
+            const { structTable, isArray } = remap;
+            if (!isArray) {
+              return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
+            }
+            // Array FK: use list_transform with a precomputed map
+            // DuckDB supports list_transform with a non-correlated lambda
+            // Build map as: map(old_ids, new_ids) from idmap filtered to this worker
+            return `(SELECT list(m.new_id ORDER BY pos)
+                     FROM (SELECT unnest(e."${col}") AS oid, generate_subscripts(e."${col}", 1) AS pos) t
+                     JOIN "_idmap_${structTable}" m ON m._worker=${wi} AND m.old_id=t.oid
+                    ) AS "${col}"`;
+          });
+          const scalarJoins = scalarFkCols.map(col => {
+            const { structTable } = colRemap.get(col)!;
+            return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=${wi} AND idmap_${col}.old_id=e."${col}"`;
+          }).join('\n');
+          sql = `SELECT ${selectExprs2.join(', ')} FROM "${prefix}${base}" e\n${scalarJoins}`;
+        }
+        if (!created) {
+          await conn.query(`CREATE TABLE "${base}" AS ${sql}`).catch((e) => console.warn(`merge event ${base} (w${wi}) create failed:`, e));
+          created = true;
+        } else {
+          await conn.query(`INSERT INTO "${base}" ${sql}`).catch((e) => console.warn(`merge event ${base} (w${wi}) insert failed:`, e));
+        }
+      }
+    } else {
+      // No array FKs — simpler path with JOIN for scalar FKs
+      const selectExprs = allCols.map(col => {
+        const remap = colRemap.get(col);
+        if (!remap) return `e."${col}"`;
+        return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
+      });
+      const joins = scalarFkCols.map(col => {
+        const { structTable } = colRemap.get(col)!;
+        return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=e._w AND idmap_${col}.old_id=e."${col}"`;
+      }).join('\n');
+
+      const unionParts = workers.map((i) =>
+        `SELECT ${i} AS _w, ${allCols.map(c => `"${c}"`).join(', ')} FROM "chunk${i}_${base}"`
+      ).join(' UNION ALL ');
+
+      const selectList = ['_w', ...selectExprs].join(', ');
+      await conn.query(
+        `CREATE TABLE "${base}" AS SELECT ${allCols.map(c => `"${c}"`).join(', ')} FROM (SELECT ${selectList} FROM (${unionParts}) e\n${joins})`
+      ).catch((e) => console.warn(`merge event ${base} failed:`, e));
+    }
+  }
+
+  // 5. Drop all chunk-prefixed and staging tables
+  for (const base of allBaseNames) {
+    const workers = baseToWorkers.get(base)!;
+    for (const i of workers) {
+      await conn.query(`DROP TABLE IF EXISTS "chunk${i}_${base}"`).catch(() => {});
+    }
+    await conn.query(`DROP TABLE IF EXISTS "_stage_${base}"`).catch(() => {});
+    await conn.query(`DROP TABLE IF EXISTS "_idmap_${base}"`).catch(() => {});
+  }
+}
+
+/**
+ * Imports `jfrBytes` into the given DuckDB WASM connection via Web Workers.
  *
- * @param stacktraceDepth Max stack frames per event (default 10). Lower values
- *   significantly reduce import time on sampling-heavy recordings.
+ * Multi-chunk JFR files (common for recordings >~5 MB) are parsed into their
+ * constituent chunks and imported in parallel — one worker per chunk (up to
+ * MAX_CHUNK_WORKERS). Struct tables (Method, Class, etc.) are deduplicated by
+ * natural key and merged; event tables are union-appended with ID remapping.
+ *
+ * @param stacktraceDepth Max stack frames per event (default 10).
  * @param onProgress Optional callback (0–1) called at key checkpoints.
  */
 export async function loadJfrIntoWasm(
@@ -31,7 +340,6 @@ export async function loadJfrIntoWasm(
   stacktraceDepth = 10,
   onProgress?: (pct: number) => void,
 ): Promise<void> {
-  // Stage Arrow module on globalThis — needed for main-thread insertArrowTable calls.
   if (!(window as any).__arrow) {
     (window as any).__arrow = await import('apache-arrow');
   }
@@ -42,116 +350,130 @@ export async function loadJfrIntoWasm(
     try { return parseFloat(localStorage.getItem(PERF_KEY) ?? '') || 0; } catch { return 0; }
   })();
 
-  // Record byte count before transfer (buffer becomes detached after postMessage).
   const jfrByteLength = jfrBytes.byteLength;
 
-  const tJava0 = performance.now();
+  // Parse chunk boundaries before any transfer (buffer stays valid here)
+  const chunks = parseJfrChunks(jfrBytes);
+  const numChunks = chunks.length;
+  const useParallel = numChunks > 1;
+  const numWorkers = Math.min(numChunks, MAX_CHUNK_WORKERS);
 
-  // Track in-flight insertArrowTable calls on the main thread for drain + progress.
+  console.log(`[jfr-import] ${numChunks} chunk(s), using up to ${numWorkers} parallel worker(s)`);
+
+  const tJava0 = performance.now();
   let pendingInserts = 0;
   let peakPending = 0;
 
-  await new Promise<void>((resolve, reject) => {
-    const worker = new Worker(
-      new URL('../workers/jfrImport.worker.ts', import.meta.url),
-      // Must be 'module' for Vite to bundle the worker with its imports.
-      // The jfr-importer.js WASM bundle is loaded inside the worker via fetch+eval
-      // (see jfrImport.worker.ts) rather than importScripts to stay compatible
-      // with module workers.
-      { type: 'module' },
-    );
+  if (!useParallel) {
+    // Single-chunk path: original behavior, no prefix, no merge needed
+    await new Promise<void>((resolve, reject) => {
+      const worker = new Worker(
+        new URL('../workers/jfrImport.worker.ts', import.meta.url),
+        { type: 'module' },
+      );
 
-    worker.onmessage = async (e: MessageEvent) => {
-      const msg = e.data;
-
-      if (msg.type === 'query') {
-        // DDL from JsDuckDBSink.jsExecute — fire on real conn, return value ignored.
-        try {
-          await conn.query(msg.sql as string);
-        } catch (err) {
-          console.warn('[jfr-worker] query failed:', err);
+      worker.onmessage = async (e: MessageEvent) => {
+        const msg = e.data;
+        if (msg.type === 'query') {
+          try { await conn.query(msg.sql as string); } catch (err) { console.warn('[jfr-worker] query failed:', err); }
+          worker.postMessage({ type: 'query-result', reqId: msg.reqId, rows: [] });
+          return;
         }
-        worker.postMessage({ type: 'query-result', reqId: msg.reqId, rows: [] });
-        return;
-      }
+        if (msg.type === 'insert') {
+          pendingInserts++;
+          peakPending = Math.max(peakPending, pendingInserts);
+          conn.insertArrowTable(
+            tableFromIPC(new Uint8Array(msg.ipcBytes as ArrayBuffer)),
+            { name: msg.tableName as string, create: false },
+          ).catch((err) => console.warn('[jfr-worker] insert failed for', msg.tableName, err))
+            .finally(() => { pendingInserts--; });
+          worker.postMessage({ type: 'insert-result', reqId: msg.reqId });
+          return;
+        }
+        if (msg.type === 'done') { worker.terminate(); resolve(); return; }
+        if (msg.type === 'error') { worker.terminate(); reject(new Error(msg.message as string)); return; }
+      };
+      worker.onerror = (e) => { worker.terminate(); reject(new Error(`JFR import worker error: ${e.message}`)); };
 
-      if (msg.type === 'insert') {
-        // Arrow IPC bytes from BinaryAppender — deserialise and insert into real conn.
-        pendingInserts++;
-        peakPending = Math.max(peakPending, pendingInserts);
-        // Don't await before replying — let the worker continue processing events
-        // while we insert. Track completion locally for drain.
-        conn.insertArrowTable(
-          tableFromIPC(new Uint8Array(msg.ipcBytes as ArrayBuffer)),
-          { name: msg.tableName as string, create: false },
-        ).catch((err) => console.warn('[jfr-worker] insert failed for', msg.tableName, err))
-          .finally(() => { pendingInserts--; });
-        // Reply immediately so the worker's pending counter decrements and Java continues.
-        worker.postMessage({ type: 'insert-result', reqId: msg.reqId });
-        return;
-      }
+      const buf = jfrBytes.buffer.byteLength === jfrBytes.byteLength ? jfrBytes.buffer : jfrBytes.slice().buffer;
+      worker.postMessage({ type: 'import', bytes: new Uint8Array(buf), stacktraceDepth, tablePrefix: '' }, [buf]);
+    });
+  } else {
+    // Multi-chunk parallel path: one worker per chunk (up to MAX_CHUNK_WORKERS).
+    // Each worker receives exactly ONE complete JFR chunk (a self-contained byte slice).
+    // Chunks beyond MAX_CHUNK_WORKERS are processed sequentially by reusing worker slots.
+    //
+    // We process in batches: in each batch, spawn min(remaining, MAX_CHUNK_WORKERS) workers
+    // in parallel, wait for all, then advance to the next batch.
+    // Worker i in batch b uses prefix "chunk{b*MAX_CHUNK_WORKERS+i}_".
 
-      if (msg.type === 'done') {
-        worker.terminate();
-        resolve();
-        return;
-      }
+    let globalWorkerIdx = 0;
+    for (let batchStart = 0; batchStart < chunks.length; batchStart += MAX_CHUNK_WORKERS) {
+      const batchChunks = chunks.slice(batchStart, batchStart + MAX_CHUNK_WORKERS);
 
-      if (msg.type === 'error') {
-        worker.terminate();
-        reject(new Error(msg.message as string));
-        return;
-      }
-    };
+      const batchPromises = batchChunks.map((chunk, i) => {
+        const workerIdx = globalWorkerIdx + i;
+        const slice = jfrBytes.slice(chunk.start, chunk.end);
+        return runImportWorker(
+          slice,
+          `chunk${workerIdx}_`,
+          conn,
+          stacktraceDepth,
+          () => { pendingInserts++; peakPending = Math.max(peakPending, pendingInserts); },
+          () => { pendingInserts--; },
+        );
+      });
 
-    worker.onerror = (e) => {
-      worker.terminate();
-      reject(new Error(`JFR import worker error: ${e.message}`));
-    };
-
-    // Transfer the bytes zero-copy — worker takes ownership of the buffer.
-    const buf = jfrBytes.buffer.byteLength === jfrBytes.byteLength
-      ? jfrBytes.buffer
-      : jfrBytes.slice().buffer;
-
-    worker.postMessage(
-      { type: 'import', bytes: new Uint8Array(buf), stacktraceDepth },
-      [buf],
-    );
-  });
+      await Promise.all(batchPromises);
+      globalWorkerIdx += batchChunks.length;
+    }
+  }
 
   const tJavaDone = performance.now();
   const actualJavaMs = tJavaDone - tJava0;
 
-  onProgress?.(0.80);
+  onProgress?.(0.75);
 
-  // Drain: wait for all main-thread insertArrowTable calls to complete.
+  // Drain: wait for all pending insertArrowTable calls to complete
   const tDrainStart = performance.now();
   while (pendingInserts > 0) {
     await new Promise(r => setTimeout(r, 10));
     if (peakPending > 0) {
-      onProgress?.(0.80 + 0.15 * (1 - pendingInserts / peakPending));
+      onProgress?.(0.75 + 0.10 * (1 - pendingInserts / peakPending));
     }
   }
   const tDrainDone = performance.now();
 
-  onProgress?.(0.95);
+  onProgress?.(0.85);
 
-  console.log(`[jfr-perf] Java+drain: ${actualJavaMs.toFixed(0)}ms | main-thread drain: ${(tDrainDone - tDrainStart).toFixed(0)}ms`);
+  // Multi-chunk: merge prefixed tables into final tables
+  let mergeMs = 0;
+  if (useParallel) {
+    const tMergeStart = performance.now();
+    await mergeChunkTables(conn, numChunks);
+    mergeMs = performance.now() - tMergeStart;
+    console.log(`[jfr-perf] merge pass: ${mergeMs.toFixed(0)}ms`);
+  }
+
+  onProgress?.(0.90);
+
+  console.log(`[jfr-perf] Java+drain: ${actualJavaMs.toFixed(0)}ms | drain: ${(tDrainDone - tDrainStart).toFixed(0)}ms | merge: ${mergeMs.toFixed(0)}ms`);
   (window as any).__lastJfrPerf = {
     javaSyncMs: actualJavaMs,
     drainMs: tDrainDone - tDrainStart,
+    mergeMs,
     bytes: jfrByteLength,
+    numChunks,
+    numWorkers,
   };
 
-  // Update calibration: smooth toward actual observed ms/byte.
   if (jfrByteLength > 0 && actualJavaMs > 500) {
     const observed = actualJavaMs / jfrByteLength;
     const updated = storedMsPerByte > 0 ? 0.7 * storedMsPerByte + 0.3 * observed : observed;
     try { localStorage.setItem(PERF_KEY, String(updated)); } catch { /* storage full */ }
   }
 
-  // Register built-in macros and views in parallel across 4 connections.
+  // Register built-in macros and views in parallel across 4 connections
   const tSqlStart = performance.now();
   const PARALLELISM = new URL(location.href).searchParams.has('sqlSerial') ? 1 : 4;
   const allSql = [...BUILTIN_MACROS_SQL, ...BUILTIN_VIEWS_SQL];
