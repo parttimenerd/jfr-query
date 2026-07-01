@@ -33,6 +33,12 @@ export interface ToolDeps {
     screenshotPreview?: (previewId: string) => Promise<string | null>;
     /** True when the active provider can carry image content in a tool_result. */
     providerSupportsImages?: () => boolean;
+    /** Return the current per-channel memory facts. */
+    getMemory?: () => Record<string, string>;
+    /** Upsert a memory fact (max 200 chars; LRU eviction at 10 entries handled by caller). */
+    setMemory?: (key: string, value: string) => void;
+    /** Replace the per-channel task list. */
+    setTaskList?: (tasks: Array<{ id: string; text: string; done: boolean }>) => void;
 }
 
 export type NotebookMutation =
@@ -57,9 +63,40 @@ function isForbiddenSql(sql: string): boolean {
     return /[\["`']?\$ai_providers[\]"`']?/i.test(sql);
 }
 
-export async function executeTool(name: string, args: any, deps: ToolDeps): Promise<ToolResult> {
+/**
+ * Detect multiple top-level SELECT/WITH/INSERT/UPDATE/DELETE statements in a
+ * single SQL string. A cell must contain exactly one statement (the notebook
+ * runner passes the whole content to DuckDB as one query). Returns an error
+ * message if multiple statements are detected, or null if it looks clean.
+ *
+ * Heuristic: strip single-line comments and string literals, then count
+ * top-level SELECT/WITH/INSERT/UPDATE/DELETE keywords that appear at a
+ * position where a new statement could start (preceded only by whitespace or
+ * a semicolon).
+ */
+function detectMultipleSqlStatements(sql: string): string | null {
+    // Strip -- comments and quoted strings (rough approximation)
+    const stripped = sql
+        .replace(/--[^\n]*/g, ' ')
+        .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+        .replace(/"(?:[^"\\]|\\.)*"/g, '""');
+
+    // Match bare SELECT/WITH/INSERT/UPDATE/DELETE at start-of-statement positions.
+    // "Start of statement" = beginning of string, after semicolon, or after newline
+    // following only whitespace.
+    const stmtPattern = /(?:^|;\s*|\n\s*)(SELECT|WITH|INSERT|UPDATE|DELETE)\b/gi;
+    const matches = [...stripped.matchAll(stmtPattern)];
+    if (matches.length > 1) {
+        return `SQL cell content contains ${matches.length} statements. ` +
+            'A cell must contain exactly one SQL statement. ' +
+            'Call addCell once per statement instead of concatenating them.';
+    }
+    return null;
+}
+
+
     const tool = getTool(name);
-    if (!tool) return { ok: false, error: `unknown tool: ${name}` };
+    if (!tool) return { ok: false, error: `Tool "${name}" is not available. The available tools are: ${TOOLS.map(t => t.name).join(', ')}.` };
 
     const err = validateToolArgs(tool, args ?? {});
     if (err) return { ok: false, error: err };
@@ -70,7 +107,7 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
         try {
             await deps.requireApproval(name, args);
         } catch (e: any) {
-            return { ok: false, error: e?.message || 'rejected by user' };
+            return { ok: false, error: e?.message || 'The user declined this action. Try a different approach.' };
         }
     }
 
@@ -78,7 +115,7 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
         switch (name) {
             case 'runQuery': {
                 const sql: string = args.sql;
-                if (isForbiddenSql(sql)) return { ok: false, error: 'forbidden token' };
+                if (isForbiddenSql(sql)) return { ok: false, error: 'SQL references $ai_providers which contains sensitive credentials and cannot be queried.' };
                 const pageSize = typeof args.limit === 'number' ? Math.min(Math.max(args.limit, 1), 500) : 100;
                 const offset = typeof args.offset === 'number' ? Math.max(args.offset, 0) : 0;
                 // Ask the dep for pageSize + offset rows; the dep is allowed to
@@ -116,7 +153,7 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
             case 'previewPlot': {
                 const sql: string = args.sql;
                 const plotConfig: string = args.plotConfig;
-                if (isForbiddenSql(sql)) return { ok: false, error: 'forbidden token' };
+                if (isForbiddenSql(sql)) return { ok: false, error: 'SQL references $ai_providers which contains sensitive credentials and cannot be queried.' };
                 if (deps.getVisibility?.() === 'no-data') {
                     return { ok: false, error: "previewPlot disabled when chat visibility is 'no-data' — the user would see chart data the AI cannot." };
                 }
@@ -168,6 +205,10 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                 return { ok: true, data: { image: { mediaType: 'image/png', dataUrl } } };
             }
             case 'addCell': {
+                if (args.type === 'sql') {
+                    const multiErr = detectMultipleSqlStatements(args.content);
+                    if (multiErr) return { ok: false, error: multiErr };
+                }
                 const res = await deps.mutateCells({
                     kind: 'add',
                     type: args.type,
@@ -178,6 +219,11 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                 return { ok: false, error: (res as { ok: false; error: string }).error };
             }
             case 'editCell': {
+                const targetCell = deps.listCells().find(c => c.id === args.cellId);
+                if (targetCell?.type === 'sql') {
+                    const multiErr = detectMultipleSqlStatements(args.content);
+                    if (multiErr) return { ok: false, error: multiErr };
+                }
                 const res = await deps.mutateCells({
                     kind: 'edit',
                     cellId: args.cellId,
@@ -251,8 +297,21 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                 if (res.ok) return { ok: true, data: { name, deleted: true } };
                 return { ok: false, error: (res as { ok: false; error: string }).error };
             }
+            case 'rememberFact': {
+                const { key, value } = args as { key: string; value: string };
+                deps.setMemory?.(key, String(value).slice(0, 200));
+                return { ok: true, data: { stored: key } };
+            }
+            case 'recallMemory': {
+                return { ok: true, data: deps.getMemory?.() ?? {} };
+            }
+            case 'updateTaskList': {
+                const tasks = (args as any).tasks ?? [];
+                deps.setTaskList?.(tasks);
+                return { ok: true, data: { updated: tasks.length } };
+            }
             default:
-                return { ok: false, error: `unimplemented tool: ${name}` };
+                return { ok: false, error: `Tool "${name}" is recognized but not yet implemented in this version.` };
         }
     } catch (e: any) {
         return { ok: false, error: e?.message || String(e) };

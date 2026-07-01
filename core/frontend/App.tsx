@@ -322,18 +322,18 @@ const App: React.FC = () => {
         })();
     }, [mode, dbState, loadFile]);
 
-    // Auto-run all queries when ?run=true and the DB becomes ready.
+    // Auto-run all queries when the DB becomes ready (if auto-run is enabled or ?run=true).
     useEffect(() => {
         if (urlParamsRef.current.ranAll) return;
         if (dbState !== DBState.READY) return;
         const params = new URLSearchParams(window.location.search);
-        if (params.get('run') !== 'true') return;
+        if (params.get('run') !== 'true' && !isAutoRunEnabled) return;
         urlParamsRef.current.ranAll = true;
         // Small delay so notebook/views from ?notebook= have settled.
         const t = setTimeout(() => { void handleRunAll(); }, 300);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dbState]);
+    }, [dbState, isAutoRunEnabled]);
 
     // Warm up the embedding ranker once the DB is ready so autocomplete
     // ranking is available within a few seconds of first use.
