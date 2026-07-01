@@ -92,9 +92,9 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cellAliasesByCell, results]);
 
-    const handleGlobalVariableClick = (variableName: string) => {
+    const handleGlobalVariableClick = useCallback((variableName: string) => {
         settingsPanelRef.current?.focusVariable(variableName);
-    };
+    }, []);
 
     if (isMarkdownMode) {
         return (
@@ -130,14 +130,13 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                                 allCollapsed={allCollapsed}
                                 isAiFeatureActive={isAiFeatureActive}
                                 initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
-                                onCellCollapseChange={(c) => handleCellCollapseChange(cell.id, c)}
+                                onCellCollapseChange={handleCellCollapseChange}
                                 clearResultsTrigger={clearResultsTrigger}
                                 onRunQuery={onRunQuery}
-                                onUpdate={(updatedContent) => onUpdateCell(cell.id, updatedContent)}
                                 onUpdateCell={onUpdateCell}
                                 onAddCellFromTool={onAddCellFromTool}
-                                onDelete={() => onDeleteCell(cell.id)}
-                                onDeleteQueryBlock={(index) => onDeleteQueryBlock(cell.id, index)}
+                                onDeleteCell={onDeleteCell}
+                                onDeleteQueryBlock={onDeleteQueryBlock}
                                 onMoveCell={onMoveCell}
                                 onSuggestPlot={onSuggestPlot}
                                 onFormatCode={onFormatCode}
@@ -178,14 +177,13 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     allCollapsed={allCollapsed}
                     isAiFeatureActive={isAiFeatureActive}
                     initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
-                    onCellCollapseChange={(c) => handleCellCollapseChange(cell.id, c)}
+                    onCellCollapseChange={handleCellCollapseChange}
                     clearResultsTrigger={clearResultsTrigger}
                     onRunQuery={onRunQuery}
-                    onUpdate={(updatedContent) => onUpdateCell(cell.id, updatedContent)}
                     onUpdateCell={onUpdateCell}
                     onAddCellFromTool={onAddCellFromTool}
-                    onDelete={() => onDeleteCell(cell.id)}
-                    onDeleteQueryBlock={(index) => onDeleteQueryBlock(cell.id, index)}
+                    onDeleteCell={onDeleteCell}
+                    onDeleteQueryBlock={onDeleteQueryBlock}
                     onMoveCell={onMoveCell}
                     onSuggestPlot={onSuggestPlot}
                     onFormatCode={onFormatCode}

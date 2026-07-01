@@ -72,16 +72,14 @@ interface NotebookCellProps {
     /** B-033: initial collapsed state lifted from Notebook.tsx so it survives raw-mode toggle. */
     initialCellCollapsed?: boolean;
     /** B-033: callback to persist cell-level collapse changes to the parent ref. */
-    onCellCollapseChange?: (collapsed: boolean) => void;
+    onCellCollapseChange?: (cellId: string, collapsed: boolean) => void;
     onRunQuery: (cellId: string, sql: string, queryIndex: number, allVariables: Record<string, string>) => void;
-    onUpdate: (updatedContent: string) => void;
     /** C7 — tool-runtime callbacks forwarded into InlineChat so AI tool calls
-     * can mutate other notebook cells. Optional — InlineChat falls back to
-     * legacy single-turn behavior when omitted. */
-    onUpdateCell?: (cellId: string, content: string) => void;
+     * can mutate other notebook cells. */
+    onUpdateCell: (cellId: string, content: string) => void;
     onAddCellFromTool?: (mut: { type: 'sql' | 'plot' | 'markdown'; content: string; afterCellId?: string }) => string | undefined;
-    onDelete: () => void;
-    onDeleteQueryBlock: (index: number) => void;
+    onDeleteCell: (cellId: string) => void;
+    onDeleteQueryBlock: (cellId: string, index: number) => void;
     onMoveCell: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
     /** Forward to InlineChat so "pop to sidebar" can be triggered from a cell. */
     onPopChatToSidebar?: (snapshot: import('./ChatPanel').InlineChatSnapshot) => void;
@@ -157,7 +155,7 @@ const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: stri
 };
 
 
-const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, queryTimings, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, initialCellCollapsed, onCellCollapseChange, clearResultsTrigger, onRunQuery, onUpdate, onUpdateCell, onAddCellFromTool, onDelete, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false, onPopChatToSidebar, onNavigateRef }) => {
+const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, queryTimings, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, initialCellCollapsed, onCellCollapseChange, clearResultsTrigger, onRunQuery, onUpdateCell, onAddCellFromTool, onDeleteCell, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false, onPopChatToSidebar, onNavigateRef }) => {
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [editingTitleValue, setEditingTitleValue] = useState('');
     const [isRawEditing, setIsRawEditing] = useState(false);
@@ -191,7 +189,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     useEffect(() => {
         if (collapseTrigger > 0) {
             setIsCellCollapsed(allCollapsed);
-            onCellCollapseChange?.(allCollapsed);
+            onCellCollapseChange?.(cell.id, allCollapsed);
         }
     }, [collapseTrigger]);
 
@@ -209,10 +207,10 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     
     useEffect(() => { if (focusVarName && variableInputRefs.current[focusVarName]) { variableInputRefs.current[focusVarName]?.focus(); setFocusVarName(null); } }, [focusVarName, parsed.variables]);
 
-    const onUpdateRef = useRef(onUpdate); onUpdateRef.current = onUpdate;
-    
-    const debouncedOnUpdate = useCallback(debounce((newSegments: CellSegment[]) => { onUpdateRef.current(reconstructCellContent(newSegments)); }, 800), []);
-    
+    const onUpdateCellRef = useRef(onUpdateCell); onUpdateCellRef.current = onUpdateCell;
+
+    const debouncedOnUpdate = useCallback(debounce((newSegments: CellSegment[]) => { onUpdateCellRef.current(cell.id, reconstructCellContent(newSegments)); }, 800), [cell.id]);
+
     const handleSegmentsUpdate = useCallback((newSegments: CellSegment[]) => { setSegments(newSegments); debouncedOnUpdate(newSegments); }, [debouncedOnUpdate]);
 
     const handleIntroUpdate = useCallback((intro: MarkdownSection | null) => {
@@ -810,10 +808,10 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             <div className="px-3 py-2 border-b border-gray-700/60 flex items-center justify-between bg-gray-700/20">
                 <div className="flex items-center gap-2 w-full">
                      {!presenterMode && <div draggable onDragStart={handleDragStart} onDragEnd={()=>setIsBeingDragged(false)} title="Drag to reorder (Alt+↑/↓ for keyboard)" aria-label="Drag to reorder cell" role="button" tabIndex={0} className="cursor-grab p-1 text-gray-600 hover:text-gray-400"><Bars2Icon className="w-4 h-4"/></div>}
-                    {!presenterMode && <button onClick={()=>{ const next = !isCellCollapsed; setIsCellCollapsed(next); onCellCollapseChange?.(next); }} className="p-1 text-gray-400 hover:text-gray-300 flex-shrink-0" title={isCellCollapsed ? "Expand cell" : "Collapse cell"}>{isCellCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5"/> : <ChevronUpIcon className="w-3.5 h-3.5"/>}</button>}
+                    {!presenterMode && <button onClick={()=>{ const next = !isCellCollapsed; setIsCellCollapsed(next); onCellCollapseChange?.(cell.id, next); }} className="p-1 text-gray-400 hover:text-gray-300 flex-shrink-0" title={isCellCollapsed ? "Expand cell" : "Collapse cell"}>{isCellCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5"/> : <ChevronUpIcon className="w-3.5 h-3.5"/>}</button>}
                     {isEditingTitle ? <input type="text" value={editingTitleValue} onChange={e=>setEditingTitleValue(e.target.value)} onBlur={()=>handleTitleBlur(editingTitleValue)} onKeyDown={handleTitleKeyDown} className="text-base font-semibold bg-gray-900 border border-cyan-500 rounded-md px-2 py-0.5 w-full" autoFocus/> : <h2 onClick={()=>{if(!presenterMode){setEditingTitleValue(title||'');setIsEditingTitle(true);}}} className={`text-base font-semibold w-full text-gray-100 ${presenterMode ? '' : 'cursor-pointer'}`}>{title}</h2>}
                 </div>
-                {!presenterMode && <div className="flex items-center gap-1 flex-shrink-0"><button onClick={()=>setIsRawEditing(!isRawEditing)} className="p-1.5 hover:bg-cyan-600/30 rounded-md" title={isRawEditing?"Rich View":"Raw Markdown"}>{isRawEditing ? <EyeIcon className="w-4 h-4 text-cyan-300"/>:<CodeBracketIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>{if(window.confirm('Delete this cell?'))onDelete();}} className="p-1.5 hover:bg-red-600/50 rounded-md" title="Delete Cell" aria-label="Delete Cell"><TrashIcon className="w-4 h-4 text-gray-400"/></button></div>}
+                {!presenterMode && <div className="flex items-center gap-1 flex-shrink-0"><button onClick={()=>setIsRawEditing(!isRawEditing)} className="p-1.5 hover:bg-cyan-600/30 rounded-md" title={isRawEditing?"Rich View":"Raw Markdown"}>{isRawEditing ? <EyeIcon className="w-4 h-4 text-cyan-300"/>:<CodeBracketIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>{if(window.confirm('Delete this cell?'))onDeleteCell(cell.id);}} className="p-1.5 hover:bg-red-600/50 rounded-md" title="Delete Cell" aria-label="Delete Cell"><TrashIcon className="w-4 h-4 text-gray-400"/></button></div>}
             </div>
             {!isCellCollapsed && (isRawEditing ? <div className="p-2"><SQLEditor value={reconstructCellContent(segments)} onChange={handleRawContentChange} mode="markdown"/></div> : <div className="p-3 space-y-3">
                  <MarkdownSectionEditor
@@ -952,7 +950,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 );
                                 if (!presenterMode) {
                                     items.push(
-                                        <CollapsibleBlock key={`sql-${i}`} title={sqlTitleNode} preview={sql.replace(/\s+/g,' ').substring(0,60)} isCollapsed={!!collapsedStates[`sql-${i}`]} onToggle={()=>toggleCollapse(`sql-${i}`)} statusIndicator={runningStates[i]?(<div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"/>):pendingRunStates[i]?(<div className="w-4 h-4 text-gray-500 animate-pulse">...</div>):null} controls={<><button onClick={()=>handleRun(sql,i)} disabled={runningStates[i]||pendingRunStates[i]} title="Run query (Cmd+Enter)" aria-label="Run query (Cmd+Enter)" className="p-1.5 rounded-md disabled:opacity-50"><PlayIcon className="w-4 h-4 text-green-400"/></button><button onClick={()=>handleFormat(sql,'sql',i)} title="Format SQL" aria-label="Format SQL" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSuggest(sql,i)} title="Suggest plot with AI" aria-label="Suggest plot with AI" className="p-1.5 rounded-md"><SparklesIcon className="w-4 h-4 text-yellow-400"/></button><button onClick={()=>setActiveChat(p=>p===`sql-${i}`?null:`sql-${i}`)} title="Refine with AI" aria-label="Refine with AI" className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>handleCopySql(sql,i)} title="Copy SQL" aria-label="Copy SQL" className="p-1.5 rounded-md">{copiedSql===i ? <CheckCircleIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>onDeleteQueryBlock(i)} title="Delete query block" aria-label="Delete query block" className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
+                                        <CollapsibleBlock key={`sql-${i}`} title={sqlTitleNode} preview={sql.replace(/\s+/g,' ').substring(0,60)} isCollapsed={!!collapsedStates[`sql-${i}`]} onToggle={()=>toggleCollapse(`sql-${i}`)} statusIndicator={runningStates[i]?(<div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"/>):pendingRunStates[i]?(<div className="w-4 h-4 text-gray-500 animate-pulse">...</div>):null} controls={<><button onClick={()=>handleRun(sql,i)} disabled={runningStates[i]||pendingRunStates[i]} title="Run query (Cmd+Enter)" aria-label="Run query (Cmd+Enter)" className="p-1.5 rounded-md disabled:opacity-50"><PlayIcon className="w-4 h-4 text-green-400"/></button><button onClick={()=>handleFormat(sql,'sql',i)} title="Format SQL" aria-label="Format SQL" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSuggest(sql,i)} title="Suggest plot with AI" aria-label="Suggest plot with AI" className="p-1.5 rounded-md"><SparklesIcon className="w-4 h-4 text-yellow-400"/></button><button onClick={()=>setActiveChat(p=>p===`sql-${i}`?null:`sql-${i}`)} title="Refine with AI" aria-label="Refine with AI" className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>handleCopySql(sql,i)} title="Copy SQL" aria-label="Copy SQL" className="p-1.5 rounded-md">{copiedSql===i ? <CheckCircleIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>onDeleteQueryBlock(cell.id, i)} title="Delete query block" aria-label="Delete query block" className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
                                             <SQLEditor value={sql} onChange={handleSqlChange} index={i} variables={allVariables} onVariableClick={handleVariableClick} metadata={metadata} onRun={() => handleRun(sql, i)} error={errSpec} notebookPlotScope={plotScopeView} />
                                             {errSpec && (
                                                 <div className="mt-1 px-2 py-1.5 text-xs text-red-300 bg-red-900/25 border-l-2 border-red-500/60 font-mono whitespace-pre-wrap rounded-r animate-fade-in" title={errSpec.line ? `LINE ${errSpec.line}${errSpec.column ? `:${errSpec.column}` : ''}` : undefined}>
@@ -1136,4 +1134,4 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     );
 };
 
-export default NotebookCell;
+export default React.memo(NotebookCell);

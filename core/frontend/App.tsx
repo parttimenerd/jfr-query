@@ -588,12 +588,16 @@ const App: React.FC = () => {
         }
     }, [query, isAiEnabled, schema]);
 
-    const updateCellsAndMarkdown = (newCells: NotebookCellData[]) => {
+    const metadataRef = useRef(metadata);
+    metadataRef.current = metadata;
+
+    const updateCellsAndMarkdown = useCallback((newCells: NotebookCellData[]) => {
         const newCellsContent = newCells.map(cell => cell.content).join('\n\n---\n\n');
-        const newNotebookMarkdown = reconstructNotebook({ metadata, content: newCellsContent });
+        const newNotebookMarkdown = reconstructNotebook({ metadata: metadataRef.current, content: newCellsContent });
         notebookMarkdownRef.current = newNotebookMarkdown;
         setNotebookMarkdown(newNotebookMarkdown);
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const addCell = () => {
         const newCell: NotebookCellData = {
@@ -660,7 +664,7 @@ const App: React.FC = () => {
     };
 
 
-    const deleteCell = (cellId: string) => {
+    const deleteCell = useCallback((cellId: string) => {
         const newCells = cells.filter(cell => cell.id !== cellId);
         updateCellsAndMarkdown(newCells);
         setResults(prev => {
@@ -668,21 +672,21 @@ const App: React.FC = () => {
             delete next[cellId];
             return next;
         });
-    };
+    }, [cells, updateCellsAndMarkdown]);
 
-    const updateCell = (cellId: string, updatedContent: string) => {
+    const updateCell = useCallback((cellId: string, updatedContent: string) => {
         const newCells = cells.map(cell => cell.id === cellId ? { ...cell, content: updatedContent } : cell);
         updateCellsAndMarkdown(newCells);
-    };
+    }, [cells, updateCellsAndMarkdown]);
     
-    const deleteQueryBlock = (cellId: string, index: number) => {
+    const deleteQueryBlock = useCallback((cellId: string, index: number) => {
         const cell = cells.find(c => c.id === cellId);
         if (!cell) return;
 
         const segments = tokenizeCellContent(cell.content);
         let sqlBlockCount = -1;
         let sqlSegmentIndex = -1;
-        
+
         for(let i = 0; i < segments.length; i++) {
             if (segments[i].type === 'sql') {
                 sqlBlockCount++;
@@ -707,7 +711,7 @@ const App: React.FC = () => {
         // Remove plot first (if it exists) to not mess up indices
         if(plotSegmentIndex !== -1) newSegments.splice(plotSegmentIndex, 1);
         newSegments.splice(sqlSegmentIndex, 1);
-        
+
         const updatedContent = reconstructCellContent(newSegments);
         updateCell(cellId, updatedContent);
         // Remove the result at `index` and compact the array so remaining results
@@ -717,7 +721,7 @@ const App: React.FC = () => {
             arr.splice(index, 1);
             return { ...prev, [cellId]: arr };
         });
-    };
+    }, [cells, updateCell]);
 
     const moveCell = (draggedId: string, targetId: string, position: 'before' | 'after') => {
         const draggedIndex = cells.findIndex(c => c.id === draggedId);
@@ -1067,7 +1071,7 @@ const App: React.FC = () => {
                         onFormatCode={formatCode}
                         onRunPreviewQuery={runPreviewQuery}
                         onMetadataChange={handleMetadataChange}
-                        onDeleteQueryBlock={(cellId, index) => deleteQueryBlock(cellId, index)}
+                        onDeleteQueryBlock={deleteQueryBlock}
                         presenterMode={presenterMode}
                         onPopChatToSidebar={snapshot => {
                             setIncomingChannel(snapshot);
