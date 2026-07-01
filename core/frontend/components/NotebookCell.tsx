@@ -424,10 +424,9 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     );
 
     // Stable cellContext for PlotRenderer — only rebuilds when cell content changes.
-    const cellContextContent = reconstructCellContent(segments);
+    const cellContextContent = useMemo(() => reconstructCellContent(segments), [segments]);
     const cellContext = useMemo(
         () => ({ ...cell, content: cellContextContent }),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
         [cell, cellContextContent],
     );
 
@@ -864,7 +863,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 </div>
                 {!presenterMode && <div className="flex items-center gap-1 flex-shrink-0"><button onClick={()=>setIsRawEditing(!isRawEditing)} className="p-1.5 hover:bg-cyan-600/30 rounded-md" title={isRawEditing?"Rich View":"Raw Markdown"}>{isRawEditing ? <EyeIcon className="w-4 h-4 text-cyan-300"/>:<CodeBracketIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>{if(window.confirm('Delete this cell?'))onDeleteCell(cell.id);}} className="p-1.5 hover:bg-red-600/50 rounded-md" title="Delete Cell" aria-label="Delete Cell"><TrashIcon className="w-4 h-4 text-gray-400"/></button></div>}
             </div>
-            {!isCellCollapsed && (isRawEditing ? <div className="p-2"><SQLEditor value={reconstructCellContent(segments)} onChange={handleRawContentChange} mode="markdown"/></div> : <div className="p-3 space-y-3">
+            {!isCellCollapsed && (isRawEditing ? <div className="p-2"><SQLEditor value={cellContextContent} onChange={handleRawContentChange} mode="markdown"/></div> : <div className="p-3 space-y-3">
                  <MarkdownSectionEditor
                     section={parsed.introduction}
                     defaultTitle="Introduction"
