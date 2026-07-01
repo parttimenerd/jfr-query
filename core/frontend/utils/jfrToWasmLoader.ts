@@ -133,7 +133,7 @@ export async function loadJfrIntoWasm(
 
   const jfrPerfMsg = `[jfr-perf] Java sync: ${(tJavaDone - tJava0).toFixed(0)}ms | CSV drain: ${(tDrainDone - tDrainStart).toFixed(0)}ms`;
   console.log(jfrPerfMsg);
-  (window as any).__lastJfrPerf = jfrPerfMsg;
+  (window as any).__lastJfrPerf = { javaSyncMs: tJavaDone - tJava0, drainMs: tDrainDone - tDrainStart, bytes: jfrBytes.byteLength };
 
   // Update calibration: smooth toward actual observed ms/byte.
   if (jfrBytes.byteLength > 0 && actualJavaMs > 500) {
@@ -149,7 +149,8 @@ export async function loadJfrIntoWasm(
   // Strategy: open PARALLELISM extra connections and distribute the ~134 SQL
   // statements across them so they execute concurrently. DuckDB WASM serialises
   // per-connection but allows multiple connections to overlap.
-  const PARALLELISM = 4;
+  const tSqlStart = performance.now();
+  const PARALLELISM = new URL(location.href).searchParams.has('sqlSerial') ? 1 : 4;
   const allSql = [...BUILTIN_MACROS_SQL, ...BUILTIN_VIEWS_SQL];
   const extraConns: typeof conn[] = [];
   try {
@@ -172,5 +173,12 @@ export async function loadJfrIntoWasm(
       c.close().catch(() => {});
     }
   }
+  const sqlMs = performance.now() - tSqlStart;
+  console.log(`[jfr-perf] SQL reg (parallel×${PARALLELISM}): ${sqlMs.toFixed(0)}ms`);
+  (window as any).__lastJfrPerf = {
+    ...(window as any).__lastJfrPerf,
+    sqlRegMs: sqlMs,
+    sqlParallelism: PARALLELISM,
+  };
 }
 
