@@ -282,10 +282,18 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         return slice;
     }, [allCells, cell.id]);
 
-    const precedingCellVariables = useMemo(
-        () => collectPrecedingCellVariables(precedingCells, cell.id),
-        [precedingCells, cell.id],
-    );
+    const precedingCellVariablesRef = useRef<Record<string, string>>({});
+    const precedingCellVariables = useMemo(() => {
+        const next = collectPrecedingCellVariables(precedingCells, cell.id);
+        const prev = precedingCellVariablesRef.current;
+        const prevKeys = Object.keys(prev);
+        const nextKeys = Object.keys(next);
+        if (prevKeys.length === nextKeys.length && prevKeys.every(k => prev[k] === next[k])) {
+            return prev;
+        }
+        precedingCellVariablesRef.current = next;
+        return next;
+    }, [precedingCells, cell.id]);
 
     const allVariables = useMemo(
         () => ({ ...metadata.variables, ...precedingCellVariables, ...parsed.variables }),
