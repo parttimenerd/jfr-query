@@ -423,6 +423,28 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         [metadata?.timeFormat, metadata?.decimalPlaces],
     );
 
+    // Stable cellContext for PlotRenderer — only rebuilds when cell content changes.
+    const cellContextContent = reconstructCellContent(segments);
+    const cellContext = useMemo(
+        () => ({ ...cell, content: cellContextContent }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [cell, cellContextContent],
+    );
+
+    // Stable dataByQueryRef — merges all cell results + crossCellQueryRefs for plot ON routing.
+    // Only rebuilds when results or crossCellQueryRefs actually change.
+    const dataByQueryRef = useMemo((): Record<string | number, any[]> => {
+        const out: Record<string | number, any[]> = { ...(crossCellQueryRefs ?? {}) };
+        results.forEach((r, idx) => {
+            if (r) {
+                out[idx + 1] = r;
+                const alias = parsed.queryAliases[idx];
+                if (alias) out[alias] = r;
+            }
+        });
+        return out;
+    }, [results, crossCellQueryRefs, parsed.queryAliases]);
+
     const handleAddIntro = useCallback(() =>
         handleIntroUpdate({ title: 'Introduction', content: '## Title\n\n_Introduction_\n' }),
     [handleIntroUpdate]);
@@ -1102,29 +1124,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 // Hide result when plot block is collapsed (unless in presenter mode where editor is hidden).
                                 const plotIsCollapsed = !presenterMode && (collapsedStates[`plot-${pi}`] !== undefined ? !!collapsedStates[`plot-${pi}`] : !config.trim());
                                 if (resolvedData && !plotIsCollapsed) {
-                                    // B-141/142/143: Build a lookup map so PlotRenderer can route per-leaf
-                                    // ON clauses to the correct dataset. Keys are 1-based numeric indices
-                                    // (matching `ON #1`, `ON 1`) and alias strings (matching `ON myView`).
-                                    // Cross-cell refs (aliases from sibling cells) are merged in first so
-                                    // local aliases (same name) override them.
-                                    const dataByQueryRef: Record<string | number, any[]> = {
-                                        ...(crossCellQueryRefs ?? {}),
-                                    };
-                                    results.forEach((r, idx) => {
-                                        if (r) {
-                                            dataByQueryRef[idx + 1] = r; // 1-based numeric key
-                                            const alias = parsed.queryAliases[idx];
-                                            if (alias) dataByQueryRef[alias] = r;
-                                        }
-                                    });
-
                                     items.push(
                                         <div key={`result-${pi}`} className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative" style={{ height: `${resultHeight}px` }}>
                                             <button title="Download as PNG" aria-label="Download as PNG" className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-${pi}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-${pi + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                             </button>
                                             <div id={`result-container-${cell.id}-${pi}`} className="flex-grow overflow-auto">
-                                                <PlotRenderer config={configToRender} data={resolvedData} dataByQueryRef={dataByQueryRef} sql={resolvedSql} cellContext={{...cell, content: reconstructCellContent(segments)}} onApplyFix={c => handleApplyPlotFix(c, defaultSqlIndex)} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange} onCellVariableChange={handleCellVariableChange} allVariables={allVariables} />
+                                                <PlotRenderer config={configToRender} data={resolvedData} dataByQueryRef={dataByQueryRef} sql={resolvedSql} cellContext={cellContext} onApplyFix={c => handleApplyPlotFix(c, defaultSqlIndex)} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange} onCellVariableChange={handleCellVariableChange} allVariables={allVariables} />
                                             </div>
                                         </div>
                                     );
