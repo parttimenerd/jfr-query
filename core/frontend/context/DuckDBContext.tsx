@@ -469,14 +469,31 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return executeQuery(safeSql);
   }, [dbState, executeQuery, mode]);
 
-  const refreshSchema = useCallback(async () => {
-    if (mode === 'wasm') {
-      if (!wasmConnRef.current) return;
-      const conn = wasmConnRef.current;
-      await fetchSchemaFor((sql) => runWasmQuery(conn, sql), false);
-    } else {
-      await fetchSchemaFor(executeRemoteQuery, false);
-    }
+  // Debounced refresh: multiple callers within 500ms coalesce into one schema fetch.
+  // This prevents N consecutive refreshSchema() calls (one per cell in auto-run mode)
+  // from each triggering a full schema re-fetch + row-count queries.
+  const refreshPendingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshPromiseRef = useRef<{ resolve: () => void; reject: (e: unknown) => void }[]>([]);
+
+  const refreshSchema = useCallback((): Promise<void> => {
+    return new Promise<void>((resolve, reject) => {
+      refreshPromiseRef.current.push({ resolve, reject });
+      if (refreshPendingRef.current) clearTimeout(refreshPendingRef.current);
+      refreshPendingRef.current = setTimeout(async () => {
+        refreshPendingRef.current = null;
+        const waiters = refreshPromiseRef.current.splice(0);
+        try {
+          if (mode === 'wasm') {
+            if (wasmConnRef.current) await fetchSchemaFor((sql) => runWasmQuery(wasmConnRef.current!, sql), false);
+          } else {
+            await fetchSchemaFor(executeRemoteQuery, false);
+          }
+          waiters.forEach(w => w.resolve());
+        } catch (e) {
+          waiters.forEach(w => w.reject(e));
+        }
+      }, 500);
+    });
   }, [mode, fetchSchemaFor]);
 
   const contextValue = useMemo(() => ({
