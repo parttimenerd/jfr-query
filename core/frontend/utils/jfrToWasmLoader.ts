@@ -300,21 +300,38 @@ async function mergeChunkTables(
     baseToWorkers.set(base, workers);
   }
 
-  // 2. Classify tables: struct (has _id as first column) vs event
+  // 2. Classify tables: struct (has _id as first column) vs event.
+  // Single query fetches first-column info for every representative chunk table at once.
   const structTables: string[] = [];
   const eventTables: string[] = [];
 
-  for (const base of allBaseNames) {
-    const workers = baseToWorkers.get(base)!;
-    const firstWorker = workers[0];
-    const colsResult = await conn.query(
-      `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}' ORDER BY ordinal_position LIMIT 1`
-    );
-    const firstCol = colsResult.toArray()[0];
-    if (firstCol && String((firstCol as any).column_name) === '_id') {
-      structTables.push(base);
-    } else {
-      eventTables.push(base);
+  {
+    // Build a list of representative tables (one per base — pick the lowest worker index).
+    const reprTables = allBaseNames.map(base => {
+      const firstWorker = baseToWorkers.get(base)![0];
+      return `chunk${firstWorker}_${base}`;
+    });
+    const reprPattern = reprTables.map(t => `table_name = '${t.replace(/'/g, "''")}'`).join(' OR ');
+    const firstColsResult = await conn.query(
+      `SELECT table_name, column_name FROM information_schema.columns
+       WHERE table_schema='main' AND ordinal_position = 1 AND (${reprPattern})`
+    ).catch(() => null);
+
+    const firstColByTable = new Map<string, string>();
+    if (firstColsResult) {
+      for (const row of firstColsResult.toArray()) {
+        firstColByTable.set(String((row as any).table_name), String((row as any).column_name));
+      }
+    }
+
+    for (const base of allBaseNames) {
+      const firstWorker = baseToWorkers.get(base)![0];
+      const reprTable = `chunk${firstWorker}_${base}`;
+      if (firstColByTable.get(reprTable) === '_id') {
+        structTables.push(base);
+      } else {
+        eventTables.push(base);
+      }
     }
   }
 
@@ -534,18 +551,29 @@ async function mergeEventTablesForBatch(
   if (allTableNames.length === 0) return;
 
   // Classify event vs struct tables by checking if _id is the first column.
+  // Single batch query instead of N sequential round-trips.
   const eventTables: Array<{ base: string; workerIdx: number }> = [];
-  for (const tableName of allTableNames) {
-    const workerIdx = workerIndices.find(i => tableName.startsWith(`chunk${i}_`));
-    if (workerIdx === undefined) continue;
-    const base = tableName.slice(`chunk${workerIdx}_`.length);
-
-    const colResult = await conn.query(
-      `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='${tableName.replace(/'/g, "''")}' ORDER BY ordinal_position LIMIT 1`
+  {
+    const tablePattern = allTableNames.map(t => `table_name = '${t.replace(/'/g, "''")}'`).join(' OR ');
+    const firstColsResult = await conn.query(
+      `SELECT table_name, column_name FROM information_schema.columns
+       WHERE table_schema='main' AND ordinal_position = 1 AND (${tablePattern})`
     ).catch(() => null);
-    const firstCol = colResult?.toArray()[0];
-    if (!firstCol || String((firstCol as any).column_name) !== '_id') {
-      eventTables.push({ base, workerIdx });
+
+    const firstColByTable = new Map<string, string>();
+    if (firstColsResult) {
+      for (const row of firstColsResult.toArray()) {
+        firstColByTable.set(String((row as any).table_name), String((row as any).column_name));
+      }
+    }
+
+    for (const tableName of allTableNames) {
+      const workerIdx = workerIndices.find(i => tableName.startsWith(`chunk${i}_`));
+      if (workerIdx === undefined) continue;
+      const base = tableName.slice(`chunk${workerIdx}_`.length);
+      if (firstColByTable.get(tableName) !== '_id') {
+        eventTables.push({ base, workerIdx });
+      }
     }
   }
 
