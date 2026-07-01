@@ -186,15 +186,23 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
     return String(value);
   }, [timestampColumns, durationColumns, byteColumns, numericColumns, displaySettings]);
 
+  // Pre-compute a single lowercase search string per row. Computed once per data
+  // change; filter memo below just does an indexOf per row instead of N string coercions.
+  const searchStrings = useMemo(
+    () => data.map(r => Object.values(r).join('\0').toLowerCase()),
+    [data],
+  );
+
   const processedData = useMemo(() => {
-    let filtered = debouncedFilter ? data.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(debouncedFilter.toLowerCase()))) : data;
+    const needle = debouncedFilter.toLowerCase();
+    let filtered = needle ? data.filter((_, i) => searchStrings[i].includes(needle)) : data;
     if (sortConfig.key) {
       const { key, direction } = sortConfig;
       const asc = direction === 'ascending';
       filtered = filtered.slice().sort((a, b) => compareValues(a[key], b[key], asc));
     }
     return filtered;
-  }, [data, debouncedFilter, sortConfig]);
+  }, [data, searchStrings, debouncedFilter, sortConfig]);
 
   // B-051: cap rendered rows to avoid rendering 100k+ DOM nodes.
   const DISPLAY_CAP = 2000;
