@@ -21,7 +21,7 @@ import org.graalvm.webimage.api.JSObject;
  */
 public final class JsAppender implements Appender {
 
-    private static final int BATCH_SIZE = 1000;
+    private static final int BATCH_SIZE = 10_000;
 
     private final JSObject conn;
     private final String tableName;

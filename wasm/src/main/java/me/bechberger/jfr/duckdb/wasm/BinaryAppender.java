@@ -85,6 +85,9 @@ final class BinaryAppender implements Appender {
     private float[][]  floatData;
     private double[][] doubleData;
     private List<?>[]  objData;    // TYPE_STRING -> List<String>, TYPE_INT_ARRAY -> List<int[]>
+    // High-water mark of each objData list's actual .size(). For TYPE_INT_ARRAY columns, resetChunk
+    // leaves the list untouched (so int[] objects stay alive for reuse) and tracks logical size here.
+    private int[] objDataHwm;
 
     private byte[][] nullBitmaps;
     private int      currentCol = -1;
@@ -261,6 +264,7 @@ final class BinaryAppender implements Appender {
         floatData   = new float[cols][];
         doubleData  = new double[cols][];
         objData     = new List[cols];
+        objDataHwm  = new int[cols];
     }
 
     @SuppressWarnings("unchecked")
@@ -275,12 +279,27 @@ final class BinaryAppender implements Appender {
         floatData   = java.util.Arrays.copyOf(floatData, newCap);
         doubleData  = java.util.Arrays.copyOf(doubleData, newCap);
         objData     = java.util.Arrays.copyOf(objData, newCap);
+        objDataHwm  = java.util.Arrays.copyOf(objDataHwm, newCap);
     }
 
     // ── set null bit ─────────────────────────────────────────────────────────
 
     private void markValid(int c, int row) {
         nullBitmaps[c][row >> 3] |= (byte)(1 << (row & 7));
+    }
+
+    /** Set objData[c][row] = v, reusing an existing slot (set) or appending a new one (add).
+     *  This keeps List<int[]> entries alive across resetChunk calls so GC never sees 256K
+     *  orphaned int[] objects at once. */
+    @SuppressWarnings("unchecked")
+    private void listSet(int c, int row, Object v) {
+        List<Object> list = (List<Object>) objData[c];
+        if (row < objDataHwm[c]) {
+            list.set(row, v);
+        } else {
+            list.add(v);
+            objDataHwm[c] = row + 1;
+        }
     }
 
     // ── typed appenders (fast path after schema frozen; slow path for row 0) ──
@@ -301,7 +320,7 @@ final class BinaryAppender implements Appender {
             int c = currentCol;
             int type = colTypes[c];
             if (type == TYPE_STRING || type == TYPE_INT_ARRAY || type == TYPE_UNKNOWN) {
-                ((List<Object>) objData[c]).add(null);
+                listSet(c, numRows, null);
             }
             currentCol++;
             return;
@@ -311,7 +330,7 @@ final class BinaryAppender implements Appender {
         ensureStorage();
         int c = currentCol;
         if (colTypes[c] == TYPE_STRING || colTypes[c] == TYPE_INT_ARRAY || colTypes[c] == TYPE_UNKNOWN) {
-            ((List<Object>) objData[c]).add(null);
+            listSet(c, numRows, null);
         }
         currentCol++;
     }
@@ -433,14 +452,14 @@ final class BinaryAppender implements Appender {
     public void append(String v) {
         if (schemaFrozen && inHotPathBounds(currentCol)) {
             int c = currentCol; int row = numRows;
-            ((List<String>) objData[c]).add(v);
+            listSet(c, row, v);
             if (v != null) nullBitmaps[c][row >> 3] |= (byte)(1 << (row & 7));
             currentCol++;
             return;
         }
         ensureCol(TYPE_STRING); ensureStorage();
         int c = currentCol; int row = numRows;
-        ((List<String>) objData[c]).add(v);
+        listSet(c, row, v);
         if (v != null) markValid(c, row);
         currentCol++;
     }
@@ -450,16 +469,40 @@ final class BinaryAppender implements Appender {
     public void append(int[] v) {
         if (schemaFrozen && inHotPathBounds(currentCol)) {
             int c = currentCol; int row = numRows;
-            ((List<int[]>) objData[c]).add(v);
+            listSetIntArray(c, row, v);
             if (v != null) nullBitmaps[c][row >> 3] |= (byte)(1 << (row & 7));
             currentCol++;
             return;
         }
         ensureCol(TYPE_INT_ARRAY); ensureStorage();
         int c = currentCol; int row = numRows;
-        ((List<int[]>) objData[c]).add(v);
+        listSetIntArray(c, row, v);
         if (v != null) markValid(c, row);
         currentCol++;
+    }
+
+    /** Like listSet but for int[] values: reuses the existing slot's int[] object by copying
+     *  src into it (avoids allocating a new int[] when the slot already has one of the right size).
+     *  This lets callers pass a scratch array and have BinaryAppender manage pooled storage. */
+    @SuppressWarnings("unchecked")
+    private void listSetIntArray(int c, int row, int[] src) {
+        if (src == null) {
+            listSet(c, row, null);
+            return;
+        }
+        List<int[]> list = (List<int[]>) objData[c];
+        if (row < objDataHwm[c]) {
+            int[] slot = list.get(row);
+            if (slot != null && slot.length == src.length) {
+                System.arraycopy(src, 0, slot, 0, src.length);
+                return;
+            }
+            // slot is null or wrong size — replace with a fresh clone
+            list.set(row, src.clone());
+        } else {
+            list.add(src.clone());
+            objDataHwm[c] = row + 1;
+        }
     }
 
     @Override
@@ -558,10 +601,13 @@ final class BinaryAppender implements Appender {
         }
         long t1 = System.nanoTime();
 
-        String b64 = encodeBase64(buf.b, buf.pos);
+        // Pass raw bytes as a latin-1 String (charCode == byte value, 0-255).
+        // This replaces base64 encode+decode (~4/3× data) with a direct 1:1 char mapping,
+        // saving ~1/3 allocation on the Java side and the atob() decode on the JS side.
+        String rawStr = new String(buf.b, 0, buf.pos, java.nio.charset.StandardCharsets.ISO_8859_1);
         long t2 = System.nanoTime();
 
-        loadColumnarData(conn, db, tableName, b64);
+        loadColumnarData(conn, db, tableName, rawStr);
         long t3 = System.nanoTime();
 
         totalSerializeNs += t1 - t0;
@@ -573,10 +619,10 @@ final class BinaryAppender implements Appender {
         String line = "flush#" + flushCount + " rows=" + n + " cols=" + numCols
                 + " bytes=" + buf.pos
                 + " ser=" + (t1-t0)/1_000_000 + "ms"
-                + " b64=" + (t2-t1)/1_000_000 + "ms"
+                + " latin1=" + (t2-t1)/1_000_000 + "ms"
                 + " jsCall=" + (t3-t2)/1_000_000 + "ms"
                 + " | cumSer=" + totalSerializeNs/1_000_000 + "ms"
-                + " cumB64=" + totalTransferNs/1_000_000 + "ms"
+                + " cumLatin1=" + totalTransferNs/1_000_000 + "ms"
                 + " cumJsCall=" + totalJsCallNs/1_000_000 + "ms";
         appendFlushLog(line);
 
@@ -597,7 +643,12 @@ final class BinaryAppender implements Appender {
                 java.util.Arrays.fill(nullBitmaps[c], 0, Math.min(bitmapBytes, nullBitmaps[c].length), (byte) 0);
             }
             if (objData != null && objData[c] != null) {
-                ((List<?>) objData[c]).clear();
+                if (colTypes[c] == TYPE_INT_ARRAY) {
+                    // Keep the list's int[] objects alive for reuse next chunk (avoids 256K GC objects).
+                    // listSet() will overwrite slots 0..numRows-1 without allocating.
+                } else {
+                    ((List<?>) objData[c]).clear();
+                }
             }
         }
     }
@@ -704,11 +755,10 @@ final class BinaryAppender implements Appender {
                         List, Field, TimestampMicrosecond } = globalThis.__arrow;
                 if (!tableFromArrays) throw new Error('globalThis.__arrow not set');
 
-                // Decode base64 to raw bytes
-                const binaryStr = atob(b64);
-                const byteLen = binaryStr.length;
+                // Decode latin-1 string to raw bytes (charCode == byte value, no base64 overhead).
+                const byteLen = b64.length;
                 const raw = new Uint8Array(byteLen);
-                for (let i = 0; i < byteLen; i++) raw[i] = binaryStr.charCodeAt(i);
+                for (let i = 0; i < byteLen; i++) raw[i] = b64.charCodeAt(i);
 
                 const dv = new DataView(raw.buffer);
                 let off = 0;

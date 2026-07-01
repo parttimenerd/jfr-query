@@ -3,9 +3,12 @@ package me.bechberger.jfr.duckdb;
 import static me.bechberger.jfr.duckdb.util.JFRUtil.*;
 import static me.bechberger.jfr.duckdb.util.SQLUtil.append;
 
+import io.jafar.parser.impl.LazyMapValueBuilder;
+import io.jafar.parser.impl.LazyMapValueBuilder.ArrayPool;
 import io.jafar.parser.internal_api.metadata.MetadataClass;
 import io.jafar.parser.internal_api.metadata.MetadataField;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -51,6 +54,57 @@ public class BasicParallelImporter {
         void appendDefault(Appender appender) throws SQLException;
     }
 
+    /**
+     * Faster variant of {@link AppendFunction} that receives the pre-extracted raw value directly
+     * from the jafar ArrayPool arrays, bypassing {@code LazyEventMap.get()} entirely.
+     * Only used for top-level scalar columns; struct/array columns fall back to AppendFunction.
+     */
+    @FunctionalInterface
+    interface AppendDirectFunction {
+        void appendDirect(Object rawValue, Appender appender) throws SQLException;
+    }
+
+    // ── jafar ArrayPool direct access ─────────────────────────────────────────
+    // LazyMapValueBuilder.ARRAY_POOL is a public static ThreadLocal<ArrayPool>.
+    // ArrayPool.keys, .values, .size are public fields on the public nested class.
+    // We access them directly (no reflection) to iterate the current event's raw
+    // key/value arrays in O(M) without allocating a HashMap — the only zero-allocation O(M) path.
+
+    /** Cached reflection fields for ArrayPool — only used during initPoolReflect for validation. */
+    private static volatile Field POOL_KEYS_FIELD;
+    private static volatile Field POOL_VALUES_FIELD;
+    private static volatile Field POOL_SIZE_FIELD;
+    /** The jafar ARRAY_POOL ThreadLocal — accessed once and cached. */
+    private static volatile ThreadLocal<ArrayPool> ARRAY_POOL_TL;
+    private static volatile boolean POOL_REFLECT_INIT = false;
+
+    @SuppressWarnings("unchecked")
+    private static void initPoolReflect() {
+        if (POOL_REFLECT_INIT) return;
+        try {
+            // ARRAY_POOL is a public static final field on LazyMapValueBuilder
+            java.lang.reflect.Field tlField = LazyMapValueBuilder.class.getField("ARRAY_POOL");
+            ARRAY_POOL_TL = (ThreadLocal<ArrayPool>) tlField.get(null);
+            // Verify field accessibility on ArrayPool (public fields on a public class)
+            ArrayPool probe = ARRAY_POOL_TL.get();
+            if (probe != null) {
+                // Touch the fields to confirm direct access works
+                @SuppressWarnings("unused") String[] k = probe.keys;
+                @SuppressWarnings("unused") Object[] v = probe.values;
+                @SuppressWarnings("unused") int s = probe.size;
+                POOL_KEYS_FIELD = ArrayPool.class.getField("keys"); // keep for canUseFastPath flag
+            } else {
+                POOL_KEYS_FIELD = ArrayPool.class.getField("keys");
+            }
+            POOL_VALUES_FIELD = ArrayPool.class.getField("values");
+            POOL_SIZE_FIELD   = ArrayPool.class.getField("size");
+        } catch (Exception e) {
+            // Direct access unavailable — fast path disabled
+            POOL_KEYS_FIELD = null;
+        }
+        POOL_REFLECT_INIT = true;
+    }
+
     /** Represents a table in the database with its columns and an appender to insert data into it. */
     static class Table {
         final String name;
@@ -63,7 +117,26 @@ public class BasicParallelImporter {
         // logical struct (e.g. a Method) emitted in different chunks is never .equals() under
         // raw Map.equals. We deep-unwrap to canonical Map/List/primitive form before keying.
         private final HashMap<Object, Integer> objToIndex = new HashMap<>();
+        // Identity-based shortcut: if jafar reuses object instances across the same chunk (or
+        // across chunks for constant-pool entries), skip deepUnwrap entirely — O(1) no-alloc.
+        private final java.util.IdentityHashMap<Object, Integer> identityCache = new java.util.IdentityHashMap<>();
         private final boolean cache;
+
+        /**
+         * For each column in order: the index into pool.keys[] where that column's field was found
+         * during the first event of this type, or -1 if the column has no directFn or the field
+         * wasn't in the pool. Populated lazily on the first call to insertIntoFast; re-used on all
+         * subsequent events of the same type (pool key order is stable within a jafar parse run).
+         * Null until the first event is processed.
+         */
+        private volatile @Nullable int[] poolPositions;
+
+        /** Parallel to columns: the directFn for each column, or null if slow path. */
+        private final @Nullable AppendDirectFunction[] directFunctions;
+        /** True when pool reflection is available and we have at least one direct column. */
+        private final boolean canUseFastPath;
+        /** Number of columns with a directFn — used to decide if full fast path is possible. */
+        private final int directColCount;
 
         Table(
                 String name,
@@ -76,8 +149,41 @@ public class BasicParallelImporter {
             this.columns = columns;
             this.cache = cache;
             this.description = description;
+            // Build direct-dispatch structures for the fast insertion path.
+            initPoolReflect();
+            if (POOL_KEYS_FIELD != null) {
+                AppendDirectFunction[] fns = new AppendDirectFunction[columns.size()];
+                int direct = 0;
+                for (int i = 0; i < columns.size(); i++) {
+                    Column col = columns.get(i);
+                    if (col.directFn() != null) {
+                        fns[i] = col.directFn();
+                        direct++;
+                    }
+                }
+                this.directFunctions = direct > 0 ? fns : null;
+                this.directColCount  = direct;
+                this.canUseFastPath  = direct > 0;
+            } else {
+                this.directFunctions = null;
+                this.directColCount  = 0;
+                this.canUseFastPath  = false;
+            }
+            this.poolPositions = null;
             createTable(sink);
             this.appender = sink.createAppender(name);
+            // Let the appender know column names upfront so it can embed them in the
+            // binary payload and skip the PRAGMA table_info round-trip on the JS side.
+            String[] colNames;
+            if (cache) {
+                // caching tables prepend an implicit integer ID column named "_id"
+                colNames = new String[columns.size() + 1];
+                colNames[0] = "_id";
+                for (int i = 0; i < columns.size(); i++) colNames[i + 1] = columns.get(i).name();
+            } else {
+                colNames = columns.stream().map(Column::name).toArray(String[]::new);
+            }
+            this.appender.setColumnNames(colNames);
             appendNullRowIfNeeded();
         }
 
@@ -93,6 +199,7 @@ public class BasicParallelImporter {
                 @Nullable AppendDefaultValueFunction appendDefault,
                 @Nullable String referencedTable,
                 @Nullable String description,
+                @Nullable AppendDirectFunction directFn,
                 @Nullable String... dataTypes) {
 
             @Override
@@ -127,7 +234,7 @@ public class BasicParallelImporter {
 
             public Column prependName(String prefix) {
                 return new Column(
-                        prefix + name, type, append, appendDefault, referencedTable, description, dataTypes);
+                        prefix + name, type, append, appendDefault, referencedTable, description, directFn, dataTypes);
             }
 
             public Column(
@@ -135,7 +242,7 @@ public class BasicParallelImporter {
                     String type,
                     AppendFunction append,
                     @Nullable AppendDefaultValueFunction appendDefault) {
-                this(name, type, append, appendDefault, null, null);
+                this(name, type, append, appendDefault, null, null, null);
             }
 
             public Column(
@@ -144,14 +251,14 @@ public class BasicParallelImporter {
                     AppendFunction append,
                     @Nullable AppendDefaultValueFunction appendDefault,
                     @Nullable String referencedTable) {
-                this(name, type, append, appendDefault, referencedTable, null);
+                this(name, type, append, appendDefault, referencedTable, null, null);
             }
 
             public Column withDataTypes(String... dataTypes) {
                 if (dataTypes == null || dataTypes.length == 0) {
                     return this;
                 }
-                return new Column(name, type, append, appendDefault, referencedTable, description, dataTypes);
+                return new Column(name, type, append, appendDefault, referencedTable, description, directFn, dataTypes);
             }
 
             public Column withDescription(String label, String description) {
@@ -160,7 +267,11 @@ public class BasicParallelImporter {
                     return this;
                 }
                 return new Column(
-                        name, type, append, appendDefault, referencedTable, combinedDescription, dataTypes);
+                        name, type, append, appendDefault, referencedTable, combinedDescription, directFn, dataTypes);
+            }
+
+            public Column withDirect(AppendDirectFunction fn) {
+                return new Column(name, type, append, appendDefault, referencedTable, description, fn, dataTypes);
             }
         }
 
@@ -245,6 +356,12 @@ public class BasicParallelImporter {
          */
         public int insertInto(Map<String, Object> object) {
             if (cache) {
+                // Fast path: identity-based check (no deepUnwrap allocation).
+                // Works when jafar reuses the same ComplexType/Map instance for the same
+                // logical entry within a chunk (common for constant-pool structs like Method).
+                Integer cached = identityCache.get(object);
+                if (cached != null) return cached;
+
                 Object key = JafarValues.deepUnwrap(object);
                 return objToIndex.computeIfAbsent(
                         key,
@@ -257,6 +374,7 @@ public class BasicParallelImporter {
                                         "Failed to insert into table " + name + " at row " + id,
                                         e);
                             }
+                            identityCache.put(object, id);
                             return id;
                         });
             }
@@ -281,6 +399,87 @@ public class BasicParallelImporter {
         }
 
         private void insertIntoWithoutCaching(Map<String, Object> object) throws SQLException {
+            if (canUseFastPath) {
+                insertIntoFast(object);
+                return;
+            }
+            insertIntoSlow(object);
+        }
+
+        /**
+         * Fast path: iterate columns in order. For each column with a directFn, look up its raw
+         * value from the pool by cached position (or linear scan on first event). No per-event
+         * allocation — poolPositions is built once per event type.
+         *
+         * <p>Column order is preserved (required by BinaryAppender's currentCol counter).
+         */
+        private void insertIntoFast(Map<String, Object> object) throws SQLException {
+            // Build poolPositions lazily on first call for this event type.
+            // poolPositions[i] = index into pool.keys[] where column i's field name was found,
+            // or -1 if the column has no directFn or the field was not present in the pool.
+            int[] pos = poolPositions;
+            ArrayPool pool = ARRAY_POOL_TL != null ? ARRAY_POOL_TL.get() : null;
+            if (pos == null) {
+                int nCols = columns.size();
+                pos = new int[nCols];
+                if (pool != null) {
+                    String[] keys = pool.keys;
+                    int size      = pool.size;
+                    for (int i = 0; i < nCols; i++) {
+                        if (directFunctions[i] == null) { pos[i] = -1; continue; }
+                        String colName = columns.get(i).name();
+                        pos[i] = -1;
+                        for (int j = 0; j < size; j++) {
+                            if (colName.equals(keys[j])) { pos[i] = j; break; }
+                        }
+                    }
+                } else {
+                    Arrays.fill(pos, -1);
+                }
+                poolPositions = pos;
+            }
+
+            appender.beginRow();
+            if (doesUseCaching()) {
+                appender.append(counter.get());
+            }
+
+            int nCols = columns.size();
+            Object[] poolValues = (pool != null) ? pool.values : null;
+
+            for (int i = 0; i < nCols; i++) {
+                int pIdx = pos[i];
+                if (pIdx >= 0 && poolValues != null) {
+                    // Hot path: read value directly from pool array — no map lookup, no boxing.
+                    try {
+                        directFunctions[i].appendDirect(poolValues[pIdx], appender);
+                    } catch (SQLException e) {
+                        throw new RuntimeSQLException(
+                                "Failed to append column " + columns.get(i).name()
+                                        + " for table " + name + " at row " + counter.get(), e);
+                    }
+                } else {
+                    // Slow path: struct / array / missing field — use the regular AppendFunction.
+                    try {
+                        columns.get(i).append.appendTo(object, appender);
+                    } catch (SQLException e) {
+                        throw new RuntimeSQLException(
+                                "Failed to append column " + columns.get(i).name()
+                                        + " for table " + name + " at row " + counter.get(), e);
+                    }
+                }
+            }
+
+            try {
+                appender.endRow();
+            } catch (SQLException e) {
+                throw new RuntimeSQLException(
+                        "Failed to end row for table " + name + " at row " + counter.get()
+                                + " with schema " + this, e);
+            }
+        }
+
+        private void insertIntoSlow(Map<String, Object> object) throws SQLException {
             appender.beginRow();
             if (doesUseCaching()) {
                 try {
@@ -318,7 +517,6 @@ public class BasicParallelImporter {
                         e);
             }
         }
-
         public void close() {
             try {
                 appender.close();
@@ -404,32 +602,58 @@ public class BasicParallelImporter {
 
     public final void importRecording(Path path) throws IOException {
         Object lock = new Object();
+        // [0]=parseStart [1]=parseEnd [2]=insertTotal [3]=eventCount [4]=fastCount [5]=slowCount
+        // [6]=tableCreateTotal [7]=recordingInfoTotal [8]=eventCountMergeTotal [9]=flushTotal
+        long[] times = new long[10];
+        times[0] = System.nanoTime();
         JFRUtil.runUntyped(
                 path,
                 (type, event) -> {
-                    // jafar parses chunks in parallel from a thread pool — guard the importer's
-                    // mutable state with a lock to keep semantics identical to the old sequential
-                    // forEach loop.
                     synchronized (lock) {
+                        long t0 = System.nanoTime();
                         Table table = getTableForEventType(type);
+                        long t1 = System.nanoTime();
+                        if (table.canUseFastPath) times[4]++; else times[5]++;
                         table.insertInto(event);
+                        long t2 = System.nanoTime();
                         eventCount.merge(type.getName(), 1, Integer::sum);
+                        long t3 = System.nanoTime();
                         recordingInfo.processEvent(type, event);
+                        long t4 = System.nanoTime();
+                        times[2] += t4 - t0;
+                        times[3]++;
+                        times[6] += t1 - t0;
+                        times[7] += t4 - t3;
+                        times[8] += t3 - t2;
                     }
                 });
+        times[1] = System.nanoTime();
+        System.out.printf("[jfr-timing] parse+insert wall: %dms | insert-only: %dms | events: %d | fast: %d | slow: %d%n" +
+                          "[jfr-timing] tableCreate: %dms | insertInto: %dms | eventCountMerge: %dms | recordingInfo: %dms%n",
+                (times[1] - times[0]) / 1_000_000,
+                times[2] / 1_000_000,
+                times[3], times[4], times[5],
+                times[6] / 1_000_000,
+                (times[2] - times[6] - times[7] - times[8]) / 1_000_000,
+                times[8] / 1_000_000,
+                times[7] / 1_000_000);
         finalizeImport();
     }
 
     private void finalizeImport() {
+        long t0 = System.nanoTime();
         writeEventCounts();
         writeEventLabels();
+        long t1 = System.nanoTime();
         for (Table table : eventTypeToTable.values()) {
             table.close();
         }
         for (Table table : structTypeToTable.values()) {
             table.close();
         }
+        long t2 = System.nanoTime();
         sortEventTablesByStartTime();
+        long t3 = System.nanoTime();
         try {
             recordingInfo.store(sinkSupplier.get());
         } catch (SQLException e) {
@@ -440,6 +664,10 @@ public class BasicParallelImporter {
         } catch (SQLException e) {
             throw new RuntimeSQLException("Failed to get a connection for macros/views", e);
         }
+        long t4 = System.nanoTime();
+        System.out.printf("[jfr-finalize] writeLabels: %dms | closeTables: %dms | sortByStartTime: %dms | macros/views: %dms%n",
+                (t1 - t0) / 1_000_000, (t2 - t1) / 1_000_000,
+                (t3 - t2) / 1_000_000, (t4 - t3) / 1_000_000);
     }
 
     /**
@@ -593,6 +821,7 @@ public class BasicParallelImporter {
         String fieldName = descriptor.getName();
         String typeName = descriptor.getType().getName();
         // String-constant-pool entries (jafar's Symbol/Class.name surface here) — flatten to VARCHAR.
+        final boolean isTopLevel = (getBaseObject == IDENTITY_FUNCTION);
         if (isStringConstant(descriptor) && !"java.lang.String".equals(typeName)) {
             Table.Column scol;
             if (fieldName.equals("descriptor") && !options.useComplexDescriptors()) {
@@ -606,6 +835,8 @@ public class BasicParallelImporter {
                                     app.append(JFRUtil.simplifyDescriptor(d));
                                 },
                                 Appender::appendNull);
+                if (isTopLevel) scol = scol.withDirect((raw, app) ->
+                        app.append(JFRUtil.simplifyDescriptor(JafarValues.getStringDirect(raw))));
             } else {
                 scol =
                         new Table.Column(
@@ -616,6 +847,8 @@ public class BasicParallelImporter {
                                                 JafarValues.getString(
                                                         getBaseObject.apply(obj), fieldName)),
                                 Appender::appendNull);
+                if (isTopLevel) scol = scol.withDirect((raw, app) ->
+                        app.append(JafarValues.getStringDirect(raw)));
             }
             String slabel = JafarValues.getAnnotationValue(descriptor, LABEL_ANNOTATION);
             String sdesc = JafarValues.getAnnotationValue(descriptor, DESCRIPTION_ANNOTATION);
@@ -638,6 +871,8 @@ public class BasicParallelImporter {
                                         app.append(JFRUtil.simplifyDescriptor(d));
                                     },
                                     Appender::appendNull);
+                    if (isTopLevel) col = col.withDirect((raw, app) ->
+                            app.append(JFRUtil.simplifyDescriptor(JafarValues.getStringDirect(raw))));
                     break;
                 }
                 col =
@@ -649,17 +884,10 @@ public class BasicParallelImporter {
                                                 JafarValues.getString(
                                                         getBaseObject.apply(obj), fieldName)),
                                 Appender::appendNull);
+                if (isTopLevel) col = col.withDirect((raw, app) ->
+                        app.append(JafarValues.getStringDirect(raw)));
             }
             case "long" -> {
-                var defaultCol =
-                        new Table.Column(
-                                fieldName,
-                                "BIGINT",
-                                (obj, app) ->
-                                        app.append(
-                                                JafarValues.getLongOr(
-                                                        getBaseObject.apply(obj), fieldName, 0L)),
-                                (app) -> app.append(0L));
                 boolean isTimestamp = hasContentType(descriptor, "jdk.jfr.Timestamp");
                 boolean isTimespan = hasContentType(descriptor, "jdk.jfr.Timespan");
                 if (isTimestamp) {
@@ -681,6 +909,11 @@ public class BasicParallelImporter {
                                         append(app, Instant.ofEpochSecond(0, nanos));
                                     },
                                     (app) -> append(app, Instant.EPOCH));
+                    if (isTopLevel) col = col.withDirect((rawVal, app) -> {
+                        Long raw = JafarValues.getLongDirect(rawVal);
+                        if (raw == null || raw < 0) { append(app, Instant.EPOCH); return; }
+                        append(app, Instant.ofEpochSecond(0, raw * tsNanosPerUnit));
+                    });
                 } else if (isTimespan) {
                     final long tsNanosPerUnit = nanosPerTimeUnit(
                             JafarValues.getAnnotationValue(descriptor, "jdk.jfr.Timespan"));
@@ -710,8 +943,25 @@ public class BasicParallelImporter {
                                         app.append(seconds);
                                     },
                                     (app) -> app.append(Double.POSITIVE_INFINITY));
+                    if (isTopLevel) col = col.withDirect((rawVal, app) -> {
+                        Long raw = JafarValues.getLongDirect(rawVal);
+                        if (raw == null) { app.append(0.0); return; }
+                        if (raw == Long.MAX_VALUE) { app.append(Double.POSITIVE_INFINITY); return; }
+                        double seconds = (raw * tsNanosPerUnit) / 1_000_000_000.0;
+                        app.append(seconds > 24L * 365 * 10 * 3600 ? Double.POSITIVE_INFINITY : seconds);
+                    });
                 } else {
-                    col = defaultCol;
+                    col =
+                            new Table.Column(
+                                    fieldName,
+                                    "BIGINT",
+                                    (obj, app) ->
+                                            app.append(
+                                                    JafarValues.getLongOr(
+                                                            getBaseObject.apply(obj), fieldName, 0L)),
+                                    (app) -> app.append(0L));
+                    if (isTopLevel) col = col.withDirect((raw, app) -> {
+                        Long v = JafarValues.getLongDirect(raw); app.append(v != null ? v : 0L); });
                 }
             }
             case "byte" -> {
@@ -725,6 +975,8 @@ public class BasicParallelImporter {
                                     app.append(v != null ? (byte) v.longValue() : (byte) 0);
                                 },
                                 (app) -> app.append((byte) 0));
+                if (isTopLevel) col = col.withDirect((raw, app) -> {
+                    Long v = JafarValues.getLongDirect(raw); app.append(v != null ? (byte)v.longValue() : (byte)0); });
             }
             case "short" -> {
                 col =
@@ -737,6 +989,8 @@ public class BasicParallelImporter {
                                     app.append(v != null ? (short) v.longValue() : (short) 0);
                                 },
                                 (app) -> app.append((short) 0));
+                if (isTopLevel) col = col.withDirect((raw, app) -> {
+                    Long v = JafarValues.getLongDirect(raw); app.append(v != null ? (short)v.longValue() : (short)0); });
             }
             case "char" -> {
                 col =
@@ -750,6 +1004,8 @@ public class BasicParallelImporter {
                                     app.append(c != null ? (short) (int) c : (short) 0);
                                 },
                                 (app) -> app.append(0));
+                if (isTopLevel) col = col.withDirect((raw, app) -> {
+                    Character c = JafarValues.getCharacterDirect(raw); app.append(c != null ? (short)(int)c : (short)0); });
             }
             case "int" -> {
                 col =
@@ -763,6 +1019,8 @@ public class BasicParallelImporter {
                                     app.append(v != null ? v.intValue() : 0);
                                 },
                                 (app) -> app.append(0));
+                if (isTopLevel) col = col.withDirect((raw, app) -> {
+                    Integer v = JafarValues.getIntegerDirect(raw); app.append(v != null ? v.intValue() : 0); });
             }
             case "boolean" -> {
                 col =
@@ -776,6 +1034,8 @@ public class BasicParallelImporter {
                                     app.append(v != null && v);
                                 },
                                 (app) -> app.append(false));
+                if (isTopLevel) col = col.withDirect((raw, app) -> {
+                    Boolean v = JafarValues.getBooleanDirect(raw); app.append(v != null && v); });
             }
             case "double" -> {
                 col =
@@ -789,6 +1049,8 @@ public class BasicParallelImporter {
                                     app.append(v != null ? v.doubleValue() : 0.0);
                                 },
                                 (app) -> app.append(0.0));
+                if (isTopLevel) col = col.withDirect((raw, app) -> {
+                    Double v = JafarValues.getDoubleDirect(raw); app.append(v != null ? v.doubleValue() : 0.0); });
             }
             case "float" -> {
                 col =
@@ -802,6 +1064,8 @@ public class BasicParallelImporter {
                                     app.append(v != null ? v.floatValue() : 0.0f);
                                 },
                                 (app) -> app.append(0.0f));
+                if (isTopLevel) col = col.withDirect((raw, app) -> {
+                    Float v = JafarValues.getFloatDirect(raw); app.append(v != null ? v.floatValue() : 0.0f); });
             }
             case "jdk.types.Timestamp" -> {
                 col =
@@ -819,6 +1083,10 @@ public class BasicParallelImporter {
                                     }
                                 },
                                 Appender::appendNull);
+                if (isTopLevel) col = col.withDirect((raw, app) -> {
+                    Long nanos = JafarValues.getLongDirect(raw);
+                    if (nanos == null) app.appendNull(); else app.append(Instant.ofEpochSecond(0, nanos).toString());
+                });
             }
             case "jdk.types.StackTrace" -> {
                 return createStackTraceColumns(descriptor, getBaseObject);
@@ -885,13 +1153,24 @@ public class BasicParallelImporter {
     }
 
     /**
-     * Reads {@code stackTrace.frames} as an array of frame structs. Each frame struct contains
-     * {@code method}, {@code lineNumber}, {@code bytecodeIndex}, {@code type}.
-     *
-     * <p>The {@code type} field carries a string-constant frame kind (e.g. {@code "Java"}).
+     * Per-event cache for stack frame arrays. Each stack trace column calls getFramesRaw with the
+     * same stackTrace object; caching by identity avoids 5 redundant jafar array-pool lookups per
+     * event on the WASM hot path (WasmGC array allocation is expensive).
      */
-    private static List<Map<String, Object>> getFrames(Map<String, Object> stackTrace) {
+    private static Object lastFramesKey = null;
+    private static Object[] lastFramesVal = null;
+
+    private static Object[] getFramesCached(Map<String, Object> stackTrace) {
+        if (stackTrace == lastFramesKey) return lastFramesVal;
         Object[] arr = JafarValues.getArray(stackTrace, "frames");
+        lastFramesKey = stackTrace;
+        lastFramesVal = arr;
+        return arr;
+    }
+
+    /** @deprecated use {@link #getFramesCached} to avoid ArrayList allocation */
+    private static List<Map<String, Object>> getFrames(Map<String, Object> stackTrace) {
+        Object[] arr = getFramesCached(stackTrace);
         if (arr == null) return List.of();
         List<Map<String, Object>> out = new ArrayList<>(arr.length);
         for (Object e : arr) {
@@ -939,7 +1218,12 @@ public class BasicParallelImporter {
                                         Map<String, Object> stackTrace =
                                                 JafarValues.getStruct(
                                                         getBaseObject.apply(obj), fieldName);
-                                        if (stackTrace == null || getFrames(stackTrace).isEmpty()) {
+                                        if (stackTrace == null) {
+                                            app.append(0);
+                                            return;
+                                        }
+                                        Object[] arr = getFramesCached(stackTrace);
+                                        if (arr == null || arr.length == 0) {
                                             app.append(0);
                                             return;
                                         }
@@ -964,46 +1248,41 @@ public class BasicParallelImporter {
                                     "Method"));
                 };
 
-        addFrameColumn.accept(stackTrace -> getFrames(stackTrace).getFirst(), "topMethod");
+        addFrameColumn.accept(stackTrace -> {
+            Object[] arr = getFramesCached(stackTrace);
+            return (arr != null && arr.length > 0) ? JafarValues.unwrapStruct(arr[0]) : null;
+        }, "topMethod");
         addFrameColumn.accept(
-                stackTrace ->
-                        getFrames(stackTrace).stream()
-                                .filter(
-                                        f -> {
-                                            if (!isJavaFrame(f)) return false;
-                                            Map<String, Object> method =
-                                                    JafarValues.getStruct(f, "method");
-                                            if (method == null) return false;
-                                            Map<String, Object> type =
-                                                    JafarValues.getStruct(method, "type");
-                                            if (type == null) return false;
-                                            Map<String, Object> classLoader =
-                                                    JafarValues.getStruct(type, "classLoader");
-                                            // Bootstrap loader sets name="bootstrap"; application
-                                            // loaders (URLClassLoader, custom) leave name=null.
-                                            // Treat null/missing classLoader as bootstrap too.
-                                            if (classLoader == null) return false;
-                                            String clName =
-                                                    JafarValues.getString(classLoader, "name");
-                                            return !"bootstrap".equals(clName);
-                                        })
-                                .findFirst()
-                                .orElse(null),
+                stackTrace -> {
+                    Object[] arr = getFramesCached(stackTrace);
+                    if (arr == null) return null;
+                    for (Object e : arr) {
+                        Map<String, Object> f = JafarValues.unwrapStruct(e);
+                        if (f == null || !isJavaFrame(f)) continue;
+                        Map<String, Object> method = JafarValues.getStruct(f, "method");
+                        if (method == null) continue;
+                        Map<String, Object> type = JafarValues.getStruct(method, "type");
+                        if (type == null) continue;
+                        Map<String, Object> classLoader = JafarValues.getStruct(type, "classLoader");
+                        if (classLoader == null) continue;
+                        String clName = JafarValues.getString(classLoader, "name");
+                        if (!"bootstrap".equals(clName)) return f;
+                    }
+                    return null;
+                },
                 "topApplicationMethod");
         addFrameColumn.accept(
-                stackTrace ->
-                        getFrames(stackTrace).stream()
-                                .filter(
-                                        f -> {
-                                            if (!isJavaFrame(f)) return false;
-                                            Map<String, Object> method =
-                                                    JafarValues.getStruct(f, "method");
-                                            return method != null
-                                                    && !"<init>"
-                                                            .equals(JafarValues.getString(method, "name"));
-                                        })
-                                .findFirst()
-                                .orElse(null),
+                stackTrace -> {
+                    Object[] arr = getFramesCached(stackTrace);
+                    if (arr == null) return null;
+                    for (Object e : arr) {
+                        Map<String, Object> f = JafarValues.unwrapStruct(e);
+                        if (f == null || !isJavaFrame(f)) continue;
+                        Map<String, Object> method = JafarValues.getStruct(f, "method");
+                        if (method != null && !"<init>".equals(JafarValues.getString(method, "name"))) return f;
+                    }
+                    return null;
+                },
                 "topNonInitMethod");
 
         cols.add(
@@ -1013,7 +1292,9 @@ public class BasicParallelImporter {
                         (obj, app) -> {
                             Map<String, Object> stackTrace =
                                     JafarValues.getStruct(getBaseObject.apply(obj), fieldName);
-                            app.append(stackTrace != null ? (short) getFrames(stackTrace).size() : 0);
+                            if (stackTrace == null) { app.append((short) 0); return; }
+                            Object[] arr = getFramesCached(stackTrace);
+                            app.append(arr != null ? (short) arr.length : (short) 0);
                         },
                         (app) -> app.append(0)));
         cols.add(
@@ -1028,39 +1309,39 @@ public class BasicParallelImporter {
                                 return;
                             }
                             Boolean truncated = JafarValues.getBoolean(stackTrace, "truncated");
-                            int frameCount = getFrames(stackTrace).size();
+                            Object[] arr = getFramesCached(stackTrace);
+                            int frameCount = arr != null ? arr.length : 0;
                             app.append(
                                     (truncated != null && truncated)
                                             || frameCount > options.getMaxStackTraceDepth());
                         },
                         (app) -> app.append(false)));
+        final int maxDepth = options.getMaxStackTraceDepth();
+        // Reuse a single int[] per thread instead of allocating one per event (256K events/flush).
+        final ThreadLocal<int[]> scratchTL = ThreadLocal.withInitial(() -> new int[maxDepth]);
         cols.add(
                 new Table.Column(
                         fieldName + "$methods",
-                        "UINTEGER[" + options.getMaxStackTraceDepth() + "]",
+                        "UINTEGER[" + maxDepth + "]",
                         (obj, app) -> {
                             Map<String, Object> stackTrace =
                                     JafarValues.getStruct(getBaseObject.apply(obj), fieldName);
-                            int[] arr = new int[options.getMaxStackTraceDepth()];
-                            List<Map<String, Object>> frames =
-                                    stackTrace == null ? List.of() : getFrames(stackTrace);
-                            for (int i = 0; i < options.getMaxStackTraceDepth(); i++) {
-                                if (i >= frames.size()) {
-                                    arr[i] = 0;
-                                } else {
-                                    Map<String, Object> method =
-                                            JafarValues.getStruct(frames.get(i), "method");
-                                    if (method == null) {
-                                        arr[i] = 0;
-                                    } else {
-                                        arr[i] =
-                                                getTableForMiscType(methodField)
-                                                        .assumeCaching()
-                                                        .insertInto(method);
+                            int[] out = scratchTL.get();
+                            java.util.Arrays.fill(out, 0);
+                            if (stackTrace != null) {
+                                Object[] frames = getFramesCached(stackTrace);
+                                if (frames != null) {
+                                    int n = Math.min(frames.length, maxDepth);
+                                    Table methodTable = getTableForMiscType(methodField).assumeCaching();
+                                    for (int i = 0; i < n; i++) {
+                                        Map<String, Object> method =
+                                                JafarValues.getStruct(
+                                                        JafarValues.unwrapStruct(frames[i]), "method");
+                                        if (method != null) out[i] = methodTable.insertInto(method);
                                     }
                                 }
                             }
-                            app.append(arr);
+                            app.append(out);
                         },
                         (app) -> app.append(0),
                         "Method"));
