@@ -63,22 +63,34 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     // B-161/cross-cell ON routing: build a map from SQL alias name → dataset so
     // plots in any cell can reference results from other cells via ON <alias>.
     // Keys are bare alias names (lowercase-normalised look-up, original casing stored).
+    //
+    // Split into two memos: parsed aliases only re-compute when cell content changes;
+    // the final map re-computes when any result changes (but parse is already cached).
+    const cellAliasesByCell = useMemo((): Map<string, (string | null)[]> => {
+        const out = new Map<string, (string | null)[]>();
+        for (const cell of cells) {
+            const parsed = parseCellContent(tokenizeCellContent(cell.content));
+            out.set(cell.id, parsed.queryAliases as (string | null)[]);
+        }
+        return out;
+    }, [cells]);
+
     const crossCellQueryRefs = useMemo((): Record<string, any[]> => {
         const out: Record<string, any[]> = {};
         for (const cell of cells) {
-            const parsed = parseCellContent(tokenizeCellContent(cell.content));
+            const aliases = cellAliasesByCell.get(cell.id);
             const cellResults = results[cell.id];
-            if (!cellResults) continue;
-            parsed.queryAliases.forEach((alias, i) => {
+            if (!aliases || !cellResults) continue;
+            aliases.forEach((alias, i) => {
                 if (alias && cellResults[i]) {
                     out[alias] = cellResults[i]!;
                 }
             });
         }
         return out;
-    // Recompute when cell content or any result changes.
+    // Recompute when cell aliases or any result changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cells, results]);
+    }, [cellAliasesByCell, results]);
 
     const handleGlobalVariableClick = (variableName: string) => {
         settingsPanelRef.current?.focusVariable(variableName);
