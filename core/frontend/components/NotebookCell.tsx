@@ -19,6 +19,8 @@ import { aiService } from '../services/AiService';
 // Module-level cache so repeated identical errors (same sql + message) skip the
 // API round-trip and show the suggestion instantly.
 const aiErrorSuggestionCache = new Map<string, { text: string; code: string | null }>();
+// Per-cell SQL-block count cache keyed by cell object reference.
+const cellSqlCountCache = new WeakMap<object, number>();
 import { NotebookPlotScope } from './editor/plot/notebookPlotScope';
 import { SettingsContext } from '../context/SettingsContext';
 import PlotSuggestionChip from './PlotSuggestionChip';
@@ -280,11 +282,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     // Aggregate SQL block count across all cells (fallback used by `#N` hints
     // when the rich scope is unavailable).
     const totalSqlBlockCount = useMemo(() => {
-        // Cheap pass: count fenced ```sql blocks per cell content.
         let n = 0;
         for (const c of allCells) {
-            const m = c.content.match(/```sql\b/gi);
-            if (m) n += m.length;
+            let count = cellSqlCountCache.get(c);
+            if (count === undefined) {
+                const m = c.content.match(/```sql\b/gi);
+                count = m ? m.length : 0;
+                cellSqlCountCache.set(c, count);
+            }
+            n += count;
         }
         return n;
     }, [allCells]);
