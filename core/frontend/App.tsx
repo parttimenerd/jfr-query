@@ -648,7 +648,7 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [updateCellsAndMarkdown]);
 
-    const addCellsBatchFromTool = (muts: { type: 'sql' | 'plot' | 'markdown'; content: string }[]): void => {
+    const addCellsBatchFromTool = useCallback((muts: { type: 'sql' | 'plot' | 'markdown'; content: string }[]): void => {
         flushHistory();
         const newCells = muts.map((mut, i) => {
             const fence = mut.type === 'sql' ? '```sql' : mut.type === 'plot' ? '```plot' : null;
@@ -656,9 +656,9 @@ const App: React.FC = () => {
             return { id: `cell-${Date.now()}-${i}`, title: '', content: body };
         });
         updateCellsAndMarkdown([...cells, ...newCells]);
-    };
-    
-    const addCellFromAI = (sql: string, plotConfig: string, title: string, markdownText: string) => {
+    }, [cells, updateCellsAndMarkdown, flushHistory]);
+
+    const addCellFromAI = useCallback((sql: string, plotConfig: string, title: string, markdownText: string) => {
         const content = reconstructCellContent([
             { type: 'markdown', content: `# ${title}\n\n${markdownText}\n\n` },
             { type: 'sql', content: `\n${sql}\n` },
@@ -672,7 +672,7 @@ const App: React.FC = () => {
         };
         const newCells = [...cells, newCell];
         updateCellsAndMarkdown(newCells);
-    };
+    }, [cells, updateCellsAndMarkdown]);
 
 
     const deleteCell = useCallback((cellId: string) => {
@@ -879,6 +879,24 @@ const App: React.FC = () => {
         await refreshSchema();
     }, [cellsContent, refreshSchema]);
 
+    const handleNavigateRef = useCallback((ref: string) => {
+        const idxMatch = /^(?:cell-|plot-)?(\d+)$/.exec(ref);
+        const el = idxMatch
+            ? document.querySelector(`[data-cell-idx="${idxMatch[1]}"]`)
+            : document.querySelector(`[data-cell-alias="${ref}"], [data-cell-alias="${ref.replace(/^@/, '')}"]`);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, []);
+
+    const handlePopChatToSidebar = useCallback((snapshot: import('./components/ChatPanel').InlineChatSnapshot) => {
+        setIncomingChannel(snapshot);
+        setIsChatPanelCollapsed(false);
+    }, [setIsChatPanelCollapsed]);
+
+    const handleIncomingChannelConsumed = useCallback(() => setIncomingChannel(null), []);
+
+    const handleToggleSidebar = useCallback(() => setIsSidebarCollapsed(v => !v), [setIsSidebarCollapsed]);
+    const handleToggleChatPanel = useCallback(() => setIsChatPanelCollapsed(v => !v), [setIsChatPanelCollapsed]);
+
     // Seed session_start / session_end variables from recording bounds when a
     // JFR file is loaded and the variables haven't been set yet.
     useEffect(() => {
@@ -1052,7 +1070,7 @@ const App: React.FC = () => {
                     initialWidth={320}
                     minWidth={250}
                     isCollapsed={isSidebarCollapsed}
-                    onCollapseToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                    onCollapseToggle={handleToggleSidebar}
                 >
                     <Sidebar metadata={metadata} />
                 </ResizablePanel>
@@ -1084,17 +1102,8 @@ const App: React.FC = () => {
                         onMetadataChange={handleMetadataChange}
                         onDeleteQueryBlock={deleteQueryBlock}
                         presenterMode={presenterMode}
-                        onPopChatToSidebar={snapshot => {
-                            setIncomingChannel(snapshot);
-                            setIsChatPanelCollapsed(false);
-                        }}
-                        onNavigateRef={ref => {
-                            const idxMatch = /^(?:cell-|plot-)?(\d+)$/.exec(ref);
-                            const el = idxMatch
-                                ? document.querySelector(`[data-cell-idx="${idxMatch[1]}"]`)
-                                : document.querySelector(`[data-cell-alias="${ref}"], [data-cell-alias="${ref.replace(/^@/, '')}"]`);
-                            el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }}
+                        onPopChatToSidebar={handlePopChatToSidebar}
+                        onNavigateRef={handleNavigateRef}
                     />
                     </div>
                 </main>
@@ -1105,7 +1114,7 @@ const App: React.FC = () => {
                         initialWidth={400}
                         minWidth={300}
                         isCollapsed={isChatPanelCollapsed}
-                        onCollapseToggle={() => setIsChatPanelCollapsed(!isChatPanelCollapsed)}
+                        onCollapseToggle={handleToggleChatPanel}
                     >
                         <ChatPanel
                             metadata={metadata}
@@ -1120,14 +1129,8 @@ const App: React.FC = () => {
                             onUndoLastAction={canUndo ? undo : undefined}
                             onBeforeMutate={flushHistory}
                             incomingChannel={incomingChannel}
-                            onIncomingChannelConsumed={() => setIncomingChannel(null)}
-                            onNavigateRef={ref => {
-                                const idxMatch = /^(?:cell-|plot-)?(\d+)$/.exec(ref);
-                                const el = idxMatch
-                                    ? document.querySelector(`[data-cell-idx="${idxMatch[1]}"]`)
-                                    : document.querySelector(`[data-cell-alias="${ref}"], [data-cell-alias="${ref.replace(/^@/, '')}"]`);
-                                el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            }}
+                            onIncomingChannelConsumed={handleIncomingChannelConsumed}
+                            onNavigateRef={handleNavigateRef}
                         />
                     </ResizablePanel>
                 )}

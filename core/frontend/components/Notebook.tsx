@@ -207,4 +207,4 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     );
 };
 
-export default Notebook;
+export default React.memo(Notebook);

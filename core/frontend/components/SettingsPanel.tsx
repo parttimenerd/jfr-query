@@ -209,4 +209,4 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
     </div>{tooltip?.visible && ReactDOM.createPortal(<div style={{top:tooltip.top,left:tooltip.left}} className="absolute z-[100] p-2 bg-gray-700 border border-gray-600 rounded shadow-lg w-auto max-w-xs animate-fade-in" onMouseEnter={()=>{if(hideTimeout.current)clearTimeout(hideTimeout.current);}} onMouseLeave={handleHideTooltip}>{tooltip.content}</div>, document.body)}</>);
 });
 
-export default SettingsPanel;
+export default React.memo(SettingsPanel);
