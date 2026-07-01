@@ -1164,13 +1164,42 @@ function areCrossCellRefsEqual(
     return true;
 }
 
+function allCellsEqual(a: NotebookCellData[], b: NotebookCellData[]): boolean {
+    if (a === b) return true;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
+}
+
+// Returns true if the change in allCells is "invisible" to the cell at cellId.
+// A cell only needs updated allCells when:
+//   (a) its own object changed (handled separately via prev.cell !== next.cell), or
+//   (b) a cell BEFORE it in the array changed (cross-cell variable scope flows downward).
+// Changes to cells AFTER cellId in the array don't affect this cell's render.
+function allCellsRelevantlyEqual(
+    prev: NotebookCellData[],
+    next: NotebookCellData[],
+    cellId: string,
+): boolean {
+    if (prev === next) return true;
+    if (prev.length !== next.length) return false;
+    // Walk cells until we pass the current cell; any change before or at this cell matters.
+    for (let i = 0; i < prev.length; i++) {
+        if (prev[i] !== next[i]) return false;
+        if (prev[i].id === cellId) break; // cells after this one don't affect our scope
+    }
+    return true;
+}
+
 function arePropsEqual(prev: NotebookCellProps, next: NotebookCellProps): boolean {
     // Fast path: same reference for most props (callbacks, primitives).
     // Only deep-check crossCellQueryRefs which always gets a new object on result updates.
     if (prev === next) return true;
     return (
         prev.cell === next.cell &&
-        prev.allCells === next.allCells &&
+        allCellsRelevantlyEqual(prev.allCells, next.allCells, next.cell.id) &&
         prev.metadata === next.metadata &&
         prev.results === next.results &&
         prev.queryTimings === next.queryTimings &&
