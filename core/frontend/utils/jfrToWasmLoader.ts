@@ -347,14 +347,34 @@ async function mergeChunkTables(
     const getConn = (i: number) => allConns[i % allConns.length];
 
     // 3. Struct tables in parallel (each table's 3 queries stay sequential within that table).
+    // Pre-fetch all natural-key columns for struct tables in one batch query.
+    const structNaturalColsMap = new Map<string, string[]>();
+    if (structTables.length > 0) {
+      const structReprTables = structTables.map(base => {
+        const firstWorker = baseToWorkers.get(base)![0];
+        return { base, reprTable: `chunk${firstWorker}_${base}` };
+      });
+      const structColPattern = structReprTables.map(({ reprTable: t }) => `table_name='${t.replace(/'/g, "''")}'`).join(' OR ');
+      const structColsResult = await conn.query(
+        `SELECT table_name, column_name FROM information_schema.columns
+         WHERE table_schema='main' AND column_name != '_id' AND (${structColPattern})
+         ORDER BY table_name, ordinal_position`
+      ).catch(() => null);
+      if (structColsResult) {
+        for (const row of structColsResult.toArray()) {
+          const tname = String((row as any).table_name);
+          if (!structNaturalColsMap.has(tname)) structNaturalColsMap.set(tname, []);
+          structNaturalColsMap.get(tname)!.push(`"${String((row as any).column_name)}"`);
+        }
+      }
+    }
+
     await Promise.all(structTables.map(async (base, idx) => {
       const c = getConn(idx);
       const workers = baseToWorkers.get(base)!;
       const firstWorker = workers[0];
-      const colsResult = await c.query(
-        `SELECT column_name FROM information_schema.columns WHERE table_schema='main' AND table_name='chunk${firstWorker}_${base.replace(/'/g, "''")}' AND column_name != '_id' ORDER BY ordinal_position`
-      );
-      const naturalCols = colsResult.toArray().map((r: any) => `"${String((r as any).column_name)}"`);
+      const reprTable = `chunk${firstWorker}_${base}`;
+      const naturalCols = structNaturalColsMap.get(reprTable) ?? [];
       const naturalKey = naturalCols.join(', ');
 
       // Union only chunks that have this table
