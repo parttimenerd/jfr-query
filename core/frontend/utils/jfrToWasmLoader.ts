@@ -4,11 +4,70 @@ import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL } from '../data/builtinSql';
 
 const PERF_KEY = 'jfr_import_ms_per_byte';
 
-// Maximum workers to spawn for chunk-parallel import.
-// Kept at 2 to balance parallelism against per-worker WASM heap cost.
-// Each worker instantiates its own 11 MB GraalVM WASM binary; beyond 2
-// workers the combined heap may exhaust browser tab memory on large files.
+// Maximum workers to run in parallel.
+// Kept at 2: each worker instantiates its own 11 MB GraalVM WASM binary;
+// beyond 2 the combined heap can exhaust browser tab memory on large files.
 const MAX_CHUNK_WORKERS = 2;
+
+// ── WASM worker pool ──────────────────────────────────────────────────────────
+//
+// Workers are long-lived and reused across chunk batches. On first use we
+// pre-compile the WebAssembly.Module on the main thread (compileStreaming is
+// fast on the main thread and the compiled Module is transferable to workers),
+// then post it to each worker so they can skip their own compile step — saving
+// ~5-8 s of cold-start per worker.
+
+let _precompiledModulePromise: Promise<WebAssembly.Module | null> | null = null;
+
+function getPrecompiledModule(): Promise<WebAssembly.Module | null> {
+  if (!_precompiledModulePromise) {
+    _precompiledModulePromise = WebAssembly.compileStreaming(fetch('/wasm/jfr-importer.js.wasm'))
+      .catch(() => null); // non-fatal — workers fall back to their own compile
+  }
+  return _precompiledModulePromise;
+}
+
+/** A ready-to-use worker and its associated DuckDB connection. */
+interface PooledWorker {
+  worker: Worker;
+  conn: AsyncDuckDBConnection;
+  busy: boolean;
+}
+
+const workerPool: PooledWorker[] = [];
+
+// Kick off WASM compilation immediately at module load — so it's likely done
+// by the time the user drops a JFR file.
+getPrecompiledModule();
+
+/** Create and warm a new pooled worker, sending it the pre-compiled WASM module. */
+async function createPooledWorker(
+  db: AsyncDuckDB,
+  wasmModule: WebAssembly.Module | null,
+): Promise<PooledWorker> {
+  const conn = await db.connect();
+  const worker = new Worker(
+    new URL('../workers/jfrImport.worker.ts', import.meta.url),
+    { type: 'module' },
+  );
+  const entry: PooledWorker = { worker, conn, busy: false };
+
+  await new Promise<void>((resolve, reject) => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data.type === 'ready') { worker.removeEventListener('message', onMsg); resolve(); }
+      if (e.data.type === 'error') { worker.removeEventListener('message', onMsg); reject(new Error(e.data.message)); }
+    };
+    worker.addEventListener('message', onMsg);
+    worker.onerror = (ev) => reject(new Error(ev.message));
+    if (wasmModule) {
+      worker.postMessage({ type: 'init', wasmModule });
+    } else {
+      worker.postMessage({ type: 'init' });
+    }
+  });
+
+  return entry;
+}
 
 /**
  * Parses JFR chunk boundaries from raw bytes.
@@ -39,60 +98,63 @@ function parseJfrChunks(bytes: Uint8Array): Array<{ start: number; end: number }
 }
 
 /**
- * Runs one JFR import worker for a single byte slice.
- * Returns when the worker posts {type:'done'} or rejects on {type:'error'}.
- * Relays query/insert messages to the shared DuckDB connection.
+ * Dispatch one import job to an existing pooled worker.
+ * The worker is marked busy for the duration and released on completion.
+ * Uses the worker's own dedicated DuckDB connection for all queries/inserts.
  */
-async function runImportWorker(
+async function dispatchToPooledWorker(
+  pooled: PooledWorker,
   slice: Uint8Array,
   tablePrefix: string,
-  conn: AsyncDuckDBConnection,
   stacktraceDepth: number,
   onInsert?: () => void,
   onInsertDone?: () => void,
 ): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const worker = new Worker(
-      new URL('../workers/jfrImport.worker.ts', import.meta.url),
-      { type: 'module' },
-    );
+  pooled.busy = true;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const { worker, conn } = pooled;
 
-    worker.onmessage = async (e: MessageEvent) => {
-      const msg = e.data;
+      const onMsg = async (e: MessageEvent) => {
+        const msg = e.data;
 
-      if (msg.type === 'query') {
-        try {
-          await conn.query(msg.sql as string);
-        } catch (err) {
-          console.warn(`[jfr-worker ${tablePrefix}] query failed:`, err);
+        if (msg.type === 'query') {
+          try {
+            await conn.query(msg.sql as string);
+          } catch (err) {
+            console.warn(`[jfr-worker ${tablePrefix}] query failed:`, err);
+          }
+          worker.postMessage({ type: 'query-result', reqId: msg.reqId, rows: [] });
+          return;
         }
-        worker.postMessage({ type: 'query-result', reqId: msg.reqId, rows: [] });
-        return;
-      }
 
-      if (msg.type === 'insert') {
-        onInsert?.();
-        conn.insertArrowTable(
-          tableFromIPC(new Uint8Array(msg.ipcBytes as ArrayBuffer)),
-          { name: msg.tableName as string, create: false },
-        ).catch((err) => console.warn(`[jfr-worker ${tablePrefix}] insert failed for`, msg.tableName, err))
-          .finally(() => { onInsertDone?.(); });
-        worker.postMessage({ type: 'insert-result', reqId: msg.reqId });
-        return;
-      }
+        if (msg.type === 'insert') {
+          onInsert?.();
+          conn.insertArrowTable(
+            tableFromIPC(new Uint8Array(msg.ipcBytes as ArrayBuffer)),
+            { name: msg.tableName as string, create: false },
+          ).catch((err) => console.warn(`[jfr-worker ${tablePrefix}] insert failed for`, msg.tableName, err))
+            .finally(() => { onInsertDone?.(); });
+          worker.postMessage({ type: 'insert-result', reqId: msg.reqId });
+          return;
+        }
 
-      if (msg.type === 'done') { worker.terminate(); resolve(); return; }
-      if (msg.type === 'error') { worker.terminate(); reject(new Error(msg.message as string)); return; }
-    };
+        if (msg.type === 'done') { worker.removeEventListener('message', onMsg); resolve(); return; }
+        if (msg.type === 'error') { worker.removeEventListener('message', onMsg); reject(new Error(msg.message as string)); return; }
+      };
 
-    worker.onerror = (e) => {
-      worker.terminate();
-      reject(new Error(`JFR import worker error (${tablePrefix}): ${e.message}`));
-    };
+      worker.addEventListener('message', onMsg);
+      worker.onerror = (ev) => {
+        worker.removeEventListener('message', onMsg);
+        reject(new Error(`JFR import worker error (${tablePrefix}): ${ev.message}`));
+      };
 
-    const buf = slice.buffer.byteLength === slice.byteLength ? slice.buffer : slice.slice().buffer;
-    worker.postMessage({ type: 'import', bytes: new Uint8Array(buf), stacktraceDepth, tablePrefix }, [buf]);
-  });
+      const buf = slice.buffer.byteLength === slice.byteLength ? slice.buffer : slice.slice().buffer;
+      worker.postMessage({ type: 'import', bytes: new Uint8Array(buf), stacktraceDepth, tablePrefix }, [buf]);
+    });
+  } finally {
+    pooled.busy = false;
+  }
 }
 
 /**
@@ -110,8 +172,6 @@ async function mergeChunkTables(
   conn: AsyncDuckDBConnection,
   numChunks: number,
 ): Promise<void> {
-  const prefixes = Array.from({ length: numChunks }, (_, i) => `chunk${i}_`);
-
   // 1. Collect all base table names across ALL chunks (not just chunk0)
   const allTablesResult = await conn.query(
     `SELECT DISTINCT regexp_replace(table_name, '^chunk\\d+_', '') AS base_name
@@ -123,15 +183,20 @@ async function mergeChunkTables(
 
   if (allBaseNames.length === 0) return;
 
-  // Build a map: baseName → array of worker indices that have it
+  // Build a map: baseName → array of worker indices that have it.
+  // Single query fetches all chunk-prefixed table names at once — avoids N×M round-trips.
+  const allChunkTablesResult = await conn.query(
+    `SELECT table_name FROM information_schema.tables
+     WHERE table_schema='main' AND regexp_matches(table_name, '^chunk\\d+_')`
+  );
+  const chunkTableSet = new Set(
+    allChunkTablesResult.toArray().map((r: any) => String(r.table_name))
+  );
   const baseToWorkers = new Map<string, number[]>();
   for (const base of allBaseNames) {
     const workers: number[] = [];
     for (let i = 0; i < numChunks; i++) {
-      const exists = await conn.query(
-        `SELECT 1 FROM information_schema.tables WHERE table_schema='main' AND table_name='chunk${i}_${base.replace(/'/g, "''")}'`
-      );
-      if (exists.toArray().length > 0) workers.push(i);
+      if (chunkTableSet.has(`chunk${i}_${base}`)) workers.push(i);
     }
     baseToWorkers.set(base, workers);
   }
@@ -364,60 +429,53 @@ export async function loadJfrIntoWasm(
   let pendingInserts = 0;
   let peakPending = 0;
 
+  // Pre-warm pool in parallel with chunk boundary parsing.
+  // We need exactly numWorkers pooled entries.
+  // getPrecompiledModule() was already called above; it may still be compiling — that's fine.
+  const wasmModule = await getPrecompiledModule();
+  const tWasmCompile = performance.now();
+  console.log(`[jfr-perf] WASM compile: ${(tWasmCompile - tJava0).toFixed(0)}ms`);
+
+  // Ensure pool has enough workers for this import.
+  // Reuse existing idle workers; create new ones as needed — in parallel.
+  const toCreate = numWorkers - workerPool.length;
+  if (toCreate > 0) {
+    const newWorkers = await Promise.all(
+      Array.from({ length: toCreate }, () => createPooledWorker(db, wasmModule)),
+    );
+    workerPool.push(...newWorkers);
+  }
+  const tPoolReady = performance.now();
+  console.log(`[jfr-perf] pool ready (${numWorkers} workers): ${(tPoolReady - tWasmCompile).toFixed(0)}ms`);
+
   if (!useParallel) {
-    // Single-chunk path: original behavior, no prefix, no merge needed
-    await new Promise<void>((resolve, reject) => {
-      const worker = new Worker(
-        new URL('../workers/jfrImport.worker.ts', import.meta.url),
-        { type: 'module' },
-      );
-
-      worker.onmessage = async (e: MessageEvent) => {
-        const msg = e.data;
-        if (msg.type === 'query') {
-          try { await conn.query(msg.sql as string); } catch (err) { console.warn('[jfr-worker] query failed:', err); }
-          worker.postMessage({ type: 'query-result', reqId: msg.reqId, rows: [] });
-          return;
-        }
-        if (msg.type === 'insert') {
-          pendingInserts++;
-          peakPending = Math.max(peakPending, pendingInserts);
-          conn.insertArrowTable(
-            tableFromIPC(new Uint8Array(msg.ipcBytes as ArrayBuffer)),
-            { name: msg.tableName as string, create: false },
-          ).catch((err) => console.warn('[jfr-worker] insert failed for', msg.tableName, err))
-            .finally(() => { pendingInserts--; });
-          worker.postMessage({ type: 'insert-result', reqId: msg.reqId });
-          return;
-        }
-        if (msg.type === 'done') { worker.terminate(); resolve(); return; }
-        if (msg.type === 'error') { worker.terminate(); reject(new Error(msg.message as string)); return; }
-      };
-      worker.onerror = (e) => { worker.terminate(); reject(new Error(`JFR import worker error: ${e.message}`)); };
-
-      const buf = jfrBytes.buffer.byteLength === jfrBytes.byteLength ? jfrBytes.buffer : jfrBytes.slice().buffer;
-      worker.postMessage({ type: 'import', bytes: new Uint8Array(buf), stacktraceDepth, tablePrefix: '' }, [buf]);
-    });
+    // Single-chunk: use pool worker 0 with empty prefix
+    const pooled = workerPool[0];
+    const buf = jfrBytes.buffer.byteLength === jfrBytes.byteLength ? jfrBytes.buffer : jfrBytes.slice().buffer;
+    await dispatchToPooledWorker(
+      pooled,
+      new Uint8Array(buf),
+      '',
+      stacktraceDepth,
+      () => { pendingInserts++; peakPending = Math.max(peakPending, pendingInserts); },
+      () => { pendingInserts--; },
+    );
   } else {
-    // Multi-chunk parallel path: one worker per chunk (up to MAX_CHUNK_WORKERS).
-    // Each worker receives exactly ONE complete JFR chunk (a self-contained byte slice).
-    // Chunks beyond MAX_CHUNK_WORKERS are processed sequentially by reusing worker slots.
-    //
-    // We process in batches: in each batch, spawn min(remaining, MAX_CHUNK_WORKERS) workers
-    // in parallel, wait for all, then advance to the next batch.
-    // Worker i in batch b uses prefix "chunk{b*MAX_CHUNK_WORKERS+i}_".
-
+    // Multi-chunk parallel path: dispatch chunks to pool workers round-robin.
+    // Process in batches of MAX_CHUNK_WORKERS; wait for each batch before advancing
+    // so we don't enqueue more work than the pool has capacity for.
     let globalWorkerIdx = 0;
     for (let batchStart = 0; batchStart < chunks.length; batchStart += MAX_CHUNK_WORKERS) {
       const batchChunks = chunks.slice(batchStart, batchStart + MAX_CHUNK_WORKERS);
 
       const batchPromises = batchChunks.map((chunk, i) => {
         const workerIdx = globalWorkerIdx + i;
+        const pooled = workerPool[i % workerPool.length];
         const slice = jfrBytes.slice(chunk.start, chunk.end);
-        return runImportWorker(
+        return dispatchToPooledWorker(
+          pooled,
           slice,
           `chunk${workerIdx}_`,
-          conn,
           stacktraceDepth,
           () => { pendingInserts++; peakPending = Math.max(peakPending, pendingInserts); },
           () => { pendingInserts--; },

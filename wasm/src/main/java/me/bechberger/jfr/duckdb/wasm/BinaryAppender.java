@@ -503,9 +503,9 @@ final class BinaryAppender implements Appender {
         }
 
         void writeByte(int v)  { ensureCap(1); b[pos++] = (byte) v; }
-        void writeShort(int v) { ensureCap(2); b[pos] = (byte)(v >> 8); b[pos+1] = (byte)v; pos += 2; }
-        void writeInt(int v)   { ensureCap(4); b[pos]=(byte)(v>>24); b[pos+1]=(byte)(v>>16); b[pos+2]=(byte)(v>>8); b[pos+3]=(byte)v; pos += 4; }
-        void writeLong(long v) { ensureCap(8); writeInt((int)(v>>32)); writeInt((int)v); }
+        void writeShort(int v) { ensureCap(2); b[pos] = (byte)v; b[pos+1] = (byte)(v >> 8); pos += 2; }
+        void writeInt(int v)   { ensureCap(4); b[pos]=(byte)v; b[pos+1]=(byte)(v>>8); b[pos+2]=(byte)(v>>16); b[pos+3]=(byte)(v>>24); pos += 4; }
+        void writeLong(long v) { ensureCap(8); writeInt((int)v); writeInt((int)(v>>32)); }
         void writeFloat(float v)   { writeInt(Float.floatToRawIntBits(v)); }
         void writeDouble(double v) { writeLong(Double.doubleToRawLongBits(v)); }
         void writeBytes(byte[] src, int off, int len) { ensureCap(len); System.arraycopy(src, off, b, pos, len); pos += len; }
@@ -716,8 +716,9 @@ final class BinaryAppender implements Appender {
                 const TYPE_BOOL=0,TYPE_BYTE=1,TYPE_SHORT=2,TYPE_INT=3,TYPE_LONG=4,
                       TYPE_FLOAT=5,TYPE_DOUBLE=6,TYPE_STRING=7,TYPE_INSTANT=8,TYPE_INT_ARRAY=9;
 
-                const numCols = dv.getInt32(off, false); off += 4;
-                const numRows = dv.getInt32(off, false); off += 4;
+                // All multi-byte integers are little-endian (LE) for typed-array-view compatibility.
+                const numCols = dv.getInt32(off, true); off += 4;
+                const numRows = dv.getInt32(off, true); off += 4;
                 const colTypes = [];
                 for (let c = 0; c < numCols; c++) { colTypes.push(dv.getInt8(off)); off++; }
 
@@ -725,12 +726,12 @@ final class BinaryAppender implements Appender {
                 // Sentinel: if first int16 == -1, names are absent (fall back to PRAGMA).
                 const td2 = new TextDecoder();
                 let colNames = null;
-                const firstNameLen = dv.getInt16(off, false);
+                const firstNameLen = dv.getInt16(off, true);
                 if (firstNameLen >= 0) {
                     colNames = [];
                     let tmpOff = off;
                     for (let c = 0; c < numCols; c++) {
-                        const len = dv.getInt16(tmpOff, false); tmpOff += 2;
+                        const len = dv.getInt16(tmpOff, true); tmpOff += 2;
                         colNames.push(td2.decode(raw.subarray(tmpOff, tmpOff + len))); tmpOff += len;
                     }
                     off = tmpOff;
@@ -755,34 +756,53 @@ final class BinaryAppender implements Appender {
                         const data = raw.slice(off, off + numRows).buffer; off += numRows;
                         arrowVectors.push(makeVector({ data: new Int8Array(data), nullBitmap, type: new Int8() }));
                     } else if (t === TYPE_SHORT) {
-                        const data = new Int16Array(numRows);
-                        for (let r = 0; r < numRows; r++) { data[r] = dv.getInt16(off, false); off += 2; }
-                        arrowVectors.push(makeVector({ data, nullBitmap, type: new Int16() }));
+                        // LE: align or copy then wrap as typed array view
+                        const aligned = (off & 1) === 0
+                            ? raw.buffer.slice(off, off + numRows * 2)
+                            : new Int16Array(numRows).buffer;
+                        if ((off & 1) !== 0) new Int16Array(aligned).set(new Int16Array(raw.buffer, off, numRows));
+                        off += numRows * 2;
+                        arrowVectors.push(makeVector({ data: new Int16Array(aligned), nullBitmap, type: new Int16() }));
                     } else if (t === TYPE_INT) {
-                        const data = new Int32Array(numRows);
-                        for (let r = 0; r < numRows; r++) { data[r] = dv.getInt32(off, false); off += 4; }
-                        arrowVectors.push(makeVector({ data, nullBitmap, type: new Int32() }));
+                        const aligned = (off & 3) === 0
+                            ? raw.buffer.slice(off, off + numRows * 4)
+                            : new ArrayBuffer(numRows * 4);
+                        if ((off & 3) !== 0) new Uint8Array(aligned).set(raw.subarray(off, off + numRows * 4));
+                        off += numRows * 4;
+                        arrowVectors.push(makeVector({ data: new Int32Array(aligned), nullBitmap, type: new Int32() }));
                     } else if (t === TYPE_LONG) {
-                        const data = new BigInt64Array(numRows);
-                        for (let r = 0; r < numRows; r++) { data[r] = dv.getBigInt64(off, false); off += 8; }
-                        arrowVectors.push(makeVector({ data, nullBitmap, type: new Int64() }));
+                        const aligned = (off & 7) === 0
+                            ? raw.buffer.slice(off, off + numRows * 8)
+                            : new ArrayBuffer(numRows * 8);
+                        if ((off & 7) !== 0) new Uint8Array(aligned).set(raw.subarray(off, off + numRows * 8));
+                        off += numRows * 8;
+                        arrowVectors.push(makeVector({ data: new BigInt64Array(aligned), nullBitmap, type: new Int64() }));
                     } else if (t === TYPE_INSTANT) {
-                        const data = new BigInt64Array(numRows);
-                        for (let r = 0; r < numRows; r++) { data[r] = dv.getBigInt64(off, false); off += 8; }
-                        arrowVectors.push(makeVector({ data, nullBitmap, type: new TimestampMicrosecond() }));
+                        const aligned = (off & 7) === 0
+                            ? raw.buffer.slice(off, off + numRows * 8)
+                            : new ArrayBuffer(numRows * 8);
+                        if ((off & 7) !== 0) new Uint8Array(aligned).set(raw.subarray(off, off + numRows * 8));
+                        off += numRows * 8;
+                        arrowVectors.push(makeVector({ data: new BigInt64Array(aligned), nullBitmap, type: new TimestampMicrosecond() }));
                     } else if (t === TYPE_FLOAT) {
-                        const data = new Float32Array(numRows);
-                        for (let r = 0; r < numRows; r++) { data[r] = dv.getFloat32(off, false); off += 4; }
-                        arrowVectors.push(makeVector({ data, nullBitmap, type: new Float32() }));
+                        const aligned = (off & 3) === 0
+                            ? raw.buffer.slice(off, off + numRows * 4)
+                            : new ArrayBuffer(numRows * 4);
+                        if ((off & 3) !== 0) new Uint8Array(aligned).set(raw.subarray(off, off + numRows * 4));
+                        off += numRows * 4;
+                        arrowVectors.push(makeVector({ data: new Float32Array(aligned), nullBitmap, type: new Float32() }));
                     } else if (t === TYPE_DOUBLE) {
-                        const data = new Float64Array(numRows);
-                        for (let r = 0; r < numRows; r++) { data[r] = dv.getFloat64(off, false); off += 8; }
-                        arrowVectors.push(makeVector({ data, nullBitmap, type: new Float64() }));
+                        const aligned = (off & 7) === 0
+                            ? raw.buffer.slice(off, off + numRows * 8)
+                            : new ArrayBuffer(numRows * 8);
+                        if ((off & 7) !== 0) new Uint8Array(aligned).set(raw.subarray(off, off + numRows * 8));
+                        off += numRows * 8;
+                        arrowVectors.push(makeVector({ data: new Float64Array(aligned), nullBitmap, type: new Float64() }));
                     } else if (t === TYPE_STRING) {
                         const arr = new Array(numRows);
                         const td = new TextDecoder();
                         for (let r = 0; r < numRows; r++) {
-                            const len = dv.getInt32(off, false); off += 4;
+                            const len = dv.getInt32(off, true); off += 4;
                             if (len < 0) arr[r] = null;
                             else { arr[r] = td.decode(raw.subarray(off, off + len)); off += len; }
                         }
@@ -790,11 +810,11 @@ final class BinaryAppender implements Appender {
                     } else if (t === TYPE_INT_ARRAY) {
                         const arr = new Array(numRows);
                         for (let r = 0; r < numRows; r++) {
-                            const len = dv.getInt32(off, false); off += 4;
+                            const len = dv.getInt32(off, true); off += 4;
                             if (len < 0) { arr[r] = null; }
                             else {
                                 const sub = [];
-                                for (let i = 0; i < len; i++) { sub.push(dv.getInt32(off, false)); off += 4; }
+                                for (let i = 0; i < len; i++) { sub.push(dv.getInt32(off, true)); off += 4; }
                                 arr[r] = sub;
                             }
                         }

@@ -2,115 +2,129 @@
  * Web Worker for JFR WASM import.
  *
  * Runs the GraalVM-compiled jfr-importer.js entirely off the main thread so the
- * UI stays responsive during the 30-60 s Java parsing phase on large files.
+ * UI stays responsive during the Java parsing phase on large files.
+ *
+ * The worker is long-lived and reusable: the WASM module is compiled once (either
+ * pre-compiled by the main thread and posted as a WebAssembly.Module, or compiled
+ * here on first use) and kept resident for subsequent imports.
  *
  * Protocol (main → worker):
- *   { type: 'import', bytes: Uint8Array, stacktraceDepth: number }
+ *   { type: 'init', wasmModule?: WebAssembly.Module }  — optional pre-compiled module
+ *   { type: 'import', bytes: Uint8Array, stacktraceDepth: number, tablePrefix: string }
  *
  * Protocol (worker → main):
- *   { type: 'query',       reqId: number, sql: string }
- *   { type: 'insert',      reqId: number, tableName: string, ipcBytes: ArrayBuffer }
- *   { type: 'pending',     delta: number }   // +1 before async, -1 after
+ *   { type: 'ready' }                                  — WASM loaded, ready for imports
+ *   { type: 'query',  reqId: number, sql: string }
+ *   { type: 'insert', reqId: number, tableName: string, ipcBytes: ArrayBuffer }
+ *   { type: 'pending', delta: number }
  *   { type: 'done' }
- *   { type: 'error',       message: string }
- *   { type: 'log',         message: string }
- *   { type: 'flushLog',    line: string }
+ *   { type: 'error', message: string }
  *
  * Protocol (main → worker, replies):
  *   { type: 'query-result',  reqId: number, rows: Array<{name: string}> }
  *   { type: 'insert-result', reqId: number }
  */
 
-// Typed globals injected into this worker scope
 declare global {
   interface WorkerGlobalScope {
     JFRImporter?: {
-      importJfrIntoDuckDB(bytes: Uint8Array, conn: unknown, db: unknown, stacktraceDepth: number): void;
+      importJfrIntoDuckDB(bytes: Uint8Array, conn: unknown, db: unknown, stacktraceDepth: number, tablePrefix: string): void;
     };
-    _jfrStagedBytes?: Uint8Array | null;
     _jfrCsvPending?: number;
-    _jfrLog?: string[];
-    _jfrFlushLog?: string[];
     _jfrStacktraceDepth?: number;
     __arrow?: typeof import('apache-arrow');
     __jfrPendingValue?: number;
+    __jfrWasmReady?: boolean;
   }
 }
 
 let reqIdCounter = 0;
-// Pending reply promises: reqId → { resolve, reject }
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
 
-// Reply handler: main thread sends query-result / insert-result messages back here
+// Initialization state — only load WASM once per worker lifetime
+let wasmInitPromise: Promise<void> | null = null;
+
 self.addEventListener('message', (e: MessageEvent) => {
   const msg = e.data;
+
   if (msg.type === 'query-result' || msg.type === 'insert-result') {
     const p = pending.get(msg.reqId);
-    if (p) {
-      pending.delete(msg.reqId);
-      p.resolve(msg);
-    }
+    if (p) { pending.delete(msg.reqId); p.resolve(msg); }
     return;
   }
+
+  if (msg.type === 'init') {
+    // Pre-warm: load WASM now so it's ready before 'import' arrives.
+    // Accept an optional pre-compiled WebAssembly.Module to skip compilation.
+    wasmInitPromise = loadWasm(msg.wasmModule ?? null);
+    wasmInitPromise
+      .then(() => self.postMessage({ type: 'ready' }))
+      .catch(err => self.postMessage({ type: 'error', message: String(err) }));
+    return;
+  }
+
   if (msg.type === 'import') {
     handleImport(msg.bytes as Uint8Array, msg.stacktraceDepth as number, (msg.tablePrefix as string) ?? '');
   }
 });
 
+async function loadWasm(precompiledModule: WebAssembly.Module | null): Promise<void> {
+  if ((self as any).__jfrWasmReady) return; // already loaded
+
+  if (!(self as any).__arrow) {
+    (self as any).__arrow = await import('apache-arrow');
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    fetch('/wasm/jfr-importer.js')
+      .then(r => r.text())
+      .then(src => {
+        // Patch GraalVM bootstrap:
+        // 1. Override wasm_path so the loader finds the .wasm file by absolute URL.
+        // 2. If a pre-compiled WebAssembly.Module was provided, inject it into the
+        //    GraalVM config so it skips the compile step (~10× faster instantiation).
+        let patch = 'const config = new GraalVM.Config(); config.wasm_path = "/wasm/jfr-importer.js.wasm";';
+        if (precompiledModule) {
+          // GraalVM Web Image config accepts a pre-compiled module via config.wasm_module.
+          // Stage the module in a global so the eval'd code can read it.
+          (self as any).__jfrPrecompiledModule = precompiledModule;
+          patch = `const config = new GraalVM.Config();
+config.wasm_path = "/wasm/jfr-importer.js.wasm";
+if (globalThis.__jfrPrecompiledModule) { try { config.wasm_module = globalThis.__jfrPrecompiledModule; } catch(_){} }`;
+        }
+        const patchedSrc = src.replace('const config = new GraalVM.Config();', patch);
+        // eslint-disable-next-line no-eval
+        (0, eval)(patchedSrc);
+        resolve();
+      })
+      .catch(reject);
+  });
+
+  // Wait for JFRImporter global
+  await new Promise<void>((resolve, reject) => {
+    const start = Date.now();
+    const wait = () => {
+      if ((self as any).JFRImporter) return resolve();
+      if (Date.now() - start > 15_000) return reject(new Error('JFRImporter global never appeared'));
+      setTimeout(wait, 50);
+    };
+    wait();
+  });
+
+  (self as any).__jfrWasmReady = true;
+}
+
 async function handleImport(bytes: Uint8Array, stacktraceDepth: number, tablePrefix = '') {
   try {
-    // Load the GraalVM WASM bundle into this worker context.
-    // In a module worker, importScripts() is unavailable, and self.location.href
-    // points to the worker script (not /wasm/jfr-importer.js), so the WASM loader
-    // would resolve jfr-importer.wasm from the wrong URL.
-    //
-    // Fix: fetch the JS source, inject a wasm_path override that intercepts
-    // GraalVM.Config construction before the auto-run fires, then eval in worker scope.
-    await new Promise<void>((resolve, reject) => {
-      fetch('/wasm/jfr-importer.js')
-        .then(r => r.text())
-        .then(src => {
-          // Inject config.wasm_path = '/wasm/jfr-importer.wasm' by monkey-patching
-          // GraalVM.Config before the IIFE at the bottom calls new GraalVM.Config().
-          // We replace the final bootstrap IIFE with a patched version.
-          const patchedSrc = src.replace(
-            'const config = new GraalVM.Config();',
-            'const config = new GraalVM.Config(); config.wasm_path = "/wasm/jfr-importer.js.wasm";',
-          );
-          // Use indirect eval so it runs in the global (worker) scope.
-          // eslint-disable-next-line no-eval
-          (0, eval)(patchedSrc);
-          resolve();
-        })
-        .catch(reject);
-    });
-
-    // Wait for JFRImporter global (same polling logic as main-thread loader).
-    await new Promise<void>((resolve, reject) => {
-      const start = Date.now();
-      const wait = () => {
-        if ((self as any).JFRImporter) return resolve();
-        if (Date.now() - start > 10_000) return reject(new Error('JFRImporter global never appeared'));
-        setTimeout(wait, 50);
-      };
-      wait();
-    });
-
-    // Stage Arrow module so BinaryAppender's @JS code can use it.
-    if (!(self as any).__arrow) {
-      (self as any).__arrow = await import('apache-arrow');
+    // Ensure WASM is loaded (may already be in progress from 'init' message)
+    if (!wasmInitPromise) {
+      wasmInitPromise = loadWasm(null);
     }
+    await wasmInitPromise;
 
-    // Reset pending counter
-    (self as any)._jfrCsvPending = 0;
+    // Reset pending counter for this import
+    (self as any).__jfrPendingValue = 0;
 
-    // Build the fake conn and db objects.
-    // BinaryAppender's @JS template uses:
-    //   conn.query(sql)                                  — DDL only, return ignored
-    //   conn.insertArrowTable(arrowTable, {name, create}) — transfer Arrow IPC to main
-    // JsDuckDBSink uses:
-    //   conn.query(sql)                                  — same
-    // db is passed to BinaryAppender constructor but never called in current code.
     const fakeConn = {
       query(sql: string) {
         const reqId = ++reqIdCounter;
@@ -121,14 +135,12 @@ async function handleImport(bytes: Uint8Array, stacktraceDepth: number, tablePre
         return resultPromise;
       },
       async insertArrowTable(arrowTable: unknown, opts: { name: string; create: boolean }) {
-        // Serialise the Arrow table to IPC stream bytes and transfer zero-copy.
         const { tableToIPC } = (self as any).__arrow as typeof import('apache-arrow');
         const ipcBytes: Uint8Array = tableToIPC(arrowTable as any, 'stream');
         const reqId = ++reqIdCounter;
         const resultPromise = new Promise<unknown>((resolve, reject) => {
           pending.set(reqId, { resolve, reject });
         });
-        // Transfer the underlying ArrayBuffer — zero-copy, main gets ownership.
         (self as unknown as Worker).postMessage(
           { type: 'insert', reqId, tableName: opts.name, ipcBytes: ipcBytes.buffer },
           [ipcBytes.buffer],
@@ -136,11 +148,8 @@ async function handleImport(bytes: Uint8Array, stacktraceDepth: number, tablePre
         return resultPromise;
       },
     };
-    const fakeDb = {}; // db is never actually called in BinaryAppender
+    const fakeDb = {};
 
-    // Override loadColumnarData's globalThis._jfrCsvPending tracking so it matches
-    // what the main thread drains. We intercept the pending counter changes by
-    // monkey-patching the global the @JS template writes to.
     Object.defineProperty(self, '_jfrCsvPending', {
       get() { return (self as any).__jfrPendingValue ?? 0; },
       set(v: number) {
@@ -151,11 +160,8 @@ async function handleImport(bytes: Uint8Array, stacktraceDepth: number, tablePre
       configurable: true,
     });
 
-    // The Java WASM call — blocks this worker thread for the full parse duration.
-    // Main thread stays responsive throughout.
     (self as any).JFRImporter.importJfrIntoDuckDB(bytes, fakeConn, fakeDb, stacktraceDepth, tablePrefix);
 
-    // Drain: wait for all insertArrowTable round-trips to complete.
     while (((self as any).__jfrPendingValue ?? 0) > 0) {
       await new Promise(r => setTimeout(r, 10));
     }
