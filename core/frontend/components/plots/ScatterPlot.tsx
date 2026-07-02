@@ -48,8 +48,8 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
     if (!config.size || data.length === 0) return [10, 100];
     const values = data.map(d => d[config.size]).filter(v => typeof v === 'number');
     if(values.length === 0) return [10, 100];
-    const min = Math.min(...values);
-    const max = Math.max(...values);
+    let min = values[0], max = values[0];
+    for (let i = 1; i < values.length; i++) { if (values[i] < min) min = values[i]; if (values[i] > max) max = values[i]; }
     if (min === max) return [0, max * 2 || 1];
     return [min, max];
   }, [data, config.size]);

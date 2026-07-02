@@ -37,7 +37,8 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
     const chartData = useMemo(() => {
         const values = data.map(r => parseFloat(r[config.x])).filter(v => !isNaN(v));
         if (values.length === 0) return [];
-        let min=Math.min(...values), max=Math.max(...values);
+        let min = values[0], max = values[0];
+        for (let i = 1; i < values.length; i++) { if (values[i] < min) min = values[i]; if (values[i] > max) max = values[i]; }
         if (min === max) return [{ range: numberFormatter(min), count: values.length }];
 
         // Resolve bin count. Accepts number, numeric string, or 'auto' (Freedman-Diaconis).
@@ -49,7 +50,8 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
         if (config.logBins) {
             const posValues = values.filter(v => v>0);
             if(posValues.length===0) return [];
-            min=Math.min(...posValues); max=Math.max(...posValues);
+            min=posValues[0]; max=posValues[0];
+            for (let i = 1; i < posValues.length; i++) { if (posValues[i] < min) min = posValues[i]; if (posValues[i] > max) max = posValues[i]; }
             if (min === max) return [{ range: numberFormatter(min), count: posValues.length }];
             const logMin=Math.log(min), logMax=Math.log(max);
             const size=(logMax-logMin)/binCount;

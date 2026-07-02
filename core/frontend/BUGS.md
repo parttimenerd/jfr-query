@@ -1337,6 +1337,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
 
+### 🟡 [B-225] `HistogramPlot.tsx` and `ScatterPlot.tsx` — `Math.min/max(...values)` spread throws RangeError for large datasets ✅ FIXED
+**Where:** `components/plots/HistogramPlot.tsx:40,52`; `components/plots/ScatterPlot.tsx:51-52`
+**Repro:** Plot a histogram or scatter chart (with `size:`) against a query returning 100k+ rows — `Math.min(...values)` with 100k arguments throws "Maximum call stack size exceeded" (V8 argument limit ~65k).
+**Observed:** Chart renders blank / throws an uncaught error.
+**Fix:** Replaced both spread-based `Math.min/max` calls with explicit iterative min/max loops. Applied in both the linear and log-bins paths in `HistogramPlot` and in the `sizeDomain` memo in `ScatterPlot`.
+
 ### 🟡 [B-224] `FlameGraphPlot.tsx` canvas renderer — `Math.max(...arr)` spread throws for wide trees; `HeatmapPlot.tsx` — `Math.min/max(...values)` spread throws for large datasets ✅ FIXED
 **Where:** `components/plots/FlameGraphPlot.tsx:225,227`; `components/plots/HeatmapPlot.tsx:29-30`
 **Repro:** FlameGraph: import a JFR with many unique top-level frames (e.g., 5000+ distinct direct callees of root) — `getDepth` does `Math.max(...children.map(...))` where children can be thousands of items, exceeding V8's `Function.prototype.apply` argument limit (~65k), throwing "Maximum call stack size exceeded". HeatmapPlot: a heatmap with 50k cells calls `Math.min(...values)` / `Math.max(...values)` with 50k arguments, same throw.
