@@ -7,6 +7,9 @@
  * @returns The formatted string.
  */
 export const formatNumber = (value: any, decimalPlaces: number): string => {
+  // BigInt: format without precision loss — always an integer, no fractional part.
+  if (typeof value === 'bigint') return value.toString();
+
   const num = Number(value);
   // Return non-numeric types as-is
   if (typeof value === 'boolean' || isNaN(num) || value === null || value === undefined) {

@@ -57,4 +57,10 @@ describe('formatNumber', () => {
     it('handles very small numbers', () => {
         expect(formatNumber(0.0001, 6)).toBe('0.0001');
     });
+
+    it('B-244: formats BigInt without precision loss', () => {
+        // Number(1716584383215000000n) loses precision; BigInt path returns exact string.
+        expect(formatNumber(1716584383215000000n, 6)).toBe('1716584383215000000');
+        expect(formatNumber(42n, 2)).toBe('42');
+    });
 });

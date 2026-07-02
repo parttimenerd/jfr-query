@@ -1452,6 +1452,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** The parser fails to bind the `frames` required param, producing an "unknown parameter" warning and leaving the flamegraph with no frame data.
 **Fix:** Changed both fallback and generated template strings from `frame:` to `frames:`.
 
+### 🟡 [B-244] `formatNumber` — `BigInt` values converted via `Number()`, losing precision for large values ✅ FIXED
+**Where:** `utils/numberFormatter.ts:10`
+**Repro:** A DataTable column with `BigInt` values that isn't classified as a timestamp/duration/bytes column (e.g., a raw ID or counter) reaches `formatNumber`. `Number(bigint)` loses precision for values above `Number.MAX_SAFE_INTEGER` (≈9×10¹⁵).
+**Observed:** Large BigInt values like `1716584383215000000n` are displayed as `1716584383215000064` (rounded) instead of the exact value.
+**Fix:** Added an early-return for `typeof value === 'bigint'` that calls `value.toString()` directly, bypassing `Number()` conversion entirely.
+
 ### 🟡 [B-236] `RangePlot`, `GanttChartPlot` — `AXIS-X DOMAIN`, `AXIS-X LABEL`, `AXIS-Y DOMAIN/LABEL` clauses ignored ✅ FIXED
 **Where:** `components/plots/RangePlot.tsx:97-117`; `components/plots/GanttChartPlot.tsx:135-142`
 **Repro:** `RANGE_PLOT(x: "time", low: "p10", high: "p90") AXIS-X LABEL "Time"` — label never appears; `GANTT_CHART(lane: "l", start: "s", end: "e") AXIS-X DOMAIN [0, 1000]` — domain ignored.
