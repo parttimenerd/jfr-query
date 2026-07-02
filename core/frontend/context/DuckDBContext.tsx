@@ -501,20 +501,22 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (dbState !== DBState.READY) {
       throw new Error(`Cannot run query: database is in state "${dbState}". Wait for it to finish loading or reload the page if it appears stuck.`);
     }
+    // Strip trailing semicolons so both "SELECT 1" and "SELECT 1;" work identically.
+    const trimmedSql = sql.replace(/;+\s*$/, '').trim();
     // In WASM mode, guard against runaway queries: inject LIMIT if the SQL doesn't have one.
     // This prevents materializing millions of Arrow rows into JS objects and crashing the tab.
     // The check is intentionally simple (no full parser) — it looks for LIMIT at the end of the
     // cleaned SQL text (comments stripped) since that's where a top-level LIMIT always appears.
     // Users can add "-- no-limit" anywhere in their query to bypass this guard.
-    let safeSql = sql;
+    let safeSql = trimmedSql;
     if (mode === 'wasm') {
-      const noLimitBypass = /--\s*no-limit/i.test(sql);
+      const noLimitBypass = /--\s*no-limit/i.test(trimmedSql);
       if (!noLimitBypass) {
-        const cleaned = sql.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+        const cleaned = trimmedSql.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
         const isSelect = /^(select|with)\b/i.test(cleaned);
         const hasLimit = /\blimit\s+\d/i.test(cleaned);
         if (isSelect && !hasLimit) {
-          safeSql = `SELECT * FROM (\n${sql}\n) __q LIMIT ${MAX_QUERY_ROWS}`;
+          safeSql = `SELECT * FROM (\n${trimmedSql}\n) __q LIMIT ${MAX_QUERY_ROWS}`;
         }
       }
     }

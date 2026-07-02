@@ -314,6 +314,133 @@ const InteractivePlotWrapper: React.FC<{
     );
 };
 
+/** Standalone zoom/pan wrapper for any plot — no LINK_X required.
+ *  Scroll to zoom around the cursor, drag to pan, reset button to go back to full range. */
+const StandaloneZoomWrapper: React.FC<{
+    children: React.ReactElement;
+    data: any[];
+    xCol: string;
+}> = ({ children, data, xCol }) => {
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const [localDomain, setLocalDomain] = useState<[number, number] | null>(null);
+    const dragRef = useRef<{ startX: number; domainMin: number; domainMax: number } | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+
+    const dataRange = useMemo(() => {
+        if (!data || data.length === 0 || !xCol) return null;
+        let min: number | null = null;
+        let max: number | null = null;
+        for (const row of data) {
+            const val = getTimeValue(row[xCol]);
+            if (!isNaN(val)) {
+                if (min === null || val < min) min = val;
+                if (max === null || val > max) max = val;
+            }
+        }
+        return min !== null && max !== null ? { min, max } : null;
+    }, [data, xCol]);
+
+    const isZoomed = localDomain !== null && dataRange !== null &&
+        (localDomain[0] !== dataRange.min || localDomain[1] !== dataRange.max);
+
+    const clampDomain = useCallback((newMin: number, newMax: number): [number, number] => {
+        if (!dataRange) return [newMin, newMax];
+        const range = newMax - newMin;
+        const dataSpan = dataRange.max - dataRange.min;
+        let finalMin = newMin;
+        let finalMax = newMax;
+        if (newMin < dataRange.min) { finalMin = dataRange.min; finalMax = dataRange.min + range; }
+        if (newMax > dataRange.max) { finalMax = dataRange.max; finalMin = dataRange.max - range; }
+        if (dataSpan < finalMax - finalMin) {
+            const center = Math.max(dataRange.min + dataSpan / 2, Math.min(dataRange.max - dataSpan / 2, (finalMin + finalMax) / 2));
+            finalMin = center - dataSpan / 2;
+            finalMax = center + dataSpan / 2;
+        }
+        if (finalMin >= finalMax) return [dataRange.min, dataRange.max];
+        return [finalMin, finalMax];
+    }, [dataRange]);
+
+    useEffect(() => {
+        const el = wrapperRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => {
+            // Require Shift key so normal page scroll still works.
+            if (!e.shiftKey) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            const rangeArr: [number, number] | null = dataRange ? [dataRange.min, dataRange.max] : null;
+            const [currentMin, currentMax] = localDomain ?? rangeArr ?? [0, 1];
+            const rect = el.getBoundingClientRect();
+            if (rect.width <= 0) return;
+            const mouseX = e.clientX - rect.left;
+            const zoomFactor = 1 + Math.abs(e.deltaY) / 200;
+            const currentRange = currentMax - currentMin;
+            if (currentRange <= 0) return;
+            const mousePercent = Math.max(0, Math.min(1, mouseX / rect.width));
+            const mouseValue = currentMin + currentRange * mousePercent;
+            let newRange = e.deltaY < 0 ? currentRange / zoomFactor : currentRange * zoomFactor;
+            if (dataRange && newRange > (dataRange.max - dataRange.min)) newRange = dataRange.max - dataRange.min;
+            const newMin = mouseValue - newRange * mousePercent;
+            const newMax = newMin + newRange;
+            setLocalDomain(clampDomain(newMin, newMax));
+        };
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, [localDomain, dataRange, clampDomain]);
+
+    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.button !== 0) return;
+        if ((e.target as HTMLElement).closest('button')) return;
+        const rangeArr: [number, number] | null = dataRange ? [dataRange.min, dataRange.max] : null;
+        const [currentMin, currentMax] = localDomain ?? rangeArr ?? [0, 1];
+        dragRef.current = { startX: e.clientX, domainMin: currentMin, domainMax: currentMax };
+        setIsDragging(true);
+        e.preventDefault();
+    };
+
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!dragRef.current || !wrapperRef.current) return;
+        const rect = wrapperRef.current.getBoundingClientRect();
+        if (rect.width <= 0) return;
+        const { startX, domainMin, domainMax } = dragRef.current;
+        const range = domainMax - domainMin;
+        const domainDelta = -((e.clientX - startX) / rect.width) * range;
+        setLocalDomain(clampDomain(domainMin + domainDelta, domainMax + domainDelta));
+    };
+
+    const handleMouseUp = () => { dragRef.current = null; setIsDragging(false); };
+
+    return (
+        <div
+            ref={wrapperRef}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            style={{ width: '100%', height: '100%', cursor: isDragging ? 'grabbing' : isZoomed ? 'grab' : 'default' }}
+            className="relative group"
+        >
+            <div className="absolute top-1 right-1 z-10 flex items-center gap-1">
+                <span className="text-[10px] text-gray-400 bg-gray-800/70 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    ⇧ scroll = zoom · drag = pan
+                </span>
+                {isZoomed && (
+                    <button
+                        onClick={() => setLocalDomain(null)}
+                        className="text-[10px] px-1.5 py-0.5 bg-cyan-800/70 hover:bg-cyan-700/80 text-cyan-200 rounded transition-colors"
+                        title="Reset zoom"
+                    >
+                        reset
+                    </button>
+                )}
+            </div>
+            {React.cloneElement<any>(children, { domainX: localDomain })}
+        </div>
+    );
+};
+
+
 /** Wraps a plot container in a LINK_SCROLL group — synchronizes scroll position
  *  with other plots in the same group. Pass `group=null` to disable. */
 const ScrollSyncWrapper: React.FC<{ group: string | null; children: React.ReactNode }> = ({ group, children }) => {
@@ -651,6 +778,12 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                                         {leafContent}
                                     </InteractivePlotWrapper>
                                 );
+                            } else if ((leafCfg as any).x && leafData && leafData.length > 0) {
+                                leafContent = (
+                                    <StandaloneZoomWrapper data={leafData} xCol={(leafCfg as any).x}>
+                                        {leafContent}
+                                    </StandaloneZoomWrapper>
+                                );
                             }
                             if (leaf.linkScroll) {
                                 leafContent = (
@@ -736,6 +869,12 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                                 <InteractivePlotWrapper linkX={linkX} linkXClamp={!!linkXClamp} data={singlePlotData} xCol={(parsedConfig as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
                                     {plotContent}
                                 </InteractivePlotWrapper>
+                            );
+                        } else if ((parsedConfig as any).x && singlePlotData && singlePlotData.length > 0) {
+                            plotContent = (
+                                <StandaloneZoomWrapper data={singlePlotData} xCol={(parsedConfig as any).x}>
+                                    {plotContent}
+                                </StandaloneZoomWrapper>
                             );
                         }
 

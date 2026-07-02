@@ -73,7 +73,7 @@ interface SettingsContextType {
 const SETTINGS_KEY = 'jfr-notebook-settings';
 
 const defaultSettings: Settings = {
-    aiProvider: 'google',
+    aiProvider: 'browser',
     googleApiKey: process.env.GEMINI_API_KEY || process.env.API_KEY || '',
     openaiApiKey: process.env.OPENAI_API_KEY || '',
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || '',

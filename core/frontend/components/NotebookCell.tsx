@@ -725,6 +725,18 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         }
     }, [onRunQuery, cell.id, allVariables, parsedQueryAliases, parsedQueryAliasMaterialized, registerAlias, refreshSchema, handleStr, cellIndex, awaitUpstream]);
 
+    // Keep a ref to the latest handleRun so the auto-run effect never needs it
+    // as a dep — including it would cause the effect to re-fire whenever any of
+    // handleRun's own deps (allVariables, etc.) change, even for SQL that doesn't
+    // use variables.
+    const handleRunRef = useRef(handleRun);
+    handleRunRef.current = handleRun;
+
+    // Keep a ref to the latest metadata so the auto-run effect doesn't re-fire
+    // when unrelated metadata fields change (e.g. timeFormat, decimalPlaces).
+    const metadataRef = useRef(metadata);
+    metadataRef.current = metadata;
+
     useEffect(() => () => { unregisterCell(cell.id).catch(() => {}); }, [cell.id, unregisterCell]);
 
     useEffect(() => {
@@ -749,9 +761,10 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         })();
         // Build a set of custom view/macro names so we can detect when a cell's SQL
         // uses a view whose body references a metadata variable (B-012).
+        // Read from ref so metadata changes don't cause this effect to re-fire.
         const customNames = new Set([
-            ...(metadata.views || []).map(v => v.name).filter(Boolean),
-            ...(metadata.macros || []).map(m => m.name).filter(Boolean),
+            ...(metadataRef.current.views || []).map(v => v.name).filter(Boolean),
+            ...(metadataRef.current.macros || []).map(m => m.name).filter(Boolean),
         ]);
 
         parsedSqlBlocks.forEach((sql, i) => {
@@ -777,7 +790,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 runTimersRef.current[i] = setTimeout(() => {
                     delete runTimersRef.current[i];
                     setPendingRunStates(s=>({...s,[i]:false}));
-                    handleRun(sql, i);
+                    handleRunRef.current(sql, i);
                 }, 1500);
             }
         });
@@ -799,7 +812,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             prevSqlBlocksRef.current = [];
             prevVariablesRef.current = {};
         };
-    }, [parsedSqlBlocks, allVariables, metadata, handleRun, isAutoRunEnabled]);
+    }, [parsedSqlBlocks, allVariables, isAutoRunEnabled]);
 
     useEffect(() => () => { Object.values(runTimersRef.current).forEach(clearTimeout); }, []);
 
