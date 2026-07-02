@@ -33,7 +33,7 @@ interface Props {
  */
 export const TemplatedMarkdown: React.FC<Props> = ({ segments, variables, formatSettings }) => {
     const { query } = useContext(DataContext);
-    const { aliases } = useCellAliases();
+    const aliases = useCellAliases();
 
     // Version key — any change here re-runs evaluators. Includes the SQL
     // text itself (which changes when the user edits) plus the alias

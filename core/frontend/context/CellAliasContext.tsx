@@ -40,13 +40,15 @@ interface RegisterArgs {
     materialized: boolean;
 }
 
-interface CellAliasContextType {
+// ---------------------------------------------------------------------------
+// Actions context — stable callbacks; never triggers re-renders on alias updates.
+// ---------------------------------------------------------------------------
+
+interface CellAliasActionsContextType {
     /** Compile + create the temp view(s) for this alias and bump its version. */
     registerAlias: (args: RegisterArgs) => Promise<AliasInfo | null>;
     /** Drop all aliases registered against a cell (called on cell unmount). */
     unregisterCell: (cellId: string) => Promise<void>;
-    /** Snapshot of all currently registered aliases. */
-    aliases: Record<string, AliasInfo>;
     /** Get alias info by bare name (e.g. `gc_pauses`). */
     getByBare: (name: string) => AliasInfo | undefined;
     /** Get alias info by cell-qualified ref (e.g. `cell_3.gc_pauses`). */
@@ -55,16 +57,30 @@ interface CellAliasContextType {
 
 const noopAsync = async () => null;
 
-const defaultCtx: CellAliasContextType = {
+const defaultActionsCtx: CellAliasActionsContextType = {
     registerAlias: noopAsync as any,
     unregisterCell: async () => {},
-    aliases: {},
     getByBare: () => undefined,
     getByQualified: () => undefined,
 };
 
-export const CellAliasContext = createContext<CellAliasContextType>(defaultCtx);
+export const CellAliasActionsContext = createContext<CellAliasActionsContextType>(defaultActionsCtx);
 
+// ---------------------------------------------------------------------------
+// State context — aliases snapshot; changes on every registration/unregistration.
+// ---------------------------------------------------------------------------
+
+/** Snapshot of all currently registered aliases. */
+export const CellAliasContext = createContext<Record<string, AliasInfo>>({});
+
+// ---------------------------------------------------------------------------
+// Hooks
+// ---------------------------------------------------------------------------
+
+/** Returns stable callbacks. Does NOT re-render when aliases change. */
+export const useCellAliasActions = () => useContext(CellAliasActionsContext);
+
+/** Returns the aliases snapshot. Re-renders when any alias changes. */
 export const useCellAliases = () => useContext(CellAliasContext);
 
 /** Key used for the aliases map: `<sanitized-handle>.<alias_or_1>`. */
@@ -126,6 +142,8 @@ export const buildAliasSql = (args: BuildAliasSqlArgs): BuildAliasSqlResult => {
 export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { query, schema, dbState } = useContext(DataContext);
     const [aliases, setAliases] = useState<Record<string, AliasInfo>>({});
+    const aliasesRef = useRef(aliases);
+    aliasesRef.current = aliases;
     /** cellId -> set of qualified keys currently owned by that cell. */
     const cellOwnership = useRef<Record<string, Set<string>>>({});
     const versionRef = useRef(0);
@@ -137,11 +155,6 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
         for (const v of schema?.views ?? []) s.add(v.name);
         return s;
     }, [schema?.tables, schema?.views]);
-
-    /** Check `information_schema.tables` (i.e. real JFR/user tables, not temp). */
-    const isShadowed = useCallback((name: string): boolean => {
-        return shadowedNames.has(name);
-    }, [shadowedNames]);
 
     const registerAlias = useCallback(async (args: RegisterArgs): Promise<AliasInfo | null> => {
         if (dbState !== 4 /* DBState.READY */) return null;
@@ -242,19 +255,26 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
         });
     }, [query]);
 
-    const getByBare = useCallback((name: string) => aliases[name], [aliases]);
+    // Read aliases via ref so these callbacks don't rebuild when aliases change.
+    const getByBare = useCallback((name: string) => aliasesRef.current[name], []);
     const getByQualified = useCallback((handle: string, aliasOr1: string) => {
         const sanHandle = sanitizeForDuckDB(handle);
-        return aliases[qualifiedKey(sanHandle, aliasOr1)];
-    }, [aliases]);
+        return aliasesRef.current[qualifiedKey(sanHandle, aliasOr1)];
+    }, []);
 
-    const value = useMemo<CellAliasContextType>(() => ({
+    const actions = useMemo<CellAliasActionsContextType>(() => ({
         registerAlias,
         unregisterCell,
-        aliases,
         getByBare,
         getByQualified,
-    }), [registerAlias, unregisterCell, aliases, getByBare, getByQualified]);
+    }), [registerAlias, unregisterCell, getByBare, getByQualified]);
 
-    return <CellAliasContext.Provider value={value}>{children}</CellAliasContext.Provider>;
+    return (
+        <CellAliasActionsContext.Provider value={actions}>
+            <CellAliasContext.Provider value={aliases}>
+                {children}
+            </CellAliasContext.Provider>
+        </CellAliasActionsContext.Provider>
+    );
 };
+

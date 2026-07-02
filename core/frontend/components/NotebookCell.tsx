@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import type { NotebookCellData, NotebookMetadata } from '../types';
 import { tokenizeCellContent, reconstructCellContent, parseCellContent, CellSegment, MarkdownSection } from '../utils/notebookParser';
 import { cellHandle as computeCellHandle } from '../utils/cellHandle';
-import { useCellAliases } from '../context/CellAliasContext';
+import { useCellAliases, useCellAliasActions } from '../context/CellAliasContext';
 import { DataContext } from '../context/DuckDBContext';
 import { useExecutor } from '../context/ExecutorContext';
 import TemplatedMarkdown from './TemplatedMarkdown';
@@ -582,8 +582,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         }).catch(() => {});
     }, []);
 
-    const { registerAlias, unregisterCell } = useCellAliases();
-    const { aliases } = useCellAliases();
+    const { registerAlias, unregisterCell } = useCellAliasActions();
+    const aliases = useCellAliases();
     const { query: dbQuery, refreshSchema } = useContext(DataContext);
     // Phase 5 — DATASET clause results, keyed by `<plotIndex>:<datasetName>`.
     const [datasetResults, setDatasetResults] = useState<Record<string, any[]>>({});
