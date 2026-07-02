@@ -54,15 +54,46 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
     const { settings } = useContext(SettingsContext);
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
 
-    const { xCol, yCols, lineYCols } = useMemo(() => {
+    const { xCol, yCols, lineYCols, chartData } = useMemo(() => {
         if (!data || data.length === 0) {
-            return { xCol: config.x, yCols: config.y || [], lineYCols: config.lineY || [] };
+            return { xCol: config.x, yCols: config.y || [], lineYCols: config.lineY || [], chartData: data };
         }
         const allColumns = Object.keys(data[0]);
+
+        // When color is set, pivot by color column: each distinct value becomes a
+        // bar series, overriding the explicit y columns with grouped series keys.
+        if (config.color && allColumns.includes(config.color)) {
+            const xC = findColumn(config.x, allColumns);
+            const colorC = config.color;
+            const yBase = config.y ? Array.from(new Set(config.y.flatMap(col => findColumns(col, allColumns)))) : allColumns.filter(c => c !== xC && c !== colorC).slice(0, 1);
+            const colorValues = Array.from(new Set(data.map(r => String(r[colorC] ?? ''))));
+            const seriesKeys = colorValues.flatMap(cv =>
+                yBase.map(yc => yBase.length === 1 ? cv : `${cv} ${yc}`)
+            );
+            const xMap = new Map<any, Record<string, any>>();
+            for (const row of data) {
+                const xv = row[xC];
+                if (!xMap.has(xv)) xMap.set(xv, { [xC]: xv });
+                const entry = xMap.get(xv)!;
+                const cv = String(row[colorC] ?? '');
+                for (const yc of yBase) {
+                    const sk = yBase.length === 1 ? cv : `${cv} ${yc}`;
+                    entry[sk] = row[yc];
+                }
+            }
+            return {
+                xCol: xC,
+                yCols: seriesKeys,
+                lineYCols: [] as string[],
+                chartData: Array.from(xMap.values()),
+            };
+        }
+
         return {
             xCol: findColumn(config.x, allColumns),
             yCols: config.y ? Array.from(new Set(config.y.flatMap(col => findColumns(col, allColumns)))) : [],
             lineYCols: config.lineY ? Array.from(new Set(config.lineY.flatMap(col => findColumns(col, allColumns)))) : [],
+            chartData: data,
         };
     }, [data, config]);
 
@@ -166,7 +197,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
     return React.createElement('div', { style: { width: '100%', height: '100%', minHeight: 200 } },
         React.createElement(ResponsiveContainer, { minHeight: 200 } as any,
             React.createElement(BarChart, {
-                data: data,
+                data: chartData,
                 layout: config.horizontal ? 'vertical' : 'horizontal',
                 margin: { top: 5, right: 20, left: 20, bottom: config.horizontal ? 5 : 50 },
                 barGap: config.layout === 'grouped' ? 4 : undefined
