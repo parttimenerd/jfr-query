@@ -1,0 +1,34 @@
+site_name: JFR Query
+site_description: Analyse Java Flight Recorder files with SQL
+site_url: https://parttimenerd.github.io/jfr-query/
+repo_url: https://github.com/parttimenerd/jfr-query
+repo_name: parttimenerd/jfr-query
+
+docs_dir: docs-site
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.top
+    - search.suggest
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Usage:
+    - CLI Commands: cli.md
+    - Web UI & Notebooks: web-ui.md
+  - Live Demo: https://parttimenerd.github.io/jfr-query/app/
+
+plugins:
+  - search
