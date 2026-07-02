@@ -121,12 +121,12 @@ export const BUILTIN_MACROS_SQL: string[] = [
 )`,
   `CREATE OR REPLACE MACRO duration_since_last_gc(ts) AS (
   COALESCE(
-    (SELECT ts - startTime
+    (SELECT epoch_ms(ts) - epoch_ms(startTime)
      FROM GarbageCollection
      WHERE startTime <= ts
      ORDER BY startTime DESC
      LIMIT 1),
-    INTERVAL '-1' SECOND
+    -1
   )
 )`,
   `CREATE OR REPLACE MACRO HEAP_BEFORE_GC(gc_id) AS (
@@ -1402,7 +1402,7 @@ ORDER BY value DESC`,
   `CREATE OR REPLACE VIEW "lock-flamegraph" AS
 SELECT
   stack_frames(jme."stackTrace$methods") AS frame,
-  ROUND(SUM(epoch_ms(jme.duration)) / 1000.0, 4) AS value
+  ROUND(SUM(jme.duration), 4) AS value
 FROM JavaMonitorEnter jme
 WHERE jme."stackTrace$methods" IS NOT NULL
 GROUP BY jme."stackTrace$methods"

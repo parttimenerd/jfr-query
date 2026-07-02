@@ -449,8 +449,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await runWasmQuery(conn, stmt + ';');
       }
       // Register built-in macros so notebooks can use P90(), format_duration(), etc.
+      // Some macros (GC_TYPE, recording_start, etc.) reference JFR tables that may not
+      // exist in every recording — those Catalog errors are expected and suppressed.
       for (const sql of BUILTIN_MACROS_SQL) {
-        try { await conn.query(sql); } catch (e) { console.warn('builtin macro failed:', e); }
+        try { await conn.query(sql); } catch (e: any) {
+          if (!String(e?.message ?? e).includes('Catalog Error')) console.warn('builtin macro failed:', e);
+        }
       }
       setSourceType('jfr');
       setDbState(DBState.SCHEMA_LOADING);
