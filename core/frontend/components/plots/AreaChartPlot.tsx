@@ -58,6 +58,7 @@ const AreaChartComponent: React.FC<{
   const numberFormatter = (v: any) => formatNumber(v, settings.decimalPlaces);
   const gestures = usePlotGestures({ name: gestureName, onVariableChange });
   const effectiveYScale = (clauses?.axisY?.type === 'log' ? 'log' : config.yScale) as 'linear' | 'log';
+  const yDomainFromClause = clauses?.axisY?.domain as [any, any] | undefined;
 
   const { chartData, isTime, allY, finalXCol } = useMemo(() => {
     if (!data || !data.length || !data[0] || !config.x) {
@@ -172,7 +173,7 @@ const AreaChartComponent: React.FC<{
                 : undefined
             }
             scale={effectiveYScale === 'log' ? 'log' : 'auto'}
-            domain={domainY ?? (effectiveYScale === 'log' ? [0.1, 'dataMax'] : undefined)}
+            domain={domainY ?? (effectiveYScale === 'log' ? (yDomainFromClause ?? [0.1, 'dataMax']) : yDomainFromClause)}
             allowDataOverflow
           />
           <Tooltip

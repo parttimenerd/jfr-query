@@ -1337,6 +1337,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
 
+### 🟡 [B-226] `LineChartPlot`, `AreaChartPlot` — `AXIS-Y DOMAIN` clause ignored when log scale is active ✅ FIXED
+**Where:** `components/plots/LineChartPlot.tsx:113`; `components/plots/AreaChartPlot.tsx:175`
+**Repro:** `LINE_CHART(x: "time", y: ["v"]) AXIS-Y TYPE LOG DOMAIN [1, 1000]` — the log scale is applied but the `[1, 1000]` domain is ignored; recharts uses its default `[0.1, dataMax]` instead.
+**Observed:** When `effectiveYScale === 'log'`, both components unconditionally used `[0.1, 'dataMax']` for the domain, discarding `yDomainFromClause`.
+**Fix:** Changed the log-scale domain to `yDomainFromClause ?? [0.1, 'dataMax']` so an explicit `AXIS-Y DOMAIN [lo, hi]` takes precedence, with the safe log-scale default as fallback. Also extracted `yDomainFromClause` in `AreaChartPlot` (it was missing the extraction entirely).
+
 ### 🟡 [B-225] `HistogramPlot.tsx` and `ScatterPlot.tsx` — `Math.min/max(...values)` spread throws RangeError for large datasets ✅ FIXED
 **Where:** `components/plots/HistogramPlot.tsx:40,52`; `components/plots/ScatterPlot.tsx:51-52`
 **Repro:** Plot a histogram or scatter chart (with `size:`) against a query returning 100k+ rows — `Math.min(...values)` with 100k arguments throws "Maximum call stack size exceeded" (V8 argument limit ~65k).
