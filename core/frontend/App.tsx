@@ -96,7 +96,7 @@ function usePersistentState<T>(key: string, defaultValue: T): [T, React.Dispatch
 const App: React.FC = () => {
     const {
         dbState, mode, sourceType, errorMessage, serverProbeError, query, refreshSchema, loadFile, loadDemo,
-        recordingStart, recordingEnd, schema, importProgress,
+        recordingStart, recordingEnd, schema, importProgress, wasmInitializing,
     } = useContext(DataContext);
     
     const { settings } = useContext(SettingsContext);
@@ -965,12 +965,15 @@ const App: React.FC = () => {
     }, [recordingStart, recordingEnd]);
 
     if (dbState !== DBState.READY) {
-        if (mode === 'wasm' && (dbState === DBState.NEEDS_FILE || dbState === DBState.IMPORTING || dbState === DBState.SCHEMA_LOADING || dbState === DBState.ERROR)) {
+        // Show the drop zone during initial probe (mode still null) so the user sees the UI immediately
+        // instead of a blank screen while we wait for the server probe to time out.
+        const showDropZone = mode === 'wasm' || (mode === null && dbState === DBState.SCHEMA_LOADING);
+        if (showDropZone && (dbState === DBState.NEEDS_FILE || dbState === DBState.IMPORTING || dbState === DBState.SCHEMA_LOADING || dbState === DBState.ERROR)) {
             return (
                 <JFRDropZone
                     onFileSelected={(bytes, fileName, stacktraceDepth) => { void loadFile(bytes, fileName, stacktraceDepth); }}
-                    isImporting={dbState === DBState.IMPORTING || dbState === DBState.SCHEMA_LOADING}
-                    importPhase={dbState === DBState.SCHEMA_LOADING ? 'Building schema…' :
+                    isImporting={dbState === DBState.IMPORTING || (mode === 'wasm' && dbState === DBState.SCHEMA_LOADING)}
+                    importPhase={dbState === DBState.SCHEMA_LOADING && mode === 'wasm' ? 'Building schema…' :
                         (importProgress ?? 0) < 0.05 ? 'Warming up…' :
                         (importProgress ?? 0) < 0.70 ? `Parsing chunks… ${Math.round((importProgress ?? 0) * 100)}%` :
                         (importProgress ?? 0) < 0.85 ? 'Flushing inserts…' :
@@ -980,6 +983,7 @@ const App: React.FC = () => {
                     errorMessage={dbState === DBState.ERROR ? errorMessage : null}
                     onLoadDemo={() => { loadNotebook(initialNotebook); void loadDemo(); }}
                     onLoadGcNotebook={() => { loadNotebook(gcAnalysisNotebook); void loadDemo(); }}
+                    wasmInitializing={wasmInitializing}
                 />
             );
         }

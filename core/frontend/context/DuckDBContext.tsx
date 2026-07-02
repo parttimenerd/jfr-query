@@ -53,6 +53,7 @@ interface DataContextType {
   recordingStart: number | null;
   recordingEnd: number | null;
   importProgress: number | null;
+  wasmInitializing: boolean;
   query: (sql: string) => Promise<any[]>;
   refreshSchema: () => Promise<void>;
   loadFile: (source: File | Uint8Array, fileName: string, stacktraceDepth?: number) => Promise<void>;
@@ -71,6 +72,7 @@ export const DataContext = createContext<DataContextType>({
   recordingStart: null,
   recordingEnd: null,
   importProgress: null,
+  wasmInitializing: false,
   query: async () => { throw new Error('DataContext not initialized'); },
   refreshSchema: async () => { throw new Error('DataContext not initialized'); },
   loadFile: async () => { throw new Error('DataContext not initialized'); },
@@ -240,9 +242,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [recordingStart, setRecordingStart] = useState<number | null>(null);
   const [recordingEnd, setRecordingEnd] = useState<number | null>(null);
   const [importProgress, setImportProgress] = useState<number | null>(null);
+  const [wasmInitializing, setWasmInitializing] = useState(false);
 
   const wasmDbRef = useRef<AsyncDuckDB | null>(null);
   const wasmConnRef = useRef<AsyncDuckDBConnection | null>(null);
+  // In-flight eager init promise — loadFile awaits this instead of re-initializing.
+  const wasmInitPromiseRef = useRef<Promise<void> | null>(null);
 
   const executeQuery = useCallback(async (sql: string): Promise<any> => {
     if (mode === 'wasm') {
@@ -366,6 +371,21 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setMode('wasm');
         if (!probe.silent) setServerProbeError(probe.reason || 'server probe failed');
         setDbState(DBState.NEEDS_FILE);
+        // Eagerly initialize WASM in the background so it's ready when the user drops a file.
+        if (!wasmDbRef.current && !wasmInitPromiseRef.current) {
+          setWasmInitializing(true);
+          wasmInitPromiseRef.current = initDuckDBWasm().then(db => {
+            if (cancelled) return;
+            wasmDbRef.current = db;
+            return db.connect();
+          }).then(conn => {
+            if (cancelled || !conn) return;
+            wasmConnRef.current = conn;
+            setWasmInitializing(false);
+          }).catch(() => {
+            if (!cancelled) setWasmInitializing(false);
+          });
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -377,8 +397,15 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setErrorMessage(null);
     try {
       if (!wasmDbRef.current) {
-        wasmDbRef.current = await initDuckDBWasm();
-        wasmConnRef.current = await wasmDbRef.current.connect();
+        if (wasmInitPromiseRef.current) {
+          // Eager init is in flight — wait for it instead of starting a second instance.
+          await wasmInitPromiseRef.current;
+        }
+        if (!wasmDbRef.current) {
+          // Eager init either wasn't started or failed; fall back to init here.
+          wasmDbRef.current = await initDuckDBWasm();
+          wasmConnRef.current = await wasmDbRef.current.connect();
+        }
       }
       const conn = wasmConnRef.current!;
       const isJfr = fileName.toLowerCase().endsWith('.jfr');
@@ -408,8 +435,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setErrorMessage(null);
     try {
       if (!wasmDbRef.current) {
-        wasmDbRef.current = await initDuckDBWasm();
-        wasmConnRef.current = await wasmDbRef.current.connect();
+        if (wasmInitPromiseRef.current) {
+          await wasmInitPromiseRef.current;
+        }
+        if (!wasmDbRef.current) {
+          wasmDbRef.current = await initDuckDBWasm();
+          wasmConnRef.current = await wasmDbRef.current.connect();
+        }
       }
       const conn = wasmConnRef.current!;
       // Execute each statement in DEMO_SETUP_SQL individually
@@ -514,9 +546,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const contextValue = useMemo(() => ({
     dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
-    recordingStart, recordingEnd, importProgress, refreshSchema, loadFile, loadServerFile, loadDemo,
+    recordingStart, recordingEnd, importProgress, wasmInitializing, refreshSchema, loadFile, loadServerFile, loadDemo,
   }), [dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
-    recordingStart, recordingEnd, importProgress, refreshSchema, loadFile, loadServerFile, loadDemo]);
+    recordingStart, recordingEnd, importProgress, wasmInitializing, refreshSchema, loadFile, loadServerFile, loadDemo]);
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;
 };

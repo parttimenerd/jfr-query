@@ -12,6 +12,7 @@ interface JFRDropZoneProps {
     errorMessage: string | null;
     onLoadDemo?: () => void;
     onLoadGcNotebook?: () => void;
+    wasmInitializing?: boolean;
 }
 
 const FEATURE_HINTS = [
@@ -37,7 +38,7 @@ interface PendingFile {
     sizeMb: number;
 }
 
-const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, importPhase, importProgress, errorMessage, onLoadDemo, onLoadGcNotebook }) => {
+const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, importPhase, importProgress, errorMessage, onLoadDemo, onLoadGcNotebook, wasmInitializing }) => {
     const [fileName, setFileName] = useState<string | null>(null);
     const [fileBytes, setFileBytes] = useState<number | null>(null);
     const [pending, setPending] = useState<PendingFile | null>(null);
@@ -180,6 +181,12 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                         <div className="text-gray-300">
                             <p className="text-lg font-medium">{isDragActive ? 'Drop the file' : 'Drop a .jfr or .duckdb file here'}</p>
                             <p className="text-sm text-gray-500 mt-1">or click to choose one · runs entirely in-browser, no server needed</p>
+                            {wasmInitializing && (
+                                <div className="mt-3 flex items-center justify-center gap-2 text-xs text-cyan-400/70">
+                                    <div className="w-1.5 h-1.5 bg-cyan-400/70 rounded-full animate-pulse" />
+                                    <span>Initializing engine…</span>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
