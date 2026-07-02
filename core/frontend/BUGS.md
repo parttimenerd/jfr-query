@@ -1337,6 +1337,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
 
+### 🟡 [B-233] `AreaChartPlot` — `AXIS-X DOMAIN` and `AXIS-X LABEL` clauses ignored ✅ FIXED
+**Where:** `components/plots/AreaChartPlot.tsx:162`
+**Repro:** `AREA_CHART(x: "ts", y: ["v"]) AXIS-X DOMAIN [100, 200]` — domain ignored; `AXIS-X LABEL "Time"` — no label appears.
+**Observed:** `AreaChartPlot` extracted `clauses?.axisY` fields but had no handling for `clauses?.axisX`.
+**Fix:** Extracted `xDomainFromClause` and `xLabelFromClause` from `clauses?.axisX`; updated `<XAxis>` to use `xDomainFromClause || domainX || ...` and add an `insideBottom` label when `xLabelFromClause` is set.
+
 ### 🟠 [B-232] `sampleLooksLikeNanoseconds` — returns `true` for all-null columns, triggering duration formatting on unrelated data ✅ FIXED
 **Where:** `utils/plotUtils.ts:214`
 **Repro:** A column named `duration` where every row has a null value (e.g., a `LEFT JOIN` that never matches). The duration formatter activates and formats null/NaN as `NaNns` or `undefinedns` in tooltip/axis labels instead of the raw value.

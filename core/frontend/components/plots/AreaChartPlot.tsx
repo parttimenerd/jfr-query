@@ -60,6 +60,8 @@ const AreaChartComponent: React.FC<{
   const effectiveYScale = (clauses?.axisY?.type === 'log' ? 'log' : config.yScale) as 'linear' | 'log';
   const yDomainFromClause = clauses?.axisY?.domain as [any, any] | undefined;
   const yLabelFromClause = clauses?.axisY?.label;
+  const xDomainFromClause = clauses?.axisX?.domain as [any, any] | undefined;
+  const xLabelFromClause = clauses?.axisX?.label;
   const legendPos = clauses?.legend;
   const showLegend = legendPos !== 'none';
 
@@ -161,10 +163,11 @@ const AreaChartComponent: React.FC<{
             allowDataOverflow
             dataKey={finalXCol}
             type={isTime ? 'number' : 'category'}
-            domain={domainX || (isTime ? ['dataMin', 'dataMax'] : undefined)}
+            domain={xDomainFromClause || domainX || (isTime ? ['dataMin', 'dataMax'] : undefined)}
             tickFormatter={isTime ? (t: any) => formatTimestamp(t, 'HH:mm:ss.SS') : undefined}
             stroke="#9ca3af"
             tick={{ fontSize: 12 }}
+            label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined}
           />
           <YAxis
             stroke="#9ca3af"
