@@ -909,7 +909,9 @@ export async function loadJfrIntoWasm(
       conns.map((c, ci) => {
         const slice = allSql.slice(ci * chunkSize, (ci + 1) * chunkSize);
         return slice.reduce(
-          (chain, sql) => chain.then(() => c.query(sql).catch((e) => console.warn('builtin sql failed:', e))),
+          (chain, sql) => chain.then(() => c.query(sql).catch((e: any) => {
+            if (!String(e?.message ?? e).includes('Catalog Error')) console.warn('builtin sql failed:', e);
+          })),
           Promise.resolve(),
         );
       }),
