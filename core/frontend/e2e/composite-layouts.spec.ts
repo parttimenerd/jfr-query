@@ -15,6 +15,11 @@ async function gotoDemo(page: Page) {
   await page.waitForTimeout(2000);
 }
 
+async function pressRun(page: Page) {
+  const modKey = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await page.keyboard.press(`${modKey}+Enter`);
+}
+
 async function setCmContent(page: Page, editor: import('@playwright/test').Locator, text: string) {
   await editor.scrollIntoViewIfNeeded();
   await editor.waitFor({ state: 'visible' });
@@ -57,13 +62,13 @@ async function renderPlot(page: Page, sql: string, plot: string) {
   const sqlEd = await getFirstSqlEditor(page);
   if (!sqlEd) return false;
   await setCmContent(page, sqlEd, sql);
-  await page.keyboard.press('Shift+Enter');
+  await pressRun(page);
   await page.waitForTimeout(1500);
 
   const plotEd = await getFirstPlotEditor(page);
   if (!plotEd) return false;
   await setCmContent(page, plotEd, plot);
-  await page.keyboard.press('Shift+Enter');
+  await pressRun(page);
   await page.waitForTimeout(2000);
   return true;
 }

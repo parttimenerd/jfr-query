@@ -15,6 +15,12 @@ async function gotoDemo(page: Page) {
   await page.waitForTimeout(2000);
 }
 
+/** Press the CodeMirror run-cell shortcut (Mod-Enter). */
+async function pressRun(page: Page) {
+  const modKey = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await page.keyboard.press(`${modKey}+Enter`);
+}
+
 /** Replace content of a CodeMirror 6 editor (macOS-safe). */
 async function setCmContent(page: Page, editor: import('@playwright/test').Locator, text: string) {
   await editor.scrollIntoViewIfNeeded();
@@ -231,7 +237,7 @@ test.describe.serial('Plot: lineType dots', () => {
     const newSqlEd = page.locator('.cm-jfr-editor .cm-editor').nth(newSqlIdx);
     await setCmContent(page, newSqlEd,
       'SELECT gcId, duration FROM GarbageCollection ORDER BY gcId LIMIT 20');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     // Count existing plot editors before adding, and record their DOM positions.
@@ -295,7 +301,7 @@ test.describe.serial('Plot: lineType dots', () => {
     const newPlotEd = page.locator('.cm-jfr-editor .cm-editor').nth(newPlotIdx);
     await setCmContent(page, newPlotEd,
       'LINE_CHART(x: "gcId", y: ["duration"], lineType: "dots")');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(3000);
 
     // Find the NEW result container (the one added for this cell's new plot block).
@@ -337,7 +343,7 @@ test.describe.serial('Plot: HISTOGRAM logBins', () => {
 
     await setCmContent(page, sqlEd,
       'SELECT duration FROM GarbageCollection WHERE duration > 0 LIMIT 200');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const plotEd = await getLastPlotEditor(page);
@@ -345,7 +351,7 @@ test.describe.serial('Plot: HISTOGRAM logBins', () => {
 
     await setCmContent(page, plotEd,
       'HISTOGRAM(x: "duration", logBins: true)');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const bars = page.locator('div[id^="result-container-"] svg rect, div[id^="result-container-"] .recharts-bar-rectangle');
@@ -380,7 +386,7 @@ test.describe.serial('Plot: PIE_CHART donut (innerRadius)', () => {
 
     await setCmContent(page, sqlEd,
       'SELECT cause, COUNT(*) AS n FROM GarbageCollection GROUP BY cause');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const plotEd = await getLastPlotEditor(page);
@@ -388,7 +394,7 @@ test.describe.serial('Plot: PIE_CHART donut (innerRadius)', () => {
 
     await setCmContent(page, plotEd,
       'PIE_CHART(category: "cause", value: "n", innerRadius: 60)');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const paths = page.locator('div[id^="result-container-"] svg path');
@@ -423,7 +429,7 @@ test.describe.serial('Plot: BOX_PLOT with category', () => {
 
     await setCmContent(page, sqlEd,
       'SELECT duration, cause FROM GarbageCollection');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const plotEd = await getLastPlotEditor(page);
@@ -431,7 +437,7 @@ test.describe.serial('Plot: BOX_PLOT with category', () => {
 
     await setCmContent(page, plotEd,
       'BOX_PLOT(value: "duration", category: "cause")');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const svgEls = page.locator('div[id^="result-container-"] svg line, div[id^="result-container-"] svg rect');
@@ -468,7 +474,7 @@ test.describe.serial('Plot: FLAMEGRAPH click-to-zoom', () => {
       `SELECT 'root' AS name, 100 AS value, '' AS parent
        UNION ALL SELECT 'child_a', 60, 'root'
        UNION ALL SELECT 'child_b', 40, 'root'`);
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const plotEd = await getLastPlotEditor(page);
@@ -476,7 +482,7 @@ test.describe.serial('Plot: FLAMEGRAPH click-to-zoom', () => {
 
     await setCmContent(page, plotEd,
       'FLAMEGRAPH(name: "name", value: "value", parent: "parent")');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(2000);
 
     const container = page.locator('div[id^="result-container-"]').first();

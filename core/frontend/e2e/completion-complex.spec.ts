@@ -248,8 +248,9 @@ test.describe.serial('Plot DSL complex completions', () => {
     await expectPlotCompletions(page, {
       plotBefore: 'row { LINE_CHART(x: ',
       plotAfter: ')',
-      expected: ['startTime', 'duration', 'cause', 'gcId'],
+      expected: ['Cause', 'Collections', 'Total Pause (ms)', 'Avg Pause (ms)'],
       mode: 'anyOf',
+      preCompletionDelayMs: 1500,
     });
   });
 });

@@ -15,6 +15,11 @@ async function gotoDemo(page: Page) {
   await page.waitForTimeout(2000);
 }
 
+async function pressRun(page: Page) {
+  const modKey = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await page.keyboard.press(`${modKey}+Enter`);
+}
+
 async function setCmContent(page: Page, editor: import('@playwright/test').Locator, text: string) {
   await editor.scrollIntoViewIfNeeded();
   await editor.waitFor({ state: 'visible' });
@@ -70,14 +75,14 @@ test.describe.serial('Plot DSL: ON HOVER TOOLTIP', () => {
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
       'SELECT startTime, duration, cause FROM GarbageCollection ORDER BY startTime LIMIT 50');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const plotEd = await getFirstPlotEditor(page);
     if (!plotEd) { test.skip(); return; }
     await setCmContent(page, plotEd,
       'LINE_CHART(x: "startTime", y: ["duration"]) ON HOVER TOOLTIP "{cause}: {duration}ms"');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const container = page.locator('div[id^="result-container-"]').first();
@@ -110,14 +115,14 @@ test.describe.serial('Plot DSL: AXIS-Y DOMAIN', () => {
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
       'SELECT startTime, duration FROM GarbageCollection ORDER BY startTime LIMIT 50');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const plotEd = await getFirstPlotEditor(page);
     if (!plotEd) { test.skip(); return; }
     await setCmContent(page, plotEd,
       'LINE_CHART(x: "startTime", y: ["duration"]) AXIS-Y DOMAIN [0, 1000]');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const svg = page.locator('div[id^="result-container-"] svg').first();
@@ -150,14 +155,14 @@ test.describe.serial('Plot DSL: AXIS-X LABEL', () => {
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
       'SELECT cause, COUNT(*) AS n FROM GarbageCollection GROUP BY cause');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const plotEd = await getFirstPlotEditor(page);
     if (!plotEd) { test.skip(); return; }
     await setCmContent(page, plotEd,
       'BAR_CHART(x: "cause", y: ["n"]) AXIS-X LABEL "GC Cause"');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const svg = page.locator('div[id^="result-container-"] svg').first();
@@ -190,14 +195,14 @@ test.describe.serial('Plot DSL: BRUSH MODE Y', () => {
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
       'SELECT startTime, duration FROM GarbageCollection ORDER BY startTime LIMIT 100');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const plotEd = await getFirstPlotEditor(page);
     if (!plotEd) { test.skip(); return; }
     await setCmContent(page, plotEd,
       'SCATTER_PLOT(x: "startTime", y: "duration") BRUSH "$ysel" MODE Y');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const svg = page.locator('div[id^="result-container-"] svg').first();
@@ -213,7 +218,7 @@ test.describe.serial('Plot DSL: BRUSH MODE Y', () => {
     if (!plotEd) { test.skip(); return; }
     await setCmContent(page, plotEd,
       'SCATTER_PLOT(x: "startTime", y: "duration") BRUSH "$xysel" MODE XY');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const svg = page.locator('div[id^="result-container-"] svg').first();
@@ -252,7 +257,7 @@ test.describe.serial('Plot DSL: multi-query ON 1, 2', () => {
     if (!sqlEd0) { test.skip(); return; }
     await setCmContent(page, sqlEd0,
       'SELECT startTime, duration FROM GarbageCollection ORDER BY startTime LIMIT 50');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     // Add second SQL cell.
@@ -270,7 +275,7 @@ test.describe.serial('Plot DSL: multi-query ON 1, 2', () => {
     const sqlEd1 = page.locator('.cm-jfr-editor .cm-editor').nth(sqlEditors[sqlEditors.length - 1]);
     await setCmContent(page, sqlEd1,
       'SELECT startTime, sumOfPauses FROM GarbageCollection ORDER BY startTime LIMIT 50');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     // Set the plot cell to reference both queries.
@@ -278,7 +283,7 @@ test.describe.serial('Plot DSL: multi-query ON 1, 2', () => {
     if (!plotEd) { test.skip(); return; }
     await setCmContent(page, plotEd,
       'LINE_CHART(x: "startTime", y: ["duration"]) ON 1\nLINE_CHART(x: "startTime", y: ["sumOfPauses"]) ON 2');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(2000);
 
     const container = page.locator('div[id^="result-container-"]').first();
@@ -315,14 +320,14 @@ test.describe.serial('Plot DSL: TOOLTIP COLUMNS', () => {
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
       'SELECT startTime, duration, cause FROM GarbageCollection ORDER BY startTime LIMIT 50');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const plotEd = await getFirstPlotEditor(page);
     if (!plotEd) { test.skip(); return; }
     await setCmContent(page, plotEd,
       'LINE_CHART(x: "startTime", y: ["duration"]) TOOLTIP COLUMNS ["cause", "duration"]');
-    await page.keyboard.press('Shift+Enter');
+    await pressRun(page);
     await page.waitForTimeout(1500);
 
     const svg = page.locator('div[id^="result-container-"] svg').first();
