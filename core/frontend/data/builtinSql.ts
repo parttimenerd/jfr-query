@@ -796,20 +796,22 @@ ORDER BY g.gcId`,
 
   `CREATE OR REPLACE VIEW "heap-summary-over-time" AS
 SELECT
-    startTime AS "Time",
-    gcId AS "GC ID",
-    "when" AS "When",
-    format_memory(heapUsed) AS "Heap Used"
-FROM GCHeapSummary
-ORDER BY startTime`,
+    g.startTime AS "Time",
+    h.gcId AS "GC ID",
+    h."when" AS "When",
+    format_memory(h.heapUsed) AS "Heap Used"
+FROM GCHeapSummary h
+JOIN GarbageCollection g ON g.gcId = h.gcId
+ORDER BY g.startTime`,
 
   `CREATE OR REPLACE VIEW "heap-committed-vs-used" AS
 SELECT
-    startTime AS "Time",
-    "when" AS "Phase",
-    heapUsed / (1024.0 * 1024.0) AS "Used MB"
-FROM GCHeapSummary
-ORDER BY startTime`,
+    g.startTime AS "Time",
+    h."when" AS "Phase",
+    h.heapUsed / (1024.0 * 1024.0) AS "Used MB"
+FROM GCHeapSummary h
+JOIN GarbageCollection g ON g.gcId = h.gcId
+ORDER BY g.startTime`,
 
   `CREATE OR REPLACE VIEW "allocation-rate" AS
 SELECT
