@@ -222,9 +222,12 @@ const FlameGraphCanvas: React.FC<{
                 : (node.value / pv) * 100;
             if (pct < minFrameWidth) return depth;
             if (node.children.length === 0) return depth + 1;
-            return Math.max(...node.children.map(c => getDepth(c, node.value, depth + 1)));
+            let d = depth;
+            for (const c of node.children) { const cd = getDepth(c, node.value, depth + 1); if (cd > d) d = cd; }
+            return d;
         };
-        const maxDepth = Math.max(...currentRoot.children.map(c => getDepth(c, currentRoot.value, 0)));
+        let maxDepth = 0;
+        for (const c of currentRoot.children) { const cd = getDepth(c, currentRoot.value, 0); if (cd > maxDepth) maxDepth = cd; }
         const w = canvasWidth;
         const h = Math.max(200, (maxDepth + 1) * FRAME_H + 4);
 

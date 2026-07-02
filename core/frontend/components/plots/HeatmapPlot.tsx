@@ -25,13 +25,20 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
   const { chartData, xLabels, yLabels, min, max } = useMemo(() => {
     const xLabels = [...new Set(data.map(item => item[x]))].sort();
     const yLabels = [...new Set(data.map(item => item[y]))].sort();
-    const values = data.map(item => parseFloat(item[valueCol])).filter(v => !isNaN(v));
-    const min = values.length > 0 ? Math.min(...values) : 0;
-    const max = values.length > 0 ? Math.max(...values) : 0;
-    
+    const xIndex = new Map<any, number>(xLabels.map((v, i) => [v, i]));
+    const yIndex = new Map<any, number>(yLabels.map((v, i) => [v, i]));
+    let min = 0, max = 0;
+    let hasValue = false;
+    for (const item of data) {
+      const v = parseFloat(item[valueCol]);
+      if (isNaN(v)) continue;
+      if (!hasValue) { min = v; max = v; hasValue = true; }
+      else { if (v < min) min = v; if (v > max) max = v; }
+    }
+
     const chartData = data.map(item => ({
-      x: xLabels.indexOf(item[x]),
-      y: yLabels.indexOf(item[y]),
+      x: xIndex.get(item[x]) ?? -1,
+      y: yIndex.get(item[y]) ?? -1,
       z: parseFloat(item[valueCol]),
       ...item
     })).filter(d => !isNaN(d.z) && d.x >= 0 && d.y >= 0);

@@ -1337,6 +1337,13 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
 
+### 🟡 [B-224] `FlameGraphPlot.tsx` canvas renderer — `Math.max(...arr)` spread throws for wide trees; `HeatmapPlot.tsx` — `Math.min/max(...values)` spread throws for large datasets ✅ FIXED
+**Where:** `components/plots/FlameGraphPlot.tsx:225,227`; `components/plots/HeatmapPlot.tsx:29-30`
+**Repro:** FlameGraph: import a JFR with many unique top-level frames (e.g., 5000+ distinct direct callees of root) — `getDepth` does `Math.max(...children.map(...))` where children can be thousands of items, exceeding V8's `Function.prototype.apply` argument limit (~65k), throwing "Maximum call stack size exceeded". HeatmapPlot: a heatmap with 50k cells calls `Math.min(...values)` / `Math.max(...values)` with 50k arguments, same throw.
+**Fix:**
+- FlameGraph: replaced `Math.max(...children.map(...))` pattern in `getDepth` with an iterative loop using a mutable max variable; same fix for `const maxDepth = Math.max(...currentRoot.children.map(...))`.
+- HeatmapPlot: replaced the intermediate `values` array + `Math.min/max(...values)` with a single-pass loop computing `min`/`max` inline. Also replaced `xLabels.indexOf(item[x])` (O(n) per cell) with a `Map`-based O(1) lookup, fixing an O(n²) slowdown for large heatmaps.
+
 ### 🟠 [B-223] `LINE_CHART`, `AREA_CHART`, `BAR_CHART` — `PALETTE` clause parsed but not implemented
 **Where:** `utils/plotParser.ts:150`; `components/plots/LineChartPlot.tsx`, `AreaChartPlot.tsx`, `BarChartPlot.ts`
 **Repro:** `BAR_CHART(x: "label", y: ["v1", "v2"]) PALETTE "category10"` — bars use the default purple/green/amber colors, not the d3 category10 palette.
