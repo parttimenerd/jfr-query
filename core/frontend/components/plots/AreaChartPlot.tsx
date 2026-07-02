@@ -179,7 +179,7 @@ const AreaChartComponent: React.FC<{
                 : undefined
             }
             scale={effectiveYScale === 'log' ? 'log' : 'auto'}
-            domain={domainY ?? (effectiveYScale === 'log' ? (yDomainFromClause ?? [0.1, 'dataMax']) : yDomainFromClause)}
+            domain={domainY ?? (effectiveYScale === 'log' ? (yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : [0.1, 'dataMax']) : yDomainFromClause)}
             allowDataOverflow
           />
           <Tooltip

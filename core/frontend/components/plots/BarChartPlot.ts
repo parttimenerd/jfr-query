@@ -123,7 +123,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         tick: { fontSize: 12 },
         tickFormatter: numberFormatter,
         scale: effectiveLogScale ? "log" as const : "auto" as const,
-        domain: (domainY ?? yDomainFromClause ?? (effectiveLogScale ? [0.1, 'dataMax'] : [0, 'dataMax'])) as any,
+        domain: (domainY ?? (effectiveLogScale && yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : yDomainFromClause) ?? (effectiveLogScale ? [0.1, 'dataMax'] : [0, 'dataMax'])) as any,
         allowDataOverflow: true,
     };
     

@@ -1465,6 +1465,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Expected:** Apply the format string as a custom `tickFormatter` on the relevant axis, using a d3-format-compatible formatter (recharts accepts a custom tick formatter function).
 **Notes:** Requires integrating a d3-format library or writing a minimal subset formatter. Deferred.
 
+### 🟡 [B-246] Log-scale Y axis with `AXIS-Y DOMAIN [0, N]` breaks recharts (domain includes 0) ✅ FIXED
+**Where:** `LineChartPlot.tsx:113`, `AreaChartPlot.tsx:182`, `BarChartPlot.ts:126`, `HistogramPlot.tsx:82`
+**Repro:** `LINE_CHART(x: "ts", y: ["v"]) AXIS-Y TYPE LOG AXIS-Y DOMAIN [0, 100]` — recharts log scale crashes or renders blank because the domain lower bound is 0 (log(0) = -∞).
+**Observed:** The log-scale guard `[0.1, 'dataMax']` only applies when no domain clause is set; when `yDomainFromClause` is present the raw value (potentially `[0, N]`) is used unchanged.
+**Fix:** In all four plots, when log scale is active and a domain clause is provided, the lower bound is clamped to `Math.max(0.1, parseFloat(lower))` before passing to recharts.
+
 ### 🟡 [B-236] `RangePlot`, `GanttChartPlot` — `AXIS-X DOMAIN`, `AXIS-X LABEL`, `AXIS-Y DOMAIN/LABEL` clauses ignored ✅ FIXED
 **Where:** `components/plots/RangePlot.tsx:97-117`; `components/plots/GanttChartPlot.tsx:135-142`
 **Repro:** `RANGE_PLOT(x: "time", low: "p10", high: "p90") AXIS-X LABEL "Time"` — label never appears; `GANTT_CHART(lane: "l", start: "s", end: "e") AXIS-X DOMAIN [0, 1000]` — domain ignored.
