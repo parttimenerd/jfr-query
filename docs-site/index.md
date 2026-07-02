@@ -14,7 +14,7 @@ or explore it through a notebook-style web UI.
 - **Variable controls** — parameterised queries with sliders, dropdowns, and text inputs
 - **Inline scalars** — embed `${SELECT …}` expressions directly in prose
 - **AI-assisted queries** — context-aware SQL suggestions powered by Google Gemini
-- **Live demo** — try the UI without installing anything: [Open demo →](app/index.html)
+- **Live demo** — try the UI in a browser after deploying via CI: [Open demo →](https://parttimenerd.github.io/jfr-query/app/)
 
 ## Quick Start
 
