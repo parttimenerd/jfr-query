@@ -383,12 +383,16 @@ async function mergeChunkTables(
         `SELECT ${i} AS _worker, * FROM "chunk${i}_${base}"`
       ).join(' UNION ALL ');
 
+      // NOTE: DuckDB WASM does not reliably support TEMP tables across connections
+      // (temp tables are per-connection and the multi-connection merge below reads
+      // "_idmap_*" from a different connection than the one that created it).
+      // Use regular tables and drop them in the final cleanup batch.
       await c.query(
-        `CREATE TEMP TABLE "_stage_${base}" AS ${unionParts}`
+        `CREATE TABLE "_stage_${base}" AS ${unionParts}`
       ).catch((e) => console.warn(`merge stage failed for ${base}:`, e));
 
       await c.query(
-        `CREATE TEMP TABLE "_idmap_${base}" AS
+        `CREATE TABLE "_idmap_${base}" AS
          SELECT _worker, _id AS old_id,
            CASE WHEN _id = 0 THEN 0
                 ELSE DENSE_RANK() OVER (ORDER BY ${naturalKey}) END AS new_id
@@ -555,13 +559,33 @@ async function mergeChunkTables(
   }
 
   // 5. Drop all chunk-prefixed and staging/idmap tables.
+  // Re-discover chunk-prefixed and scratch tables from the catalog so we drop
+  // EVERY leftover — including anything created on an extra connection that
+  // wasn't reflected in baseToWorkers, and any _stage_/_idmap_ tables from any
+  // struct base (even those we may not have iterated over).
   // Batch all DROP TABLE statements into one SQL call to avoid
   // N × numBaseTables sequential round-trips on a single connection.
+  const leftoverResult = await conn.query(
+    `SELECT table_name FROM information_schema.tables
+     WHERE table_schema='main'
+       AND (regexp_matches(table_name, '^chunk\\d+_')
+            OR table_name LIKE '\\_stage\\_%' ESCAPE '\\'
+            OR table_name LIKE '\\_idmap\\_%' ESCAPE '\\')`
+  ).catch(() => null);
   const allDropNames: string[] = [];
-  for (const base of allBaseNames) {
-    const workers = baseToWorkers.get(base)!;
-    for (const i of workers) allDropNames.push(`"chunk${i}_${base}"`);
-    allDropNames.push(`"_stage_${base}"`, `"_idmap_${base}"`);
+  if (leftoverResult) {
+    for (const row of leftoverResult.toArray()) {
+      allDropNames.push(`"${String((row as any).table_name).replace(/"/g, '""')}"`);
+    }
+  }
+  // Fallback: also add the names we know about from baseToWorkers, in case the
+  // discovery query above returned null.
+  if (allDropNames.length === 0) {
+    for (const base of allBaseNames) {
+      const workers = baseToWorkers.get(base)!;
+      for (const i of workers) allDropNames.push(`"chunk${i}_${base}"`);
+      allDropNames.push(`"_stage_${base}"`, `"_idmap_${base}"`);
+    }
   }
   // DuckDB supports DROP TABLE IF EXISTS t1, t2, t3; — batch to avoid huge SQL strings.
   const DROP_BATCH = 50;
@@ -570,7 +594,7 @@ async function mergeChunkTables(
     dropBatches.push(allDropNames.slice(i, i + DROP_BATCH));
   }
   await Promise.all(dropBatches.map(batch =>
-    conn.query(`DROP TABLE IF EXISTS ${batch.join(', ')}`).catch(() => {}),
+    conn.query(`DROP TABLE IF EXISTS ${batch.join(', ')}`).catch((e) => console.warn('merge cleanup drop failed:', e)),
   ));
 }
 
