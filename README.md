@@ -16,6 +16,17 @@ _If you are looking for the tool based on the JFR internal language, you can fin
 
 **This is an early prototype, to see what's possible. The database schema might change at any point.**
 
+## Features
+
+![JFR Query Notebook UI](page-full.png)
+
+- **Notebook-style analysis** — compose SQL cells, prose, and charts in a single document
+- **Built-in templates** — ready-made analyses for GC, heap allocation, threading, and exceptions
+- **Interactive charts** — line, bar, scatter, heatmap, and flame graphs with brushable time ranges
+- **Variable controls** — parameterised queries with sliders, dropdowns, and text inputs
+- **Inline scalars** — embed `${SELECT …}` query results directly in prose
+- **AI-assisted queries** — context-aware SQL suggestions powered by Google Gemini
+
 Try it out
 ----------
 
