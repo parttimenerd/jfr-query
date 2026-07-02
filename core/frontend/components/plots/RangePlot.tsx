@@ -7,6 +7,7 @@ import { formatTimestamp } from '../../utils/timeFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn, getTimeValue } from '../../utils/plotUtils';
 import { usePlotGestures } from '../../hooks/usePlotGestures';
+import type { ParsedPlotCall } from '../../utils/plotParser';
 
 interface Config {
   x: string;
@@ -39,10 +40,13 @@ const RangePlotComponent: React.FC<{
   animationDuration?: number;
   gestureName?: string;
   onVariableChange?: (vars: Record<string, unknown>) => void;
-}> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration, gestureName, onVariableChange }) => {
+  clauses?: ParsedPlotCall;
+}> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration, gestureName, onVariableChange, clauses }) => {
   const { settings } = useContext(SettingsContext);
   const numberFormatter = (v: any) => formatNumber(v, settings.decimalPlaces);
   const gestures = usePlotGestures({ name: gestureName, onVariableChange });
+  const legendPos = clauses?.legend;
+  const showLegend = legendPos !== 'none';
 
   const { chartData, isTime, finalXCol, lowKey, highKey, centerKey } = useMemo(() => {
     if (!data || !data.length || !data[0] || !config.x) {
@@ -122,15 +126,17 @@ const RangePlotComponent: React.FC<{
             }}
             labelFormatter={isTime ? (l) => formatTimestamp(l, settings.timeFormat) : undefined}
           />
-          <Legend
+          {showLegend && <Legend
             wrapperStyle={{ fontSize: '12px' }}
+            verticalAlign={legendPos === 'top' ? 'top' : 'bottom'}
+            align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'}
             formatter={(v: string) => {
               if (v === '__rangeHigh') return `Range (${lowKey} – ${highKey})`;
-              if (v === '__rangeLow') return null as any; // hide low from legend — range is shown via high entry
+              if (v === '__rangeLow') return null as any;
               if (v === '__center') return centerKey ? `Center (${centerKey})` : 'Center';
               return String(v).replace(/_/g, ' ');
             }}
-          />
+          />}
           {/* Lower bound — invisible base, fills from 0 to low */}
           <Area
             type="monotone"

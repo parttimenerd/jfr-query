@@ -4,7 +4,8 @@ import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec, findColumn } from '../../utils/plotUtils';
+import { buildParserSpec, findColumn, getPaletteColors } from '../../utils/plotUtils';
+import type { ParsedPlotCall } from '../../utils/plotParser';
 import { topN } from '../../services/plot/decimation';
 
 const PIE_SOFT_CAP = 12;
@@ -34,8 +35,11 @@ const params: PlotParameter[] = [
 ];
 const parseConfig = createConfigParser<PieChartConfig>(buildParserSpec(params));
 
-const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; }> = ({ config, data, isAnimationActive, animationDuration }) => {
+const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; clauses?: ParsedPlotCall; }> = ({ config, data, isAnimationActive, animationDuration, clauses }) => {
   const { settings } = useContext(SettingsContext);
+  const colors = getPaletteColors(clauses?.palette, COLORS);
+  const legendPos = clauses?.legend;
+  const showLegend = legendPos !== 'none';
   
   const { nameCol, valueCol } = useMemo(() => {
     if (!data || data.length === 0) {
@@ -86,10 +90,10 @@ const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnima
             isAnimationActive={isAnimationActive}
             animationDuration={animationDuration}
           >
-            {chartData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+            {chartData.map((_, index) => <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />)}
           </Pie>
           <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} itemStyle={{ color: '#e5e7eb' }} formatter={(value: number) => formatNumber(value, settings.decimalPlaces)} />
-          <Legend wrapperStyle={{fontSize: "12px"}} verticalAlign="bottom" align="center"/>
+          {showLegend && <Legend wrapperStyle={{fontSize: "12px"}} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'}/>}
         </PieChart>
       </ResponsiveContainer>
     </div>

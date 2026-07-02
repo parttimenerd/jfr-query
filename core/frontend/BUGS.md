@@ -1337,6 +1337,14 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
 
+### 🟡 [B-229] `RangePlot`, `PieChartPlot` — `LEGEND AT …` clause ignored; `PieChartPlot` also ignores `PALETTE` clause ✅ FIXED
+**Where:** `components/plots/RangePlot.tsx:125`; `components/plots/PieChartPlot.tsx:92`
+**Repro:** `PIE_CHART(category: "k", value: "v") LEGEND AT NONE` — legend still appears. `PIE_CHART(…) PALETTE "tableau10"` — colors unchanged.
+**Observed:** `PieChartPlot` had no `clauses` prop at all (not in component signature). `RangePlot` accepted `clauses` but never consumed `clauses?.legend`. Neither used `getPaletteColors` for their cell/series colors.
+**Fix:**
+- `PieChartPlot`: added `clauses?: ParsedPlotCall` to props, imported `getPaletteColors` and `ParsedPlotCall`, extracted `legendPos`/`showLegend`, conditionally render Legend, replaced hardcoded `COLORS[…]` with `colors = getPaletteColors(clauses?.palette, COLORS)`.
+- `RangePlot`: added `clauses?: ParsedPlotCall` to props/signature, extracted `legendPos`/`showLegend`, conditionally render Legend with position support.
+
 ### 🟡 [B-227] `AreaChartPlot`, `BarChartPlot` — `LEGEND AT …` clause ignored; legend always rendered ✅ FIXED
 **Where:** `components/plots/AreaChartPlot.tsx:186`; `components/plots/BarChartPlot.ts:194`
 **Repro:** `BAR_CHART(x: "k", y: ["v"]) LEGEND AT NONE` — the legend still appears. `BAR_CHART(x: "k", y: ["v"]) LEGEND AT TOP` — legend stays at the bottom.
