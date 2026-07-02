@@ -36,7 +36,7 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --port ${PORT} --strictPort`,
     url: BASE_URL,
-    reuseExistingServer: false,
+    reuseExistingServer: !IS_CI,
     timeout: 120_000,
     stdout: 'ignore',
     stderr: 'pipe',

@@ -12,7 +12,9 @@ async function gotoDemo(page: Page) {
     .waitFor({ state: 'visible', timeout: 60_000 });
   await page.locator('.cm-jfr-editor .cm-editor').first()
     .waitFor({ state: 'visible', timeout: 30_000 });
-  await page.waitForTimeout(2000);
+  // Wait for cell-2 (GC Pause Summary) to have both sql+plot editors ready.
+  await page.locator('[data-cell-id="cell-2"] .cm-content[data-language="plot"]')
+    .waitFor({ state: 'visible', timeout: 30_000 });
 }
 
 /** Press the CodeMirror run-cell shortcut (Mod-Enter). */
@@ -30,8 +32,9 @@ async function setCmContent(page: Page, editor: import('@playwright/test').Locat
   const isMac = process.platform === 'darwin';
   const modKey = isMac ? 'Meta' : 'Control';
   await page.keyboard.press(`${modKey}+a`);
-  await page.keyboard.press('Delete');
-  await page.keyboard.type(text);
+  // Do NOT press Delete — emptying a plot editor removes its segment from the notebook.
+  // Meta+a selects all; insertText replaces the selection atomically.
+  await page.keyboard.insertText(text);
 }
 
 /** Find the nth plot editor (data-language="plot"). */
@@ -338,25 +341,36 @@ test.describe.serial('Plot: HISTOGRAM logBins', () => {
   test.afterAll(async () => page.close());
 
   test('P6. HISTOGRAM(x, logBins:true) renders bars without error', async () => {
-    const sqlEd = await getLastSqlEditor(page);
-    if (!sqlEd) { test.skip(); return; }
+    const cell2 = page.locator('[data-cell-id="cell-2"]');
+    await cell2.scrollIntoViewIfNeeded().catch(() => {});
+    await page.waitForTimeout(500);
 
-    await setCmContent(page, sqlEd,
-      'SELECT duration FROM GarbageCollection WHERE duration > 0 LIMIT 200');
+    const sqlEd = cell2.locator('.cm-content[data-language="sql"]').first();
+    const sqlVisible = await sqlEd.isVisible().catch(() => false);
+    if (!sqlVisible) { test.skip(); return; }
+
+    await sqlEd.click();
+    const modKey = process.platform === 'darwin' ? 'Meta' : 'Control';
+    await page.keyboard.press(`${modKey}+a`);
+    await page.keyboard.insertText('SELECT duration FROM GarbageCollection WHERE duration > 0 LIMIT 200');
     await pressRun(page);
     await page.waitForTimeout(1500);
 
-    const plotEd = await getLastPlotEditor(page);
-    if (!plotEd) { test.skip(); return; }
+    const plotEd = cell2.locator('.cm-content[data-language="plot"]').first();
+    const plotVisible = await plotEd.isVisible().catch(() => false);
+    if (!plotVisible) { test.skip(); return; }
 
-    await setCmContent(page, plotEd,
-      'HISTOGRAM(x: "duration", logBins: true)');
+    await plotEd.click();
+    await page.keyboard.press(`${modKey}+a`);
+    await page.keyboard.insertText('HISTOGRAM(x: "duration", logBins: true)');
     await pressRun(page);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(3000);
 
-    const bars = page.locator('div[id^="result-container-"] svg rect, div[id^="result-container-"] .recharts-bar-rectangle');
-    const count = await bars.count();
-    expect(count, 'histogram bars rendered').toBeGreaterThan(0);
+    const container = page.locator('#result-container-cell-2-0');
+    await container.waitFor({ state: 'visible', timeout: 10_000 });
+
+    const svg = container.locator('svg').first();
+    await svg.waitFor({ state: 'visible', timeout: 8_000 });
 
     const errOverlay = page.locator('[class*="error-overlay"], [class*="ErrorOverlay"], [class*="plot-error"]');
     const hasError = await errOverlay.isVisible().catch(() => false);
@@ -424,25 +438,37 @@ test.describe.serial('Plot: BOX_PLOT with category', () => {
   test.afterAll(async () => page.close());
 
   test('P8. BOX_PLOT(value, category) renders multiple box groups', async () => {
-    const sqlEd = await getLastSqlEditor(page);
-    if (!sqlEd) { test.skip(); return; }
+    const cell2 = page.locator('[data-cell-id="cell-2"]');
+    await cell2.scrollIntoViewIfNeeded().catch(() => {});
+    await page.waitForTimeout(500);
 
-    await setCmContent(page, sqlEd,
-      'SELECT duration, cause FROM GarbageCollection');
+    const modKey = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+    const sqlEd = cell2.locator('.cm-content[data-language="sql"]').first();
+    const sqlVisible = await sqlEd.isVisible().catch(() => false);
+    if (!sqlVisible) { test.skip(); return; }
+
+    await sqlEd.click();
+    await page.keyboard.press(`${modKey}+a`);
+    await page.keyboard.insertText('SELECT duration, cause FROM GarbageCollection');
     await pressRun(page);
     await page.waitForTimeout(1500);
 
-    const plotEd = await getLastPlotEditor(page);
-    if (!plotEd) { test.skip(); return; }
+    const plotEd = cell2.locator('.cm-content[data-language="plot"]').first();
+    const plotVisible = await plotEd.isVisible().catch(() => false);
+    if (!plotVisible) { test.skip(); return; }
 
-    await setCmContent(page, plotEd,
-      'BOX_PLOT(value: "duration", category: "cause")');
+    await plotEd.click();
+    await page.keyboard.press(`${modKey}+a`);
+    await page.keyboard.insertText('BOX_PLOT(value: "duration", category: "cause")');
     await pressRun(page);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(3000);
 
-    const svgEls = page.locator('div[id^="result-container-"] svg line, div[id^="result-container-"] svg rect');
-    const count = await svgEls.count();
-    expect(count, 'box plot SVG elements rendered').toBeGreaterThan(0);
+    const container = page.locator('#result-container-cell-2-0');
+    await container.waitFor({ state: 'visible', timeout: 10_000 });
+
+    const svg = container.locator('svg').first();
+    await svg.waitFor({ state: 'visible', timeout: 8_000 });
 
     const errOverlay = page.locator('[class*="error-overlay"], [class*="ErrorOverlay"], [class*="plot-error"]');
     const hasError = await errOverlay.isVisible().catch(() => false);

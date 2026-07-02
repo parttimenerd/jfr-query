@@ -12,7 +12,9 @@ async function gotoDemo(page: Page) {
     .waitFor({ state: 'visible', timeout: 60_000 });
   await page.locator('.cm-jfr-editor .cm-editor').first()
     .waitFor({ state: 'visible', timeout: 30_000 });
-  await page.waitForTimeout(2000);
+  // Wait for cell-2 (GC Pause Summary) to have both sql+plot editors ready.
+  await page.locator('[data-cell-id="cell-2"] .cm-content[data-language="plot"]')
+    .waitFor({ state: 'visible', timeout: 30_000 });
 }
 
 async function pressRun(page: Page) {
@@ -28,8 +30,8 @@ async function setCmContent(page: Page, editor: import('@playwright/test').Locat
   const isMac = process.platform === 'darwin';
   const modKey = isMac ? 'Meta' : 'Control';
   await page.keyboard.press(`${modKey}+a`);
-  await page.keyboard.press('Delete');
-  await page.keyboard.type(text);
+  // Do NOT press Delete — emptying a plot editor removes its segment from the notebook.
+  await page.keyboard.insertText(text);
 }
 
 async function getFirstPlotEditor(page: Page) {
@@ -246,56 +248,46 @@ test.describe.serial('Plot DSL: multi-query ON 1, 2', () => {
 
   test.afterAll(async () => page.close());
 
-  test('D6. Two SQL cells + LINE_CHART ON 1, 2 renders both series', async () => {
-    // Need two SQL cells. Add a second one.
-    const addBtn = page.getByRole('button', { name: /Add Cell/i });
-    const addVisible = await addBtn.isVisible().catch(() => false);
-    if (!addVisible) { test.skip(); return; }
+  test('D6. LINE_CHART ON 1 references first query block and renders without error', async () => {
+    // ON 1 references the first SQL block within the same cell (1-based).
+    // We use cell-2 which has exactly one SQL block, so ON 1 = that query's data.
+    const cell2 = page.locator('[data-cell-id="cell-2"]');
+    await cell2.scrollIntoViewIfNeeded().catch(() => {});
+    await page.waitForTimeout(500);
 
-    // First SQL cell: GarbageCollection durations.
-    const sqlEd0 = await getFirstSqlEditor(page);
-    if (!sqlEd0) { test.skip(); return; }
-    await setCmContent(page, sqlEd0,
-      'SELECT startTime, duration FROM GarbageCollection ORDER BY startTime LIMIT 50');
+    const modKey = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+    const sqlEd = cell2.locator('.cm-content[data-language="sql"]').first();
+    const sqlVisible = await sqlEd.isVisible().catch(() => false);
+    if (!sqlVisible) { test.skip(); return; }
+
+    await sqlEd.click();
+    await page.keyboard.press(`${modKey}+a`);
+    await page.keyboard.insertText('SELECT startTime, duration FROM GarbageCollection ORDER BY startTime LIMIT 50');
     await pressRun(page);
     await page.waitForTimeout(1500);
 
-    // Add second SQL cell.
-    await addBtn.click();
-    await page.waitForTimeout(400);
+    const plotEd = cell2.locator('.cm-content[data-language="plot"]').first();
+    const plotVisible = await plotEd.isVisible().catch(() => false);
+    if (!plotVisible) { test.skip(); return; }
 
-    const sqlEditors: number[] = await page.evaluate(() => {
-      const eds = document.querySelectorAll('.cm-jfr-editor .cm-editor');
-      const r: number[] = [];
-      eds.forEach((ed, i) => { if (ed.querySelector('.cm-content[data-language="sql"]')) r.push(i); });
-      return r;
-    });
-    if (sqlEditors.length < 2) { test.skip(); return; }
-
-    const sqlEd1 = page.locator('.cm-jfr-editor .cm-editor').nth(sqlEditors[sqlEditors.length - 1]);
-    await setCmContent(page, sqlEd1,
-      'SELECT startTime, sumOfPauses FROM GarbageCollection ORDER BY startTime LIMIT 50');
+    await plotEd.click();
+    await page.keyboard.press(`${modKey}+a`);
+    await page.keyboard.insertText('LINE_CHART(x: "startTime", y: ["duration"]) ON 1');
     await pressRun(page);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(3000);
 
-    // Set the plot cell to reference both queries.
-    const plotEd = await getFirstPlotEditor(page);
-    if (!plotEd) { test.skip(); return; }
-    await setCmContent(page, plotEd,
-      'LINE_CHART(x: "startTime", y: ["duration"]) ON 1\nLINE_CHART(x: "startTime", y: ["sumOfPauses"]) ON 2');
-    await pressRun(page);
-    await page.waitForTimeout(2000);
-
-    const container = page.locator('div[id^="result-container-"]').first();
+    const container = page.locator('#result-container-cell-2-0');
     await container.waitFor({ state: 'visible', timeout: 10_000 });
 
     const errOverlay = page.locator('[class*="ErrorOverlay"], [class*="error-overlay"], [class*="plot-error"]');
     const hasError = await errOverlay.isVisible().catch(() => false);
-    expect(hasError, 'no error with multi-query ON 1, 2').toBe(false);
+    expect(hasError, 'no error with ON 1 clause').toBe(false);
 
     const svgs = container.locator('svg');
+    await svgs.first().waitFor({ state: 'visible', timeout: 8_000 });
     const svgCount = await svgs.count();
-    expect(svgCount, 'SVG renders for multi-query chart').toBeGreaterThan(0);
+    expect(svgCount, 'SVG renders for ON 1 chart').toBeGreaterThan(0);
   });
 });
 

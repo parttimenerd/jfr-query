@@ -12,7 +12,9 @@ async function gotoDemo(page: Page) {
     .waitFor({ state: 'visible', timeout: 60_000 });
   await page.locator('.cm-jfr-editor .cm-editor').first()
     .waitFor({ state: 'visible', timeout: 30_000 });
-  await page.waitForTimeout(2000);
+  // Wait for cell-2 (GC Pause Summary) to have both sql+plot editors ready.
+  await page.locator('[data-cell-id="cell-2"] .cm-content[data-language="plot"]')
+    .waitFor({ state: 'visible', timeout: 30_000 });
 }
 
 async function pressRun(page: Page) {
@@ -28,49 +30,51 @@ async function setCmContent(page: Page, editor: import('@playwright/test').Locat
   const isMac = process.platform === 'darwin';
   const modKey = isMac ? 'Meta' : 'Control';
   await page.keyboard.press(`${modKey}+a`);
-  await page.keyboard.press('Delete');
-  await page.keyboard.type(text);
+  // Do NOT press Delete first — emptying a plot editor removes the segment from the notebook.
+  // Meta+a selects all; insertText replaces the selection atomically.
+  await page.keyboard.insertText(text);
 }
 
-async function getFirstPlotEditor(page: Page) {
-  const indices: number[] = await page.evaluate(() => {
-    const eds = document.querySelectorAll('.cm-jfr-editor .cm-editor');
-    const result: number[] = [];
-    eds.forEach((ed, i) => {
-      if (ed.querySelector('.cm-content[data-language="plot"]')) result.push(i);
-    });
-    return result;
-  });
-  if (indices.length === 0) return null;
-  return page.locator('.cm-jfr-editor .cm-editor').nth(indices[0]);
-}
-
-async function getFirstSqlEditor(page: Page) {
-  const indices: number[] = await page.evaluate(() => {
-    const eds = document.querySelectorAll('.cm-jfr-editor .cm-editor');
-    const result: number[] = [];
-    eds.forEach((ed, i) => {
-      if (ed.querySelector('.cm-content[data-language="sql"]')) result.push(i);
-    });
-    return result;
-  });
-  if (indices.length === 0) return null;
-  return page.locator('.cm-jfr-editor .cm-editor').nth(indices[0]);
-}
-
+/** Overwrite the GC Pause Summary cell (cell-2: sql+BAR_CHART) and return its
+ *  result-container locator. Using cell-2 avoids disturbing the TABLE plot on
+ *  cell-1 which collapses when its content changes. */
 async function renderPlot(page: Page, sql: string, plot: string) {
-  const sqlEd = await getFirstSqlEditor(page);
-  if (!sqlEd) return false;
-  await setCmContent(page, sqlEd, sql);
+  const isMac = process.platform === 'darwin';
+  const modKey = isMac ? 'Meta' : 'Control';
+
+  // Scroll cell-2 into view so its editors are mounted (notebook may virtualize).
+  const cell2 = page.locator('[data-cell-id="cell-2"]');
+  await cell2.scrollIntoViewIfNeeded().catch(() => {});
+  await page.waitForTimeout(500);
+
+  // Find cell-2's SQL editor.
+  const sqlContent = cell2.locator('.cm-content[data-language="sql"]').first();
+  const sqlVisible = await sqlContent.isVisible().catch(() => false);
+  if (!sqlVisible) return null;
+
+  await sqlContent.click();
+  await page.keyboard.press(`${modKey}+a`);
+  await page.keyboard.insertText(sql);
   await pressRun(page);
   await page.waitForTimeout(1500);
 
-  const plotEd = await getFirstPlotEditor(page);
-  if (!plotEd) return false;
-  await setCmContent(page, plotEd, plot);
+  // Find cell-2's plot editor.
+  const plotContent = cell2.locator('.cm-content[data-language="plot"]').first();
+  const plotVisible = await plotContent.isVisible().catch(() => false);
+  if (!plotVisible) return null;
+
+  await plotContent.click();
+  await page.keyboard.press(`${modKey}+a`);
+  await page.keyboard.insertText(plot);
   await pressRun(page);
-  await page.waitForTimeout(2000);
-  return true;
+  await page.waitForTimeout(2500);
+
+  // Wait for cell-2's result container to appear.
+  const container = page.locator('#result-container-cell-2-0');
+  const appeared = await container.waitFor({ state: 'visible', timeout: 10_000 })
+    .then(() => true).catch(() => false);
+  if (!appeared) return null;
+  return container;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,13 +94,12 @@ test.describe.serial('Composite: ROW two-up widths', () => {
   test.afterAll(async () => page.close());
 
   test('C1. ROW(BAR_CHART, LINE_CHART) — both children have non-zero width', async () => {
-    const ok = await renderPlot(page,
+    const container = await renderPlot(page,
       'SELECT cause, COUNT(*) AS n, AVG(duration) AS avg_ms FROM GarbageCollection GROUP BY cause',
       'row { BAR_CHART(x: "cause", y: ["n"]) LINE_CHART(x: "cause", y: ["avg_ms"]) }'
     );
-    if (!ok) { test.skip(); return; }
+    if (!container) { test.skip(); return; }
 
-    const container = page.locator('div[id^="result-container-"]').first();
     await container.waitFor({ state: 'visible', timeout: 10_000 });
 
     // Both child SVGs must have positive rendered width.
@@ -130,13 +133,12 @@ test.describe.serial('Composite: COL stacked heights', () => {
   test.afterAll(async () => page.close());
 
   test('C2. COL(BAR_CHART, HISTOGRAM) — both children have non-zero height', async () => {
-    const ok = await renderPlot(page,
-      'SELECT cause, COUNT(*) AS n, duration FROM GarbageCollection',
-      'col { BAR_CHART(x: "cause", y: ["n"]) HISTOGRAM(x: "duration") }'
+    const container = await renderPlot(page,
+      'SELECT cause, duration FROM GarbageCollection',
+      'col { BAR_CHART(x: "cause", y: ["duration"]) HISTOGRAM(x: "duration") }'
     );
-    if (!ok) { test.skip(); return; }
+    if (!container) { test.skip(); return; }
 
-    const container = page.locator('div[id^="result-container-"]').first();
     await container.waitFor({ state: 'visible', timeout: 10_000 });
 
     const svgs = container.locator('svg');
@@ -153,10 +155,10 @@ test.describe.serial('Composite: COL stacked heights', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Section 3: Overlay (BAR + LINE) — both in same wrapper
+// Section 3: Overlay (LINE + AREA) — both in same wrapper
 // ---------------------------------------------------------------------------
 
-test.describe.serial('Composite: overlay BAR + LINE', () => {
+test.describe.serial('Composite: overlay LINE + AREA', () => {
   test.skip(SKIP, 'SKIP_E2E=1 set');
 
   let page: Page;
@@ -168,14 +170,13 @@ test.describe.serial('Composite: overlay BAR + LINE', () => {
 
   test.afterAll(async () => page.close());
 
-  test('C3. BAR_CHART + LINE_CHART overlay — both series visible in one SVG', async () => {
-    const ok = await renderPlot(page,
-      'SELECT cause, COUNT(*) AS n, AVG(duration) AS avg_ms FROM GarbageCollection GROUP BY cause',
-      'BAR_CHART(x: "cause", y: ["n"]) + LINE_CHART(x: "cause", y: ["avg_ms"])'
+  test('C3. LINE_CHART + AREA_CHART overlay — both series visible in one SVG', async () => {
+    const container = await renderPlot(page,
+      'SELECT startTime, duration, sumOfPauses FROM GarbageCollection ORDER BY startTime',
+      'LINE_CHART(x: "startTime", y: ["duration"]) + AREA_CHART(x: "startTime", y: ["sumOfPauses"])'
     );
-    if (!ok) { test.skip(); return; }
+    if (!container) { test.skip(); return; }
 
-    const container = page.locator('div[id^="result-container-"]').first();
     await container.waitFor({ state: 'visible', timeout: 10_000 });
 
     // Overlay shares the same SVG; at minimum one SVG should contain both bars and lines.
@@ -206,16 +207,12 @@ test.describe.serial('Composite: 2×2 grid', () => {
   test.afterAll(async () => page.close());
 
   test('C4. COL(ROW(BAR,LINE), ROW(HISTOGRAM,PIE)) — four leaf charts render', async () => {
-    const ok = await renderPlot(page,
+    const container = await renderPlot(page,
       'SELECT cause, COUNT(*) AS n, AVG(duration) AS avg_ms, duration FROM GarbageCollection GROUP BY cause, duration',
-      `col {
-  row { BAR_CHART(x: "cause", y: ["n"]) LINE_CHART(x: "cause", y: ["avg_ms"]) }
-  row { HISTOGRAM(x: "duration") PIE_CHART(category: "cause", value: "n") }
-}`
+      'col { row { BAR_CHART(x: "cause", y: ["n"]) LINE_CHART(x: "cause", y: ["avg_ms"]) } row { HISTOGRAM(x: "duration") PIE_CHART(category: "cause", value: "n") } }'
     );
-    if (!ok) { test.skip(); return; }
+    if (!container) { test.skip(); return; }
 
-    const container = page.locator('div[id^="result-container-"]').first();
     await container.waitFor({ state: 'visible', timeout: 15_000 });
 
     // Expect at least 4 SVG elements (one per chart).
@@ -246,16 +243,12 @@ test.describe.serial('Composite: LINK_X pan sync', () => {
   test.afterAll(async () => page.close());
 
   test('C5. ROW with LINK_X($lo, $hi) renders two charts without error', async () => {
-    const ok = await renderPlot(page,
+    const container = await renderPlot(page,
       'SELECT startTime, duration, sumOfPauses FROM GarbageCollection ORDER BY startTime',
-      `row {
-  LINE_CHART(x: "startTime", y: ["duration"]) LINK_X($lo, $hi)
-  LINE_CHART(x: "startTime", y: ["sumOfPauses"]) LINK_X($lo, $hi)
-}`
+      'row { LINE_CHART(x: "startTime", y: ["duration"]) LINK_X($lo, $hi) LINE_CHART(x: "startTime", y: ["sumOfPauses"]) LINK_X($lo, $hi) }'
     );
-    if (!ok) { test.skip(); return; }
+    if (!container) { test.skip(); return; }
 
-    const container = page.locator('div[id^="result-container-"]').first();
     await container.waitFor({ state: 'visible', timeout: 10_000 });
 
     const svgs = container.locator('svg');
@@ -268,7 +261,10 @@ test.describe.serial('Composite: LINK_X pan sync', () => {
   });
 
   test('C6. Dragging to pan on left chart updates $lo/$hi (no error thrown)', async () => {
-    const container = page.locator('div[id^="result-container-"]').first();
+    // Use cell-2's result container which was set up by C5.
+    const container = page.locator('#result-container-cell-2-0');
+    const exists = await container.isVisible().catch(() => false);
+    if (!exists) { test.skip(); return; }
     const svgs = container.locator('svg');
     const firstSvg = svgs.first();
 

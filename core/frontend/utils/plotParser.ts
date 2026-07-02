@@ -251,6 +251,64 @@ export const parsePlotCall = (configLine: string): ParsedPlotCall => {
 // are themselves recursively parsed so `COL(ROW(A, B), C)` works.
 
 const COMPOSITE_RE = /^(ROW|COL)\s*\(([\s\S]*)\)\s*$/i;
+const COMPOSITE_BLOCK_RE = /^(row|col)\s*\{([\s\S]*)\}\s*$/i;
+
+/**
+ * Split a block-composite body into individual child strings.
+ * A new child starts when, at depth-0, we see an identifier followed by `(`
+ * (a plot function call) or `row`/`col` followed by `{`.
+ * Clause keywords (LINK_X, AXIS, etc.) stay attached to their parent chart.
+ */
+function splitBlockChildren(body: string): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let inStr: string | null = null;
+    let cur = '';
+
+    const isNewChildStart = (s: string, pos: number): boolean => {
+        let i = pos;
+        while (i < s.length && /\s/.test(s[i])) i++;
+        if (i >= s.length) return false;
+        let id = '';
+        while (i + id.length < s.length && /[\w]/.test(s[i + id.length])) {
+            id += s[i + id.length];
+        }
+        if (!id) return false;
+        const afterId = i + id.length;
+        if (afterId >= s.length) return false;
+        const nextNonWs = s.slice(afterId).match(/^(\s*)([({])/);
+        if (!nextNonWs) return false;
+        const bracket = nextNonWs[2];
+        if (bracket === '{') {
+            return /^(row|col)$/i.test(id);
+        }
+        const CLAUSE_KEYWORDS = new Set([
+            'LINK_X', 'LINK_Y', 'LINK_XY', 'LINK_SCROLL', 'BRUSH',
+            'ON', 'TOOLTIP', 'AXIS', 'AXIS_X', 'AXIS_Y',
+        ]);
+        return !CLAUSE_KEYWORDS.has(id.toUpperCase()) && /^[A-Z][A-Z0-9_]*$/.test(id);
+    };
+
+    for (let i = 0; i < body.length; i++) {
+        const c = body[i];
+        if (inStr) { cur += c; if (c === inStr) inStr = null; continue; }
+        if (c === '"' || c === "'") { inStr = c; cur += c; continue; }
+        if (c === '(' || c === '[' || c === '{') { depth++; cur += c; continue; }
+        if (c === ')' || c === ']' || c === '}') { depth--; cur += c; continue; }
+        if (depth === 0 && /\s/.test(c)) {
+            if (cur.trim() && isNewChildStart(body, i)) {
+                parts.push(cur.trim());
+                cur = '';
+                continue;
+            }
+            cur += c;
+        } else {
+            cur += c;
+        }
+    }
+    if (cur.trim()) parts.push(cur.trim());
+    return parts.filter(Boolean);
+}
 
 /**
  * Split a config line on a top-level operator (single character) that does not
@@ -311,6 +369,16 @@ export function parseComposite(configLine: string): ParsedPlotCall {
         const childParts = splitTopLevelOp(layoutMatch[2], ',')
             .map(p => p.trim())
             .filter(Boolean);
+        const children = childParts.map(p => parseComposite(p));
+        return { mainConfig: '', composite: { direction, children } };
+    }
+
+    // Block-style: `row { A B C }` — children separated by whitespace/newlines.
+    const blockMatch = trimmed.match(COMPOSITE_BLOCK_RE);
+    if (blockMatch) {
+        const direction = blockMatch[1].toLowerCase() as 'row' | 'col';
+        const body = blockMatch[2].trim();
+        const childParts = splitBlockChildren(body);
         const children = childParts.map(p => parseComposite(p));
         return { mainConfig: '', composite: { direction, children } };
     }
