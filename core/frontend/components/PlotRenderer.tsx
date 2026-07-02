@@ -254,8 +254,12 @@ const InteractivePlotWrapper: React.FC<{
     useEffect(() => {
         if (locallyOwnedRef.current) { locallyOwnedRef.current = false; return; }
         const [minVar, maxVar] = linkX;
-        const minVal = getTimeValue(allVariables[minVar]);
-        const maxVal = getTimeValue(allVariables[maxVar]);
+        const rawMin = allVariables[minVar];
+        const rawMax = allVariables[maxVar];
+        // Empty string means "reset" — another cell cleared the variables.
+        if (rawMin === '' || rawMax === '') { setLocalDomain(null); return; }
+        const minVal = getTimeValue(rawMin);
+        const maxVal = getTimeValue(rawMax);
         if (!isNaN(minVal) && !isNaN(maxVal)) {
             setLocalDomain([minVal, maxVal]);
         }
