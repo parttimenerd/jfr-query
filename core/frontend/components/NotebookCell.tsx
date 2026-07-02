@@ -343,6 +343,37 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         return next;
     }, [parsed.queryAliasMaterialized]);
 
+    // Stabilize parsedSqlBlocks / parsedPlotBlocks: reuse the previous array
+    // reference when content is identical. Without stabilization, every markdown
+    // keystroke produces a new array even though no SQL/plot changed, causing the
+    // auto-run useEffect and variableUsage memo to re-fire.
+    const parsedSqlBlocksRef = useRef<string[]>(parsed.sqlBlocks);
+    const parsedSqlBlocks = useMemo(() => {
+        const next = parsed.sqlBlocks;
+        const prev = parsedSqlBlocksRef.current;
+        if (prev.length === next.length && prev.every((v, i) => v === next[i])) return prev;
+        parsedSqlBlocksRef.current = next;
+        return next;
+    }, [parsed.sqlBlocks]);
+
+    const parsedPlotBlocksRef = useRef<(string | null)[]>(parsed.plotBlocks);
+    const parsedPlotBlocks = useMemo(() => {
+        const next = parsed.plotBlocks;
+        const prev = parsedPlotBlocksRef.current;
+        if (prev.length === next.length && prev.every((v, i) => v === next[i])) return prev;
+        parsedPlotBlocksRef.current = next;
+        return next;
+    }, [parsed.plotBlocks]);
+
+    const parsedPlotBlocksWithSqlIndexRef = useRef<{ config: string; sqlIndex: number }[]>(parsed.plotBlocksWithSqlIndex);
+    const parsedPlotBlocksWithSqlIndex = useMemo(() => {
+        const next = parsed.plotBlocksWithSqlIndex;
+        const prev = parsedPlotBlocksWithSqlIndexRef.current;
+        if (prev.length === next.length && prev.every((v, i) => v.config === next[i].config && v.sqlIndex === next[i].sqlIndex)) return prev;
+        parsedPlotBlocksWithSqlIndexRef.current = next;
+        return next;
+    }, [parsed.plotBlocksWithSqlIndex]);
+
     // P7 — Notebook-wide plot scope (named plots, query refs, variables, brushes).
     // The scope is rebuilt only when cells BEFORE the current cell change or
     // allVariables changes. Changes to cells after this cell are invisible here.
@@ -375,7 +406,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     // building these inline at render time creates a fresh object every parent
     // render, so the editor's setError effect re-fires on every keystroke elsewhere.
     const errSpecs = useMemo(() => {
-        return parsed.sqlBlocks.map((_, i) => {
+        return parsedSqlBlocks.map((_, i) => {
             const raw = results[i]?.[0]?.error;
             if (!raw) return null;
             const msg = String(raw);
@@ -404,17 +435,17 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         // Depend on a stable serialization of the error strings to avoid
         // variable-length spread in the deps array (rules-of-hooks violation).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [parsed.sqlBlocks.length, parsedQueryAliases, results]);
+    }, [parsedSqlBlocks.length, parsedQueryAliases, results]);
 
     // Auto-plot suggestion: when an SQL block completes with non-empty rows AND
     // doesn't yet have a plot block, ask the configured plot model to suggest one.
     useEffect(() => {
         if (!autoPlotSuggestionEnabled) return;
-        parsed.sqlBlocks.forEach((sql, i) => {
+        parsedSqlBlocks.forEach((sql, i) => {
             const rows = results[i];
             if (!rows || rows.length === 0) return;
             if (rows[0]?.error) return;
-            if (parsed.plotBlocks[i] && parsed.plotBlocks[i].trim()) return;
+            if (parsedPlotBlocks[i] && parsedPlotBlocks[i].trim()) return;
             if (dismissedSuggestions[i]) return;
             if (plotSuggestions[i] !== undefined) return;
             const columns = Object.keys(rows[0] ?? {});
@@ -426,7 +457,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 .catch(() => setPlotSuggestions(prev => ({ ...prev, [i]: null })));
         });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [autoPlotSuggestionEnabled, parsed.sqlBlocks.length, parsed.plotBlocks.join(' '), results]);
+    }, [autoPlotSuggestionEnabled, parsedSqlBlocks.length, parsedPlotBlocks.join(' '), results]);
 
     useEffect(() => () => cancelSuggestPlot(), []);
 
@@ -444,7 +475,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             }
             // Skip if we already have a suggestion for this error text.
             if (aiErrorSuggestions[i] !== undefined) return;
-            const sql = parsed.sqlBlocks[i] ?? '';
+            const sql = parsedSqlBlocks[i] ?? '';
             const errorText = spec.message;
             const cacheKey = `${sql}::${errorText}`;
             // Return cached suggestion immediately — no API call needed.
@@ -485,14 +516,14 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         for (const varKey of Object.keys(parsedVariables)) {
             const refs: string[] = [];
             const pattern = new RegExp(`\\${varKey.replace(/\$/g, '\\$')}\\b`);
-            parsed.sqlBlocks.forEach((sql, i) => { if (pattern.test(sql)) refs.push(`Query ${i + 1}`); });
+            parsedSqlBlocks.forEach((sql, i) => { if (pattern.test(sql)) refs.push(`Query ${i + 1}`); });
             // Use plotBlocksWithSqlIndex (dense, sequential) rather than plotBlocks
             // (sparse, SQL-indexed) so "Plot N" labels match what the user sees (B-100).
-            parsed.plotBlocksWithSqlIndex.forEach((pb, i) => { if (pattern.test(pb.config)) refs.push(`Plot ${i + 1}`); });
+            parsedPlotBlocksWithSqlIndex.forEach((pb, i) => { if (pattern.test(pb.config)) refs.push(`Plot ${i + 1}`); });
             usage[varKey] = refs;
         }
         return usage;
-    }, [parsedVariables, parsed.sqlBlocks, parsed.plotBlocksWithSqlIndex]);
+    }, [parsedVariables, parsedSqlBlocks, parsedPlotBlocksWithSqlIndex]);
 
     const formatSettings = useMemo(
         () => ({ timeFormat: metadata?.timeFormat, decimalPlaces: metadata?.decimalPlaces }),
@@ -560,7 +591,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     }, [handleSegmentsUpdate]);
 
     useEffect(() => { if (Object.keys(parsed.variables || {}).length === 0) setIsVariablesCollapsed(true); }, [parsed.variables]);
-    useEffect(() => { if (collapseTrigger > 0) { const newStates: Record<string, boolean> = {}; parsed.sqlBlocks.forEach((_, i) => newStates[`sql-${i}`] = allCollapsed); parsed.plotBlocks.forEach((_, i) => newStates[`plot-${i}`] = allCollapsed); setCollapsedStates(newStates); setIsVariablesCollapsed(allCollapsed); } }, [collapseTrigger, allCollapsed, parsed.sqlBlocks, parsed.plotBlocks]);
+    useEffect(() => { if (collapseTrigger > 0) { const newStates: Record<string, boolean> = {}; parsedSqlBlocks.forEach((_, i) => newStates[`sql-${i}`] = allCollapsed); parsedPlotBlocks.forEach((_, i) => newStates[`plot-${i}`] = allCollapsed); setCollapsedStates(newStates); setIsVariablesCollapsed(allCollapsed); } }, [collapseTrigger, allCollapsed, parsedSqlBlocks, parsedPlotBlocks]);
 
     const prevSqlBlocksRef = useRef<string[]>([]);
     const prevVariablesRef = useRef<Record<string, string>>({});
@@ -612,8 +643,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         let cancelled = false;
         (async () => {
             const next: Record<string, any[]> = {};
-            for (let pi = 0; pi < parsed.plotBlocks.length; pi++) {
-                const config = parsed.plotBlocks[pi];
+            for (let pi = 0; pi < parsedPlotBlocks.length; pi++) {
+                const config = parsedPlotBlocks[pi];
                 if (!config || !config.trim()) continue;
                 try {
                     const expanded = expandPlotConstants(config);
@@ -632,7 +663,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             if (!cancelled) setDatasetResults(next);
         })();
         return () => { cancelled = true; };
-    }, [parsed.plotBlocks, aliasVersionSum, dbQuery]);
+    }, [parsedPlotBlocks, aliasVersionSum, dbQuery]);
 
     const handleRun = useCallback(async (sql: string, index: number) => {
         if (runTimersRef.current[index]) clearTimeout(runTimersRef.current[index]);
@@ -678,7 +709,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         const prevVars = prevVariablesRef.current;
         if (!isAutoRunEnabled) {
             Object.values(runTimersRef.current).forEach(clearTimeout); runTimersRef.current = {}; setPendingRunStates({});
-            prevSqlBlocksRef.current = parsed.sqlBlocks;
+            prevSqlBlocksRef.current = parsedSqlBlocks;
             prevVariablesRef.current = allVariables;
             return;
         }
@@ -700,7 +731,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             ...(metadata.macros || []).map(m => m.name).filter(Boolean),
         ]);
 
-        parsed.sqlBlocks.forEach((sql, i) => {
+        parsedSqlBlocks.forEach((sql, i) => {
             const sqlChanged = sql.trim() && sql !== prevSqls?.[i];
             const usesVariables = /\$\$?\w+/.test(sql);
             const usesCustomView = variablesChanged && customNames.size > 0 &&
@@ -727,8 +758,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 }, 1500);
             }
         });
-        for (let i = parsed.sqlBlocks.length; i < (prevSqls?.length || 0); i++) if(runTimersRef.current[i]) { clearTimeout(runTimersRef.current[i]); delete runTimersRef.current[i]; }
-        prevSqlBlocksRef.current = parsed.sqlBlocks;
+        for (let i = parsedSqlBlocks.length; i < (prevSqls?.length || 0); i++) if(runTimersRef.current[i]) { clearTimeout(runTimersRef.current[i]); delete runTimersRef.current[i]; }
+        prevSqlBlocksRef.current = parsedSqlBlocks;
         prevVariablesRef.current = allVariables;
         return () => {
             // Effect cleanup: cancel any pending timers and forget them, AND
@@ -745,7 +776,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             prevSqlBlocksRef.current = [];
             prevVariablesRef.current = {};
         };
-    }, [parsed.sqlBlocks, allVariables, metadata, handleRun, isAutoRunEnabled]);
+    }, [parsedSqlBlocks, allVariables, metadata, handleRun, isAutoRunEnabled]);
 
     useEffect(() => () => { Object.values(runTimersRef.current).forEach(clearTimeout); }, []);
 
@@ -824,7 +855,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
     const handleSuggest = async (sql: string, index: number) => { const s = await onSuggestPlot(sql, metadata.customSystemPrompt); if (s) handlePlotChange(s, index); };
     const handleSparkle = async (plotIdx: number, sqlIdx: number) => {
-        const sqlContent = parsed.sqlBlocks[sqlIdx] ?? '';
+        const sqlContent = parsedSqlBlocks[sqlIdx] ?? '';
         if (!sqlContent.trim() || sparkleLoading[plotIdx]) return;
         setSparkleLoading(p => ({ ...p, [plotIdx]: true }));
         try {
@@ -1051,7 +1082,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                             if (seg.type === 'sql') {
                                 sqlIdx++;
                                 const i = sqlIdx;
-                                const sql = parsed.sqlBlocks[i] ?? '';
+                                const sql = parsedSqlBlocks[i] ?? '';
                                 const errSpec = errSpecs[i] ?? null;
                                 const alias = parsed.queryAliases[i];
                                 const isEditingSqlName = editingBlockName?.type === 'sql' && editingBlockName.idx === i;
@@ -1124,7 +1155,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                 </div>
                                             )}
                                             {isAiFeatureActive && activeChat===`sql-${i}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="sql" targetValue={sql} sql={sql} data={results[i] ?? undefined} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} onApplyCode={c=>handleApplyCode(c,'sql',i)} onClose={()=>setActiveChat(null)} onPopToSidebar={onPopChatToSidebar} onNavigateRef={onNavigateRef}/>}
-                                            {autoPlotSuggestionEnabled && plotSuggestions[i] && !dismissedSuggestions[i] && (!parsed.plotBlocks[i] || !parsed.plotBlocks[i].trim()) && (
+                                            {autoPlotSuggestionEnabled && plotSuggestions[i] && !dismissedSuggestions[i] && (!parsedPlotBlocks[i] || !parsedPlotBlocks[i].trim()) && (
                                                 <PlotSuggestionChip suggestion={plotSuggestions[i]!} onApply={config => { handlePlotChange(config, i); setDismissedSuggestions(p => ({ ...p, [i]: true })); }} onTryAnother={() => { const rows = results[i] ?? []; const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : []; setPlotSuggestions(prev => ({ ...prev, [i]: null })); runSuggestPlot({ sql, columns, rowCount: rows.length, signal: undefined }, { settings: settingsRef.current }).then(result => setPlotSuggestions(prev => ({ ...prev, [i]: result }))).catch(() => setPlotSuggestions(prev => ({ ...prev, [i]: null }))); }} onDismiss={() => setDismissedSuggestions(p => ({ ...p, [i]: true }))}/>
                                             )}
                                         </CollapsibleBlock>
@@ -1132,7 +1163,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 }
                             } else if (seg.type === 'plot') {
                                 plotIdx++;
-                                const plotInfo = parsed.plotBlocksWithSqlIndex[plotIdx];
+                                const plotInfo = parsedPlotBlocksWithSqlIndex[plotIdx];
                                 if (!plotInfo) return;
                                 const pi = plotIdx;
                                 const config = plotInfo.config;
@@ -1160,7 +1191,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 } catch { /* fall back to defaultSqlIndex */ }
 
                                 const resolvedData = datasetData ?? results[dataIndex];
-                                const resolvedSql = parsed.sqlBlocks[dataIndex] ?? parsed.sqlBlocks[defaultSqlIndex] ?? '';
+                                const resolvedSql = parsedSqlBlocks[dataIndex] ?? parsedSqlBlocks[defaultSqlIndex] ?? '';
                                 const plotDataCols = (resolvedData && resolvedData.length > 0) ? Object.keys(resolvedData[0]) : [];
                                 const plotAlias = parsed.plotAliases[pi] ?? null;
                                 const isEditingPlotName = editingBlockName?.type === 'plot' && editingBlockName.idx === pi;
@@ -1198,8 +1229,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                     <span className="text-[10px] text-gray-600 ml-1">— click to copy</span>
                                                 </div>
                                             )}
-                                            <PlotConfigEditor value={config} onChange={handlePlotChange} index={defaultSqlIndex} data={results[defaultSqlIndex]} variables={allVariables} onVariableClick={handleVariableClick} cellSql={parsed.sqlBlocks[defaultSqlIndex] ?? null} notebookPlotScope={plotScopeView} currentCellId={cell.id} sqlBlockCount={totalSqlBlockCount}/>
-                                            {isAiFeatureActive && activeChat===`plot-${pi}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="plot" targetValue={config} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} sql={parsed.sqlBlocks[defaultSqlIndex]} data={results[defaultSqlIndex]} onApplyCode={c=>handleApplyCode(c,'plot',defaultSqlIndex)} onClose={()=>setActiveChat(null)} onMetadataChange={onMetadataChange} onPopToSidebar={onPopChatToSidebar} onNavigateRef={onNavigateRef}/>}
+                                            <PlotConfigEditor value={config} onChange={handlePlotChange} index={defaultSqlIndex} data={results[defaultSqlIndex]} variables={allVariables} onVariableClick={handleVariableClick} cellSql={parsedSqlBlocks[defaultSqlIndex] ?? null} notebookPlotScope={plotScopeView} currentCellId={cell.id} sqlBlockCount={totalSqlBlockCount}/>
+                                            {isAiFeatureActive && activeChat===`plot-${pi}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="plot" targetValue={config} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} sql={parsedSqlBlocks[defaultSqlIndex]} data={results[defaultSqlIndex]} onApplyCode={c=>handleApplyCode(c,'plot',defaultSqlIndex)} onClose={()=>setActiveChat(null)} onMetadataChange={onMetadataChange} onPopToSidebar={onPopChatToSidebar} onNavigateRef={onNavigateRef}/>}
                                         </CollapsibleBlock>
                                     );
                                 }
