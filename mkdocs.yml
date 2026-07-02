@@ -1,6 +1,6 @@
 site_name: JFR Query
 site_description: Analyse Java Flight Recorder files with SQL
-site_url: https://parttimenerd.github.io/jfr-query/
+site_url: https://parttimenerd.github.io/jfr-query/docs/
 repo_url: https://github.com/parttimenerd/jfr-query
 repo_name: parttimenerd/jfr-query
 
@@ -28,7 +28,7 @@ nav:
   - Usage:
     - CLI Commands: cli.md
     - Web UI & Notebooks: web-ui.md
-  - Live Demo: https://parttimenerd.github.io/jfr-query/app/
+  - Live App: https://parttimenerd.github.io/jfr-query/
 
 plugins:
   - search

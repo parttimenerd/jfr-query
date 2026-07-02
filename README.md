@@ -16,6 +16,8 @@ _If you are looking for the tool based on the JFR internal language, you can fin
 
 **This is an early prototype, to see what's possible. The database schema might change at any point.**
 
+**[→ Live web app](https://parttimenerd.github.io/jfr-query/) · [Documentation](https://parttimenerd.github.io/jfr-query/docs/)**
+
 ## Features
 
 ![JFR Query Notebook UI](page-full.png)
@@ -30,9 +32,9 @@ _If you are looking for the tool based on the JFR internal language, you can fin
 Try it out
 ----------
 
-Download the [latest release](  https://github.com/parttimenerd/jfr-query/releases/download/snapshot/query.jar) and run it: `java -jar query.jar`
+**Web UI (recommended):** `java -jar query.jar serve myrecording.jfr` then open [http://localhost:4244](http://localhost:4244).
 
-Or use [jbang](https://www.jbang.dev/):
+Download the [latest release](https://github.com/parttimenerd/jfr-query/releases/download/snapshot/query.jar) or use [jbang](https://www.jbang.dev/):
 
 ```shell
 jbang jfr-query@parttimenerd/jfr-query

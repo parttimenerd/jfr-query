@@ -143,7 +143,7 @@ jobs:
         working-directory: core/frontend
         run: |
           npm ci
-          npm run build -- --base /app/
+          npm run build
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -158,9 +158,9 @@ jobs:
 
       - name: Assemble Pages artifact
         run: |
-          mkdir -p _pages/app
-          cp -r site/. _pages/
-          cp -r core/frontend/dist/. _pages/app/
+          mkdir -p _pages/docs
+          cp -r core/frontend/dist/. _pages/
+          cp -r site/. _pages/docs/
 
       - name: Configure Pages
         uses: actions/configure-pages@v4
