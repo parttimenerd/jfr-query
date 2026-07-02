@@ -195,6 +195,29 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const parsedTitleRef = useRef<string | undefined>(parsed.title);
     parsedTitleRef.current = parsed.title;
 
+    // Stabilize introduction/conclusion section references: when the user types in
+    // the SQL block the intro/conclusion content is unchanged, so reuse the previous
+    // MarkdownSection object to avoid forcing MarkdownSectionEditor to re-render.
+    const parsedIntroRef = useRef<MarkdownSection | null>(parsed.introduction ?? null);
+    const parsedIntro = useMemo(() => {
+        const next = parsed.introduction ?? null;
+        const prev = parsedIntroRef.current;
+        if (prev === next) return prev;
+        if (prev && next && prev.title === next.title && prev.content === next.content) return prev;
+        parsedIntroRef.current = next;
+        return next;
+    }, [parsed.introduction]);
+
+    const parsedConclusionRef = useRef<MarkdownSection | null>(parsed.conclusion ?? null);
+    const parsedConclusion = useMemo(() => {
+        const next = parsed.conclusion ?? null;
+        const prev = parsedConclusionRef.current;
+        if (prev === next) return prev;
+        if (prev && next && prev.title === next.title && prev.content === next.content) return prev;
+        parsedConclusionRef.current = next;
+        return next;
+    }, [parsed.conclusion]);
+
     useEffect(() => { setSegments(tokenizeCellContent(cell.content)); }, [cell.content]);
 
     useEffect(() => {
@@ -981,7 +1004,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             </div>
             {!isCellCollapsed && (isRawEditing ? <div className="p-2"><SQLEditor value={cellContextContent} onChange={handleRawContentChange} mode="markdown"/></div> : <div className="p-3 space-y-3">
                  <MarkdownSectionEditor
-                    section={parsed.introduction}
+                    section={parsedIntro}
                     defaultTitle="Introduction"
                     onUpdate={handleIntroUpdate}
                     onAdd={handleAddIntro}
@@ -1267,7 +1290,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     )}
                 </div>
                  <MarkdownSectionEditor
-                    section={parsed.conclusion}
+                    section={parsedConclusion}
                     defaultTitle="Conclusion"
                     onUpdate={handleConclusionUpdate}
                     onAdd={handleAddConclusion}
