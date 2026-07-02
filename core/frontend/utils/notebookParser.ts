@@ -109,13 +109,15 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
                 }
             }
         } else if (currentSection === 'variables') {
-            // Map of name -> value, written as "  $name: value" (no leading "- ").
+            // Map of name -> value. Accepts `$name: value`, `$$name: value`, or bare `name: value`.
+            // Bare names are stored with a $ prefix so they're accessible as $name in SQL.
             const [k, ...vParts] = trimmedLine.split(':');
             const kTrim = k.trim();
             if (kTrim) {
                 const rawV = vParts.join(':').trim();
                 const unquotedV = rawV.replace(/^['"]|['"]$/g, '');
-                result.variables![kTrim] = rawV.startsWith("'") ? unquotedV.replace(/''/g, "'") : unquotedV;
+                const key = (kTrim.startsWith('$') || kTrim.startsWith('$$')) ? kTrim : `$${kTrim}`;
+                result.variables![key] = rawV.startsWith("'") ? unquotedV.replace(/''/g, "'") : unquotedV;
             }
         } else if (currentSection) {
             if (multilineKey && indent > 2) {
@@ -415,9 +417,11 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
             seg.content.split('\n').forEach(line => {
                 const trimmed = line.trim();
                 if (trimmed === '' || trimmed.startsWith('#')) return;
-                const match = trimmed.match(/^(\$(?!\$)\w+)\s*=\s*(.*)$/);
+                // Accept both `$name = value` and bare `name = value` (auto-prepend $).
+                const match = trimmed.match(/^(\$(?!\$)\w+|\w+)\s*=\s*(.*)$/);
                 if (match) {
-                    result.variables[match[1]] = match[2].trim();
+                    const key = match[1].startsWith('$') ? match[1] : `$${match[1]}`;
+                    result.variables[key] = match[2].trim();
                 } else {
                     result.variableWarnings.push(`Unrecognized line: ${trimmed}`);
                 }
