@@ -5,7 +5,7 @@ import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { formatTimestamp } from '../../utils/timeFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec, findColumn, findColumns, getTimeValue, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds } from '../../utils/plotUtils';
+import { buildParserSpec, findColumn, findColumns, getTimeValue, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds, getPaletteColors } from '../../utils/plotUtils';
 import { usePlotGestures } from '../../hooks/usePlotGestures';
 import { warnDeprecated } from './deprecation';
 import type { ParsedPlotCall } from '../../utils/plotParser';
@@ -140,6 +140,7 @@ const AreaChartComponent: React.FC<{
 
   const yIsDuration = allY.length > 0 && allY.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY);
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
+  const colors = getPaletteColors(clauses?.palette, COLORS);
 
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
@@ -189,8 +190,8 @@ const AreaChartComponent: React.FC<{
               type="monotone"
               dataKey={y}
               stackId={isStacked ? 'stack' : undefined}
-              stroke={COLORS[i % COLORS.length]}
-              fill={COLORS[i % COLORS.length]}
+              stroke={colors[i % colors.length]}
+              fill={colors[i % colors.length]}
               fillOpacity={config.opacity}
               connectNulls={config.connectNulls}
               isAnimationActive={isAnimationActive}

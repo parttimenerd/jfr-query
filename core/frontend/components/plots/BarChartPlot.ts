@@ -4,7 +4,8 @@ import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec, findColumn, findColumns } from '../../utils/plotUtils';
+import { buildParserSpec, findColumn, findColumns, getPaletteColors } from '../../utils/plotUtils';
+import type { ParsedPlotCall } from '../../utils/plotParser';
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
@@ -50,9 +51,10 @@ const CustomTooltip: React.FC<any> = ({ active, payload, label, formatter }) => 
     return null;
 };
 
-const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; domainY?: [number, number]; }> = ({ config, data, isAnimationActive, animationDuration, domainY }) => {
+const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; domainY?: [number, number]; clauses?: ParsedPlotCall; }> = ({ config, data, isAnimationActive, animationDuration, domainY, clauses }) => {
     const { settings } = useContext(SettingsContext);
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
+    const colors = getPaletteColors(clauses?.palette, COLORS);
 
     const { xCol, yCols, lineYCols, chartData } = useMemo(() => {
         if (!data || data.length === 0) {
@@ -169,7 +171,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         dataKey: y,
         yAxisId: config.horizontal ? undefined : 'left',
         stackId: config.layout === 'stacked' ? 'a' : undefined,
-        fill: COLORS[i % COLORS.length],
+        fill: colors[i % colors.length],
         isAnimationActive,
         animationDuration
     }));
@@ -179,7 +181,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         type: "monotone",
         dataKey: y,
         yAxisId: config.horizontal ? undefined : 'right',
-        stroke: COLORS[(yCols.length + i) % COLORS.length],
+        stroke: colors[(yCols.length + i) % colors.length],
         strokeWidth: 2,
         isAnimationActive,
         animationDuration

@@ -1336,3 +1336,9 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Repro:** Open the app with `?maxWorkers=abc` in the URL; `getMaxWorkers()` returns `NaN` because `parseInt('abc', 10)` is `NaN` and `Math.max(1, Math.min(4, NaN))` propagates `NaN`.
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
+
+### 🟠 [B-223] `LINE_CHART`, `AREA_CHART`, `BAR_CHART` — `PALETTE` clause parsed but not implemented
+**Where:** `utils/plotParser.ts:150`; `components/plots/LineChartPlot.tsx`, `AreaChartPlot.tsx`, `BarChartPlot.ts`
+**Repro:** `BAR_CHART(x: "label", y: ["v1", "v2"]) PALETTE "category10"` — bars use the default purple/green/amber colors, not the d3 category10 palette.
+**Observed:** `ParsedPlotCall.palette` is populated by the parser but no plot component reads `clauses?.palette`. The clause is a no-op.
+**Fix:** Added `getPaletteColors(palette, fallback)` to `utils/plotUtils.ts` mapping named palettes (`category10`, `tableau10`, `pastel1`, `dark2`, `set2`) to color arrays. Each of the three affected plot components now reads `clauses?.palette` and applies the resolved color array to bars/lines/areas. ✅ FIXED

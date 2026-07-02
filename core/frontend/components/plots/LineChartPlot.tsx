@@ -5,7 +5,7 @@ import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { formatTimestamp } from '../../utils/timeFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec, findColumn, findColumns, getTimeValue, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds } from '../../utils/plotUtils';
+import { buildParserSpec, findColumn, findColumns, getTimeValue, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds, getPaletteColors } from '../../utils/plotUtils';
 import { lttb } from '../../services/plot/decimation';
 
 const LINE_SOFT_CAP_PER_SERIES = 5000;
@@ -102,6 +102,7 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
   const y2IsDuration = allY2.length > 0 && allY2.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY2);
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
   const y2Formatter = y2IsDuration ? formatDurationNs : numberFormatter;
+  const colors = getPaletteColors(clauses?.palette, COLORS);
 
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
@@ -113,8 +114,8 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
           {allY2.length>0 && <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" tick={{fontSize:12}} tickFormatter={y2Formatter} label={config.y2AxisLabel?{value:config.y2AxisLabel,angle:90,position:'insideRight',fill:'#82ca9d',fontSize:12}:undefined} scale={config.y2Scale === 'log' ? "log" : "auto"} domain={config.y2Scale === 'log' ? [0.1,'dataMax'] : config.y2Domain as any} allowDataOverflow/>}
           <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}} formatter={(v,n)=>[(allY2.includes(String(n)) ? y2Formatter : yFormatter)(v),String(n).replace(/_/g,' ')]} labelFormatter={isTime?(l)=>formatTimestamp(l,settings.timeFormat):undefined}/>
           {showLegend && <Legend wrapperStyle={{fontSize:"12px"}} formatter={v=>String(v).replace(/_/g,' ')} verticalAlign={legendPos === 'top' ? 'top' : legendPos === 'bottom' ? 'bottom' : 'middle'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'}/>}
-          {allY.map((y,i)=><Line yAxisId="left" key={y} type="monotone" dataKey={y} stroke={COLORS[i%COLORS.length]} connectNulls={config.connectNulls} strokeWidth={config.lineType === 'line' ? 1 : 0} dot={config.lineType === 'dots'} activeDot={{r: 4}} isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>)}
-          {allY2.map((y,i)=><Line yAxisId="right" key={y} type="monotone" dataKey={y} stroke={COLORS[(allY.length+i)%COLORS.length]} connectNulls={config.connectNulls} strokeWidth={config.lineType === 'line' ? 1 : 0} dot={config.lineType === 'dots'} activeDot={{r: 4}} isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>)}
+          {allY.map((y,i)=><Line yAxisId="left" key={y} type="monotone" dataKey={y} stroke={colors[i%colors.length]} connectNulls={config.connectNulls} strokeWidth={config.lineType === 'line' ? 1 : 0} dot={config.lineType === 'dots'} activeDot={{r: 4}} isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>)}
+          {allY2.map((y,i)=><Line yAxisId="right" key={y} type="monotone" dataKey={y} stroke={colors[(allY.length+i)%colors.length]} connectNulls={config.connectNulls} strokeWidth={config.lineType === 'line' ? 1 : 0} dot={config.lineType === 'dots'} activeDot={{r: 4}} isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>)}
           {config.xRefLines?.map((l,i)=><ReferenceLine key={`x-${i}`} x={l.value} label={l.label} stroke="#facc15" strokeDasharray="3 3"/>)}
           {config.yRefLines?.map((l,i)=><ReferenceLine key={`y-${i}`} y={l.value} label={l.label} stroke="#facc15" strokeDasharray="3 3"/>)}
         </LineChart>
