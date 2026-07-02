@@ -1220,11 +1220,10 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** DuckDB returns INTERVAL values as `[microseconds, days, months]` arrays (or comma-separated strings). `parseIntervalToSeconds` only read `value[0]` (µs), silently discarding `value[1]` (days) and `value[2]` (months). A 1-day interval `[0, 1, 0]` returned `0` instead of `86400`. A 30-min + 1-day interval `[1_800_000_000, 1, 0]` returned `1800` instead of `88200`. This caused duration columns with day/month-scale values to display as near-zero in the DataTable and sort incorrectly.
 **Fix:** Sum all three components — `µs / 1_000_000 + days * 86_400 + months * 30 * 86_400`. Months approximated as 30 days (standard calendar approximation used throughout DuckDB SQL). Same fix applied to the comma-string branch. Added 4 regression tests in `tests/dataTable.test.ts`.
 
-### 🟡 [B-204] `components/editor/completions.ts` + `sqlContext.ts`: `OVER` keyword not suggested after window-function call
-**Where:** `components/editor/completions.ts`, `components/editor/sqlContext.ts`
-**Observed:** After `SELECT ROW_NUMBER() `, the SQL completion popup does not suggest `OVER`. The `parseSqlContext` parser does not track "cursor is immediately after a function call argument list" to suggest `OVER` as the required next keyword. Instead the popup offers table names and generic keywords.
-**Impact:** User cannot autocomplete `ROW_NUMBER() OVER (...)` — must type `OVER` manually.
-**Status:** Known gap, not yet fixed. Regression guard added in `tests/autocomplete/cases/sql.cases.ts` (`sql-window` tier, `window-over-keyword-after-func`) with a placeholder assertion.
+### 🟡 [B-204] `components/editor/completions.ts` + `sqlContext.ts`: `OVER` keyword not suggested after window-function call ✅ FIXED
+**Where:** `components/editor/sql/completion/providers/keywords.ts`, `components/editor/sql/completion/dispatcher.ts`
+**Observed:** After `SELECT ROW_NUMBER() `, the SQL completion popup did not suggest `OVER`.
+**Fix:** Added `overKeywordProvider` (priority 200) to the AST-driven dispatcher. It fires when `upTo` ends with `FUNC(...)` in a SELECT or ORDER BY context and suggests `OVER (` with boost 20. Removed dead equivalent code from the legacy `completions.ts`. Test: `sql-window` tier, `window-over-keyword-after-func`.
 
 ### 🟡 [B-205] `components/editor/completions.ts` + `sqlContext.ts`: LATERAL join inner-subquery scope not tracked
 **Where:** `components/editor/completions.ts`, `components/editor/sqlContext.ts`
@@ -1232,12 +1231,96 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Impact:** Column completions inside LATERAL are inaccurate (outer-scope columns shown instead of inner-scope).
 **Status:** Known gap, not yet fixed. Regression guard in `tests/autocomplete/cases/sql.cases.ts` (`sql-complex` tier) with a placeholder assertion.
 
-### 🟡 [B-206] `components/editor/completions.ts`: BRUSH / AXIS-X / AXIS-Y / PALETTE / LEGEND not suggested in plot tail-key position
+### 🟡 [B-206] `components/editor/completions.ts`: BRUSH / AXIS-X / AXIS-Y / PALETTE / LEGEND not suggested in plot tail-key position ✅ FIXED
 **Where:** `components/editor/completions.ts:completeTailKey`, `components/editor/plot/parser.ts:UPPERCASE_TAIL_KEYWORDS`
 **Observed:** When typing `LINE_CHART(...) B|`, the tail-key completion did not suggest `BRUSH` (or `AXIS-X`, `AXIS-Y`, `PALETTE`, `LEGEND`, `DATASET`). Root cause: `completeTailKey` used `hint.allowedTails` verbatim, which was populated from `UPPERCASE_TAIL_KEYWORDS` — a strict subset that excludes BRUSH/AXIS*/PALETTE/LEGEND/DATASET.
 **Fix:** `completeTailKey` now merges `hint.allowedTails` with `UPPERCASE_TAILS_DEFAULT` so all documented tail keywords appear as suggestions even when the parser doesn't recognise them as first-class tail tokens. Added regression test in `tests/autocomplete/cases/plot.cases.ts` (`plot-tail-complex` tier, `brush-tail-key-appears`).
 
-### 🟡 [B-207] `components/editor/completions.ts`: Partial `#alias` typed inside `ON` arg not completed
+### 🟡 [B-207] `components/editor/completions.ts`: Partial `#alias` typed inside `ON` arg not completed ✅ FIXED
 **Where:** `components/editor/completions.ts:plotCompletionSource` (no-hint fallback)
 **Observed:** Typing `ON #b` when the scope has a query with alias `base` produced no completion suggestions. The parser consumes the ident after `#` as a complete `queryRef` node, so no `queryRefTarget` hole is emitted, and the hint-dispatch code had no fallback for a `#`-prefixed partial.
 **Fix:** Added a `#` prefix fallback in the no-hint path that calls `buildQueryRefOptions` to offer `#index` / `#alias` completions. Added regression test `on-arg-alias-label` in `tests/autocomplete/cases/plot.cases.ts` (`plot-tail-complex` tier).
+
+---
+
+## Plot component edge-case audit (2026-06-30)
+
+### 🟠 [B-208] `HistogramPlot` logBins mode produces size=0 when all positive values are identical — entire dataset lands in last bucket ✅ FIXED
+**Where:** `components/plots/HistogramPlot.tsx:52-54`
+**Observed:** When `config.logBins: true` and all positive values are equal, `min === max`, so `logMin === logMax` and `size = 0`. `Math.floor((Math.log(v) - logMin) / 0) = Infinity`, clamped to `binCount - 1`, so every value lands in the last bucket. The first `binCount-1` bins show 0, the last shows all values — misleading rather than the correct single-bin display.
+**Contrast:** Linear mode at line 41 has `if (min === max) return [{ range: ..., count: values.length }]`.
+**Fix:** Added the same early-return guard in logBins mode: `if (min === max) return [{ range: numberFormatter(min), count: posValues.length }]`.
+
+### 🟠 [B-209] `HeatmapPlot` — `Math.min(...[])` produces `Infinity` when all value column entries are non-numeric ✅ FIXED
+**Where:** `components/plots/HeatmapPlot.tsx:28-30`
+**Observed:** `Math.min(...[]) = Infinity`, `Math.max(...[]) = -Infinity`. Then `(max - min) = -Infinity`, and `isNaN(-Infinity) === false`, so `colorScale` computes `hsl(NaN°, ...)` — an invalid CSS color string, causing all cells to render as `hsl(NaN, ...)` (treated as black or opaque by browsers).
+**Fix:** Guard with `values.length > 0` before spreading: `const min = values.length > 0 ? Math.min(...values) : 0`.
+
+### 🟠 [B-210] `BarChartPlot` — silently renders empty chart (axes + grid, no bars) when y-column names don't match data ✅ FIXED
+**Where:** `components/plots/BarChartPlot.ts:125` — `yCols` is empty so `barElements = []`
+**Observed:** `BAR_CHART(y: ["unknownCol"])` produces a complete chart frame with no bars and no error message. User has no indication that the column name was wrong.
+**Fix:** Added early return after the `useMemo`: if `yCols.length === 0` and data is present, render a yellow diagnostic message listing the attempted column names and the available columns.
+
+### 🟠 [B-211] `App.tsx setResults` — sparse array created when `queryIndex` exceeds current array length ✅ FIXED
+**Where:** `App.tsx:524-526` (and the error path at 530-532)
+**Observed:** `newCellResults[queryIndex] = data` on a shorter array creates holes (`[empty, empty, data]`). Downstream code that uses `cellResults[i]` for `i < queryIndex` receives `undefined` rather than `null`, potentially causing crashes in plot rendering or `?.` chain failures that silently skip data.
+**Fix:** Both success and error paths now pre-fill with `null` using `while (newCellResults.length <= queryIndex) newCellResults.push(null)` before the assignment, ensuring a dense array at all times.
+
+### 🟠 [B-212] `tests/autocomplete/cases/sql.cases.ts` — `ViewSchema` and `MacroSchema` test fixtures missing required fields `query` and `sql` — TypeScript compile errors in tests ✅ FIXED
+**Where:** `tests/autocomplete/cases/sql.cases.ts:25-30`
+**Observed:** `npx tsc --noEmit` reported 4 TS2741 errors about missing `query` on `ViewSchema` and `sql` on `MacroSchema` in test fixture data. These were pre-existing divergences between the types and the fixture.
+**Fix:** Added `query: ''` to both `ViewSchema` entries and `sql: ''` to both `MacroSchema` entries.
+
+---
+
+## Error message and documentation improvements (2026-06-30)
+
+### 🟡 [B-213] `services/ai/tools/runtime.ts`: vague tool error messages ✅ FIXED
+**Where:** `services/ai/tools/runtime.ts:62,81,119,73,255`
+**Observed:** Several AI tool error messages were terse and non-actionable: "unknown tool: X", "forbidden token in sql", "rejected by user", "unimplemented tool: X". These were shown to the AI assistant as tool_result errors and gave no useful guidance for recovery.
+**Fix:** Improved all four:
+- Unknown tool: lists the available tool names so the assistant can correct the call.
+- Forbidden SQL: explicitly names `$ai_providers` and explains it contains credentials.
+- Rejected: suggests trying a different approach instead of bare "rejected by user".
+- Unimplemented: clarifies the tool is "recognized but not yet implemented in this version".
+
+### 🟡 [B-214] `context/DuckDBContext.tsx`: `'DB not ready.'` gives no actionable guidance ✅ FIXED
+**Where:** `context/DuckDBContext.tsx:416`
+**Observed:** When a query fires before the database finishes loading, the error `'DB not ready.'` is surfaced to the user in the cell result area. The message provides no indication of what state the DB is in, why it isn't ready, or what to do.
+**Fix:** Changed to `'Cannot run query: database is in state "${dbState}". Wait for it to finish loading or reload the page if it appears stuck.'` — includes the actual DBState enum value so the user can correlate it with the loading indicator.
+
+### 🟡 [B-215] `services/AiService.ts`: `'AI Service not initialized.'` error provides no remediation ✅ FIXED
+**Where:** `services/AiService.ts:143,454`
+**Observed:** Both `handleApiCall` and `streamChatWithTools` throw `"AI Service not initialized."` when no provider is configured. This error can surface in the chat panel or plot AI fixer. The user sees the raw error with no guidance on how to fix it.
+**Fix:** Changed to `"AI Service not initialized — configure an API key in ⚙ Settings first."` so users know exactly where to go.
+
+### 🟡 [B-216] `components/PlotRenderer.tsx`: `AiErrorFixer` error messages give no remediation guidance ✅ FIXED
+**Where:** `components/PlotRenderer.tsx:113,123,139`
+**Observed:** Three messages lacked actionable guidance:
+- `'AI feature not configured'` — no hint about where to configure it.
+- `'AI suggestion timed out'` — no hint about what might have caused the timeout or what to try.
+- `'Could not get AI suggestion: {error}'` — framing implies permanent failure.
+**Fix:**
+- Not configured: `'Configure an AI provider in ⚙ Settings to get fix suggestions'`
+- Timed out: `'AI suggestion timed out — check your API key or try again'`
+- Error prefix: changed to `'AI suggestion unavailable: {error}'`
+
+### 🟡 [B-217] `components/PlotRenderer.tsx`: `AiErrorFixer` renders `\n` in error messages as spaces ✅ FIXED
+**Where:** `components/PlotRenderer.tsx:136`
+**Observed:** The error `<p>` in `AiErrorFixer` lacked `whitespace-pre-wrap`, so multiline error messages (containing `\n`) were collapsed to a single run-on line. The "Missing required parameter" error with its full Usage block appeared as one unreadable sentence. Column-not-found errors had "Available columns: ..." and "Did you mean...?" run together.
+**Fix:** Added `whitespace-pre-wrap` to the error `<p>` class.
+
+### 🟡 [B-218] `utils/plotConfigParser.ts`: `buildUsage` includes aliases and deprecated params, buries required params ✅ FIXED
+**Where:** `utils/plotConfigParser.ts:156-160`
+**Observed:** The Usage block shown on "Missing required parameter" errors listed every entry in the param spec including aliases (`x` as alias for `value`, `color` as alias for `category`, etc.) and deprecated params, making the list longer and harder to scan. Required and optional params were interleaved with no visual separation.
+**Fix:** `buildUsage` now filters to non-alias, non-deprecated params only, puts required params first, then a `---` separator, then optional params. Labels changed from `-- Required` / `-- default X` to `(required)` / `(default: X)` for readability.
+
+### 🟡 [B-219] `utils/plotConfigParser.ts`: parameter error double-wraps message and labels hint redundantly ✅ FIXED
+**Where:** `utils/plotConfigParser.ts:260-262`
+**Observed:** Parameter errors wrapped the inner message as `"Error in parameter "X":\n{inner}\n\nHint: {description}"`. The "Error in parameter" prefix was redundant when the inner message already named the parameter. "Hint:" was an unnecessary label before the description.
+**Fix:** Simplified to `"Parameter "X": {inner}\n\n{description}"` — one fewer level of wrapping, description follows directly without a label.
+
+### 🟡 [B-220] `utils/plotConfigParser.ts`: "did you mean" for unknown param name could suggest aliases ✅ FIXED
+**Where:** `utils/plotConfigParser.ts:228`
+**Observed:** `closestMatch` for unknown param names searched `Object.keys(spec)` unfiltered, meaning it could suggest an alias (`color` → `category`) or deprecated param as a correction. The list of available params already filtered aliases but the suggestion did not.
+**Fix:** Both the available-params list and the `closestMatch` candidates now use the same filtered set (non-alias, non-deprecated keys only).
