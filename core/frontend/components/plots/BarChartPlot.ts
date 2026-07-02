@@ -66,6 +66,17 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         };
     }, [data, config]);
 
+    if (!data || data.length === 0) {
+        return React.createElement('div', { className: "p-4 text-center text-gray-500 text-sm" }, 'No data.');
+    }
+
+    if (yCols.length === 0) {
+        const tried = (config.y || []).join(', ');
+        return React.createElement('div', { className: "p-4 text-center text-yellow-500/80 text-sm font-mono" },
+            `No matching y-axis columns found for: ${tried}. Available: ${Object.keys(data[0]).join(', ')}`
+        );
+    }
+
     const commonValueAxisProps = {
         type: "number" as const,
         stroke: "#9ca3af",

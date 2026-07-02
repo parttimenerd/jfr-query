@@ -50,6 +50,7 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
             const posValues = values.filter(v => v>0);
             if(posValues.length===0) return [];
             min=Math.min(...posValues); max=Math.max(...posValues);
+            if (min === max) return [{ range: numberFormatter(min), count: posValues.length }];
             const logMin=Math.log(min), logMax=Math.log(max);
             const size=(logMax-logMin)/binCount;
             const hist=Array(binCount).fill(0).map((_,i)=>({range:`${numberFormatter(Math.exp(logMin+i*size))}-${numberFormatter(Math.exp(logMin+(i+1)*size))}`, count:0}));

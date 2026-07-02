@@ -130,8 +130,11 @@ async function measureFile(browser, appUrl, file, repeatIdx) {
       totalMs: t1 - t0,
       javaSyncMs: perf?.javaSyncMs ?? null,
       drainMs: perf?.drainMs ?? null,
+      mergeMs: perf?.mergeMs ?? null,
       sqlRegMs: perf?.sqlRegMs ?? null,
       sqlParallelism: perf?.sqlParallelism ?? null,
+      numChunks: perf?.numChunks ?? null,
+      numWorkers: perf?.numWorkers ?? null,
       consoleLines,
       repeatIdx,
       error: null,
@@ -185,7 +188,7 @@ async function main() {
       if (result.error) {
         console.log(`FAILED: ${result.error}`);
       } else {
-        console.log(`done. Total: ${fmt(result.totalMs)}  Java: ${fmt(result.javaSyncMs)}  drain: ${fmt(result.drainMs)}  sqlReg: ${fmt(result.sqlRegMs)}`);
+        console.log(`done. Total: ${fmt(result.totalMs)}  Java: ${fmt(result.javaSyncMs)}  drain: ${fmt(result.drainMs)}  merge: ${fmt(result.mergeMs)}  sqlReg: ${fmt(result.sqlRegMs)}  chunks: ${result.numChunks ?? '?'}×${result.numWorkers ?? '?'}`);
       }
     }
   }
@@ -195,8 +198,8 @@ async function main() {
   // ── Summary table ──────────────────────────────────────────────────────
   console.log(`\n${'─'.repeat(80)}`);
   console.log(`Results (${mode})\n`);
-  console.log(`| File           | Size  | Total   | Java sync | Drain   | SQL reg | SQL×  |`);
-  console.log(`|----------------|-------|---------|-----------|---------|---------|-------|`);
+  console.log(`| File           | Size  | Total   | Java sync | Drain   | Merge   | SQL reg | SQL×  | Chunks/W |`);
+  console.log(`|----------------|-------|---------|-----------|---------|---------|---------|-------|----------|`);
 
   // Average across repeats.
   const byFile = new Map();
@@ -212,20 +215,25 @@ async function main() {
     const totalMs = avg('totalMs');
     const javaMs = avg('javaSyncMs');
     const drainMs = avg('drainMs');
+    const mergeMs = avg('mergeMs');
     const sqlMs = avg('sqlRegMs');
     const parallelism = valid[0]?.sqlParallelism ?? '—';
+    const chunks = valid[0]?.numChunks ?? '—';
+    const workers = valid[0]?.numWorkers ?? '—';
     const size = fmtBytes(valid[0]?.bytes ?? null);
     const errNote = runs.some(r => r.error) ? ' ⚠' : '';
 
     console.log(
-      `| ${label.padEnd(14)} | ${size.padEnd(5)} | ${fmt(totalMs)} | ${fmt(javaMs)}  | ${fmt(drainMs)} | ${fmt(sqlMs)} | ${String(parallelism).padEnd(5)} |${errNote}`
+      `| ${label.padEnd(14)} | ${size.padEnd(5)} | ${fmt(totalMs)} | ${fmt(javaMs)}  | ${fmt(drainMs)} | ${fmt(mergeMs)} | ${fmt(sqlMs)} | ${String(parallelism).padEnd(5)} | ${chunks}/${workers} |${errNote}`
     );
   }
 
-  console.log(`\nLegend: SQL reg = time to CREATE all ${SERIAL_MODE ? '134' : '134'} macros+views`);
+  console.log(`\nLegend: SQL reg = time to CREATE all macros+views`);
   console.log(`        Java sync = GraalVM WASM parsing (blocks JS thread)`);
   console.log(`        Drain = async Arrow inserts to DuckDB`);
-  console.log(`        SQL× = parallelism used for SQL registration\n`);
+  console.log(`        Merge = struct-table dedup + event-table union`);
+  console.log(`        SQL× = parallelism used for SQL registration`);
+  console.log(`        Chunks/W = JFR chunks / workers used\n`);
 
   // Write JSON results for comparison.
   const outPath = path.join(__dirname, `benchmark-results-${SERIAL_MODE ? 'serial' : 'parallel'}-${Date.now()}.json`);

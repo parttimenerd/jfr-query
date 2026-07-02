@@ -17,13 +17,13 @@ const params: PlotParameter[] = [
 const parseConfig = createConfigParser<TablePlotConfig>(buildParserSpec(params));
 
 
-const TablePlotComponent: React.FC<{ config: TablePlotConfig; data: any[], domainX?: [any, any] }> = ({ config, data }) => {
+const TablePlotComponent: React.FC<{ config: TablePlotConfig; data: any[], domainX?: [any, any]; clauses?: import('../../utils/plotParser').ParsedPlotCall }> = ({ config, data, clauses }) => {
     let resolvedHeaders = config.headers;
     if (config.headers && data && data.length > 0) {
         const allColumns = Object.keys(data[0]);
         resolvedHeaders = config.headers.map(h => findColumn(h, allColumns));
     }
-    
+
     // Convert parsed widths into a format suitable for the DataTable component.
     const widths = config.columnWidths?.map(w => {
         // The parser converts "-1" to the number -1. This signifies auto-width.
@@ -34,6 +34,12 @@ const TablePlotComponent: React.FC<{ config: TablePlotConfig; data: any[], domai
         return w;
     });
 
+    // Derive a filename from the plot title (e.g. "GC Pauses" → "gc-pauses.csv")
+    const title = clauses?.title || (config as any).title;
+    const csvFilename = title
+        ? title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.csv'
+        : 'data.csv';
+
     return React.createElement(
         'div',
         { className: "h-full" },
@@ -41,6 +47,7 @@ const TablePlotComponent: React.FC<{ config: TablePlotConfig; data: any[], domai
             data: data,
             headers: resolvedHeaders,
             columnWidths: widths,
+            csvFilename,
         })
     );
 };

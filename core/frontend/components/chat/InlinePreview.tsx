@@ -51,6 +51,10 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
             ? result.columns.map((c: any) => c.name)
             : undefined;
 
+        // Don't show an inline preview for empty results — these are usually
+        // exploratory schema-discovery queries the user doesn't need to see.
+        if (rows.length === 0) return null;
+
         return (
             <div className="my-2 border border-gray-700 rounded bg-gray-800/60">
                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-700 text-[10px] uppercase tracking-wider text-gray-500">
@@ -67,13 +71,9 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
                     )}
                 </div>
                 <pre className="px-3 py-2 text-[11px] text-gray-300 whitespace-pre-wrap font-mono border-b border-gray-700 max-h-32 overflow-auto">{sql}</pre>
-                {rows.length > 0 ? (
-                    <div className="max-h-56 overflow-auto">
-                        <DataTable data={rows} headers={headers} showSearch={false} />
-                    </div>
-                ) : (
-                    <div className="px-3 py-2 text-xs text-gray-500 italic">no rows returned</div>
-                )}
+                <div className="max-h-56 overflow-auto">
+                    <DataTable data={rows} headers={headers} showSearch={false} />
+                </div>
             </div>
         );
     }

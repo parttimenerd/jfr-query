@@ -26,8 +26,8 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
     const xLabels = [...new Set(data.map(item => item[x]))].sort();
     const yLabels = [...new Set(data.map(item => item[y]))].sort();
     const values = data.map(item => parseFloat(item[valueCol])).filter(v => !isNaN(v));
-    const min = Math.min(...values);
-    const max = Math.max(...values);
+    const min = values.length > 0 ? Math.min(...values) : 0;
+    const max = values.length > 0 ? Math.max(...values) : 0;
     
     const chartData = data.map(item => ({
       x: xLabels.indexOf(item[x]),
