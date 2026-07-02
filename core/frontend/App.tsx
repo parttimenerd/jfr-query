@@ -46,6 +46,7 @@ import { TrashIcon } from './components/icons/TrashIcon';
 import { BeakerIcon } from './components/icons/BeakerIcon';
 import { DocumentTextIcon } from './components/icons/DocumentTextIcon';
 import { EyeIcon } from './components/icons/EyeIcon';
+import { BookOpenIcon } from './components/icons/BookOpenIcon';
 import * as EmbeddingService from './services/ml/EmbeddingService';
 import { initPlotModel } from './services/ml/PlotGenerationService';
 
@@ -1099,6 +1100,7 @@ const App: React.FC = () => {
                         <EyeIcon className="w-4 h-4"/>
                     </button>
                     <div className="w-px h-5 bg-gray-700 mx-1" />
+                    <a href="https://parttimenerd.github.io/jfr-query/docs/" target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Documentation" aria-label="Documentation"><BookOpenIcon className="w-4 h-4"/></a>
                     <button onClick={() => setIsSettingsModalOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Settings" aria-label="Settings"><CogIcon className="w-4 h-4"/></button>
                 </div>
             </header>
