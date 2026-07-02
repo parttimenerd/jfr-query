@@ -1434,6 +1434,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** Timestamps in `startTime` / `endTime` columns sourced from `TIMESTAMPTZ` columns display as dates in the 1970s instead of their correct 2024+ values.
 **Fix:** Replaced the binary `> 15 → nanoseconds` heuristic with a three-tier function (`normalizeEpochToMs`) aligned with `plotUtils.normalizeEpochInteger`: digits ≥ 18 → ns (÷1e6), digits ≥ 15 → µs (÷1e3), else ms. Added regression tests for the 16-digit (µs) and 19-digit (ns) paths in `timeFormatter.test.ts`.
 
+### 🟡 [B-241] `BarChartPlot` — `AXIS-X LABEL` clause ignored; horizontal bar chart uses AXIS-Y label on wrong axis ✅ FIXED
+**Where:** `components/plots/BarChartPlot.ts:141-157`
+**Repro:** `BAR_CHART(x: "event", y: ["count"]) AXIS-X LABEL "Event Type"` — label never appears on the X axis.
+**Observed:** `clauses?.axisX?.label` was never read — `xLabelFromClause` was not computed. Additionally, the horizontal bar chart's `YAxis` (which carries the categorical x-column) had no label prop at all. The horizontal `XAxis` (value axis) incorrectly inherited `yLabelFromClause` which is correct behavior for the value axis, but the categorical axis label was missing entirely.
+**Fix:** Added `xLabelFromClause = clauses?.axisX?.label` extraction. Wired it into the `XAxis` of the normal bar chart and the `YAxis` of the horizontal bar chart.
+
 ### 🟡 [B-236] `RangePlot`, `GanttChartPlot` — `AXIS-X DOMAIN`, `AXIS-X LABEL`, `AXIS-Y DOMAIN/LABEL` clauses ignored ✅ FIXED
 **Where:** `components/plots/RangePlot.tsx:97-117`; `components/plots/GanttChartPlot.tsx:135-142`
 **Repro:** `RANGE_PLOT(x: "time", low: "p10", high: "p90") AXIS-X LABEL "Time"` — label never appears; `GANTT_CHART(lane: "l", start: "s", end: "e") AXIS-X DOMAIN [0, 1000]` — domain ignored.

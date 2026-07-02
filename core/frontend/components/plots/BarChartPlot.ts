@@ -61,6 +61,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
     const effectiveLogScale = axisYClause?.type === 'log' ? true : config.logScale;
     const yDomainFromClause = axisYClause?.domain as [any, any] | undefined;
     const yLabelFromClause = axisYClause?.label;
+    const xLabelFromClause = clauses?.axisX?.label;
 
     const { xCol, yCols, lineYCols, chartData } = useMemo(() => {
         if (!data || data.length === 0) {
@@ -136,7 +137,8 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
             angle: 0,
             textAnchor: "end",
             interval: 0,
-            width: 80
+            width: 80,
+            label: xLabelFromClause ? { value: xLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined
         }),
         React.createElement(XAxis, {
             key: 'x-axis',
@@ -152,7 +154,8 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
             angle: -45,
             textAnchor: "end",
             interval: 0,
-            height: 60
+            height: 60,
+            label: xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined
         }),
         React.createElement(YAxis, {
             key: 'y-axis',
