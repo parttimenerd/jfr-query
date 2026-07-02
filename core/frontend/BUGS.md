@@ -1458,6 +1458,13 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** Large BigInt values like `1716584383215000000n` are displayed as `1716584383215000064` (rounded) instead of the exact value.
 **Fix:** Added an early-return for `typeof value === 'bigint'` that calls `value.toString()` directly, bypassing `Number()` conversion entirely.
 
+### 🔵 [B-245] `AXIS-X FORMAT` / `AXIS-Y FORMAT` clauses parsed but never applied to tick formatters
+**Where:** `utils/plotParser.ts:118` (parses `FORMAT` sub-clause into `AxisSpec.format`); all plot components
+**Repro:** `LINE_CHART(x: "ts", y: ["v"]) AXIS-Y FORMAT ".2s"` — tick labels use default formatting, not the d3 format string.
+**Observed:** `AxisSpec.format` is populated by the parser but no plot component reads `clauses?.axisX?.format` or `clauses?.axisY?.format`. The clause is silently ignored.
+**Expected:** Apply the format string as a custom `tickFormatter` on the relevant axis, using a d3-format-compatible formatter (recharts accepts a custom tick formatter function).
+**Notes:** Requires integrating a d3-format library or writing a minimal subset formatter. Deferred.
+
 ### 🟡 [B-236] `RangePlot`, `GanttChartPlot` — `AXIS-X DOMAIN`, `AXIS-X LABEL`, `AXIS-Y DOMAIN/LABEL` clauses ignored ✅ FIXED
 **Where:** `components/plots/RangePlot.tsx:97-117`; `components/plots/GanttChartPlot.tsx:135-142`
 **Repro:** `RANGE_PLOT(x: "time", low: "p10", high: "p90") AXIS-X LABEL "Time"` — label never appears; `GANTT_CHART(lane: "l", start: "s", end: "e") AXIS-X DOMAIN [0, 1000]` — domain ignored.
