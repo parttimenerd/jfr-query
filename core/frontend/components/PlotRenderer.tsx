@@ -354,6 +354,13 @@ interface PlotRendererProps {
 
 const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRef, sql, cellContext, onApplyFix, isAiFeatureActive = false, metadata, onMetadataChange, onCellVariableChange, allVariables }) => {
 
+    // Keep onApplyFix in a ref so callers can drop it from arePropsEqual without
+    // risk of calling a stale handler. The ref is updated synchronously on every
+    // render, so by the time a user click reaches the handler it is always current.
+    const onApplyFixRef = useRef(onApplyFix);
+    onApplyFixRef.current = onApplyFix;
+    const stableOnApplyFix = useCallback((newConfig: string) => onApplyFixRef.current(newConfig), []);
+
     // Extract ALL distinct LINK-Y / LINK-XY variable names from the config so we
     // can subscribe once per unique name and pass per-leaf domains to composites.
     const linkYVarNames = useMemo((): string[] => {
@@ -764,7 +771,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                         const handleFix = (fixedCode: string) => {
                             const newRows = JSON.parse(JSON.stringify(rows));
                             newRows[rowIndex][colIndex] = fixedCode + outerClauses;
-                            onApplyFix(newRows.map(row => row.join('; ')).join('\n\n'));
+                            stableOnApplyFix(newRows.map(row => row.join('; ')).join('\n\n'));
                         };
                         e.fixContext = { failedConfig: mainConfig, onFix: handleFix };
                         throw e;
@@ -782,7 +789,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
         // before accessing `.fixContext` or `.message`.
         const fixContext = e instanceof Error ? (e as any).fixContext : (e && typeof e === 'object' ? e.fixContext : undefined);
         const errorMessage: string = (e instanceof Error ? e.message : typeof e === 'string' ? e : String(e ?? 'Unknown error'));
-        const errorInfo = { error: e, failedConfig: fixContext?.failedConfig || config, onFix: fixContext?.onFix || onApplyFix };
+        const errorInfo = { error: e, failedConfig: fixContext?.failedConfig || config, onFix: fixContext?.onFix || stableOnApplyFix };
 
         const ErrorDisplay = isAiFeatureActive
             ? <AiErrorFixer error={errorMessage} config={errorInfo.failedConfig} data={data!} sql={sql} cellContext={cellContext} onApplyFix={errorInfo.onFix} metadata={metadata} />
@@ -814,7 +821,9 @@ function arePlotRendererPropsEqual(prev: PlotRendererProps, next: PlotRendererPr
         prev.dataByQueryRef === next.dataByQueryRef &&
         prev.sql === next.sql &&
         prev.cellContext === next.cellContext &&
-        prev.onApplyFix === next.onApplyFix &&
+        // onApplyFix is a click handler, not a render input — exclude from comparison
+        // so that the inline arrow function `c => handleApplyPlotFix(c, i)` created
+        // per render does not invalidate the memo on every keystroke.
         prev.isAiFeatureActive === next.isAiFeatureActive &&
         prev.metadata?.customSystemPrompt === next.metadata?.customSystemPrompt &&
         prev.metadata?.variables === next.metadata?.variables &&
