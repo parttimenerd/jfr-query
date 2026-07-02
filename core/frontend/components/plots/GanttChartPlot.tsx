@@ -5,8 +5,9 @@ import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { formatTimestamp } from '../../utils/timeFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec, findColumn, getTimeValue } from '../../utils/plotUtils';
+import { buildParserSpec, findColumn, getTimeValue, getPaletteColors } from '../../utils/plotUtils';
 import { usePlotGestures } from '../../hooks/usePlotGestures';
+import type { ParsedPlotCall } from '../../utils/plotParser';
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
@@ -49,10 +50,12 @@ const GanttChartComponent: React.FC<{
   animationDuration?: number;
   gestureName?: string;
   onVariableChange?: (vars: Record<string, unknown>) => void;
-}> = ({ config, data, isAnimationActive, animationDuration, gestureName, onVariableChange }) => {
+  clauses?: ParsedPlotCall;
+}> = ({ config, data, isAnimationActive, animationDuration, gestureName, onVariableChange, clauses }) => {
   const { settings } = useContext(SettingsContext);
   const numberFormatter = (v: any) => formatNumber(v, settings.decimalPlaces);
   const gestures = usePlotGestures({ name: gestureName, onVariableChange });
+  const colors = getPaletteColors(clauses?.palette, COLORS);
 
   const { chartData, isTime, startCol, endCol, rowCol, colorCategories } = useMemo(() => {
     if (!data || !data.length || !data[0]) {
@@ -94,7 +97,7 @@ const GanttChartComponent: React.FC<{
         __duration: duration,
         __startRaw: row[sCol],
         __endRaw: row[eCol],
-        __color: COLORS[colorIndex % COLORS.length],
+        __colorIndex: colorIndex,
         __label: config.task ? String(row[findColumn(config.task, allColumns)] ?? '') : undefined,
         ...row,
       };
@@ -168,7 +171,7 @@ const GanttChartComponent: React.FC<{
             shape={<GanttBarShape />}
           >
             {chartData.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={entry.__color} />
+              <Cell key={`cell-${index}`} fill={colors[(entry.__colorIndex ?? index) % colors.length]} />
             ))}
           </Bar>
         </ComposedChart>

@@ -1337,6 +1337,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
 
+### 🟡 [B-230] `GanttChartPlot` — `PALETTE` clause ignored; `clauses` prop missing entirely ✅ FIXED
+**Where:** `components/plots/GanttChartPlot.tsx:52`
+**Repro:** `GANTT(start: "s", end: "e", lane: "l", color: "state") PALETTE "tableau10"` — bars use default colors regardless.
+**Observed:** `GanttChartComponent` had no `clauses` prop in its signature. Colors were computed as `COLORS[colorIndex % COLORS.length]` directly in the `useMemo`, with no access to `clauses?.palette`.
+**Fix:** Added `clauses?: ParsedPlotCall` to props, imported `getPaletteColors`, computed `colors = getPaletteColors(clauses?.palette, COLORS)` at component level. Moved color resolution from useMemo (stored `__colorIndex` instead of `__color`) to the Cell render using the live `colors` array. This also makes PALETTE reactive to clause changes without re-running the data transformation.
+
 ### 🟡 [B-229] `RangePlot`, `PieChartPlot` — `LEGEND AT …` clause ignored; `PieChartPlot` also ignores `PALETTE` clause ✅ FIXED
 **Where:** `components/plots/RangePlot.tsx:125`; `components/plots/PieChartPlot.tsx:92`
 **Repro:** `PIE_CHART(category: "k", value: "v") LEGEND AT NONE` — legend still appears. `PIE_CHART(…) PALETTE "tableau10"` — colors unchanged.
