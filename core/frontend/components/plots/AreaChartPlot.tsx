@@ -59,6 +59,8 @@ const AreaChartComponent: React.FC<{
   const gestures = usePlotGestures({ name: gestureName, onVariableChange });
   const effectiveYScale = (clauses?.axisY?.type === 'log' ? 'log' : config.yScale) as 'linear' | 'log';
   const yDomainFromClause = clauses?.axisY?.domain as [any, any] | undefined;
+  const legendPos = clauses?.legend;
+  const showLegend = legendPos !== 'none';
 
   const { chartData, isTime, allY, finalXCol } = useMemo(() => {
     if (!data || !data.length || !data[0] || !config.x) {
@@ -181,7 +183,7 @@ const AreaChartComponent: React.FC<{
             formatter={(v, n) => [yFormatter(v), String(n).replace(/_/g, ' ')]}
             labelFormatter={isTime ? (l) => formatTimestamp(l, settings.timeFormat) : undefined}
           />
-          <Legend wrapperStyle={{ fontSize: '12px' }} formatter={v => String(v).replace(/_/g, ' ')} verticalAlign="bottom" align="center" />
+          {showLegend && <Legend wrapperStyle={{ fontSize: '12px' }} formatter={v => String(v).replace(/_/g, ' ')} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'} />}
           {allY.map((y, i) => {
             const isStacked = config.layout === 'stacked' || config.stack === true;
             if (config.stack !== undefined) warnDeprecated('AREA_CHART', 'stack', 'layout');

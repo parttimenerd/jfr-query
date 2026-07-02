@@ -55,6 +55,8 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
     const { settings } = useContext(SettingsContext);
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
     const colors = getPaletteColors(clauses?.palette, COLORS);
+    const legendPos = clauses?.legend;
+    const showLegend = legendPos !== 'none';
 
     const { xCol, yCols, lineYCols, chartData } = useMemo(() => {
         if (!data || data.length === 0) {
@@ -191,7 +193,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         React.createElement(CartesianGrid, { key: 'grid', strokeDasharray: "3 3", stroke: "#4a5568" }),
         ...axisElements,
         React.createElement(Tooltip, { key: 'tooltip', content: React.createElement(CustomTooltip, { formatter: numberFormatter }) }),
-        React.createElement(Legend as any, { key: 'legend', wrapperStyle: { fontSize: "12px" }, formatter: (v: string) => String(v).replace(/_/g, ' ') }),
+        ...(showLegend ? [React.createElement(Legend as any, { key: 'legend', wrapperStyle: { fontSize: "12px" }, formatter: (v: string) => String(v).replace(/_/g, ' '), verticalAlign: legendPos === 'top' ? 'top' : 'bottom', align: legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center' })] : []),
         ...barElements,
         ...lineElements
     ];

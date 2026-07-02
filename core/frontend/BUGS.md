@@ -1337,6 +1337,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
 
+### 🟡 [B-227] `AreaChartPlot`, `BarChartPlot` — `LEGEND AT …` clause ignored; legend always rendered ✅ FIXED
+**Where:** `components/plots/AreaChartPlot.tsx:186`; `components/plots/BarChartPlot.ts:194`
+**Repro:** `BAR_CHART(x: "k", y: ["v"]) LEGEND AT NONE` — the legend still appears. `BAR_CHART(x: "k", y: ["v"]) LEGEND AT TOP` — legend stays at the bottom.
+**Observed:** Both components rendered `<Legend>` unconditionally without consulting `clauses?.legend`. Only `LineChartPlot` checked the clause.
+**Fix:** Extracted `legendPos = clauses?.legend` and `showLegend = legendPos !== 'none'` in both components. Conditionally render Legend based on `showLegend`; pass `verticalAlign` and `align` derived from `legendPos` to support TOP/BOTTOM/LEFT/RIGHT positions.
+
 ### 🟡 [B-226] `LineChartPlot`, `AreaChartPlot` — `AXIS-Y DOMAIN` clause ignored when log scale is active ✅ FIXED
 **Where:** `components/plots/LineChartPlot.tsx:113`; `components/plots/AreaChartPlot.tsx:175`
 **Repro:** `LINE_CHART(x: "time", y: ["v"]) AXIS-Y TYPE LOG DOMAIN [1, 1000]` — the log scale is applied but the `[1, 1000]` domain is ignored; recharts uses its default `[0.1, dataMax]` instead.
