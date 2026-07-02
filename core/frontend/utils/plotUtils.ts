@@ -213,12 +213,14 @@ export function formatDurationNs(ns: any): string {
  */
 export function sampleLooksLikeNanoseconds(data: any[], cols: string[]): boolean {
     if (!data.length || !cols.length) return false;
+    let checkedAny = false;
     for (const col of cols) {
         const sample = data.find(row => row[col] != null)?.[col];
         if (sample == null) continue;
+        checkedAny = true;
         if (Math.abs(Number(sample)) < 1e6) return false;
     }
-    return true;
+    return checkedAny;
 }
 
 /**

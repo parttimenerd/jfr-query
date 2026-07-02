@@ -1337,6 +1337,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
 
+### 🟠 [B-232] `sampleLooksLikeNanoseconds` — returns `true` for all-null columns, triggering duration formatting on unrelated data ✅ FIXED
+**Where:** `utils/plotUtils.ts:214`
+**Repro:** A column named `duration` where every row has a null value (e.g., a `LEFT JOIN` that never matches). The duration formatter activates and formats null/NaN as `NaNns` or `undefinedns` in tooltip/axis labels instead of the raw value.
+**Observed:** The loop `for (const col of cols) { if (sample == null) continue; … }` falls off the end and returns `true` when all column samples are null, activating the nanosecond formatter for columns where it cannot be validated.
+**Fix:** Added a `checkedAny` flag; only return `true` if at least one non-null sample was found and all non-null samples were ≥ 1e6.
+
 ### 🟡 [B-231] `BarChartPlot`, `AreaChartPlot` — `AXIS-Y TYPE LOG`, `AXIS-Y DOMAIN`, `AXIS-Y LABEL` clauses ignored ✅ FIXED
 **Where:** `components/plots/BarChartPlot.ts:120-121`; `components/plots/AreaChartPlot.tsx:173-175`
 **Repro:** `BAR_CHART(x: "k", y: ["v"]) AXIS-Y TYPE LOG` — no effect; `BAR_CHART(…) AXIS-Y DOMAIN [1, 1000]` — no effect; `AREA_CHART(…) AXIS-Y LABEL "My Label"` — no effect.
