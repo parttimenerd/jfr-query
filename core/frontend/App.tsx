@@ -259,11 +259,11 @@ const App: React.FC = () => {
                 e.preventDefault();
                 return;
             }
+            setIsMdDragOver(false);
             const files = Array.from(e.dataTransfer?.files || []);
             const md = files.find(f => /\.(md|markdown)$/i.test(f.name) || f.type === 'text/markdown');
             if (!md) return;
             e.preventDefault();
-            setIsMdDragOver(false);
             const reader = new FileReader();
             reader.onload = ev => {
                 const text = ev.target?.result;
@@ -878,10 +878,17 @@ const App: React.FC = () => {
             getCells: () => cellsRef.current.map(c => ({ id: c.id, content: c.content })),
             /** Run all queries in all cells. Returns a promise. */
             runAll: () => handleRunAll(),
+            /** Load a JFR or DuckDB file from a URL (e.g. fetch + ArrayBuffer). */
+            loadFileFromUrl: async (url: string, fileName: string) => {
+                const resp = await fetch(url);
+                if (!resp.ok) throw new Error(`fetch ${url} failed: ${resp.status}`);
+                const bytes = new Uint8Array(await resp.arrayBuffer());
+                await loadFile(bytes, fileName);
+            },
         };
         return () => { delete (window as any).__notebookApi; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [setNotebookMarkdown, addCellFromTool, addCellsBatchFromTool, updateCell, deleteCell, handleRunAll]);
+    }, [setNotebookMarkdown, addCellFromTool, addCellsBatchFromTool, updateCell, deleteCell, handleRunAll, loadFile]);
 
     const cmdActions: CommandAction[] = useMemo(() => [
         { id: 'format-all', label: 'Format all cells', hint: '⇧⇧ then "format"', keywords: 'beautify pretty indent', run: () => formatAllCells() },
