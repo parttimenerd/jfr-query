@@ -102,11 +102,11 @@ const probeServer = async (): Promise<{ ok: boolean; reason?: string; silent?: b
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sql: 'SELECT 1' }),
         });
-        // 5xx / 404 typically means "no query server is running here" — that's
-        // the normal WASM-only setup, not a noteworthy failure. Don't bother
-        // the user with a toast.
+        // 5xx / 404 / 405 typically means "no query server is running here" — that's
+        // the normal WASM-only setup (GitHub Pages returns 405 for POST to a static path),
+        // not a noteworthy failure. Don't bother the user with a toast.
         if (!r.ok) {
-            const silent = r.status >= 500 || r.status === 404;
+            const silent = r.status >= 500 || r.status === 404 || r.status === 405;
             return { ok: false, reason: `server probe returned HTTP ${r.status}`, silent };
         }
         const body = await r.json().catch(() => null);
