@@ -11,6 +11,8 @@ permissions:
   contents: write
   packages: read
   issues: read
+  pages: write
+  id-token: write
 
 jobs:
   build:
@@ -115,3 +117,56 @@ jobs:
           name: JFR Query Tool - Latest Snapshot
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  pages:
+    needs: build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: core/frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: core/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install MkDocs Material
+        run: pip install mkdocs-material
+
+      - name: Build docs
+        run: mkdocs build --strict
+
+      - name: Assemble Pages artifact
+        run: |
+          mkdir -p _pages/app
+          cp -r site/. _pages/
+          cp -r core/frontend/dist/. _pages/app/
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _pages
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
