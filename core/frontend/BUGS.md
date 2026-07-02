@@ -1416,17 +1416,23 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `ParsedPlotCall.palette` is populated by the parser but no plot component reads `clauses?.palette`. The clause is a no-op.
 **Fix:** Added `getPaletteColors(palette, fallback)` to `utils/plotUtils.ts` mapping named palettes (`category10`, `tableau10`, `pastel1`, `dark2`, `set2`) to color arrays. Each of the three affected plot components now reads `clauses?.palette` and applies the resolved color array to bars/lines/areas. ✅ FIXED
 
-### 🟡 [B-238] `compareValues` — mixed `BigInt`/`number` comparison falls back to `Number()` subtraction, losing precision
+### 🟡 [B-238] `compareValues` — mixed `BigInt`/`number` comparison falls back to `Number()` subtraction, losing precision ✅ FIXED
 **Where:** `utils/dataTableUtils.ts:103-104`
 **Repro:** Sort a DataTable column that mixes `BigInt` values (e.g., nanosecond timestamps retained as BigInt for B-133) with plain `number` values. The `typeof a === 'bigint' && typeof b === 'bigint'` guard on line 102 is skipped; `Number(a) - Number(b)` is used instead, which loses precision for values > `Number.MAX_SAFE_INTEGER`.
 **Observed:** Rows containing large nanosecond timestamps (> 9007199254740991) sort incorrectly when mixed with regular numbers.
 **Fix:** Added a mixed-type branch that promotes both values to `BigInt` for a precision-safe comparison before falling through to the `Number` path.
 
-### 🟡 [B-239] `buildSmartTemplate` for `HISTOGRAM` emits deprecated `value:` param instead of `x:`
+### 🟡 [B-239] `buildSmartTemplate` for `HISTOGRAM` emits deprecated `value:` param instead of `x:` ✅ FIXED
 **Where:** `utils/plotUtils.ts:286`
 **Repro:** Trigger the "Suggest Plot" feature (or the AI tool) on a query with a numeric column — the generated template is `HISTOGRAM(value: "col")`. `value` is a `deprecated: true` alias for `x`; the correct canonical form is `HISTOGRAM(x: "col")`.
 **Observed:** The deprecated form still works (alias resolution in `createConfigParser`), but triggers a deprecation warning in the console.
 **Fix:** Changed the template to use `x:` instead of `value:`. Updated the matching test assertion.
+
+### 🟠 [B-240] `formatTimestamp` — 16-digit microsecond epoch divided by 1e6 (nanosecond path) instead of 1e3 ✅ FIXED
+**Where:** `utils/timeFormatter.ts:10-16` (old heuristic)
+**Repro:** A DataTable column classified as `timestampColumns` with a DuckDB `TIMESTAMPTZ` value returned as a 16-digit microsecond number (e.g., `1716584383215000` — 16 digits). The old `length > 15 → /1e6` heuristic treats microseconds as nanoseconds, producing a date ~1000× too early (year ~1970-1975).
+**Observed:** Timestamps in `startTime` / `endTime` columns sourced from `TIMESTAMPTZ` columns display as dates in the 1970s instead of their correct 2024+ values.
+**Fix:** Replaced the binary `> 15 → nanoseconds` heuristic with a three-tier function (`normalizeEpochToMs`) aligned with `plotUtils.normalizeEpochInteger`: digits ≥ 18 → ns (÷1e6), digits ≥ 15 → µs (÷1e3), else ms. Added regression tests for the 16-digit (µs) and 19-digit (ns) paths in `timeFormatter.test.ts`.
 
 ### 🟡 [B-236] `RangePlot`, `GanttChartPlot` — `AXIS-X DOMAIN`, `AXIS-X LABEL`, `AXIS-Y DOMAIN/LABEL` clauses ignored ✅ FIXED
 **Where:** `components/plots/RangePlot.tsx:97-117`; `components/plots/GanttChartPlot.tsx:135-142`

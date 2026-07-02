@@ -1,6 +1,14 @@
 
 const pad = (num: number, length = 2): string => String(num).padStart(length, '0');
 
+// Aligns with normalizeEpochInteger in plotUtils.ts:
+// digits >= 18 → nanoseconds (÷1e6), digits >= 15 → microseconds (÷1e3), else ms.
+function normalizeEpochToMs(n: number, digits: number): number {
+    if (digits >= 18) return n / 1_000_000;
+    if (digits >= 15) return n / 1_000;
+    return n;
+}
+
 export const formatTimestamp = (timestamp: number | bigint | string, format: string): string => {
     if (timestamp === null || timestamp === undefined) return String(timestamp);
     
@@ -9,15 +17,12 @@ export const formatTimestamp = (timestamp: number | bigint | string, format: str
 
     if (typeof timestamp === 'number' || typeof timestamp === 'bigint') {
         const num = Number(timestamp);
-        // Heuristic: if it's a very large number, it's likely nanos.
-        const isNano = originalValue.length > 15;
-        date = isNano ? new Date(num / 1000000) : new Date(num);
+        date = new Date(normalizeEpochToMs(num, originalValue.length));
     } else if (typeof timestamp === 'string') {
         const asNumber = Number(timestamp);
         // Check if the string is purely numeric
         if (!isNaN(asNumber) && timestamp.match(/^\d+$/)) {
-            const isNano = timestamp.length > 15;
-            date = isNano ? new Date(asNumber / 1000000) : new Date(asNumber);
+            date = new Date(normalizeEpochToMs(asNumber, timestamp.length));
         } else {
             // Otherwise, parse as a date string (e.g., ISO format)
             date = new Date(timestamp);

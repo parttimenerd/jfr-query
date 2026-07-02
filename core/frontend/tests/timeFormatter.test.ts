@@ -4,7 +4,8 @@ import { formatTimestamp } from '../utils/timeFormatter';
 // Use a fixed UTC epoch for deterministic tests.
 // 2024-05-24T20:59:43.215Z = 1716584383215 ms
 const EPOCH_MS = 1716584383215;
-const EPOCH_NS = EPOCH_MS * 1_000_000; // 16 digits → nano heuristic kicks in
+const EPOCH_US = EPOCH_MS * 1_000;   // 16-digit microseconds (DuckDB TIMESTAMPTZ)
+const EPOCH_NS = EPOCH_MS * 1_000_000; // 19-digit nanoseconds
 
 describe('formatTimestamp — ISO output', () => {
     it('formats millisecond epoch as ISO', () => {
@@ -12,7 +13,15 @@ describe('formatTimestamp — ISO output', () => {
         expect(result).toBe(new Date(EPOCH_MS).toISOString());
     });
 
-    it('formats nanosecond epoch as ISO (16+ digit heuristic)', () => {
+    it('B-240: formats 16-digit microsecond epoch as ISO (÷1000, not ÷1e6)', () => {
+        // Old heuristic (length > 15 → /1e6) produced a date ~1000x too early.
+        expect(String(EPOCH_US).length).toBe(16);
+        const result = formatTimestamp(EPOCH_US, 'ISO');
+        expect(result).toBe(new Date(EPOCH_MS).toISOString());
+    });
+
+    it('formats 19-digit nanosecond epoch as ISO (÷1e6)', () => {
+        expect(String(EPOCH_NS).length).toBe(19);
         const result = formatTimestamp(EPOCH_NS, 'ISO');
         expect(result).toBe(new Date(EPOCH_MS).toISOString());
     });
@@ -88,6 +97,11 @@ describe('formatTimestamp — edge cases', () => {
 
     it('handles numeric string (milliseconds)', () => {
         const result = formatTimestamp(String(EPOCH_MS), 'ISO');
+        expect(result).toBe(new Date(EPOCH_MS).toISOString());
+    });
+
+    it('B-240: handles numeric string (16-digit microseconds)', () => {
+        const result = formatTimestamp(String(EPOCH_US), 'ISO');
         expect(result).toBe(new Date(EPOCH_MS).toISOString());
     });
 });
