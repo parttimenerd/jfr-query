@@ -25,7 +25,9 @@ export const overKeywordProvider: CompletionProvider = {
     matches(_node, ctx) {
         if (ctx.enclosingClause !== 'select' && ctx.enclosingClause !== 'orderBy') return false;
         if (ctx.token.includes('.')) return false;
-        return WINDOW_FUNC_RE.test(ctx.upTo);
+        // Check the text before the token (so typing "OV" doesn't break the match).
+        const beforeToken = ctx.upTo.slice(0, ctx.upTo.length - ctx.token.length);
+        return WINDOW_FUNC_RE.test(beforeToken);
     },
 
     provide(_node, ctx) {

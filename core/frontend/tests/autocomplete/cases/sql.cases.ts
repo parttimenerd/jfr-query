@@ -498,6 +498,14 @@ export const sqlCases: AutocompleteCase[] = [
         expected: { contains: ['OVER'] },
     },
     {
+        name: 'window-over-keyword-partial-token',
+        kind: 'sql',
+        tier: 'sql-window',
+        // Typing "OV" after ROW_NUMBER() should still filter to OVER.
+        input: 'SELECT ROW_NUMBER() OV|',
+        expected: { contains: ['OVER'] },
+    },
+    {
         name: 'partition-by-offers-columns',
         kind: 'sql',
         tier: 'sql-window',
