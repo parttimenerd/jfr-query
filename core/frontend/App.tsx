@@ -654,9 +654,8 @@ const App: React.FC = () => {
             title: ``,
             content: '# New Cell\n\n'
         };
-        const newCells = [...cells, newCell];
-        updateCellsAndMarkdown(newCells);
-    }, [cells, updateCellsAndMarkdown]);
+        updateCellsAndMarkdown([...cellsRef.current, newCell]);
+    }, [updateCellsAndMarkdown]);
 
     /**
      * C7 — Tool-runtime variant of addCell. The AI tool runtime emits
@@ -694,8 +693,8 @@ const App: React.FC = () => {
             const body = fence ? `${fence}\n${mut.content}\n\`\`\`\n` : `${mut.content}\n`;
             return { id: `cell-${Date.now()}-${i}`, title: '', content: body };
         });
-        updateCellsAndMarkdown([...cells, ...newCells]);
-    }, [cells, updateCellsAndMarkdown, flushHistory]);
+        updateCellsAndMarkdown([...cellsRef.current, ...newCells]);
+    }, [updateCellsAndMarkdown, flushHistory]);
 
     const addCellFromAI = useCallback((sql: string, plotConfig: string, title: string, markdownText: string) => {
         const content = reconstructCellContent([
@@ -709,9 +708,8 @@ const App: React.FC = () => {
             title: '',
             content: content,
         };
-        const newCells = [...cells, newCell];
-        updateCellsAndMarkdown(newCells);
-    }, [cells, updateCellsAndMarkdown]);
+        updateCellsAndMarkdown([...cellsRef.current, newCell]);
+    }, [updateCellsAndMarkdown]);
 
 
     const deleteCell = useCallback((cellId: string) => {
@@ -825,9 +823,9 @@ const App: React.FC = () => {
         isRunningAllRef.current = true;
         setIsRunningAll(true);
         try {
-            for (const cell of cells) {
+            for (const cell of cellsRef.current) {
                 const parsed = parseCellContent(tokenizeCellContent(cell.content));
-                const allVariables = { ...metadata.variables, ...parsed.variables };
+                const allVariables = { ...metadataRef.current.variables, ...parsed.variables };
                 for (let i = 0; i < parsed.sqlBlocks.length; i++) {
                     await runQuery(cell.id, parsed.sqlBlocks[i], i, allVariables);
                 }
@@ -836,7 +834,7 @@ const App: React.FC = () => {
             isRunningAllRef.current = false;
             setIsRunningAll(false);
         }
-    }, [cells, metadata, runQuery]);
+    }, [runQuery]);
 
     const handleClearResults = useCallback(() => {
         setResults({});
@@ -844,7 +842,7 @@ const App: React.FC = () => {
     }, []);
 
     const formatAllCells = useCallback(() => {
-        const newCells = cells.map(cell => {
+        const newCells = cellsRef.current.map(cell => {
             const segments = tokenizeCellContent(cell.content);
             const formattedSegments = segments.map(seg => {
                 if (seg.type === 'sql') return { ...seg, content: formatSql(seg.content) };
@@ -854,7 +852,7 @@ const App: React.FC = () => {
             return { ...cell, content: reconstructCellContent(formattedSegments) };
         });
         updateCellsAndMarkdown(newCells);
-    }, [cells, metadata]);
+    }, [updateCellsAndMarkdown]);
 
     const cmdActions: CommandAction[] = useMemo(() => [
         { id: 'format-all', label: 'Format all cells', hint: '⇧⇧ then "format"', keywords: 'beautify pretty indent', run: () => formatAllCells() },
