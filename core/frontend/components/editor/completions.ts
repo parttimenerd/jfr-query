@@ -168,12 +168,15 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
       const lc = token.toLowerCase();
       const opts: Completion[] = [];
       for (const [name, value] of Object.entries(variables)) {
-        if (name.toLowerCase().startsWith(lc)) {
+        // B-247: keys may be stored without a $ prefix (e.g. session_start from metadata).
+        // Normalise to the $-prefixed form for matching and display.
+        const displayName = name.startsWith('$') ? name : `$${name}`;
+        if (displayName.toLowerCase().startsWith(lc)) {
           opts.push({
-            label: name,
+            label: displayName,
             detail: `= ${truncate(String(value), 30)}`,
             type: 'variable',
-            apply: name,
+            apply: displayName,
           });
         }
       }
