@@ -825,6 +825,38 @@ function completeTailValue(
   fullValue: string,
 ): CompletionResult | null {
   const options: Completion[] = [];
+
+  const tailUpper = hint.tail?.toUpperCase?.() ?? '';
+
+  // LEGEND: suggest AT <position> keywords.
+  if (tailUpper === 'LEGEND') {
+    const positions = [
+      { label: 'AT NONE', detail: 'hide legend' },
+      { label: 'AT TOP', detail: 'legend at top' },
+      { label: 'AT BOTTOM', detail: 'legend at bottom' },
+      { label: 'AT LEFT', detail: 'legend at left' },
+      { label: 'AT RIGHT', detail: 'legend at right' },
+      { label: 'HIDDEN', detail: 'hide legend' },
+    ];
+    const lc = partial.toLowerCase();
+    for (const p of positions) {
+      if (lc && !p.label.toLowerCase().startsWith(lc)) continue;
+      options.push({ label: p.label, detail: p.detail, type: 'keyword', boost: 5 });
+    }
+    return options.length > 0 ? { from, options } : null;
+  }
+
+  // PALETTE: suggest known palette names.
+  if (tailUpper === 'PALETTE') {
+    const palettes = ['category10', 'tableau10', 'pastel1', 'dark2', 'set2'];
+    const lc = partial.toLowerCase().replace(/^"/, '');
+    for (const p of palettes) {
+      if (lc && !p.startsWith(lc)) continue;
+      options.push({ label: `"${p}"`, detail: 'palette', type: 'keyword', apply: `"${p}"`, boost: 5 });
+    }
+    return options.length > 0 ? { from, options } : null;
+  }
+
   if (hint.valueType === 'identList' || hint.valueType === 'linkArgs') {
     // Names of plots / vars
     options.push(...buildPlotNameOptions(scope, partial));

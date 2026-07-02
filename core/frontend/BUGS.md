@@ -1415,3 +1415,15 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Repro:** `BAR_CHART(x: "label", y: ["v1", "v2"]) PALETTE "category10"` — bars use the default purple/green/amber colors, not the d3 category10 palette.
 **Observed:** `ParsedPlotCall.palette` is populated by the parser but no plot component reads `clauses?.palette`. The clause is a no-op.
 **Fix:** Added `getPaletteColors(palette, fallback)` to `utils/plotUtils.ts` mapping named palettes (`category10`, `tableau10`, `pastel1`, `dark2`, `set2`) to color arrays. Each of the three affected plot components now reads `clauses?.palette` and applies the resolved color array to bars/lines/areas. ✅ FIXED
+
+### 🟡 [B-236] `RangePlot`, `GanttChartPlot` — `AXIS-X DOMAIN`, `AXIS-X LABEL`, `AXIS-Y DOMAIN/LABEL` clauses ignored ✅ FIXED
+**Where:** `components/plots/RangePlot.tsx:97-117`; `components/plots/GanttChartPlot.tsx:135-142`
+**Repro:** `RANGE_PLOT(x: "time", low: "p10", high: "p90") AXIS-X LABEL "Time"` — label never appears; `GANTT_CHART(lane: "l", start: "s", end: "e") AXIS-X DOMAIN [0, 1000]` — domain ignored.
+**Observed:** Both components had `clauses` prop but never read `clauses?.axisX` / `clauses?.axisY`.
+**Fix:** Added extraction of `xDomainFromClause`, `xLabelFromClause`, `yDomainFromClause`, `yLabelFromClause` from `clauses` in both components; wired into `XAxis`/`YAxis` props.
+
+### 🟡 [B-237] `completeTailValue` — `LEGEND` and `PALETTE` tail values offer no context-specific completions ✅ FIXED
+**Where:** `components/editor/completions.ts` `completeTailValue` function
+**Repro:** Type `LINE_CHART(x: "t", y: ["v"]) LEGEND ` and trigger autocomplete — only `@const` suggestions appear; no `AT NONE`, `AT TOP`, etc.  Type `… PALETTE ` — no palette names suggested.
+**Observed:** `completeTailValue` treated LEGEND and PALETTE as generic `valueType: 'string'` tails with no special handling.
+**Fix:** Added early-return branches for `LEGEND` (suggests `AT NONE/TOP/BOTTOM/LEFT/RIGHT` and `HIDDEN`) and `PALETTE` (suggests the five named palettes).

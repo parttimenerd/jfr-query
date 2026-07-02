@@ -56,6 +56,8 @@ const GanttChartComponent: React.FC<{
   const numberFormatter = (v: any) => formatNumber(v, settings.decimalPlaces);
   const gestures = usePlotGestures({ name: gestureName, onVariableChange });
   const colors = getPaletteColors(clauses?.palette, COLORS);
+  const xDomainFromClause = clauses?.axisX?.domain as [any, any] | undefined;
+  const xLabelFromClause = clauses?.axisX?.label;
 
   const { chartData, isTime, startCol, endCol, rowCol, colorCategories } = useMemo(() => {
     if (!data || !data.length || !data[0]) {
@@ -137,8 +139,9 @@ const GanttChartComponent: React.FC<{
             stroke="#9ca3af"
             tick={{ fontSize: 11 }}
             tickFormatter={tickFormatter}
-            domain={['dataMin', 'dataMax']}
+            domain={xDomainFromClause ?? ['dataMin', 'dataMax']}
             allowDataOverflow
+            label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 11, offset: -5 } : undefined}
           />
           <YAxis
             type="category"
