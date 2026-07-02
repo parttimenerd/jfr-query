@@ -65,3 +65,5 @@ core/frontend/bench_run*.mjs
 core/frontend/scripts/bench/
 core/frontend/test-complex*.md
 
+# MkDocs generated site
+/site/
