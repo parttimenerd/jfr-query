@@ -569,8 +569,8 @@ async function mergeChunkTables(
     `SELECT table_name FROM information_schema.tables
      WHERE table_schema='main'
        AND (regexp_matches(table_name, '^chunk\\d+_')
-            OR table_name LIKE '\\_stage\\_%' ESCAPE '\\'
-            OR table_name LIKE '\\_idmap\\_%' ESCAPE '\\')`
+            OR regexp_matches(table_name, '^_stage_')
+            OR regexp_matches(table_name, '^_idmap_'))`
   ).catch(() => null);
   const allDropNames: string[] = [];
   if (leftoverResult) {
