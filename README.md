@@ -1,11 +1,11 @@
 # JFR Query
 
+![Duke, the Java mascot riding a duck](img/duck_duke.jpeg)
+
 Query Java Flight Recorder files with SQL — load a `.jfr` recording into DuckDB, write queries,
 and visualise the results as interactive charts in a notebook UI.
 
 **[→ Live web app](https://parttimenerd.github.io/jfr-query/) · [Documentation](https://parttimenerd.github.io/jfr-query/docs/)**
-
-![JFR Query Notebook — line chart, flamegraph, bar chart, heatmap, pie chart, histogram](docs-site/page-full.png)
 
 > **Early prototype.** The database schema may change at any point.
 
@@ -65,6 +65,8 @@ Run `java -jar query.jar views` to list all views, `macros` to list SQL macros.
 Compose SQL queries, prose, and charts in a single document. Cells share data through named
 aliases — one cell can feed multiple charts, and inline `${SELECT …}` expressions embed query
 results directly in text.
+
+![JFR Query notebook UI — schema explorer, line chart with tooltip, query results table, AI assistant](docs-site/page-full.png)
 
 ### 12 chart types
 
