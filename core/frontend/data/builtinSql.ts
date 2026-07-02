@@ -149,8 +149,9 @@ export const BUILTIN_MACROS_SQL: string[] = [
   )
 )`,
 
-  // Time-window helpers
-  `CREATE OR REPLACE MACRO time_bucket(ts, width_ms) AS (
+  // Time-window helpers — note: bucket_ms(ts, width_ms) returns epoch-ms integer;
+  // use DuckDB's native time_bucket(INTERVAL, TIMESTAMP) for TIMESTAMP results
+  `CREATE OR REPLACE MACRO bucket_ms(ts, width_ms) AS (
   epoch_ms(ts) - (epoch_ms(ts) % width_ms)
 )`,
   `CREATE OR REPLACE MACRO in_range(ts, t_start, t_end) AS (
@@ -808,18 +809,19 @@ ORDER BY g.startTime`,
 SELECT
     g.startTime AS "Time",
     h."when" AS "Phase",
-    h.heapUsed / (1024.0 * 1024.0) AS "Used MB"
+    h.heapUsed / (1024.0 * 1024.0) AS "Used MB",
+    h.heapCommitted / (1024.0 * 1024.0) AS "Committed MB"
 FROM GCHeapSummary h
 JOIN GarbageCollection g ON g.gcId = h.gcId
 ORDER BY g.startTime`,
 
   `CREATE OR REPLACE VIEW "allocation-rate" AS
 SELECT
-    time_bucket(startTime, 1000) AS "Bucket",
+    bucket_ms(startTime, 1000) AS "Bucket",
     SUM(weight) / (1024.0 * 1024.0) AS "Sample MB/s",
     COUNT(*) AS "Samples"
 FROM ObjectAllocationSample
-GROUP BY time_bucket(startTime, 1000)
+GROUP BY bucket_ms(startTime, 1000)
 ORDER BY 1`,
 
   `CREATE OR REPLACE VIEW "allocation-by-class-detail" AS
@@ -855,33 +857,33 @@ ORDER BY sb.startTime`,
 
   `CREATE OR REPLACE VIEW "tlab-efficiency" AS
 SELECT
-    time_bucket(startTime, 5000) AS "Bucket (5s)",
+    bucket_ms(startTime, 5000) AS "Bucket (5s)",
     SUM(allocationSize) / NULLIF(SUM(tlabSize), 0) AS "Fill Ratio",
     COUNT(*) AS "Allocations",
     format_memory(SUM(tlabSize)) AS "Total TLAB",
     format_memory(SUM(allocationSize)) AS "Total Allocated"
 FROM ObjectAllocationInNewTLAB
-GROUP BY time_bucket(startTime, 5000)
+GROUP BY bucket_ms(startTime, 5000)
 ORDER BY 1`,
 
   `CREATE OR REPLACE VIEW "gc-throughput" AS
 SELECT
-    time_bucket(startTime, 10000) AS "Window",
+    bucket_ms(startTime, 10000) AS "Window",
     SUM(sumOfPauses) * 1000 AS "GC Time (ms)",
     10000 - (SUM(sumOfPauses) * 1000) AS "Mutator Time (ms)",
     ROUND(100.0 - (SUM(sumOfPauses) * 1000 / 10000.0 * 100), 1) AS "Throughput %"
 FROM GarbageCollection
-GROUP BY time_bucket(startTime, 10000)
+GROUP BY bucket_ms(startTime, 10000)
 ORDER BY 1`,
 
   `CREATE OR REPLACE VIEW "gc-overhead" AS
 SELECT
-    time_bucket(startTime, 10000) AS "Window",
+    bucket_ms(startTime, 10000) AS "Window",
     ROUND(SUM(sumOfPauses) * 1000 / 10000.0 * 100, 2) AS "GC Overhead %",
     SUM(sumOfPauses) * 1000 AS "Pause ms",
     COUNT(*) AS "Collections"
 FROM GarbageCollection
-GROUP BY time_bucket(startTime, 10000)
+GROUP BY bucket_ms(startTime, 10000)
 ORDER BY 1`,
 
   `CREATE OR REPLACE VIEW "heap-configuration" AS
