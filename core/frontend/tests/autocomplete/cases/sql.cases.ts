@@ -22,12 +22,12 @@ const extendedSchema = () => {
         },
     ];
     const views: ViewSchema[] = [
-        { name: 'slow_requests', columns: [{ name: 'ts', type: 'TIMESTAMP' }, { name: 'path', type: 'VARCHAR' }, { name: 'latency', type: 'DOUBLE' }] },
-        { name: 'hourly_cpu', columns: [{ name: 'hour', type: 'TIMESTAMP' }, { name: 'avg_cpu', type: 'DOUBLE' }] },
+        { name: 'slow_requests', query: '', columns: [{ name: 'ts', type: 'TIMESTAMP' }, { name: 'path', type: 'VARCHAR' }, { name: 'latency', type: 'DOUBLE' }] },
+        { name: 'hourly_cpu', query: '', columns: [{ name: 'hour', type: 'TIMESTAMP' }, { name: 'avg_cpu', type: 'DOUBLE' }] },
     ];
     const macros: MacroSchema[] = [
-        { name: 'p99_latency', parameters: ['col'], returnType: 'DOUBLE' },
-        { name: 'bucket_ms', parameters: ['ts', 'interval'], returnType: 'BIGINT' },
+        { name: 'p99_latency', sql: '', parameters: ['col'], returnType: 'DOUBLE' },
+        { name: 'bucket_ms', sql: '', parameters: ['ts', 'interval'], returnType: 'BIGINT' },
     ];
     return {
         tables,
@@ -488,17 +488,14 @@ export const sqlCases: AutocompleteCase[] = [
     },
 
     // --- Tier: sql-window ---
-    // NOTE: The SQL context parser does not yet detect "cursor immediately after
-    // a window function call" and suggest OVER. B-204 tracks the fix.
-    // These cases verify the current behavior (no crash, generic completions).
+    // B-204 fixed: OVER is now suggested after a window function call.
     {
         name: 'window-over-keyword-after-func',
         kind: 'sql',
         tier: 'sql-window',
-        // Parser currently offers tables/columns here, not OVER — B-204.
-        // Test that it at least offers something (no crash) and not OVER yet.
+        // After ROW_NUMBER(), OVER should be the top suggestion.
         input: 'SELECT ROW_NUMBER() |',
-        expected: { matchesRegex: /COUNT|events|requests/i }, // placeholder until B-204
+        expected: { contains: ['OVER'] },
     },
     {
         name: 'partition-by-offers-columns',

@@ -29,7 +29,7 @@ import {
     functionProvider,
     macroProvider,
 } from './providers/symbols';
-import { keywordProvider } from './providers/keywords';
+import { keywordProvider, overKeywordProvider } from './providers/keywords';
 import { distinctValueProvider } from './providers/distinctValue';
 import { applyRerankBoosts, compareRanking } from './reranker';
 
@@ -45,6 +45,7 @@ const PROVIDERS: CompletionProvider[] = [
     aliasProvider,
     functionProvider,
     macroProvider,
+    overKeywordProvider,
     keywordProvider,
 ];
 

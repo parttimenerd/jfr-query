@@ -14,6 +14,37 @@ import {
 } from '../../../sqlFunctions';
 import { VALID_FOR_IDENT } from '../helpers';
 
+const WINDOW_FUNC_RE =
+    /\b(ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|NTILE|PERCENT_RANK|CUME_DIST|FIRST_VALUE|LAST_VALUE|NTH_VALUE|SUM|COUNT|AVG|MIN|MAX|LISTAGG|STRING_AGG|ARRAY_AGG)\s*\([^)]*\)\s*$/i;
+
+// Suggests OVER after a window function call in SELECT / ORDER BY context.
+export const overKeywordProvider: CompletionProvider = {
+    name: 'over-keyword',
+    priority: 200,
+
+    matches(_node, ctx) {
+        if (ctx.enclosingClause !== 'select' && ctx.enclosingClause !== 'orderBy') return false;
+        if (ctx.token.includes('.')) return false;
+        return WINDOW_FUNC_RE.test(ctx.upTo);
+    },
+
+    provide(_node, ctx) {
+        const partial = ctx.token.toLowerCase();
+        if (!'over'.startsWith(partial)) return { items: [] };
+        return {
+            items: [{
+                label: 'OVER',
+                detail: 'window function clause',
+                type: 'keyword',
+                apply: 'OVER (',
+                boost: 20,
+            }],
+            from: ctx.tokenFrom,
+            validFor: VALID_FOR_IDENT,
+        };
+    },
+};
+
 function keywordsForClause(clause: SqlClause | null): string[] {
     switch (clause) {
         case 'select': return SQL_KEYWORDS_AFTER_SELECT;
