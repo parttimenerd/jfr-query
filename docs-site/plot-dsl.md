@@ -37,6 +37,463 @@ A plot expression consists of:
 Aliases are accepted anywhere the canonical name is. `LINE(x=t, y=v)` is equivalent to `LINE_CHART(x=t, y=v)`.
 `PIE_CHART` also accepts the older names `name` / `labels` / `values` for backwards compatibility; prefer `category` / `value`.
 
+---
+
+### LINE_CHART
+
+Lines over time — ideal for CPU, memory, GC activity, or any metric that changes continuously. Supports zoom, pan, dual Y-axis, and reference lines.
+
+**Example 1 — A simple time-series chart showing total CPU usage**
+
+![CPU Load Over Time](img/plots/LINE_CHART-0.png)
+
+````
+```plot
+LINE_CHART(x: "timestamp", y: ["cpuLoad"])
+  TITLE "CPU Load Over Time"
+  AXIS_Y LABEL "CPU Load" DOMAIN [0, 1]
+```
+````
+
+**Example 2 — An interactively zoomable chart linked to global variables**
+
+![Zoomable Heap Used](img/plots/LINE_CHART-1.png)
+
+````
+```plot
+LINE_CHART(x: "timestamp", y: ["heapUsed"])
+  TITLE "Heap Used (Zoomable)"
+  LINK_X($start, $end)
+  AXIS_Y LABEL "Bytes"
+```
+````
+
+**Example 3 — Dot/points style (no connecting line)**
+
+![Method Call Frequency (dots)](img/plots/LINE_CHART-2.png)
+
+````
+```plot
+LINE_CHART(x: "timestamp", y: ["callCount"], lineType: "dots")
+  TITLE "Method Call Frequency"
+```
+````
+
+**Example 4 — Multi-series comparing CPU metrics**
+
+![Total vs JVM CPU](img/plots/LINE_CHART-3.png)
+
+````
+```plot
+LINE_CHART(x: "timestamp", y: ["totalCpu", "jvmCpu"])
+  TITLE "Total CPU vs JVM User CPU"
+  AXIS_Y LABEL "CPU Load" DOMAIN [0, 1]
+```
+````
+
+**Example 5 — Allocation rate with threshold reference line**
+
+![Allocation Rate with Threshold](img/plots/LINE_CHART-4.png)
+
+````
+```plot
+LINE_CHART(x: "timestamp", y: ["allocRate"], connectNulls: true)
+  TITLE "Allocation Rate"
+  AXIS_Y LABEL "MB/s"
+```
+````
+
+**Example 6 — Dual Y-axis: heap usage vs. GC throughput**
+
+![Heap vs GC Throughput](img/plots/LINE_CHART-5.png)
+
+````
+```plot
+LINE_CHART(x: "timestamp", y: ["heapUsed"], y2: ["gcThroughput"])
+  TITLE "Heap Used vs GC Throughput"
+  AXIS_Y LABEL "Bytes"
+```
+````
+
+---
+
+### BAR_CHART
+
+Bars for comparing values across categories — e.g. GC causes, top methods, pause counts per thread. Supports grouped, stacked, horizontal, and mixed bar+line.
+
+**Example 1 — Simple bar chart by category**
+
+![GC Duration by Cause](img/plots/BAR_CHART-0.png)
+
+````
+```plot
+BAR_CHART(x: "cause", y: ["duration"])
+  TITLE "GC Duration by Cause"
+  AXIS_Y LABEL "ms"
+```
+````
+
+**Example 2 — Grouped (side-by-side) bars**
+
+![Young vs Old GC Pauses](img/plots/BAR_CHART-1.png)
+
+````
+```plot
+BAR_CHART(x: "cause", y: ["youngGen", "oldGen"], layout: "grouped")
+  TITLE "Young vs Old Gen GC Pauses"
+  AXIS_Y LABEL "ms"
+```
+````
+
+**Example 3 — Stacked bar chart**
+
+![CPU Usage Breakdown (stacked)](img/plots/BAR_CHART-2.png)
+
+````
+```plot
+BAR_CHART(x: "timestamp", y: ["userCpu", "systemCpu", "ioCpu"], layout: "stacked")
+  TITLE "CPU Usage Breakdown"
+  AXIS_Y LABEL "CPU Fraction"
+```
+````
+
+**Example 4 — Bar with line overlay**
+
+![Allocation Rate with P99 Line](img/plots/BAR_CHART-3.png)
+
+````
+```plot
+BAR_CHART(x: "timestamp", y: ["allocRate"], lineY: ["p99Pause"])
+  TITLE "Allocation Rate with P99 Pause Line"
+```
+````
+
+**Example 5 — Horizontal bar chart**
+
+![Top Methods (horizontal)](img/plots/BAR_CHART-4.png)
+
+````
+```plot
+BAR_CHART(x: "method", y: ["duration"], horizontal: true)
+  TITLE "Top Methods by Duration"
+  AXIS_Y LABEL "ms"
+```
+````
+
+---
+
+### PIE_CHART
+
+Shows how a total breaks down into parts — best for 3–7 categories. Use `BAR_CHART` if you need precise comparisons.
+
+**Example 1 — Thread state breakdown**
+
+![Thread State Breakdown](img/plots/PIE_CHART-0.png)
+
+````
+```plot
+PIE_CHART(category: "state", value: "count")
+  TITLE "Thread State Breakdown"
+```
+````
+
+**Example 2 — Donut chart with outer labels**
+
+![GC Cause Breakdown (donut)](img/plots/PIE_CHART-1.png)
+
+````
+```plot
+PIE_CHART(category: "cause", value: "count", innerRadius: 0.5)
+  TITLE "GC Cause Breakdown"
+```
+````
+
+**Example 3 — Memory pool split**
+
+![Memory Pool Usage](img/plots/PIE_CHART-2.png)
+
+````
+```plot
+PIE_CHART(category: "pool", value: "usedMb")
+  TITLE "Memory Pool Usage"
+```
+````
+
+---
+
+### SCATTER_PLOT
+
+Plots individual data points by two numeric axes — great for spotting correlations (e.g. pause duration vs. bytes reclaimed). Add a third numeric column as `size` for bubble charts.
+
+**Example 1 — Memory reclaimed vs. pause duration**
+
+![GC Duration vs Reclaimed](img/plots/SCATTER_PLOT-0.png)
+
+````
+```plot
+SCATTER_PLOT(x: "reclaimedMb", y: "duration")
+  TITLE "GC Duration vs Memory Reclaimed"
+  AXIS_X LABEL "MB Reclaimed"
+  AXIS_Y LABEL "ms"
+```
+````
+
+**Example 2 — Zoomable/pannable scatter**
+
+![Heap Used vs Alloc Rate (zoomable)](img/plots/SCATTER_PLOT-1.png)
+
+````
+```plot
+SCATTER_PLOT(x: "heapUsed", y: "allocRate")
+  TITLE "Heap Used vs Allocation Rate"
+  LINK_XY($zoom)
+```
+````
+
+**Example 3 — Bubble chart (size + color)**
+
+![GC Cause Bubble Chart](img/plots/SCATTER_PLOT-2.png)
+
+````
+```plot
+SCATTER_PLOT(x: "reclaimedMb", y: "duration", size: "youngGenSize", color: "cause")
+  TITLE "GC Events by Cause"
+```
+````
+
+---
+
+### HEATMAP
+
+Two-dimensional color grid — great for showing intensity across two categorical dimensions (e.g., thread × time, class × method).
+
+**Example 1 — Lock contention by thread and lock**
+
+![Lock Contention Heatmap](img/plots/HEATMAP-0.png)
+
+````
+```plot
+HEATMAP(x: "lock", y: "thread", value: "waitMs")
+  TITLE "Lock Contention (ms)"
+```
+````
+
+**Example 2 — CPU load by hour and day of week**
+
+![CPU Load by Hour and Day](img/plots/HEATMAP-1.png)
+
+````
+```plot
+HEATMAP(x: "hour", y: "dayOfWeek", value: "avgCpu")
+  TITLE "CPU Load by Hour and Day"
+```
+````
+
+**Example 3 — Allocation rate per class and GC phase**
+
+![Allocation by Class and GC Phase](img/plots/HEATMAP-2.png)
+
+````
+```plot
+HEATMAP(x: "gcPhase", y: "className", value: "allocBytes")
+  TITLE "Allocation Rate per Class and GC Phase"
+```
+````
+
+---
+
+### FLAMEGRAPH
+
+Flamegraph of stack frames — interactive, zoomable. Requires `frames` (column of frame arrays) and `value` (weight column such as sample count or duration).
+
+**Example 1 — CPU flamegraph**
+
+![CPU Flamegraph](img/plots/FLAMEGRAPH-0.png)
+
+````
+```plot
+FLAMEGRAPH(frames: "stackFrames", value: "samples")
+  TITLE "CPU Flamegraph"
+  HEIGHT 400px
+```
+````
+
+---
+
+### HISTOGRAM
+
+Frequency distribution of a single numeric column — shows how values cluster. Use `logBins: true` for data spanning many orders of magnitude (e.g., pause durations from µs to seconds).
+
+**Example 1 — GC pause duration distribution**
+
+![GC Pause Distribution](img/plots/HISTOGRAM-0.png)
+
+````
+```plot
+HISTOGRAM(x: "duration", bins: 10)
+  TITLE "GC Pause Distribution"
+```
+````
+
+**Example 2 — Log-scale bins for allocation sizes**
+
+![Allocation Size Distribution (log bins)](img/plots/HISTOGRAM-1.png)
+
+````
+```plot
+HISTOGRAM(x: "allocationSize", bins: 20, logBins: true)
+  TITLE "Allocation Size Distribution"
+```
+````
+
+---
+
+### BOX_PLOT
+
+Distribution summary (min, Q1, median, Q3, max) — good for comparing spread across categories like GC pauses per cause or latency per endpoint.
+
+**Example 1 — Single distribution of GC pauses**
+
+![GC Pause Duration Distribution](img/plots/BOX_PLOT-0.png)
+
+````
+```plot
+BOX_PLOT(value: "duration")
+  TITLE "Distribution of GC Pauses"
+  AXIS_Y LABEL "ms"
+```
+````
+
+**Example 2 — Multiple boxes comparing GC types**
+
+![Pause Duration by GC Type](img/plots/BOX_PLOT-1.png)
+
+````
+```plot
+BOX_PLOT(value: "duration", category: "gcType")
+  TITLE "Pause Duration by GC Type"
+  AXIS_Y LABEL "ms"
+```
+````
+
+---
+
+### AREA_CHART
+
+Filled area chart — ideal for visualizing cumulative or proportional data over time, such as heap usage breakdown or allocation rates. Supports stacked or overlapping areas.
+
+**Example 1 — Simple heap area**
+
+![Heap Used Over Time](img/plots/AREA_CHART-0.png)
+
+````
+```plot
+AREA_CHART(x: "timestamp", y: ["heapUsed"])
+  TITLE "Heap Used Over Time"
+  AXIS_Y LABEL "MB"
+```
+````
+
+**Example 2 — Stacked memory regions**
+
+![Memory Regions Stacked](img/plots/AREA_CHART-1.png)
+
+````
+```plot
+AREA_CHART(x: "timestamp", y: ["eden", "survivor", "tenured"], layout: "stacked")
+  TITLE "Memory Regions Over Time"
+  AXIS_Y LABEL "MB"
+```
+````
+
+---
+
+### GANTT
+
+Horizontal Gantt chart showing time ranges per category — ideal for thread activity timelines, GC pause periods, or any start→end interval data.
+
+**Example 1 — GC pause intervals per phase**
+
+![GC Phase Timeline](img/plots/GANTT-0.png)
+
+````
+```plot
+GANTT(start: "startTime", end: "endTime", lane: "phase")
+  TITLE "GC Phase Timeline"
+```
+````
+
+**Example 2 — Thread activity colored by state**
+
+![Thread Activity Timeline](img/plots/GANTT-1.png)
+
+````
+```plot
+GANTT(start: "startTime", end: "endTime", lane: "thread", color: "state", task: "phase")
+  TITLE "Thread Activity"
+```
+````
+
+---
+
+### RANGE
+
+Confidence interval / error band chart — shaded area between a low and high bound with an optional center line. Useful for showing p5–p95 latency bands, GC pause ranges, or CPU confidence intervals.
+
+**Example 1 — P5–P95 GC pause latency band**
+
+![GC Pause Latency Band](img/plots/RANGE-0.png)
+
+````
+```plot
+RANGE(x: "timestamp", low: "p5", high: "p95")
+  TITLE "GC Pause Latency Band (P5–P95)"
+  AXIS_Y LABEL "ms"
+```
+````
+
+**Example 2 — CPU usage spread with median center line**
+
+![CPU Usage Spread](img/plots/RANGE-1.png)
+
+````
+```plot
+RANGE(x: "timestamp", low: "minCpu", high: "maxCpu", center: "medianCpu")
+  TITLE "CPU Usage Spread"
+  AXIS_Y LABEL "CPU Load"
+```
+````
+
+---
+
+### TABLE
+
+Sortable, filterable table with CSV export — the default when no other plot is specified. Timestamps, durations, and numbers are auto-formatted.
+
+**Example 1 — Default table (auto-detected columns)**
+
+![Auto Table](img/plots/TABLE-0.png)
+
+````
+```plot
+TABLE()
+  TITLE "Query Results"
+```
+````
+
+**Example 2 — Selected columns with custom widths**
+
+![Table with Column Widths](img/plots/TABLE-1.png)
+
+````
+```plot
+TABLE(headers: ["timestamp", "cause", "duration"], columnWidths: [200, 150, -1])
+  TITLE "GC Events"
+```
+````
+
+---
+
 ## Inner arguments
 
 Inner arguments go inside the parentheses after the plot type. All are optional; the sensible defaults for each plot type apply when omitted.
