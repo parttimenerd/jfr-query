@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec } from '../../utils/plotUtils';
+import type { ParsedPlotCall } from '../../utils/plotParser';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 
@@ -30,9 +31,11 @@ function freedmanDiaconisBins(values: number[]): number {
     return Math.max(1, Math.min(100, Math.ceil(range / binWidth)));
 }
 
-const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; }> = ({ config, data, isAnimationActive, animationDuration, domainX }) => {
+const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; clauses?: ParsedPlotCall; }> = ({ config, data, isAnimationActive, animationDuration, domainX, clauses }) => {
     const { settings } = useContext(SettingsContext);
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
+    const effectiveLogScale = clauses?.axisY?.type === 'log' ? true : config.logScale;
+    const yDomainFromClause = clauses?.axisY?.domain as [any, any] | undefined;
 
     const chartData = useMemo(() => {
         const values = data.map(r => parseFloat(r[config.x])).filter(v => !isNaN(v));
@@ -74,7 +77,7 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
                 <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 50 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568"/>
                     <XAxis dataKey="range" stroke="#9ca3af" tick={{fontSize:12}} angle={-45} textAnchor="end" interval="preserveStartEnd" domain={domainX ?? config.xDomain ?? ['auto', 'auto']}/>
-                    <YAxis stroke="#9ca3af" tick={{fontSize:12}} label={{value:'Frequency',angle:-90,position:'insideLeft',fill:'#9ca3af'}} scale={config.logScale?"log":"auto"} domain={config.logScale?[0.1,'dataMax']:[0,'dataMax']} allowDataOverflow/>
+                    <YAxis stroke="#9ca3af" tick={{fontSize:12}} label={{value:'Frequency',angle:-90,position:'insideLeft',fill:'#9ca3af'}} scale={effectiveLogScale?"log":"auto"} domain={yDomainFromClause ?? (effectiveLogScale?[0.1,'dataMax']:[0,'dataMax'])} allowDataOverflow/>
                     <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}}/>
                     <Bar dataKey="count" fill="#8884d8" isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>
                 </BarChart>

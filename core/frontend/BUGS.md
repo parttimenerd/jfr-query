@@ -1337,6 +1337,14 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
 
+### 🟡 [B-235] `HistogramPlot`, `BoxPlot` — `AXIS-Y TYPE LOG` / `AXIS-Y DOMAIN` clauses ignored ✅ FIXED
+**Where:** `components/plots/HistogramPlot.tsx:77`; `components/plots/BoxPlot.tsx:164`
+**Repro:** `HISTOGRAM(x: "duration") AXIS-Y TYPE LOG` — frequency axis stays linear (only `logScale: true` param works); `BOX_PLOT(value: "v") AXIS-Y DOMAIN [0, 500]` — ignored.
+**Observed:** Both components had no `clauses` prop.
+**Fix:**
+- `HistogramPlot`: added `clauses?: ParsedPlotCall`, extracted `effectiveLogScale = clauses?.axisY?.type === 'log' || config.logScale` and `yDomainFromClause`. Updated YAxis `scale` and `domain` to use these.
+- `BoxPlot`: added `clauses?: ParsedPlotCall`, extracted `yDomainFromClause`, updated YAxis `domain` to `domainY ?? yDomainFromClause ?? ['dataMin', 'dataMax']`.
+
 ### 🟡 [B-234] `ScatterPlot` — no clause support; `LEGEND AT …`, `PALETTE`, `AXIS-X/Y DOMAIN` all ignored ✅ FIXED
 **Where:** `components/plots/ScatterPlot.tsx:27`
 **Repro:** `SCATTER_PLOT(x: "x", y: "y", color: "cat") LEGEND AT NONE` — legend shows; `PALETTE "tableau10"` — uses `hsl(i*60, …)` colors instead; `AXIS-Y DOMAIN [0, 100]` — ignored.

@@ -5,6 +5,7 @@ import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn } from '../../utils/plotUtils';
+import type { ParsedPlotCall } from '../../utils/plotParser';
 
 interface BoxPlotConfig {
   category?: string;
@@ -120,9 +121,10 @@ const CustomBoxPlotTooltip: React.FC<any> = ({ active, payload, label, formatter
 };
 
 
-const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; domainY?: [number, number]; }> = ({ config, data, isAnimationActive, animationDuration, domainY }) => {
+const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; domainY?: [number, number]; clauses?: ParsedPlotCall; }> = ({ config, data, isAnimationActive, animationDuration, domainY, clauses }) => {
     const { settings } = useContext(SettingsContext);
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
+    const yDomainFromClause = clauses?.axisY?.domain as [any, any] | undefined;
 
     const chartData = useMemo(() => {
         if (!data || data.length === 0) return [];
@@ -161,7 +163,7 @@ const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimati
                 <BarChart data={chartData} barCategoryGap="30%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
                     <XAxis dataKey="category" stroke="#9ca3af" tick={{ fontSize: 12 }} />
-                    <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={numberFormatter} domain={domainY ?? ['dataMin', 'dataMax']} allowDataOverflow />
+                    <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={numberFormatter} domain={(domainY ?? yDomainFromClause) ?? ['dataMin', 'dataMax']} allowDataOverflow />
                     <Tooltip 
                         content={<CustomBoxPlotTooltip formatter={numberFormatter} />}
                         cursor={{ fill: 'rgba(130, 202, 157, 0.1)' }}
