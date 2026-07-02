@@ -33,6 +33,9 @@ nav:
     - Plot DSL: plot-dsl.md
     - Variables: variables.md
     - Built-in Views & Macros: views-macros.md
+  - Internals:
+    - JFR to DuckDB Mapping: jfr-to-duckdb.md
+    - Browser Architecture: browser-architecture.md
   - Live App: https://parttimenerd.github.io/jfr-query/
 
 plugins:
