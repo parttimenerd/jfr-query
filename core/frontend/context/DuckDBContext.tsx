@@ -392,17 +392,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [fetchSchemaFor]);
 
   const loadFile = useCallback(async (source: File | Uint8Array, fileName: string, stacktraceDepth = 10) => {
-    // Guard against OOM crashes in WASM mode for very large files.
-    const byteSize = source instanceof File ? source.size : source.byteLength;
-    const sizeMb = byteSize / (1024 * 1024);
-    if (sizeMb > 150) {
-      setDbState(DBState.ERROR);
-      setErrorMessage(
-        `File is ${sizeMb.toFixed(0)} MB — too large for in-browser (WASM) mode. ` +
-        `Start the jfr-query server and connect via server mode to load files this large.`
-      );
-      return;
-    }
     setDbState(DBState.IMPORTING);
     setImportProgress(0.01);
     setErrorMessage(null);
