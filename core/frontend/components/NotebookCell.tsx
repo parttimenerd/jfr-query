@@ -192,6 +192,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const segmentsRef = useRef(segments);
     segmentsRef.current = segments;
     const parsed = useMemo(() => parseCellContent(segments), [segments]);
+    const parsedTitleRef = useRef<string | undefined>(parsed.title);
+    parsedTitleRef.current = parsed.title;
 
     useEffect(() => { setSegments(tokenizeCellContent(cell.content)); }, [cell.content]);
 
@@ -225,14 +227,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const handleIntroUpdate = useCallback((intro: MarkdownSection | null) => {
         const newContent = intro?.content || '';
         // Re-prepend the ## title heading that parseCellContent strips from intro display content.
-        const titlePrefix = parsed.title ? `## ${parsed.title}\n\n` : '';
+        const titlePrefix = parsedTitleRef.current ? `## ${parsedTitleRef.current}\n\n` : '';
         const fullContent = newContent.trim() === '' ? '' : `${titlePrefix}${newContent}`;
         const newIntroSegments: CellSegment[] = (fullContent.trim() === '') ? [] : [{ type: 'markdown', content: fullContent }];
-        
-        let firstNonMarkdownIdx = segments.findIndex(s => s.type !== 'markdown');
-        if (firstNonMarkdownIdx === -1) firstNonMarkdownIdx = segments.length;
-        
-        const otherSegments = segments.slice(firstNonMarkdownIdx);
+
+        const segs = segmentsRef.current;
+        let firstNonMarkdownIdx = segs.findIndex(s => s.type !== 'markdown');
+        if (firstNonMarkdownIdx === -1) firstNonMarkdownIdx = segs.length;
+
+        const otherSegments = segs.slice(firstNonMarkdownIdx);
 
         if (newIntroSegments.length === 0 && otherSegments.length === 0) {
             handleSegmentsUpdate([{ type: 'markdown', content: '' }]);
@@ -241,25 +244,26 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
         const newSegments = [...newIntroSegments, ...otherSegments];
         handleSegmentsUpdate(newSegments);
-    }, [segments, handleSegmentsUpdate, parsed.title]);
+    }, [handleSegmentsUpdate]);
 
     const handleConclusionUpdate = useCallback((conclusion: MarkdownSection | null) => {
         const newContent = conclusion?.content || '';
         const newConclusionSegments: CellSegment[] = (newContent.trim() === '') ? [] : [{ type: 'markdown', content: newContent }];
 
+        const segs = segmentsRef.current;
         let lastNonMarkdownIdx = -1;
-        for (let i = segments.length - 1; i >= 0; i--) {
-            if (segments[i].type !== 'markdown') {
+        for (let i = segs.length - 1; i >= 0; i--) {
+            if (segs[i].type !== 'markdown') {
                 lastNonMarkdownIdx = i;
                 break;
             }
         }
-        
-        const coreAndIntroSegments = lastNonMarkdownIdx === -1 ? [] : segments.slice(0, lastNonMarkdownIdx + 1);
-        
+
+        const coreAndIntroSegments = lastNonMarkdownIdx === -1 ? [] : segs.slice(0, lastNonMarkdownIdx + 1);
+
         const newSegments = [...coreAndIntroSegments, ...newConclusionSegments];
         handleSegmentsUpdate(newSegments);
-    }, [segments, handleSegmentsUpdate]);
+    }, [handleSegmentsUpdate]);
 
     const title = parsed.title || cell.title;
 
@@ -870,7 +874,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         setEditingBlockName(null);
         const name = newName.trim().replace(/\n/g, ' ');
         let blockIdx = -1;
-        const newSegments = segments.map(seg => {
+        const newSegments = segmentsRef.current.map(seg => {
             if (seg.type !== type) return seg;
             blockIdx++;
             if (blockIdx !== idx) return seg;
@@ -883,7 +887,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             return { ...seg, content: newContent };
         });
         handleSegmentsUpdate(newSegments);
-    }, [segments, handleSegmentsUpdate]);
+    }, [handleSegmentsUpdate]);
     const handleDeleteVariable = (k:string) => { const v = {...(parsed.variables||{})}; delete v[k]; handleCellVariableChange(v);};
     const handleVariableChange = (o:string,n:string,v:string) => {
         const vars:Record<string,string>={};
