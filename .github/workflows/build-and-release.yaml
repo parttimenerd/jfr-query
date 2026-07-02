@@ -122,6 +122,9 @@ jobs:
     needs: build
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -140,7 +143,7 @@ jobs:
         working-directory: core/frontend
         run: |
           npm ci
-          npm run build
+          npm run build -- --base /app/
 
       - name: Setup Python
         uses: actions/setup-python@v5

@@ -52,4 +52,4 @@ Show a section only when a condition holds:
 ## Custom templates
 
 Pass `--templates-dir ~/my-templates` to `serve`. Any `.md` file at the top level is listed
-in the gallery under a "user" badge. See [Notebook Templates](../README.md#notebook-templates) in the README for full template syntax.
+in the gallery under a "user" badge. See the [Notebook Templates](https://github.com/parttimenerd/jfr-query#notebook-templates) section in the README for full template syntax.

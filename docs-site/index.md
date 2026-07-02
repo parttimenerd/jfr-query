@@ -1,6 +1,6 @@
 # JFR Query
 
-![JFR Query Notebook UI](../page-full.png)
+![JFR Query Notebook UI](page-full.png)
 
 Analyse Java Flight Recorder files with SQL. JFR Query transforms a `.jfr` recording into a
 [DuckDB](https://duckdb.org/) database and lets you query it with the full power of SQL —
