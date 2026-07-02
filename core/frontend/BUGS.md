@@ -1324,3 +1324,15 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Where:** `utils/plotConfigParser.ts:228`
 **Observed:** `closestMatch` for unknown param names searched `Object.keys(spec)` unfiltered, meaning it could suggest an alias (`color` → `category`) or deprecated param as a correction. The list of available params already filtered aliases but the suggestion did not.
 **Fix:** Both the available-params list and the `closestMatch` candidates now use the same filtered set (non-alias, non-deprecated keys only).
+
+### 🟠 [B-221] `LINE_CHART` and `AREA_CHART` — `color` parameter declared but not implemented
+**Where:** `components/plots/LineChartPlot.tsx:14,35-71`; `components/plots/AreaChartPlot.tsx:21,62-112`
+**Repro:** `LINE_CHART(x: "time", y: "val", color: "host")` — data is not split by `host` column; all rows are plotted as a single series as if `color` were absent.
+**Observed:** Both components declare `color?: string` in their `Config` interface and list a `color` param, but the `useMemo` that builds `chartData` / `allY` never reads `config.color`. The param is silently ignored.
+**Fix:** When `config.color` is set, pivot the data by that column's distinct values: for each unique value, create a series key `colorValue` (or `colorValue yCol` when multiple y columns are given), and produce one row per x value with columns for all series. The pivoted rows are passed to recharts and one `<Line>` (or `<Area>`) per series key is rendered. Applied to both `LineChartPlot` and `AreaChartPlot`. ✅ FIXED
+
+### 🟡 [B-222] `utils/jfrToWasmLoader.ts`: `?maxWorkers=abc` returns `NaN` instead of default
+**Where:** `utils/jfrToWasmLoader.ts:14-15`
+**Repro:** Open the app with `?maxWorkers=abc` in the URL; `getMaxWorkers()` returns `NaN` because `parseInt('abc', 10)` is `NaN` and `Math.max(1, Math.min(4, NaN))` propagates `NaN`.
+**Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
+**Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED

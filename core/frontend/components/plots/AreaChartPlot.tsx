@@ -86,6 +86,33 @@ const AreaChartComponent: React.FC<{
         })
       : data;
 
+    // When a color column is specified, pivot by color value — same approach as
+    // LineChartPlot: one series key per (colorValue × yCol), one row per x value.
+    if (config.color && allColumns.includes(config.color)) {
+        const colorCol = config.color;
+        const colorValues = Array.from(new Set(transformedData.map(r => String(r[colorCol] ?? ''))));
+        const yColsForColor = allYCols.length > 0 ? allYCols : (allColumns.filter(c => c !== xCol && c !== colorCol).slice(0, 1));
+        const seriesKeys = colorValues.flatMap(cv =>
+            yColsForColor.map(yc => yColsForColor.length === 1 ? cv : `${cv} ${yc}`)
+        );
+        const xMap = new Map<any, Record<string, any>>();
+        for (const row of transformedData) {
+            const xv = row[xCol];
+            if (!xMap.has(xv)) xMap.set(xv, { [xCol]: xv });
+            const entry = xMap.get(xv)!;
+            const cv = String(row[colorCol] ?? '');
+            for (const yc of yColsForColor) {
+                const sk = yColsForColor.length === 1 ? cv : `${cv} ${yc}`;
+                entry[sk] = row[yc];
+            }
+        }
+        const pivoted = Array.from(xMap.values()).sort((a, b) => {
+            const av = a[xCol], bv = b[xCol];
+            return av < bv ? -1 : av > bv ? 1 : 0;
+        });
+        return { chartData: pivoted, isTime: isTimeAxis, allY: seriesKeys, finalXCol: xCol };
+    }
+
     // W13 — LTTB decimation when over the soft cap (time-axis only).
     // B-121: run LTTB guided by each Y series and union the selected indices so
     // features of ALL series are preserved, not just the first one.
@@ -109,7 +136,7 @@ const AreaChartComponent: React.FC<{
     }
 
     return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, finalXCol: xCol };
-  }, [data, config.x, config.y]);
+  }, [data, config.x, config.y, config.color]);
 
   const yIsDuration = allY.length > 0 && allY.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY);
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;

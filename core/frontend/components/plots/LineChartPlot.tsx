@@ -36,14 +36,14 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
     if (!data || !data.length || !data[0] || !config.x) {
         return { chartData: data, isTime: false, allY: [], allY2: [], finalXCol: config.x };
     }
-    
+
     const allColumns = Object.keys(data[0]);
     const xCol = findColumn(config.x, allColumns);
-    
+
     const firstXValue = data.find(d => d[xCol] != null)?.[xCol];
     const timeValue = getTimeValue(firstXValue);
     const isTimeAxis = !isNaN(timeValue);
-    
+
     const allYCols = config.y ? Array.from(new Set(config.y.flatMap(col => findColumns(col, allColumns)))) : [];
     const allY2Cols = config.y2 ? Array.from(new Set(config.y2.flatMap(col => findColumns(col, allColumns)))) : [];
 
@@ -58,6 +58,34 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
       })
       : data;
 
+    // When a color column is specified, pivot the data: group by color value and
+    // produce one series key per (colorValue × yCol) pair, stored as columns in
+    // a per-x-value row so recharts can render one <Line> per series.
+    if (config.color && allColumns.includes(config.color)) {
+        const colorCol = config.color;
+        const colorValues = Array.from(new Set(transformedData.map(r => String(r[colorCol] ?? ''))));
+        const yColsForColor = allYCols.length > 0 ? allYCols : (allColumns.filter(c => c !== xCol && c !== colorCol).slice(0, 1));
+        const seriesKeys = colorValues.flatMap(cv =>
+            yColsForColor.map(yc => yColsForColor.length === 1 ? cv : `${cv} ${yc}`)
+        );
+        const xMap = new Map<any, Record<string, any>>();
+        for (const row of transformedData) {
+            const xv = row[xCol];
+            if (!xMap.has(xv)) xMap.set(xv, { [xCol]: xv });
+            const entry = xMap.get(xv)!;
+            const cv = String(row[colorCol] ?? '');
+            for (const yc of yColsForColor) {
+                const sk = yColsForColor.length === 1 ? cv : `${cv} ${yc}`;
+                entry[sk] = row[yc];
+            }
+        }
+        const pivoted = Array.from(xMap.values()).sort((a, b) => {
+            const av = a[xCol], bv = b[xCol];
+            return av < bv ? -1 : av > bv ? 1 : 0;
+        });
+        return { chartData: pivoted, isTime: isTimeAxis, allY: seriesKeys, allY2: [], finalXCol: xCol };
+    }
+
     // W13 — decimate via LTTB when over the soft cap. Picks the first y column
     // as the area-preserving signal; visual extrema across all series stay
     // close to faithful because LTTB on the dominant series sweeps the same
@@ -68,7 +96,7 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
       : transformedData;
 
     return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, allY2: allY2Cols, finalXCol: xCol };
-  }, [data, config.x, config.y, config.y2]);
+  }, [data, config.x, config.y, config.y2, config.color]);
 
   const yIsDuration = allY.length > 0 && allY.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY);
   const y2IsDuration = allY2.length > 0 && allY2.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY2);

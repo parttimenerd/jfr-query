@@ -12,7 +12,8 @@ const PERF_KEY = 'jfr_import_ms_per_byte';
 // Override via URL: ?maxWorkers=N
 function getMaxWorkers(): number {
   const override = new URLSearchParams(location.search).get('maxWorkers');
-  if (override) return Math.max(1, Math.min(4, parseInt(override, 10)));
+  const n = parseInt(override, 10);
+  if (override && !isNaN(n)) return Math.max(1, Math.min(4, n));
   const mem = (navigator as any).deviceMemory as number | undefined;
   if (mem !== undefined && mem >= 16) return 3;
   return 2;
