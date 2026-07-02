@@ -354,12 +354,14 @@ interface PlotRendererProps {
 
 const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRef, sql, cellContext, onApplyFix, isAiFeatureActive = false, metadata, onMetadataChange, onCellVariableChange, allVariables }) => {
 
-    // Keep onApplyFix in a ref so callers can drop it from arePropsEqual without
-    // risk of calling a stale handler. The ref is updated synchronously on every
-    // render, so by the time a user click reaches the handler it is always current.
+    // Keep onApplyFix and sql in refs so callers can drop them from arePropsEqual
+    // without risk of calling a stale handler or showing stale SQL in error state.
+    // Both refs are updated synchronously on every render.
     const onApplyFixRef = useRef(onApplyFix);
     onApplyFixRef.current = onApplyFix;
     const stableOnApplyFix = useCallback((newConfig: string) => onApplyFixRef.current(newConfig), []);
+    const sqlRef = useRef(sql);
+    sqlRef.current = sql;
 
     // Extract ALL distinct LINK-Y / LINK-XY variable names from the config so we
     // can subscribe once per unique name and pass per-leaf domains to composites.
@@ -792,7 +794,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
         const errorInfo = { error: e, failedConfig: fixContext?.failedConfig || config, onFix: fixContext?.onFix || stableOnApplyFix };
 
         const ErrorDisplay = isAiFeatureActive
-            ? <AiErrorFixer error={errorMessage} config={errorInfo.failedConfig} data={data!} sql={sql} cellContext={cellContext} onApplyFix={errorInfo.onFix} metadata={metadata} />
+            ? <AiErrorFixer error={errorMessage} config={errorInfo.failedConfig} data={data!} sql={sqlRef.current} cellContext={cellContext} onApplyFix={errorInfo.onFix} metadata={metadata} />
             : <div className="p-3 text-sm text-red-400 bg-red-900/30 font-mono whitespace-pre-wrap">{errorMessage}</div>;
 
         // Show the last valid plot below the error banner so the user doesn't lose
@@ -819,7 +821,8 @@ function arePlotRendererPropsEqual(prev: PlotRendererProps, next: PlotRendererPr
         prev.config === next.config &&
         prev.data === next.data &&
         prev.dataByQueryRef === next.dataByQueryRef &&
-        prev.sql === next.sql &&
+        // sql is only used in AiErrorFixer (error path) — stored in a ref so the
+        // latest value is always accessible without triggering a re-render.
         prev.cellContext === next.cellContext &&
         // onApplyFix is a click handler, not a render input — exclude from comparison
         // so that the inline arrow function `c => handleApplyPlotFix(c, i)` created
