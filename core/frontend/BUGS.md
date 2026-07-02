@@ -1446,6 +1446,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `ScatterPlot` read `axisX.domain` and `axisY.domain` but never `axisX.label` / `axisY.label`. `HistogramPlot` and `BoxPlot` had neither X nor Y label support. Histogram hardcoded `'Frequency'` as the Y label, ignoring `AXIS-Y LABEL` override.
 **Fix:** Added `xLabelFromClause` and `yLabelFromClause` extraction in all three components. Wired labels into the respective `XAxis`/`YAxis` `label` props. Histogram Y label falls back to `'Frequency'` when clause is absent.
 
+### 🟡 [B-243] `buildSmartTemplate` for `FLAMEGRAPH` emits `frame:` (singular) instead of canonical `frames:` ✅ FIXED
+**Where:** `utils/plotUtils.ts:301-305`
+**Repro:** Trigger "Suggest Plot" or AI plot suggestion on a query with a `method` column — the generated template is `FLAMEGRAPH(frame: "method", value: ...)`. `frame` is not a registered param; the canonical param is `frames`.
+**Observed:** The parser fails to bind the `frames` required param, producing an "unknown parameter" warning and leaving the flamegraph with no frame data.
+**Fix:** Changed both fallback and generated template strings from `frame:` to `frames:`.
+
 ### 🟡 [B-236] `RangePlot`, `GanttChartPlot` — `AXIS-X DOMAIN`, `AXIS-X LABEL`, `AXIS-Y DOMAIN/LABEL` clauses ignored ✅ FIXED
 **Where:** `components/plots/RangePlot.tsx:97-117`; `components/plots/GanttChartPlot.tsx:135-142`
 **Repro:** `RANGE_PLOT(x: "time", low: "p10", high: "p90") AXIS-X LABEL "Time"` — label never appears; `GANTT_CHART(lane: "l", start: "s", end: "e") AXIS-X DOMAIN [0, 1000]` — domain ignored.

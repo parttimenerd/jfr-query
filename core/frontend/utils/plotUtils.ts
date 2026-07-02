@@ -301,8 +301,8 @@ export const buildSmartTemplate = (plotName: string, columns: string[], sampleRo
         case 'FLAMEGRAPH': {
             const nameCol = columns.find(c => /frame|method|stack|name|function/i.test(c)) ?? columns[0];
             const valCol = numericCols[0] ?? columns.find(c => c !== nameCol);
-            if (!valCol) return 'FLAMEGRAPH(frame: , value: )';
-            return `FLAMEGRAPH(frame: ${q(nameCol)}, value: ${q(valCol)})`;
+            if (!valCol) return 'FLAMEGRAPH(frames: , value: )';
+            return `FLAMEGRAPH(frames: ${q(nameCol)}, value: ${q(valCol)})`;
         }
         default:
             return null;
