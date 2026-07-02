@@ -553,6 +553,12 @@ const App: React.FC = () => {
         return result;
     }, [cellsContent]);
 
+    // Always-fresh ref so cell-mutation callbacks (updateCell, deleteCell, etc.)
+    // can read the latest cells without depending on the `cells` state variable,
+    // keeping those callbacks stable across content-edit renders.
+    const cellsRef = useRef<NotebookCellData[]>(cells);
+    cellsRef.current = cells;
+
     const runQuery = useCallback(async (cellId: string, sql: string, queryIndex: number, allVariables: Record<string,string>) => {
         const runOnce = async (sqlToRun: string) => {
             const subSql = expandBrushOperator(substituteVariables(sqlToRun, toSqlVariables(allVariables)), allVariables);
@@ -709,22 +715,22 @@ const App: React.FC = () => {
 
 
     const deleteCell = useCallback((cellId: string) => {
-        const newCells = cells.filter(cell => cell.id !== cellId);
+        const newCells = cellsRef.current.filter(cell => cell.id !== cellId);
         updateCellsAndMarkdown(newCells);
         setResults(prev => {
             const next = { ...prev };
             delete next[cellId];
             return next;
         });
-    }, [cells, updateCellsAndMarkdown]);
+    }, [updateCellsAndMarkdown]);
 
     const updateCell = useCallback((cellId: string, updatedContent: string) => {
-        const newCells = cells.map(cell => cell.id === cellId ? { ...cell, content: updatedContent } : cell);
+        const newCells = cellsRef.current.map(cell => cell.id === cellId ? { ...cell, content: updatedContent } : cell);
         updateCellsAndMarkdown(newCells);
-    }, [cells, updateCellsAndMarkdown]);
+    }, [updateCellsAndMarkdown]);
     
     const deleteQueryBlock = useCallback((cellId: string, index: number) => {
-        const cell = cells.find(c => c.id === cellId);
+        const cell = cellsRef.current.find(c => c.id === cellId);
         if (!cell) return;
 
         const segments = tokenizeCellContent(cell.content);
@@ -765,14 +771,14 @@ const App: React.FC = () => {
             arr.splice(index, 1);
             return { ...prev, [cellId]: arr };
         });
-    }, [cells, updateCell]);
+    }, [updateCell]);
 
     const moveCell = useCallback((draggedId: string, targetId: string, position: 'before' | 'after') => {
-        const draggedIndex = cells.findIndex(c => c.id === draggedId);
-        const targetIndex = cells.findIndex(c => c.id === targetId);
+        const draggedIndex = cellsRef.current.findIndex(c => c.id === draggedId);
+        const targetIndex = cellsRef.current.findIndex(c => c.id === targetId);
         if (draggedIndex === -1 || targetIndex === -1) return;
 
-        const newCells = [...cells];
+        const newCells = [...cellsRef.current];
         const [draggedItem] = newCells.splice(draggedIndex, 1);
 
         const insertionIndex = position === 'before'
@@ -781,7 +787,7 @@ const App: React.FC = () => {
 
         newCells.splice(insertionIndex, 0, draggedItem);
         updateCellsAndMarkdown(newCells);
-    }, [cells, updateCellsAndMarkdown]);
+    }, [updateCellsAndMarkdown]);
 
     const suggestPlot = useCallback(async (sql: string, customPromptOverride?: string): Promise<string | null> => {
         if (!isAiFeatureActive) return null;
