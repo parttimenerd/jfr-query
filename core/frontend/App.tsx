@@ -855,6 +855,34 @@ const App: React.FC = () => {
         updateCellsAndMarkdown(newCells);
     }, [updateCellsAndMarkdown]);
 
+    // Expose a testing API on window for Playwright/e2e tests.
+    // Only available when import.meta.env.DEV is true (Vite dev server).
+    useEffect(() => {
+        if (!import.meta.env.DEV) return;
+        (window as any).__notebookApi = {
+            /** Replace the entire notebook with raw markdown. */
+            setMarkdown: (md: string) => setNotebookMarkdown(md),
+            /** Get the current raw notebook markdown. */
+            getMarkdown: () => notebookMarkdownRef.current,
+            /** Append a new cell. type: 'sql'|'plot'|'markdown', content: string. Returns cell id. */
+            addCell: (mut: { type: 'sql' | 'plot' | 'markdown'; content: string; afterCellId?: string }) =>
+                addCellFromTool(mut),
+            /** Append multiple cells at once. */
+            addCells: (muts: { type: 'sql' | 'plot' | 'markdown'; content: string }[]) =>
+                addCellsBatchFromTool(muts),
+            /** Update a cell by id. */
+            updateCell: (cellId: string, content: string) => updateCell(cellId, content),
+            /** Delete a cell by id. */
+            deleteCell: (cellId: string) => deleteCell(cellId),
+            /** Get the current cells array (id + content). */
+            getCells: () => cellsRef.current.map(c => ({ id: c.id, content: c.content })),
+            /** Run all queries in all cells. Returns a promise. */
+            runAll: () => handleRunAll(),
+        };
+        return () => { delete (window as any).__notebookApi; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [setNotebookMarkdown, addCellFromTool, addCellsBatchFromTool, updateCell, deleteCell, handleRunAll]);
+
     const cmdActions: CommandAction[] = useMemo(() => [
         { id: 'format-all', label: 'Format all cells', hint: '⇧⇧ then "format"', keywords: 'beautify pretty indent', run: () => formatAllCells() },
         { id: 'run-all', label: 'Run all queries', hint: 'run every SQL block', keywords: 'execute', run: () => { void handleRunAll(); } },

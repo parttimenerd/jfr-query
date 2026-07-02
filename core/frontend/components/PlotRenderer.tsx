@@ -15,6 +15,7 @@ import { LockOpenIcon } from './icons/LockOpenIcon';
 import { useScrollProducer } from '../hooks/useScrollProducer';
 import { plotBrushStore } from '../services/plotBrushStore';
 import type { BrushMode } from '../services/plotBrushStore';
+import { linkXStore } from '../services/linkXStore';
 
 /**
  * Split a multi-plot config string on blank lines, but only when the blank
@@ -58,14 +59,6 @@ function splitTopLevelConfigs(config: string): string[] {
     }
     if (cur.trim()) out.push(cur.trim());
     return out.length > 0 ? out : [''];
-}
-
-function debounce<T extends (...args: any[]) => any>(func: T, delay: number): (...args: Parameters<T>) => void {
-  let timeout: ReturnType<typeof setTimeout>;
-  return function(this: any, ...args: Parameters<T>) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), delay);
-  };
 }
 
 class PlotErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: string | null }> {
@@ -196,7 +189,15 @@ function computeDataRange(data: any[], xCol: string): { min: number; max: number
 }
 
 // ─── InteractivePlotWrapper ───────────────────────────────────────────────────
-// Used when LINK_X($min, $max) is specified. Syncs localDomain ↔ notebook vars.
+// Used when LINK_X($min, $max) is specified.
+//
+// Gesture vs. commit split:
+//   • During active gestures (scroll/drag): publish domain to linkXStore only.
+//     No metadata.variables writes → no cross-cell React re-renders → smooth.
+//   • On gesture END (pointer-up / scroll idle): commit once to metadata.variables
+//     so SQL cells whose WHERE clause references $start/$end auto-rerun.
+//   • Subscribes to linkXStore so sibling plots sharing the same variable pair
+//     stay in sync via lightweight store notification instead of prop drilling.
 
 const InteractivePlotWrapper: React.FC<{
     children: React.ReactElement;
@@ -211,16 +212,6 @@ const InteractivePlotWrapper: React.FC<{
     const [isLocked, setIsLocked] = useState(false);
     const [localDomain, setLocalDomain] = useState<[number, number] | null>(null);
 
-    // "locally owned" flag: when we just wrote a domain update, ignore the next
-    // allVariables sync so the round-trip write doesn't overwrite our local state.
-    const locallyOwnedRef = useRef(false);
-
-    // B-148: stable debounce — latest onVariableChange via ref.
-    const onVarChangeRef = useRef(onVariableChange);
-    onVarChangeRef.current = onVariableChange;
-    const stableOnVar = useCallback((p: Record<string, string>) => onVarChangeRef.current(p), []);
-    const debouncedOnVariableChange = useMemo(() => debounce(stableOnVar, 200), [stableOnVar]);
-
     const dragRef = useRef<{ startX: number; domainMin: number; domainMax: number } | null>(null);
     const [isDragging, setIsDragging] = useState(false);
 
@@ -231,8 +222,7 @@ const InteractivePlotWrapper: React.FC<{
 
     const dataRange = useMemo(() => computeDataRange(data, xCol), [data, xCol]);
 
-    // Keep stable refs so wheel handler closure always has the latest values
-    // without needing to be re-registered on every zoom tick.
+    // Stable refs so wheel/drag closures always see latest values without re-registering.
     const localDomainRef = useRef(localDomain);
     localDomainRef.current = localDomain;
     const dataRangeRef = useRef(dataRange);
@@ -241,31 +231,58 @@ const InteractivePlotWrapper: React.FC<{
     isLockedRef.current = isLocked;
     const linkXClampRef = useRef(linkXClamp);
     linkXClampRef.current = linkXClamp;
+    const onVariableChangeRef = useRef(onVariableChange);
+    onVariableChangeRef.current = onVariableChange;
 
-    const handleInteraction = useCallback((newMin: number, newMax: number) => {
+    // Pending commit: deferred metadata write after gesture ends.
+    const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const commitToVariables = useCallback((domain: [number, number] | null) => {
+        if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+        if (domain) {
+            onVariableChangeRef.current({ [linkX[0]]: String(domain[0]), [linkX[1]]: String(domain[1]) });
+        } else {
+            onVariableChangeRef.current({ [linkX[0]]: '', [linkX[1]]: '' });
+        }
+    }, [linkX]);
+
+    // During gestures: publish to linkXStore (no React state in other cells).
+    // Schedule a commit to metadata.variables after the gesture ends.
+    const handleInteraction = useCallback((newMin: number, newMax: number, isGestureEnd = false) => {
         if (newMin >= newMax) return;
         const clamped = clampDomain(newMin, newMax, dataRangeRef.current, linkXClampRef.current);
-        locallyOwnedRef.current = true;
         setLocalDomain(clamped);
-        debouncedOnVariableChange({ [linkX[0]]: String(clamped[0]), [linkX[1]]: String(clamped[1]) });
-    }, [linkX, debouncedOnVariableChange]);
+        linkXStore.publish(linkX, clamped);
+        if (isGestureEnd) {
+            // Commit immediately on gesture end (pointer-up / area-select complete).
+            if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+            commitToVariables(clamped);
+        } else {
+            // Scroll: schedule commit 400ms after last wheel event (scroll-end idle).
+            if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+            commitTimerRef.current = setTimeout(() => commitToVariables(clamped), 400);
+        }
+    }, [linkX, commitToVariables]);
 
-    // Sync from notebook variables → localDomain, but only when we don't own the update.
+    // Subscribe to linkXStore for cross-cell sync (sibling plots sharing same vars).
     useEffect(() => {
-        if (locallyOwnedRef.current) { locallyOwnedRef.current = false; return; }
+        return linkXStore.subscribe(linkX, domain => {
+            setLocalDomain(domain);
+        });
+    }, [linkX[0], linkX[1]]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Sync reset signal from metadata.variables: when another cell writes '' to reset.
+    useEffect(() => {
         const [minVar, maxVar] = linkX;
         const rawMin = allVariables[minVar];
         const rawMax = allVariables[maxVar];
-        // Empty string means "reset" — another cell cleared the variables.
-        if (rawMin === '' || rawMax === '') { setLocalDomain(null); return; }
-        const minVal = getTimeValue(rawMin);
-        const maxVal = getTimeValue(rawMax);
-        if (!isNaN(minVal) && !isNaN(maxVal)) {
-            setLocalDomain([minVal, maxVal]);
+        if (rawMin === '' || rawMax === '') {
+            setLocalDomain(null);
+            linkXStore.publish(linkX, null);
         }
-    }, [allVariables, linkX]);
+    }, [allVariables, linkX]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Non-passive wheel listener — stable, re-registered only when isLocked changes.
+    // Non-passive wheel listener.
     useEffect(() => {
         const el = wrapperRef.current;
         if (!el) return;
@@ -285,7 +302,10 @@ const InteractivePlotWrapper: React.FC<{
             const mouseValue = currentMin + currentRange * mousePercent;
             let newRange = e.deltaY < 0 ? currentRange / zoomFactor : currentRange * zoomFactor;
             if (linkXClampRef.current && dr && newRange > dr.max - dr.min) newRange = dr.max - dr.min;
-            handleInteraction(mouseValue - newRange * mousePercent, mouseValue - newRange * mousePercent + newRange);
+            // Prevent zooming to a near-zero window (1ms minimum to avoid bad timestamps).
+            if (newRange < 1) newRange = 1;
+            // isGestureEnd=false: commit deferred until scroll idle
+            handleInteraction(mouseValue - newRange * mousePercent, mouseValue - newRange * mousePercent + newRange, false);
         };
         el.addEventListener('wheel', onWheel, { passive: false });
         return () => el.removeEventListener('wheel', onWheel);
@@ -299,7 +319,6 @@ const InteractivePlotWrapper: React.FC<{
         const rect = wrapperRef.current?.getBoundingClientRect();
         if (!rect || rect.width <= 0) return;
         if (e.shiftKey) {
-            // Shift+drag = area-select zoom
             isSelectDragRef.current = true;
             const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
             selectRef.current = { startX: e.clientX, startPct: pct };
@@ -323,7 +342,8 @@ const InteractivePlotWrapper: React.FC<{
         const { startX, domainMin, domainMax } = dragRef.current;
         const range = domainMax - domainMin;
         const domainDelta = -((e.clientX - startX) / rect.width) * range;
-        handleInteraction(domainMin + domainDelta, domainMax + domainDelta);
+        // isGestureEnd=false during drag: commit deferred until mouse-up
+        handleInteraction(domainMin + domainDelta, domainMax + domainDelta, false);
     }, [handleInteraction]);
 
     const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -338,16 +358,23 @@ const InteractivePlotWrapper: React.FC<{
                     const dr = dataRangeRef.current;
                     const [currentMin, currentMax] = localDomainRef.current ?? (dr ? [dr.min, dr.max] : [0, 1]);
                     const span = currentMax - currentMin;
-                    handleInteraction(currentMin + lo * span, currentMin + hi * span);
+                    handleInteraction(currentMin + lo * span, currentMin + hi * span, true);
                 }
             }
             isSelectDragRef.current = false;
             selectRef.current = null;
             setSelectBox(null);
+        } else if (dragRef.current) {
+            // Commit on drag end — re-apply current domain with isGestureEnd=true.
+            const domain = localDomainRef.current;
+            if (domain) {
+                if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+                commitToVariables(domain);
+            }
         }
         dragRef.current = null;
         setIsDragging(false);
-    }, [handleInteraction]);
+    }, [handleInteraction, commitToVariables]);
 
     const isZoomed = localDomain !== null && dataRange !== null &&
         (localDomain[0] !== dataRange.min || localDomain[1] !== dataRange.max);
@@ -379,7 +406,11 @@ const InteractivePlotWrapper: React.FC<{
                     </span>
                 )}
                 {isZoomed && !isLocked && (
-                    <button onClick={() => { locallyOwnedRef.current = true; setLocalDomain(null); onVariableChange({ [linkX[0]]: '', [linkX[1]]: '' }); }}
+                    <button onClick={() => {
+                        setLocalDomain(null);
+                        linkXStore.publish(linkX, null);
+                        onVariableChange({ [linkX[0]]: '', [linkX[1]]: '' });
+                    }}
                         className="text-[10px] px-1.5 py-0.5 bg-cyan-800/70 hover:bg-cyan-700/80 text-cyan-200 rounded transition-colors" title="Reset zoom">
                         reset
                     </button>
@@ -442,6 +473,7 @@ const StandaloneZoomWrapper: React.FC<{
             const mouseValue = currentMin + currentRange * mousePercent;
             let newRange = e.deltaY < 0 ? currentRange / zoomFactor : currentRange * zoomFactor;
             if (dr && newRange > dr.max - dr.min) newRange = dr.max - dr.min;
+            if (newRange < 1) newRange = 1;
             applyDomain(mouseValue - newRange * mousePercent, mouseValue - newRange * mousePercent + newRange);
         };
         el.addEventListener('wheel', onWheel, { passive: false });
