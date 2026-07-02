@@ -791,7 +791,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     delete runTimersRef.current[i];
                     setPendingRunStates(s=>({...s,[i]:false}));
                     handleRunRef.current(sql, i);
-                }, 1500);
+                }, 800);
             }
         });
         for (let i = parsedSqlBlocks.length; i < (prevSqls?.length || 0); i++) if(runTimersRef.current[i]) { clearTimeout(runTimersRef.current[i]); delete runTimersRef.current[i]; }

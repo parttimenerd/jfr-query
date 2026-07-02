@@ -239,10 +239,19 @@ const InteractivePlotWrapper: React.FC<{
 
     const commitToVariables = useCallback((domain: [number, number] | null) => {
         if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+        // Store both $var and $$var so SQL can use either:
+        //   $a  → 'quoted string' substitution (via toSqlVariables ISO wrap)
+        //   $$a → raw numeric substitution (epoch-ms float, no quoting)
+        const toDouble = (v: string) => v.startsWith('$$') ? v : `$${v}`;
+        const k0 = linkX[0], k1 = linkX[1];
+        const kk0 = toDouble(k0), kk1 = toDouble(k1);
         if (domain) {
-            onVariableChangeRef.current({ [linkX[0]]: String(domain[0]), [linkX[1]]: String(domain[1]) });
+            onVariableChangeRef.current({
+                [k0]: String(domain[0]), [k1]: String(domain[1]),
+                [kk0]: String(domain[0]), [kk1]: String(domain[1]),
+            });
         } else {
-            onVariableChangeRef.current({ [linkX[0]]: '', [linkX[1]]: '' });
+            onVariableChangeRef.current({ [k0]: '', [k1]: '', [kk0]: '', [kk1]: '' });
         }
     }, [linkX]);
 
@@ -409,7 +418,8 @@ const InteractivePlotWrapper: React.FC<{
                     <button onClick={() => {
                         setLocalDomain(null);
                         linkXStore.publish(linkX, null);
-                        onVariableChange({ [linkX[0]]: '', [linkX[1]]: '' });
+                        const toD = (v: string) => v.startsWith('$$') ? v : `$${v}`;
+                        onVariableChange({ [linkX[0]]: '', [linkX[1]]: '', [toD(linkX[0])]: '', [toD(linkX[1])]: '' });
                     }}
                         className="text-[10px] px-1.5 py-0.5 bg-cyan-800/70 hover:bg-cyan-700/80 text-cyan-200 rounded transition-colors" title="Reset zoom">
                         reset
