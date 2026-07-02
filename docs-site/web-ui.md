@@ -1,55 +1,55 @@
 # Web UI & Notebooks
 
-Start the UI with `java -jar query.jar serve recording.jfr`, then open `http://localhost:4244`.
+The jfr-query web UI is a browser-based notebook environment for analysing Java Flight Recorder (JFR) files using SQL, DuckDB, and a declarative plot DSL.
 
-## Notebook cells
+Open a notebook, drop a `.jfr` file, and start writing SQL cells that query the recording. Each cell can render a table or one or more plots described with the plot DSL.
 
-A notebook is a sequence of cells. Each cell contains a SQL query and optionally renders its
-result as a chart. Cells can reference each other's results via named aliases.
+## Layout
 
-## Built-in templates
+- **Left sidebar** — file explorer, variable controls, schema browser, and AI chat.
+- **Main area** — the notebook itself: a stack of cells with SQL, plots, and Markdown.
+- **Right rail** — issues panel, dependency graph overlay, and cell metadata.
+- **Top bar** — recording selector, workspace globals, baseline attach.
 
-Open the template gallery with **New from template** in the top bar. Built-in templates cover:
+## Cells
 
-| Template | What it shows |
-|----------|--------------|
-| GC Analysis | Pause times, GC cause breakdown, heap after GC |
-| Heap Allocation | Top allocating methods, allocation over time |
-| Threading | Thread count, lock contention, blocked threads |
-| Exceptions | Exception frequency and stack traces |
+A cell is a self-contained unit that can contain:
 
-Choose **Replace**, **Append**, or **Insert at top** when applying a template.
+- Markdown prose (rendered on the fly).
+- One or more `sql` code blocks (executed against DuckDB).
+- One or more `plot` code blocks (rendered from the query results).
+- Inline scalar expressions `${...}` embedded in Markdown.
+- Conditional blocks that only render when a SQL predicate holds.
 
-## Variable controls
+Cells are separated by an HTML comment delimiter:
 
-Add `variables` in the notebook front-matter to expose sliders/inputs in the sidebar:
-
-```yaml
-variables:
-  $$threshold_ms: '100'
+```html
+<!-- @cell name=my_handle -->
 ```
 
-Reference them in SQL as `$$threshold_ms`.
+The `name=` attribute gives the cell a stable handle that can be referenced from other cells and from `cellConditions` in the front matter.
 
-## Inline scalars
+## Working with data
 
-Embed query results inline in prose:
+1. Drop a `.jfr` file onto the sidebar or use the file ingest UI.
+2. jfr-query parses the recording into DuckDB tables. The schema browser lists every event type and column.
+3. Write a SQL cell. Aliases (`-- alias name`) let downstream cells and plots reference the result set by name.
+4. Add a plot cell using the plot DSL. By default a plot uses the query immediately preceding it.
 
-```
-There were ${SELECT count(*) FROM GarbageCollection} GC events.
-```
+## Live coupling
 
-## Conditional blocks
+Interactive plots write back to variables:
 
-Show a section only when a condition holds:
+- `BRUSH $var MODE X` writes the selected X range to `$var.lo` / `$var.hi`.
+- `ON HOVER TOOLTIP "..."` can update variables that downstream SQL cells read.
 
-````
-```{if SELECT max(duration_ms) > $$threshold_ms FROM gc_pauses}
-### Warning: long pauses detected
-```
-````
+When a variable changes, dependent SQL cells re-run automatically, and their plots re-render.
 
-## Custom templates
+## Reference documentation
 
-Pass `--templates-dir ~/my-templates` to `serve`. Any `.md` file at the top level is listed
-in the gallery under a "user" badge. See the [Notebook Templates](https://github.com/parttimenerd/jfr-query#notebook-templates) section in the README for full template syntax.
+For complete reference material see:
+
+- [Notebook Format](notebook-format.md) — front matter, cell delimiters, SQL blocks, inline scalars, conditional blocks, variable blocks.
+- [Plot DSL](plot-dsl.md) — all plot types, inner arguments, tail clauses, composite plots, query references.
+- [Variables](variables.md) — cell-local and notebook-level variables, substitution rules, live coupling.
+- [Built-in Views & Macros](views-macros.md) — every canned view and macro shipped with jfr-query.

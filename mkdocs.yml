@@ -28,6 +28,11 @@ nav:
   - Usage:
     - CLI Commands: cli.md
     - Web UI & Notebooks: web-ui.md
+  - Reference:
+    - Notebook Format: notebook-format.md
+    - Plot DSL: plot-dsl.md
+    - Variables: variables.md
+    - Built-in Views & Macros: views-macros.md
   - Live App: https://parttimenerd.github.io/jfr-query/
 
 plugins:
