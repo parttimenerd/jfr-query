@@ -57,6 +57,10 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
     const colors = getPaletteColors(clauses?.palette, COLORS);
     const legendPos = clauses?.legend;
     const showLegend = legendPos !== 'none';
+    const axisYClause = clauses?.axisY;
+    const effectiveLogScale = axisYClause?.type === 'log' ? true : config.logScale;
+    const yDomainFromClause = axisYClause?.domain as [any, any] | undefined;
+    const yLabelFromClause = axisYClause?.label;
 
     const { xCol, yCols, lineYCols, chartData } = useMemo(() => {
         if (!data || data.length === 0) {
@@ -117,8 +121,8 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         stroke: "#9ca3af",
         tick: { fontSize: 12 },
         tickFormatter: numberFormatter,
-        scale: config.logScale ? "log" as const : "auto" as const,
-        domain: (domainY ?? (config.logScale ? [0.1, 'dataMax'] : [0, 'dataMax'])) as any,
+        scale: effectiveLogScale ? "log" as const : "auto" as const,
+        domain: (domainY ?? yDomainFromClause ?? (effectiveLogScale ? [0.1, 'dataMax'] : [0, 'dataMax'])) as any,
         allowDataOverflow: true,
     };
     
@@ -137,7 +141,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         React.createElement(XAxis, {
             key: 'x-axis',
             ...commonValueAxisProps,
-            label: config.yAxisLabel ? { value: config.yAxisLabel, angle: 0, position: 'top', fill: '#9ca3af', dy: -10 } : undefined
+            label: (yLabelFromClause || config.yAxisLabel) ? { value: yLabelFromClause || config.yAxisLabel, angle: 0, position: 'top', fill: '#9ca3af', dy: -10 } : undefined
         })
     ] : [
         React.createElement(XAxis, {
@@ -154,7 +158,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
             key: 'y-axis',
             yAxisId: 'left',
             ...commonValueAxisProps,
-            label: config.yAxisLabel ? { value: config.yAxisLabel, angle: -90, position: 'insideLeft', fill: '#9ca3af' } : undefined
+            label: (yLabelFromClause || config.yAxisLabel) ? { value: yLabelFromClause || config.yAxisLabel, angle: -90, position: 'insideLeft', fill: '#9ca3af' } : undefined
         }),
         // B-129: secondary right-side Y axis for lineY series so different scales don't collapse.
         ...(lineYCols.length > 0 ? [React.createElement(YAxis, {

@@ -1337,6 +1337,14 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
 
+### 🟡 [B-231] `BarChartPlot`, `AreaChartPlot` — `AXIS-Y TYPE LOG`, `AXIS-Y DOMAIN`, `AXIS-Y LABEL` clauses ignored ✅ FIXED
+**Where:** `components/plots/BarChartPlot.ts:120-121`; `components/plots/AreaChartPlot.tsx:173-175`
+**Repro:** `BAR_CHART(x: "k", y: ["v"]) AXIS-Y TYPE LOG` — no effect; `BAR_CHART(…) AXIS-Y DOMAIN [1, 1000]` — no effect; `AREA_CHART(…) AXIS-Y LABEL "My Label"` — no effect.
+**Observed:** `BarChartPlot` used only `config.logScale` / `config.yAxisLabel` params; `AreaChartPlot` already read `clauses?.axisY?.type` and `domain` but skipped `label`. Neither applied `AXIS-Y DOMAIN` in the log-scale path.
+**Fix:**
+- `BarChartPlot`: extracted `effectiveLogScale`, `yDomainFromClause`, `yLabelFromClause` from `clauses?.axisY`. Updated `commonValueAxisProps` to use them; updated both horizontal/vertical axis label props.
+- `AreaChartPlot`: extracted `yLabelFromClause = clauses?.axisY?.label` and updated the YAxis label prop to `yLabelFromClause || config.yAxisLabel`.
+
 ### 🟡 [B-230] `GanttChartPlot` — `PALETTE` clause ignored; `clauses` prop missing entirely ✅ FIXED
 **Where:** `components/plots/GanttChartPlot.tsx:52`
 **Repro:** `GANTT(start: "s", end: "e", lane: "l", color: "state") PALETTE "tableau10"` — bars use default colors regardless.

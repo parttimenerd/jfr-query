@@ -59,6 +59,7 @@ const AreaChartComponent: React.FC<{
   const gestures = usePlotGestures({ name: gestureName, onVariableChange });
   const effectiveYScale = (clauses?.axisY?.type === 'log' ? 'log' : config.yScale) as 'linear' | 'log';
   const yDomainFromClause = clauses?.axisY?.domain as [any, any] | undefined;
+  const yLabelFromClause = clauses?.axisY?.label;
   const legendPos = clauses?.legend;
   const showLegend = legendPos !== 'none';
 
@@ -170,8 +171,8 @@ const AreaChartComponent: React.FC<{
             tick={{ fontSize: 12 }}
             tickFormatter={yFormatter}
             label={
-              config.yAxisLabel
-                ? { value: config.yAxisLabel, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 }
+              (yLabelFromClause || config.yAxisLabel)
+                ? { value: yLabelFromClause || config.yAxisLabel, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 }
                 : undefined
             }
             scale={effectiveYScale === 'log' ? 'log' : 'auto'}
