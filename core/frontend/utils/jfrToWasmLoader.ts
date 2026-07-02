@@ -387,15 +387,22 @@ async function mergeChunkTables(
       }
     }
 
-    // 3c. Parse FK columns for each struct table.
-    // Returns map: colName -> referenced structTable base name.
+    // 3c. Parse FK columns and DESCRIPTION columns for each struct table.
+    // structFkMap: colName -> referenced structTable base name.
+    // structDescCols: set of column names marked DESCRIPTION(...) in the table comment.
+    // DESCRIPTION columns are volatile metadata (e.g. modifiers) that can differ between
+    // JFR chunks for the same logical entity. They are excluded from the DENSE_RANK key
+    // so that the same class/method gets the same new_id regardless of per-chunk variation.
     const structFkMap = new Map<string, Map<string, string>>();
+    const structDescColsMap = new Map<string, Set<string>>();
     const structFkRefPattern = /Column "([^"]+)": (Array of references to|references) "([^"]+)"\(_id\)/g;
+    const structDescPattern = /Column "([^"]+)": DESCRIPTION\(/g;
     for (const base of structTables) {
       const firstWorker = baseToWorkers.get(base)![0];
       const reprTable = `chunk${firstWorker}_${base}`;
       const comment = structCommentMap.get(reprTable) ?? '';
       const fks = new Map<string, string>();
+      const descCols = new Set<string>();
       let m: RegExpExecArray | null;
       structFkRefPattern.lastIndex = 0;
       while ((m = structFkRefPattern.exec(comment)) !== null) {
@@ -403,7 +410,12 @@ async function mergeChunkTables(
         const refTable = m[3];
         if (structTables.includes(refTable)) fks.set(colName, refTable);
       }
+      structDescPattern.lastIndex = 0;
+      while ((m = structDescPattern.exec(comment)) !== null) {
+        descCols.add(m[1]);
+      }
       structFkMap.set(base, fks);
+      structDescColsMap.set(base, descCols);
     }
 
     // 3d. Topological sort so referenced structs are processed before referencing ones.
@@ -428,6 +440,7 @@ async function mergeChunkTables(
       const reprTable = `chunk${firstWorker}_${base}`;
       const naturalCols = structNaturalColsMap.get(reprTable) ?? [];
       const fks = structFkMap.get(base) ?? new Map();
+      const descCols = structDescColsMap.get(base) ?? new Set<string>();
 
       // Union only chunks that have this table.
       const unionParts = workers.map((i) =>
@@ -439,13 +452,17 @@ async function mergeChunkTables(
         `CREATE TABLE "_stage_${base}" AS ${unionParts}`
       ).catch((e) => console.warn(`merge stage failed for ${base}:`, e));
 
-      // Build the ORDER BY expression for DENSE_RANK. FK columns must use the
-      // already-remapped new_id from the referenced struct's idmap so that the
-      // same logical row gets the same rank regardless of chunk-local ID values.
+      // Build the ORDER BY expression for DENSE_RANK.
+      // FK columns must use the already-remapped new_id from the referenced struct's idmap
+      // so that the same logical row gets the same rank regardless of chunk-local ID values.
+      // DESCRIPTION columns (volatile metadata like modifiers) are excluded from the rank key
+      // so that the same logical entity gets the same new_id even when metadata varies between chunks.
       let rankFrom = `"_stage_${base}" s`;
       const rankOrderCols: string[] = [];
       for (const col of naturalCols) {
         const bareCol = col.replace(/^"|"$/g, '');
+        // Skip DESCRIPTION columns — they are volatile and should not affect identity
+        if (descCols.has(bareCol)) continue;
         const refBase = fks.get(bareCol);
         if (refBase) {
           const alias = `_idmap_ref_${bareCol}`;
@@ -466,13 +483,18 @@ async function mergeChunkTables(
       ).catch((e) => console.warn(`merge idmap failed for ${base}:`, e));
 
       // Build the final table. FK columns are stored as remapped new IDs.
+      // DESCRIPTION columns use ANY_VALUE to pick one value when multiple rows share the same new_id.
       const selectCols = naturalCols.map(col => {
         const bareCol = col.replace(/^"|"$/g, '');
         const refBase = fks.get(bareCol);
         if (refBase) {
-          return `coalesce(_idmap_fk_${bareCol}.new_id, 0) AS "${bareCol}"`;
+          return `coalesce(ANY_VALUE(_idmap_fk_${bareCol}.new_id), 0) AS "${bareCol}"`;
         }
-        return col;
+        if (descCols.has(bareCol)) {
+          // Use ANY_VALUE for description columns — they may vary between chunks for the same entity
+          return `ANY_VALUE(s."${bareCol}") AS "${bareCol}"`;
+        }
+        return `ANY_VALUE(${col}) AS "${bareCol}"`;
       }).join(', ');
       let finalFrom = `"_stage_${base}" s JOIN "_idmap_${base}" m ON s._worker = m._worker AND s._id = m.old_id`;
       for (const [col, refBase] of fks) {
@@ -480,8 +502,9 @@ async function mergeChunkTables(
       }
       await conn.query(
         `CREATE TABLE "${base}" AS
-         SELECT DISTINCT m.new_id AS _id, ${selectCols}
+         SELECT m.new_id AS _id, ${selectCols}
          FROM ${finalFrom}
+         GROUP BY m.new_id
          ORDER BY _id`
       ).catch((e) => console.warn(`merge create ${base} failed:`, e));
     }
@@ -995,24 +1018,33 @@ export async function loadJfrIntoWasm(
     try { localStorage.setItem(PERF_KEY, String(updated)); } catch { /* storage full */ }
   }
 
-  // Register built-in macros and views in parallel across 4 connections
+  // Register built-in macros first (sequential — views depend on them), then
+  // views in parallel across 4 connections.  Running both phases concurrently
+  // caused views that call macros (e.g. allocation-rate → bucket_ms) to fail
+  // with Catalog Error when the macro hadn't been created yet.
   const tSqlStart = performance.now();
   const PARALLELISM = new URL(location.href).searchParams.has('sqlSerial') ? 1 : 4;
-  const allSql = [...BUILTIN_MACROS_SQL, ...BUILTIN_VIEWS_SQL];
+  const runSql = (c: typeof conn, sql: string) =>
+    c.query(sql).catch((e: any) => {
+      if (!String(e?.message ?? e).includes('Catalog Error')) console.warn('builtin sql failed:', e);
+    });
+  // Phase 1: macros — sequential on the main connection so they're visible to all
+  for (const sql of BUILTIN_MACROS_SQL) {
+    await runSql(conn, sql);
+  }
+  // Phase 2: views — parallel across extra connections (macros are now committed)
   const extraConns: typeof conn[] = [];
   try {
     for (let i = 0; i < PARALLELISM - 1; i++) {
       extraConns.push(await db.connect());
     }
     const conns = [conn, ...extraConns];
-    const chunkSize = Math.ceil(allSql.length / PARALLELISM);
+    const chunkSize = Math.ceil(BUILTIN_VIEWS_SQL.length / PARALLELISM);
     await Promise.allSettled(
       conns.map((c, ci) => {
-        const slice = allSql.slice(ci * chunkSize, (ci + 1) * chunkSize);
+        const slice = BUILTIN_VIEWS_SQL.slice(ci * chunkSize, (ci + 1) * chunkSize);
         return slice.reduce(
-          (chain, sql) => chain.then(() => c.query(sql).catch((e: any) => {
-            if (!String(e?.message ?? e).includes('Catalog Error')) console.warn('builtin sql failed:', e);
-          })),
+          (chain, sql) => chain.then(() => runSql(c, sql)),
           Promise.resolve(),
         );
       }),
