@@ -63,7 +63,6 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 
 ### CPU & Threads
 
-- `cpu-flamegraph`
 - `cpu-information`
 - `cpu-load`
 - `cpu-load-samples`
@@ -106,7 +105,6 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 
 ### Allocation & Leaks
 
-- `alloc-flamegraph`
 - `allocation-by-class`
 - `allocation-by-class-detail`
 - `allocation-by-site`
@@ -114,7 +112,6 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 - `allocation-rate`
 - `memory-leaks-by-class`
 - `memory-leaks-by-site`
-- `native-flamegraph`
 
 ### Contention & Locks
 
@@ -122,7 +119,6 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 - `contention-by-class`
 - `contention-by-site`
 - `contention-by-thread`
-- `lock-flamegraph`
 - `monitor-inflation`
 
 ### Exceptions
@@ -131,7 +127,6 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 - `exception-by-site`
 - `exception-by-type`
 - `exception-count`
-- `exception-flamegraph`
 
 ### Container
 
@@ -189,7 +184,6 @@ SELECT P95(duration_ms) FROM gc
 
 - `EVENT_TYPE_LABEL(et)` — human-readable label for an event type id.
 - `EVENT_NAME_FOR_ID(id)` — event name for an event id.
-- `stack_frames(methods)` — flatten a stack into a list of frame labels.
 
 ### Introspection
 

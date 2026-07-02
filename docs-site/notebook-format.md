@@ -76,7 +76,7 @@ Cells are delimited by an HTML comment:
 <!-- @cell name=my_handle -->
 ```
 
-- `name=` is required. The handle must match `[A-Za-z_][A-Za-z0-9_-]*`.
+- `name=` is required. The handle must match `[A-Za-z_]\w*` (letters, digits, underscores; may not start with a digit).
 - Cells are ordered top-to-bottom in the file.
 - Content before the first delimiter belongs to an implicit intro cell.
 

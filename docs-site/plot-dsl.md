@@ -24,32 +24,41 @@ A plot expression consists of:
 | `LINE_CHART` | `LINE` | Line chart with one series per `color` group. |
 | `BAR_CHART` | `BAR` | Vertical bar chart. |
 | `SCATTER_PLOT` | `SCATTER` | Scatter plot with optional `size` and `color`. |
-| `HEATMAP` | — | 2D binned heatmap with `x`, `y`, and `z` (intensity). |
-| `HISTOGRAM` | — | Frequency histogram over `x`. |
+| `HEATMAP` | — | 2D binned heatmap with `x`, `y`, and `value` (intensity). |
+| `HISTOGRAM` | — | Frequency histogram over `x`. Supports `bins` (count) and `logBins: true` for log-scale bucketing. |
 | `BOX_PLOT` | `BOX` | Box-and-whisker per `x` category. |
-| `PIE_CHART` | `PIE` | Pie chart with `label` and `y` (magnitude). |
-| `FLAMEGRAPH` | `FLAME` | Flamegraph of stack frames. |
+| `PIE_CHART` | `PIE` | Pie chart with `category` and `value` columns. |
+| `FLAMEGRAPH` | `FLAME` | Flamegraph of stack frames — `frames` (frame list column) and `value` (weight column). |
 | `TABLE` | — | Rendered results table. |
 | `AREA_CHART` | `AREA` | Stacked / overlaid filled areas. |
-| `GANTT_CHART` | `GANTT` | Gantt bars with `x` (start), `x2` (end), and `label` per row. |
-| `RANGE_PLOT` | `RANGE` | Range/interval strips per `label`. |
+| `GANTT` | — | Gantt bars with `start`, `end`, and `lane` (row category). Optional `task` (bar label). |
+| `RANGE` | — | Range/interval band with `x`, `low`, `high`. Optional `center` line and `color`. |
 
 Aliases are accepted anywhere the canonical name is. `LINE(x=t, y=v)` is equivalent to `LINE_CHART(x=t, y=v)`.
+`PIE_CHART` also accepts the older names `name` / `labels` / `values` for backwards compatibility; prefer `category` / `value`.
 
 ## Inner arguments
 
 Inner arguments go inside the parentheses after the plot type. All are optional; the sensible defaults for each plot type apply when omitted.
 
-| Argument | Meaning |
-|----------|---------|
-| `x` | Column bound to the X axis. |
-| `y` | Column bound to the Y axis. May be a list `[a, b, c]` for multi-series plots. |
-| `z` | Third dimension (heatmap intensity, bubble depth). |
-| `label` | Column used as a text label (pie slices, gantt rows, flamegraph frames). |
-| `color` | Column used to derive series/category colours. |
-| `size` | Column used to derive marker size (scatter). |
-| `frames` | For flamegraph: column containing the stack (list of frames). |
-| `title` | Inline title. Equivalent to the `TITLE` tail clause. |
+| Argument | Applies to | Meaning |
+|----------|------------|---------|
+| `x` | most types | Column bound to the X axis. |
+| `y` | most types | Column bound to the Y axis. May be a list `[a, b, c]` for multi-series plots. |
+| `value` | HEATMAP, FLAMEGRAPH | Intensity / weight column. |
+| `category` | PIE_CHART | Column providing slice labels. |
+| `label` | TABLE, BAR | Text label column. |
+| `start` | GANTT | Column for the bar start time/value. |
+| `end` | GANTT | Column for the bar end time/value. |
+| `lane` | GANTT | Column for the row category on the Y axis. |
+| `task` | GANTT | Optional text drawn inside each bar. |
+| `low` | RANGE | Lower bound column for the shaded band. |
+| `high` | RANGE | Upper bound column for the shaded band. |
+| `center` | RANGE | Optional center-line column (e.g. median). |
+| `frames` | FLAMEGRAPH | Column containing the list of stack frames. |
+| `color` | most types | Column used to derive series/category colours. |
+| `size` | SCATTER | Column used to derive marker size. |
+| `title` | any | Inline title. Equivalent to the `TITLE` tail clause. |
 
 Values are column names from the bound query. String literals are wrapped in double quotes.
 
@@ -76,7 +85,7 @@ Tail clauses come after the closing paren of the plot type and each other, in an
 
 ### Palette
 
-- `PALETTE "name"` — colour palette name. Built-in palettes include `default`, `viridis`, `magma`, `plasma`, `cividis`, `sap`, `sap-dark`.
+- `PALETTE "name"` — colour palette name. Built-in palettes: `category10` (D3 default), `tableau10`, `pastel1`, `dark2`, `set2`.
 
 ### Linking / brushing
 
@@ -191,7 +200,7 @@ ROW(
 
 ````
 ```plot
-FLAMEGRAPH(frames=stack, size=samples) ON cpu-flamegraph
+FLAMEGRAPH(frames=stack, value=samples)
   HEIGHT 400px
 ```
 ````
