@@ -499,11 +499,20 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         [metadata?.timeFormat, metadata?.decimalPlaces],
     );
 
-    // Stable cellContext for PlotRenderer — only rebuilds when cell content changes.
+    // Stable cellContext for PlotRenderer — live content is stored in a ref so
+    // AiErrorFixer can read it on demand; the stable `cellContext` object only
+    // changes identity when the cell prop itself changes (after the debounced
+    // onUpdateCell fires and App.tsx propagates the new cell object).
     const cellContextContent = useMemo(() => reconstructCellContent(segments), [segments]);
+    const cellContextContentRef = useRef(cellContextContent);
+    cellContextContentRef.current = cellContextContent;
     const cellContext = useMemo(
-        () => ({ ...cell, content: cellContextContent }),
-        [cell, cellContextContent],
+        () => ({
+            ...cell,
+            // Getter so readers always see the live content without a new object identity.
+            get content() { return cellContextContentRef.current; },
+        }),
+        [cell],
     );
 
     // Stable dataByQueryRef — merges all cell results + crossCellQueryRefs for plot ON routing.
