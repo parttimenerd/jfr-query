@@ -751,7 +751,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const handleSqlChange = useCallback((newSql: string, index?: number) => {
         if (typeof index !== 'number') return;
         let sqlBlockCount = -1;
-        const newSegments = segments.map(seg => {
+        const newSegments = segmentsRef.current.map(seg => {
             if (seg.type === 'sql') {
                 sqlBlockCount++;
                 if (sqlBlockCount === index) return { ...seg, content: newSql };
@@ -759,15 +759,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             return seg;
         });
         handleSegmentsUpdate(newSegments);
-    }, [segments, handleSegmentsUpdate]);
+    }, [handleSegmentsUpdate]);
 
     const handlePlotChange = useCallback((newConfig: string, index?: number) => {
         if (typeof index !== 'number') return;
-        
+        const segs = segmentsRef.current;
         let sqlBlockCount = -1;
         let sqlSegmentIndex = -1;
-        for(let i = 0; i < segments.length; i++) {
-            if (segments[i].type === 'sql') {
+        for(let i = 0; i < segs.length; i++) {
+            if (segs[i].type === 'sql') {
                 sqlBlockCount++;
                 if (sqlBlockCount === index) {
                     sqlSegmentIndex = i;
@@ -778,15 +778,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         if (sqlSegmentIndex === -1) return;
 
         let plotSegmentIndex = -1;
-        for (let i = sqlSegmentIndex + 1; i < segments.length; i++) {
-            if (segments[i].type === 'plot') {
+        for (let i = sqlSegmentIndex + 1; i < segs.length; i++) {
+            if (segs[i].type === 'plot') {
                 plotSegmentIndex = i;
                 break;
             }
-            if (segments[i].type === 'sql') break;
+            if (segs[i].type === 'sql') break;
         }
 
-        const newSegments = [...segments];
+        const newSegments = [...segs];
         if (plotSegmentIndex !== -1) {
             const existing = newSegments[plotSegmentIndex];
             if (existing.type !== 'if') {
@@ -800,7 +800,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
              newSegments.splice(insertIndex, 0, {type: 'plot', content: newConfig}, {type: 'markdown', content: '\n\n'});
         }
         handleSegmentsUpdate(newSegments);
-    }, [segments, handleSegmentsUpdate]);
+    }, [handleSegmentsUpdate]);
 
 
     const handleRawContentChange = useCallback((newContent: string) => {
@@ -823,24 +823,24 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     };
 
     const handleDeletePlot = useCallback((segmentIndex: number) => {
-        const newSegments = [...segments];
+        const newSegments = [...segmentsRef.current];
         newSegments.splice(segmentIndex, 1);
         handleSegmentsUpdate(newSegments);
-    }, [segments, handleSegmentsUpdate]);
+    }, [handleSegmentsUpdate]);
 
     const handleDeleteMarkdown = useCallback((segmentIndex: number) => {
-        const newSegments = [...segments];
+        const newSegments = [...segmentsRef.current];
         newSegments.splice(segmentIndex, 1);
         handleSegmentsUpdate(newSegments);
-    }, [segments, handleSegmentsUpdate]);
+    }, [handleSegmentsUpdate]);
     const handleFormat = async (code: string, type: 'sql' | 'plot', index: number) => { const f = await onFormatCode(code, type); if (f) { if(type==='sql') handleSqlChange(f, index); else handlePlotChange(f, index); } };
-    const handleAddSql = () => handleSegmentsUpdate([...segments, {type: 'markdown', content: '\n\n'}, {type: 'sql', content: '\nSELECT 1;\n'}]);
+    const handleAddSql = () => handleSegmentsUpdate([...segmentsRef.current, {type: 'markdown', content: '\n\n'}, {type: 'sql', content: '\nSELECT 1;\n'}]);
     const handleInsertAt = useCallback((segmentIndex: number, type: 'sql' | 'plot' | 'markdown') => {
         const content = type === 'sql' ? '\nSELECT 1;\n' : type === 'plot' ? '\nTABLE()\n' : '';
-        const newSegments = [...segments];
+        const newSegments = [...segmentsRef.current];
         newSegments.splice(segmentIndex, 0, { type, content } as CellSegment);
         handleSegmentsUpdate(newSegments);
-    }, [segments, handleSegmentsUpdate]);
+    }, [handleSegmentsUpdate]);
     const handleAddPlot = () => { /* No-op, plot change creates plot blocks */ };
     const handleTitleBlur = (newTitle: string) => { setIsEditingTitle(false); if (newTitle.trim() && newTitle !== title) { const introSegmentIndex = segments.findIndex(s=>s.type==='markdown'); if(introSegmentIndex!==-1){const newSegments=[...segments]; const intro=newSegments[introSegmentIndex]; if(intro.type==='if') return; const newContent=intro.content.replace(/^(?:#|##|###)\s*(.*)/,`## ${newTitle}`); newSegments[introSegmentIndex]={...intro, content:newContent}; handleSegmentsUpdate(newSegments);} }};
     const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { handleTitleBlur(editingTitleValue); } else if (e.key === 'Escape') { setIsEditingTitle(false); } };
