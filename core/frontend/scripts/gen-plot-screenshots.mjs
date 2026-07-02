@@ -19,6 +19,7 @@ mkdirSync(OUT_DIR, { recursive: true });
 
 const BASE_URL = process.env.VITE_URL || 'http://localhost:5173';
 const PREVIEW_URL = `${BASE_URL}/plot-preview.html`;
+const HERO_URL = `${BASE_URL}/hero-preview.html`;
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({
@@ -28,16 +29,14 @@ const ctx = await browser.newContext({
 const page = await ctx.newPage();
 
 // ── 1. App screenshot for docs homepage ────────────────────────────────────
-console.log('Taking app screenshot...');
-await page.goto(BASE_URL);
-const demoBtn = page.getByRole('button', { name: /Try the demo/i });
-await demoBtn.waitFor({ state: 'visible', timeout: 30_000 });
-await demoBtn.click();
-// Wait for notebook and at least one plot to be visible
-await page.waitForSelector('h1', { timeout: 60_000 });
+console.log('Taking hero screenshot...');
+await page.goto(HERO_URL);
+// Wait for at least one plot container
+await page.waitForSelector('[data-plot], .recharts-wrapper, svg', { timeout: 30_000 });
 await page.waitForTimeout(3000); // let charts render
-await page.setViewportSize({ width: 1600, height: 960 });
-await page.screenshot({ path: APP_SCREENSHOT });
+// Capture just the hero div (full page, auto-height)
+await page.setViewportSize({ width: 1280, height: 900 });
+await page.screenshot({ path: APP_SCREENSHOT, fullPage: true });
 console.log(`Saved: ${APP_SCREENSHOT}`);
 
 // ── 2. Per-plot screenshots ─────────────────────────────────────────────────
