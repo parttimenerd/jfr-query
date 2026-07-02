@@ -347,20 +347,32 @@ async function mergeChunkTables(
     const allConns = [conn, ...extraConns];
     const getConn = (i: number) => allConns[i % allConns.length];
 
-    // 3. Struct tables in parallel (each table's 3 queries stay sequential within that table).
-    // Pre-fetch all natural-key columns for struct tables in one batch query.
+    // 3. Struct tables in topological order (leaf structs first).
+    // FK columns in struct tables use chunk-local IDs — if we DENSE_RANK over them
+    // directly the same logical row gets different ranks in different chunks. Fix:
+    // read struct table FK comments, sort by dependency, and for tables with FK
+    // columns substitute the already-merged idmap value in the ORDER BY key.
+
+    // 3a. Pre-fetch all natural-key columns for struct tables.
     const structNaturalColsMap = new Map<string, string[]>();
+    // 3b. Pre-fetch struct table comments to detect FK columns.
+    const structCommentMap = new Map<string, string>();
     if (structTables.length > 0) {
       const structReprTables = structTables.map(base => {
         const firstWorker = baseToWorkers.get(base)![0];
         return { base, reprTable: `chunk${firstWorker}_${base}` };
       });
       const structColPattern = structReprTables.map(({ reprTable: t }) => `table_name='${t.replace(/'/g, "''")}'`).join(' OR ');
-      const structColsResult = await conn.query(
-        `SELECT table_name, column_name FROM information_schema.columns
-         WHERE table_schema='main' AND column_name != '_id' AND (${structColPattern})
-         ORDER BY table_name, ordinal_position`
-      ).catch(() => null);
+      const [structColsResult, structCommentResult] = await Promise.all([
+        conn.query(
+          `SELECT table_name, column_name FROM information_schema.columns
+           WHERE table_schema='main' AND column_name != '_id' AND (${structColPattern})
+           ORDER BY table_name, ordinal_position`
+        ).catch(() => null),
+        conn.query(
+          `SELECT table_name, comment FROM duckdb_tables() WHERE ${structColPattern}`
+        ).catch(() => null),
+      ]);
       if (structColsResult) {
         for (const row of structColsResult.toArray()) {
           const tname = String((row as any).table_name);
@@ -368,46 +380,111 @@ async function mergeChunkTables(
           structNaturalColsMap.get(tname)!.push(`"${String((row as any).column_name)}"`);
         }
       }
+      if (structCommentResult) {
+        for (const row of structCommentResult.toArray()) {
+          structCommentMap.set(String((row as any).table_name), String((row as any).comment ?? ''));
+        }
+      }
     }
 
-    await Promise.all(structTables.map(async (base, idx) => {
-      const c = getConn(idx);
+    // 3c. Parse FK columns for each struct table.
+    // Returns map: colName -> referenced structTable base name.
+    const structFkMap = new Map<string, Map<string, string>>();
+    const structFkRefPattern = /Column "([^"]+)": (Array of references to|references) "([^"]+)"\(_id\)/g;
+    for (const base of structTables) {
+      const firstWorker = baseToWorkers.get(base)![0];
+      const reprTable = `chunk${firstWorker}_${base}`;
+      const comment = structCommentMap.get(reprTable) ?? '';
+      const fks = new Map<string, string>();
+      let m: RegExpExecArray | null;
+      structFkRefPattern.lastIndex = 0;
+      while ((m = structFkRefPattern.exec(comment)) !== null) {
+        const colName = m[1];
+        const refTable = m[3];
+        if (structTables.includes(refTable)) fks.set(colName, refTable);
+      }
+      structFkMap.set(base, fks);
+    }
+
+    // 3d. Topological sort so referenced structs are processed before referencing ones.
+    const structOrder: string[] = [];
+    {
+      const visited = new Set<string>();
+      const visit = (base: string) => {
+        if (visited.has(base)) return;
+        visited.add(base);
+        const fks = structFkMap.get(base) ?? new Map();
+        for (const refBase of fks.values()) visit(refBase);
+        structOrder.push(base);
+      };
+      for (const base of structTables) visit(base);
+    }
+
+    // 3e. Process struct tables sequentially in dependency order.
+    // (Cannot parallelise: later tables depend on _idmap of earlier tables.)
+    for (const base of structOrder) {
       const workers = baseToWorkers.get(base)!;
       const firstWorker = workers[0];
       const reprTable = `chunk${firstWorker}_${base}`;
       const naturalCols = structNaturalColsMap.get(reprTable) ?? [];
-      const naturalKey = naturalCols.join(', ');
+      const fks = structFkMap.get(base) ?? new Map();
 
-      // Union only chunks that have this table
+      // Union only chunks that have this table.
       const unionParts = workers.map((i) =>
         `SELECT ${i} AS _worker, * FROM "chunk${i}_${base}"`
       ).join(' UNION ALL ');
 
-      // NOTE: DuckDB WASM does not reliably support TEMP tables across connections
-      // (temp tables are per-connection and the multi-connection merge below reads
-      // "_idmap_*" from a different connection than the one that created it).
-      // Use regular tables and drop them in the final cleanup batch.
-      await c.query(
+      // NOTE: DuckDB WASM does not reliably support TEMP tables across connections.
+      await conn.query(
         `CREATE TABLE "_stage_${base}" AS ${unionParts}`
       ).catch((e) => console.warn(`merge stage failed for ${base}:`, e));
 
-      await c.query(
+      // Build the ORDER BY expression for DENSE_RANK. FK columns must use the
+      // already-remapped new_id from the referenced struct's idmap so that the
+      // same logical row gets the same rank regardless of chunk-local ID values.
+      let rankFrom = `"_stage_${base}" s`;
+      const rankOrderCols: string[] = [];
+      for (const col of naturalCols) {
+        const bareCol = col.replace(/^"|"$/g, '');
+        const refBase = fks.get(bareCol);
+        if (refBase) {
+          const alias = `_idmap_ref_${bareCol}`;
+          rankFrom += ` LEFT JOIN "_idmap_${refBase}" ${alias} ON ${alias}._worker = s._worker AND ${alias}.old_id = s."${bareCol}"`;
+          rankOrderCols.push(`coalesce(${alias}.new_id, 0)`);
+        } else {
+          rankOrderCols.push(col);
+        }
+      }
+      const rankOrderBy = rankOrderCols.join(', ');
+
+      await conn.query(
         `CREATE TABLE "_idmap_${base}" AS
-         SELECT _worker, _id AS old_id,
-           CASE WHEN _id = 0 THEN 0
-                ELSE DENSE_RANK() OVER (ORDER BY ${naturalKey}) END AS new_id
-         FROM "_stage_${base}"`
+         SELECT s._worker, s._id AS old_id,
+           CASE WHEN s._id = 0 THEN 0
+                ELSE DENSE_RANK() OVER (ORDER BY ${rankOrderBy}) END AS new_id
+         FROM ${rankFrom}`
       ).catch((e) => console.warn(`merge idmap failed for ${base}:`, e));
 
-      const selectCols = naturalCols.join(', ');
-      await c.query(
+      // Build the final table. FK columns are stored as remapped new IDs.
+      const selectCols = naturalCols.map(col => {
+        const bareCol = col.replace(/^"|"$/g, '');
+        const refBase = fks.get(bareCol);
+        if (refBase) {
+          return `coalesce(_idmap_fk_${bareCol}.new_id, 0) AS "${bareCol}"`;
+        }
+        return col;
+      }).join(', ');
+      let finalFrom = `"_stage_${base}" s JOIN "_idmap_${base}" m ON s._worker = m._worker AND s._id = m.old_id`;
+      for (const [col, refBase] of fks) {
+        finalFrom += ` LEFT JOIN "_idmap_${refBase}" _idmap_fk_${col} ON _idmap_fk_${col}._worker = s._worker AND _idmap_fk_${col}.old_id = s."${col}"`;
+      }
+      await conn.query(
         `CREATE TABLE "${base}" AS
          SELECT DISTINCT m.new_id AS _id, ${selectCols}
-         FROM "_stage_${base}" s
-         JOIN "_idmap_${base}" m ON s._worker = m._worker AND s._id = m.old_id
+         FROM ${finalFrom}
          ORDER BY _id`
       ).catch((e) => console.warn(`merge create ${base} failed:`, e));
-    }));
+    }
 
     // 4. Event tables in parallel — runs only after all struct tables are done
     // (event tables reference _idmap tables produced in step 3).
