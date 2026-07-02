@@ -598,8 +598,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
         if (flatConfigs.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">Empty plot config.</div>;
 
         const isMainConfigFunctionCall = /^\w+\s*\(.*\)\s*$/s.test(parsePlotCall(flatConfigs[0]).mainConfig);
-        const isCompositeBlock = /^\s*(row|col)\s*\{/i.test(flatConfigs[0]);
-        if (flatConfigs.length === 1 && !isMainConfigFunctionCall && !isCompositeBlock && flatConfigs[0].trim() !== '') {
+        if (flatConfigs.length === 1 && !isMainConfigFunctionCall && flatConfigs[0].trim() !== '') {
             throw new Error(`Invalid plot configuration. Expected a function call like 'TABLE()', but found extra text.`);
         }
 

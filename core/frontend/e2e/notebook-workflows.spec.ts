@@ -342,7 +342,8 @@ test.describe.serial('Per-cell: Format SQL and Copy SQL', () => {
   let page: Page;
 
   test.beforeAll(async ({ browser }) => {
-    page = await browser.newPage();
+    const ctx = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
+    page = await ctx.newPage();
     await gotoDemo(page);
   });
 

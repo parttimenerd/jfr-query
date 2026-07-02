@@ -96,7 +96,7 @@ test.describe.serial('Composite: ROW two-up widths', () => {
   test('C1. ROW(BAR_CHART, LINE_CHART) — both children have non-zero width', async () => {
     const container = await renderPlot(page,
       'SELECT cause, COUNT(*) AS n, AVG(duration) AS avg_ms FROM GarbageCollection GROUP BY cause',
-      'row { BAR_CHART(x: "cause", y: ["n"]) LINE_CHART(x: "cause", y: ["avg_ms"]) }'
+      'ROW(BAR_CHART(x: "cause", y: ["n"]), LINE_CHART(x: "cause", y: ["avg_ms"]))'
     );
     if (!container) { test.skip(); return; }
 
@@ -135,7 +135,7 @@ test.describe.serial('Composite: COL stacked heights', () => {
   test('C2. COL(BAR_CHART, HISTOGRAM) — both children have non-zero height', async () => {
     const container = await renderPlot(page,
       'SELECT cause, duration FROM GarbageCollection',
-      'col { BAR_CHART(x: "cause", y: ["duration"]) HISTOGRAM(x: "duration") }'
+      'COL(BAR_CHART(x: "cause", y: ["duration"]), HISTOGRAM(x: "duration"))'
     );
     if (!container) { test.skip(); return; }
 
@@ -209,7 +209,7 @@ test.describe.serial('Composite: 2×2 grid', () => {
   test('C4. COL(ROW(BAR,LINE), ROW(HISTOGRAM,PIE)) — four leaf charts render', async () => {
     const container = await renderPlot(page,
       'SELECT cause, COUNT(*) AS n, AVG(duration) AS avg_ms, duration FROM GarbageCollection GROUP BY cause, duration',
-      'col { row { BAR_CHART(x: "cause", y: ["n"]) LINE_CHART(x: "cause", y: ["avg_ms"]) } row { HISTOGRAM(x: "duration") PIE_CHART(category: "cause", value: "n") } }'
+      'COL(ROW(BAR_CHART(x: "cause", y: ["n"]), LINE_CHART(x: "cause", y: ["avg_ms"])), ROW(HISTOGRAM(x: "duration"), PIE_CHART(category: "cause", value: "n")))'
     );
     if (!container) { test.skip(); return; }
 
@@ -245,7 +245,7 @@ test.describe.serial('Composite: LINK_X pan sync', () => {
   test('C5. ROW with LINK_X($lo, $hi) renders two charts without error', async () => {
     const container = await renderPlot(page,
       'SELECT startTime, duration, sumOfPauses FROM GarbageCollection ORDER BY startTime',
-      'row { LINE_CHART(x: "startTime", y: ["duration"]) LINK_X($lo, $hi) LINE_CHART(x: "startTime", y: ["sumOfPauses"]) LINK_X($lo, $hi) }'
+      'ROW(LINE_CHART(x: "startTime", y: ["duration"]) LINK_X($lo, $hi), LINE_CHART(x: "startTime", y: ["sumOfPauses"]) LINK_X($lo, $hi))'
     );
     if (!container) { test.skip(); return; }
 

@@ -244,15 +244,6 @@ test.describe.serial('Plot DSL complex completions', () => {
     });
   });
 
-  test('P12. row composite inner plot gets column completions', async () => {
-    await expectPlotCompletions(page, {
-      plotBefore: 'row { LINE_CHART(x: ',
-      plotAfter: ')',
-      expected: ['Cause', 'Collections', 'Total Pause (ms)', 'Avg Pause (ms)'],
-      mode: 'anyOf',
-      preCompletionDelayMs: 1500,
-    });
-  });
 });
 
 // ---------------------------------------------------------------------------
