@@ -4,7 +4,8 @@ import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds } from '../../utils/plotUtils';
+import { buildParserSpec, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds, getPaletteColors } from '../../utils/plotUtils';
+import type { ParsedPlotCall } from '../../utils/plotParser';
 
 interface ScatterPlotConfig {
   x: string;
@@ -24,11 +25,17 @@ const params: PlotParameter[] = [
 
 const parseConfig = createConfigParser<ScatterPlotConfig>(buildParserSpec(params));
 
-const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], domainX?: [any, any], domainY?: [number, number], isAnimationActive?: boolean, animationDuration?: number }> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration }) => {
+const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], domainX?: [any, any], domainY?: [number, number], isAnimationActive?: boolean, animationDuration?: number, clauses?: ParsedPlotCall }> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration, clauses }) => {
   const { settings } = useContext(SettingsContext);
   const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
   const yIsDuration = isDurationColumnName(config.y ?? '') && sampleLooksLikeNanoseconds(data, [config.y]);
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
+  const SCATTER_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+  const colors = getPaletteColors(clauses?.palette, SCATTER_COLORS);
+  const legendPos = clauses?.legend;
+  const showLegend = legendPos !== 'none';
+  const yDomainFromClause = clauses?.axisY?.domain as [any, any] | undefined;
+  const xDomainFromClause = clauses?.axisX?.domain as [any, any] | undefined;
 
   const series = React.useMemo(() => {
     const groupCol = config.color;
@@ -59,13 +66,13 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
       <ResponsiveContainer minHeight={200}>
         <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
-          <XAxis allowDataOverflow type="number" dataKey={config.x} name={config.x} tickFormatter={numberFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={domainX} />
-          <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={yFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={domainY} allowDataOverflow />
+          <XAxis allowDataOverflow type="number" dataKey={config.x} name={config.x} tickFormatter={numberFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={xDomainFromClause || domainX} />
+          <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={yFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={yDomainFromClause || domainY} allowDataOverflow />
           {config.size && <ZAxis type="number" dataKey={config.size} name={config.size} range={[10, 200]} domain={sizeDomain} />}
           <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} formatter={yFormatter} />
-          <Legend wrapperStyle={{ fontSize: "12px" }} verticalAlign="bottom" align="center" />
+          {showLegend && <Legend wrapperStyle={{ fontSize: "12px" }} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'} />}
           {series.map((s, i) => (
-            <Scatter key={s.name} name={s.name} data={s.data} fill={`hsl(${i * 60}, 70%, 50%)`} isAnimationActive={isAnimationActive} animationDuration={animationDuration} />
+            <Scatter key={s.name} name={s.name} data={s.data} fill={colors[i % colors.length]} isAnimationActive={isAnimationActive} animationDuration={animationDuration} />
           ))}
         </ScatterChart>
       </ResponsiveContainer>

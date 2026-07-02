@@ -1337,6 +1337,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
 **Fix:** Guard with `!isNaN(n)` before returning the parsed override value; fall through to the normal heuristic on non-numeric input. ✅ FIXED
 
+### 🟡 [B-234] `ScatterPlot` — no clause support; `LEGEND AT …`, `PALETTE`, `AXIS-X/Y DOMAIN` all ignored ✅ FIXED
+**Where:** `components/plots/ScatterPlot.tsx:27`
+**Repro:** `SCATTER_PLOT(x: "x", y: "y", color: "cat") LEGEND AT NONE` — legend shows; `PALETTE "tableau10"` — uses `hsl(i*60, …)` colors instead; `AXIS-Y DOMAIN [0, 100]` — ignored.
+**Observed:** `ScatterPlotComponent` had no `clauses` prop; Scatter series colored via `hsl(i*60, 70%, 50%)` formula ignoring palettes; Legend always rendered; domain clauses not applied.
+**Fix:** Added `clauses?: ParsedPlotCall`, imported `getPaletteColors`. Extracted `legendPos/showLegend`, `colors`, `xDomainFromClause`, `yDomainFromClause`. Replaced `hsl(…)` formula with `colors[i % colors.length]`. Conditionally render Legend with position. Pass clause domains to XAxis/YAxis with existing prop as fallback.
+
 ### 🟡 [B-233] `AreaChartPlot` — `AXIS-X DOMAIN` and `AXIS-X LABEL` clauses ignored ✅ FIXED
 **Where:** `components/plots/AreaChartPlot.tsx:162`
 **Repro:** `AREA_CHART(x: "ts", y: ["v"]) AXIS-X DOMAIN [100, 200]` — domain ignored; `AXIS-X LABEL "Time"` — no label appears.
