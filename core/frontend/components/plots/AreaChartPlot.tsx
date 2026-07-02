@@ -218,6 +218,7 @@ export const areaChartPlot: PlotRegistration<Config> = {
   description: 'Filled area chart — ideal for visualizing cumulative or proportional data over time, such as heap usage breakdown or allocation rates. Supports stacked or overlapping areas.',
   params: withCommonParams(params),
   supportsMultiQuery: true,
+  supportsZoom: true,
   template: 'AREA_CHART(x: , y: [])',
   examples: [
     {

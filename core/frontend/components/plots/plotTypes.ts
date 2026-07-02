@@ -41,6 +41,10 @@ export interface PlotRegistration<TConfig = any> {
   // Can this plot handle data from multiple queries via `ON 1, 2`?
   supportsMultiQuery?: boolean;
 
+  // Does this plot support numeric x-axis zoom/pan via domainX prop?
+  // True for LINE_CHART, AREA_CHART, RANGE_PLOT, SCATTER_PLOT.
+  supportsZoom?: boolean;
+
   // Explicit template for autocompletion
   template: string;
 

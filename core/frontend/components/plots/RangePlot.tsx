@@ -192,6 +192,7 @@ export const rangePlot: PlotRegistration<Config> = {
   description: 'Confidence interval / error band chart — shaded area between a low and high bound with an optional center line. Useful for showing p5–p95 latency bands, GC pause ranges, or CPU confidence intervals.',
   params: withCommonParams(params),
   supportsMultiQuery: false,
+  supportsZoom: true,
   template: 'RANGE(x: , low: , high: )',
   examples: [
     {

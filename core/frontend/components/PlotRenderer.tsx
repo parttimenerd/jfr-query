@@ -124,7 +124,13 @@ const AiErrorFixer: React.FC<AiErrorFixerProps> = ({ error, config, data, sql, c
             }, 10_000);
             aiService.getAiPlotFixSuggestion(error, sql, data, config, cellContext.content, metadata.customSystemPrompt)
                 .then(res => { if (isMounted) setSuggestion(res); })
-                .catch(err => { if (isMounted) setApiError(err.message); })
+                .catch(err => {
+                    if (!isMounted) return;
+                    // Browser provider doesn't support chat — treat as silently unavailable.
+                    const msg: string = err?.message ?? '';
+                    if (msg.includes('Browser provider')) { setIsLoading(false); return; }
+                    setApiError(msg);
+                })
                 .finally(() => { if (isMounted) { setIsLoading(false); clearTimeout(timeoutId); } });
         }, 500);
 
@@ -136,12 +142,61 @@ const AiErrorFixer: React.FC<AiErrorFixerProps> = ({ error, config, data, sql, c
             <div><p className="font-semibold text-base text-yellow-300">Plot Error</p><p className="font-mono text-xs mt-1 whitespace-pre-wrap">{error}</p></div>
             <div className="border-t border-yellow-500/30 pt-3">
                 {isLoading && <div className="flex items-center gap-2 text-yellow-300/80"><div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div><span>Getting AI suggestion...</span></div>}
-                {apiError && <p>AI suggestion unavailable: {apiError}</p>}
+                {apiError && <p className="text-yellow-400/70 text-xs">{apiError}</p>}
                 {suggestion && (<div className="space-y-2"><p className="flex items-center gap-2 font-semibold text-yellow-300"><WandSparklesIcon className="w-4 h-4"/> AI Fix Suggestion</p><p className="text-xs text-yellow-300/90">{suggestion.explanation}</p><pre className="bg-gray-900/50 p-2 rounded-md text-xs font-mono text-cyan-300 overflow-x-auto">{suggestion.fixedCode}</pre><button onClick={() => onApplyFix(suggestion.fixedCode)} className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-green-600/30 hover:bg-green-600/50 text-green-300 rounded-md font-semibold"><CheckCircleIcon className="w-4 h-4"/>Apply Fix</button></div>)}
             </div>
         </div>
     );
 };
+
+// ─── Shared zoom/pan logic ────────────────────────────────────────────────────
+//
+// Both InteractivePlotWrapper (LINK_X) and StandaloneZoomWrapper use the same
+// low-level interactions:
+//   • Shift+scroll — zoom around the mouse cursor
+//   • Drag          — pan (when already zoomed or when linkX is active)
+//   • Shift+drag    — area-select zoom: draw a rubber-band and zoom to that range
+//   • Reset button  — snap back to full data range
+//
+// The domainX value is passed directly to the child plot component via props.
+// IMPORTANT: the child must be the actual plot component, NOT wrapped in
+// PlotErrorBoundary — the error boundary swallows extra props.
+
+function clampDomain(
+    newMin: number, newMax: number,
+    dataRange: { min: number; max: number } | null,
+    clamp: boolean,
+): [number, number] {
+    if (!clamp || !dataRange) return newMin < newMax ? [newMin, newMax] : [newMax, newMin];
+    const range = Math.abs(newMax - newMin);
+    const dataSpan = dataRange.max - dataRange.min;
+    let finalMin = Math.min(newMin, newMax);
+    let finalMax = Math.max(newMin, newMax);
+    if (finalMin < dataRange.min) { finalMin = dataRange.min; finalMax = dataRange.min + range; }
+    if (finalMax > dataRange.max) { finalMax = dataRange.max; finalMin = dataRange.max - range; }
+    if (dataSpan < finalMax - finalMin) {
+        const center = Math.max(dataRange.min + dataSpan / 2, Math.min(dataRange.max - dataSpan / 2, (finalMin + finalMax) / 2));
+        finalMin = center - dataSpan / 2;
+        finalMax = center + dataSpan / 2;
+    }
+    return finalMin < finalMax ? [finalMin, finalMax] : [dataRange.min, dataRange.max];
+}
+
+function computeDataRange(data: any[], xCol: string): { min: number; max: number } | null {
+    if (!data || data.length === 0 || !xCol) return null;
+    let min: number | null = null, max: number | null = null;
+    for (const row of data) {
+        const val = getTimeValue(row[xCol]);
+        if (!isNaN(val)) {
+            if (min === null || val < min) min = val;
+            if (max === null || val > max) max = val;
+        }
+    }
+    return min !== null && max !== null ? { min, max } : null;
+}
+
+// ─── InteractivePlotWrapper ───────────────────────────────────────────────────
+// Used when LINK_X($min, $max) is specified. Syncs localDomain ↔ notebook vars.
 
 const InteractivePlotWrapper: React.FC<{
     children: React.ReactElement;
@@ -156,19 +211,48 @@ const InteractivePlotWrapper: React.FC<{
     const [isLocked, setIsLocked] = useState(false);
     const [localDomain, setLocalDomain] = useState<[number, number] | null>(null);
 
-    // B-148: stable debounce — keep a ref to the latest onVariableChange so the
-    // debounce function itself never needs to be recreated across renders.
+    // "locally owned" flag: when we just wrote a domain update, ignore the next
+    // allVariables sync so the round-trip write doesn't overwrite our local state.
+    const locallyOwnedRef = useRef(false);
+
+    // B-148: stable debounce — latest onVariableChange via ref.
     const onVarChangeRef = useRef(onVariableChange);
     onVarChangeRef.current = onVariableChange;
     const stableOnVar = useCallback((p: Record<string, string>) => onVarChangeRef.current(p), []);
-    // B-150: 300 ms debounce (was 200 ms) to reduce write frequency during pan.
-    const debouncedOnVariableChange = useMemo(() => debounce(stableOnVar, 300), [stableOnVar]);
+    const debouncedOnVariableChange = useMemo(() => debounce(stableOnVar, 200), [stableOnVar]);
 
-    // Drag-to-pan state.
     const dragRef = useRef<{ startX: number; domainMin: number; domainMax: number } | null>(null);
     const [isDragging, setIsDragging] = useState(false);
 
+    // Shift+drag area-select state
+    const [selectBox, setSelectBox] = useState<{ startPct: number; endPct: number } | null>(null);
+    const selectRef = useRef<{ startX: number; startPct: number } | null>(null);
+    const isSelectDragRef = useRef(false);
+
+    const dataRange = useMemo(() => computeDataRange(data, xCol), [data, xCol]);
+
+    // Keep stable refs so wheel handler closure always has the latest values
+    // without needing to be re-registered on every zoom tick.
+    const localDomainRef = useRef(localDomain);
+    localDomainRef.current = localDomain;
+    const dataRangeRef = useRef(dataRange);
+    dataRangeRef.current = dataRange;
+    const isLockedRef = useRef(isLocked);
+    isLockedRef.current = isLocked;
+    const linkXClampRef = useRef(linkXClamp);
+    linkXClampRef.current = linkXClamp;
+
+    const handleInteraction = useCallback((newMin: number, newMax: number) => {
+        if (newMin >= newMax) return;
+        const clamped = clampDomain(newMin, newMax, dataRangeRef.current, linkXClampRef.current);
+        locallyOwnedRef.current = true;
+        setLocalDomain(clamped);
+        debouncedOnVariableChange({ [linkX[0]]: String(clamped[0]), [linkX[1]]: String(clamped[1]) });
+    }, [linkX, debouncedOnVariableChange]);
+
+    // Sync from notebook variables → localDomain, but only when we don't own the update.
     useEffect(() => {
+        if (locallyOwnedRef.current) { locallyOwnedRef.current = false; return; }
         const [minVar, maxVar] = linkX;
         const minVal = getTimeValue(allVariables[minVar]);
         const maxVal = getTimeValue(allVariables[maxVar]);
@@ -177,117 +261,92 @@ const InteractivePlotWrapper: React.FC<{
         }
     }, [allVariables, linkX]);
 
-    const dataRange = useMemo(() => {
-        if (!data || data.length === 0 || !xCol) return null;
-        let min: number | null = null;
-        let max: number | null = null;
-        for (const row of data) {
-            const val = getTimeValue(row[xCol]);
-            if (!isNaN(val)) {
-                if (min === null || val < min) min = val;
-                if (max === null || val > max) max = val;
-            }
-        }
-        return min !== null && max !== null ? { min, max } : null;
-    }, [data, xCol]);
-
-    // B-149: stable handleInteraction so the wheel useEffect below doesn't
-    // re-register the listener on every render frame.
-    const handleInteraction = useCallback((newMin: number, newMax: number) => {
-        if (newMin >= newMax) return;
-
-        let finalMin = newMin;
-        let finalMax = newMax;
-
-        if (linkXClamp && dataRange) {
-            const range = newMax - newMin;
-            if (newMin < dataRange.min) {
-                finalMin = dataRange.min;
-                finalMax = dataRange.min + range;
-            }
-            if (newMax > dataRange.max) {
-                finalMax = dataRange.max;
-                finalMin = dataRange.max - range;
-            }
-            // B-020: if the requested range is wider than the data, shrink it around the
-            // current center rather than jumping to [dataRange.min, dataRange.max].
-            const dataSpan = dataRange.max - dataRange.min;
-            if (dataSpan < finalMax - finalMin) {
-                const center = (finalMin + finalMax) / 2;
-                const clampedCenter = Math.max(dataRange.min + dataSpan / 2, Math.min(dataRange.max - dataSpan / 2, center));
-                finalMin = clampedCenter - dataSpan / 2;
-                finalMax = clampedCenter + dataSpan / 2;
-            }
-        }
-
-        setLocalDomain([finalMin, finalMax]);
-        debouncedOnVariableChange({ [linkX[0]]: String(finalMin), [linkX[1]]: String(finalMax) });
-    }, [linkXClamp, dataRange, linkX, debouncedOnVariableChange]);
-
-    // Use a non-passive wheel listener so preventDefault() actually works.
-    // B-149: deps list only contains stable values; handleInteraction is a
-    // useCallback so this effect re-registers only when truly necessary.
+    // Non-passive wheel listener — stable, re-registered only when isLocked changes.
     useEffect(() => {
         const el = wrapperRef.current;
         if (!el) return;
         const onWheel = (e: WheelEvent) => {
-            if (isLocked || !e.shiftKey) return;
+            if (isLockedRef.current || !e.shiftKey) return;
             e.preventDefault();
             e.stopPropagation();
-
-            const rangeArr: [number, number] | null = dataRange ? [dataRange.min, dataRange.max] : null;
-            const [currentMin, currentMax] = localDomain ?? rangeArr ?? [0, 1];
-
+            const dr = dataRangeRef.current;
+            const [currentMin, currentMax] = localDomainRef.current ?? (dr ? [dr.min, dr.max] : [0, 1]);
             const rect = el.getBoundingClientRect();
             if (rect.width <= 0) return;
             const mouseX = e.clientX - rect.left;
             const zoomFactor = 1 + Math.abs(e.deltaY) / 200;
             const currentRange = currentMax - currentMin;
             if (currentRange <= 0) return;
-
             const mousePercent = Math.max(0, Math.min(1, mouseX / rect.width));
             const mouseValue = currentMin + currentRange * mousePercent;
             let newRange = e.deltaY < 0 ? currentRange / zoomFactor : currentRange * zoomFactor;
-
-            if (linkXClamp && dataRange && newRange > (dataRange.max - dataRange.min)) {
-                newRange = dataRange.max - dataRange.min;
-            }
-
-            const newMin = mouseValue - newRange * mousePercent;
-            const newMax = newMin + newRange;
-            handleInteraction(newMin, newMax);
+            if (linkXClampRef.current && dr && newRange > dr.max - dr.min) newRange = dr.max - dr.min;
+            handleInteraction(mouseValue - newRange * mousePercent, mouseValue - newRange * mousePercent + newRange);
         };
         el.addEventListener('wheel', onWheel, { passive: false });
         return () => el.removeEventListener('wheel', onWheel);
-    }, [isLocked, localDomain, dataRange, linkXClamp, handleInteraction]);
+    }, [isLocked, handleInteraction]);
 
-    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         if (isLocked || e.button !== 0) return;
-        // Don't start a pan when clicking the lock button.
         if ((e.target as HTMLElement).closest('button')) return;
-        const rangeArr: [number, number] | null = dataRange ? [dataRange.min, dataRange.max] : null;
-        const [currentMin, currentMax] = localDomain ?? rangeArr ?? [0, 1];
-        dragRef.current = { startX: e.clientX, domainMin: currentMin, domainMax: currentMax };
-        setIsDragging(true);
+        const dr = dataRangeRef.current;
+        const [currentMin, currentMax] = localDomainRef.current ?? (dr ? [dr.min, dr.max] : [0, 1]);
+        const rect = wrapperRef.current?.getBoundingClientRect();
+        if (!rect || rect.width <= 0) return;
+        if (e.shiftKey) {
+            // Shift+drag = area-select zoom
+            isSelectDragRef.current = true;
+            const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            selectRef.current = { startX: e.clientX, startPct: pct };
+            setSelectBox({ startPct: pct, endPct: pct });
+        } else {
+            dragRef.current = { startX: e.clientX, domainMin: currentMin, domainMax: currentMax };
+            setIsDragging(true);
+        }
         e.preventDefault();
-    };
+    }, [isLocked]);
 
-    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!dragRef.current || !wrapperRef.current) return;
-        const rect = wrapperRef.current.getBoundingClientRect();
-        if (rect.width <= 0) return;
+    const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        const rect = wrapperRef.current?.getBoundingClientRect();
+        if (!rect || rect.width <= 0) return;
+        if (isSelectDragRef.current && selectRef.current) {
+            const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            setSelectBox({ startPct: selectRef.current.startPct, endPct: pct });
+            return;
+        }
+        if (!dragRef.current) return;
         const { startX, domainMin, domainMax } = dragRef.current;
         const range = domainMax - domainMin;
-        const pixelsDragged = e.clientX - startX;
-        // Negative: dragging left → pan forward in time.
-        const domainDelta = -(pixelsDragged / rect.width) * range;
+        const domainDelta = -((e.clientX - startX) / rect.width) * range;
         handleInteraction(domainMin + domainDelta, domainMax + domainDelta);
-    };
+    }, [handleInteraction]);
 
-    const handleMouseUp = () => {
+    const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (isSelectDragRef.current && selectRef.current) {
+            const rect = wrapperRef.current?.getBoundingClientRect();
+            if (rect && rect.width > 0) {
+                const { startPct } = selectRef.current;
+                const endPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                const lo = Math.min(startPct, endPct);
+                const hi = Math.max(startPct, endPct);
+                if (hi - lo > 0.01) {
+                    const dr = dataRangeRef.current;
+                    const [currentMin, currentMax] = localDomainRef.current ?? (dr ? [dr.min, dr.max] : [0, 1]);
+                    const span = currentMax - currentMin;
+                    handleInteraction(currentMin + lo * span, currentMin + hi * span);
+                }
+            }
+            isSelectDragRef.current = false;
+            selectRef.current = null;
+            setSelectBox(null);
+        }
         dragRef.current = null;
         setIsDragging(false);
-    };
+    }, [handleInteraction]);
+
+    const isZoomed = localDomain !== null && dataRange !== null &&
+        (localDomain[0] !== dataRange.min || localDomain[1] !== dataRange.max);
 
     return (
         <div
@@ -296,16 +355,34 @@ const InteractivePlotWrapper: React.FC<{
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            style={{ width: '100%', height: '100%', cursor: isLocked ? 'default' : isDragging ? 'grabbing' : 'grab' }}
-            className="relative group"
+            style={{ width: '100%', height: '100%', position: 'relative',
+                cursor: isLocked ? 'default' : isSelectDragRef.current ? 'col-resize' : isDragging ? 'grabbing' : 'grab' }}
+            className="group"
         >
+            {/* Shift+drag selection box */}
+            {selectBox && (
+                <div style={{
+                    position: 'absolute', top: 0, bottom: 0, zIndex: 20, pointerEvents: 'none',
+                    left: `${Math.min(selectBox.startPct, selectBox.endPct) * 100}%`,
+                    width: `${Math.abs(selectBox.endPct - selectBox.startPct) * 100}%`,
+                    background: 'rgba(6,182,212,0.15)', border: '1px solid rgba(6,182,212,0.6)',
+                }} />
+            )}
             <div className="absolute top-1 right-1 z-10 flex items-center gap-1">
                 {!isLocked && (
-                    <span className="text-[10px] text-gray-400 bg-gray-800/70 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" title="Drag to pan · Hold Shift while scrolling to zoom this plot">
-                        drag = pan · ⇧ scroll = zoom
+                    <span className="text-[10px] text-gray-400 bg-gray-800/70 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        drag=pan · ⇧drag=select · ⇧scroll=zoom
                     </span>
                 )}
-                <button onClick={() => setIsLocked(!isLocked)} className="p-1 bg-gray-700/50 rounded-full text-gray-300 hover:text-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-500" title={isLocked ? "Unlock Plot" : "Lock Plot"}>
+                {isZoomed && !isLocked && (
+                    <button onClick={() => { locallyOwnedRef.current = true; setLocalDomain(null); onVariableChange({ [linkX[0]]: '', [linkX[1]]: '' }); }}
+                        className="text-[10px] px-1.5 py-0.5 bg-cyan-800/70 hover:bg-cyan-700/80 text-cyan-200 rounded transition-colors" title="Reset zoom">
+                        reset
+                    </button>
+                )}
+                <button onClick={() => setIsLocked(!isLocked)}
+                    className="p-1 bg-gray-700/50 rounded-full text-gray-300 hover:text-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                    title={isLocked ? 'Unlock Plot' : 'Lock Plot'}>
                     {isLocked ? <LockClosedIcon className="w-4 h-4 text-yellow-400"/> : <LockOpenIcon className="w-4 h-4"/>}
                 </button>
             </div>
@@ -314,8 +391,10 @@ const InteractivePlotWrapper: React.FC<{
     );
 };
 
-/** Standalone zoom/pan wrapper for any plot — no LINK_X required.
- *  Scroll to zoom around the cursor, drag to pan, reset button to go back to full range. */
+// ─── StandaloneZoomWrapper ────────────────────────────────────────────────────
+// Used when a plot has a numeric x-axis but no LINK_X clause.
+// Zoom/pan is local only — no notebook variable writes.
+
 const StandaloneZoomWrapper: React.FC<{
     children: React.ReactElement;
     data: any[];
@@ -325,52 +404,30 @@ const StandaloneZoomWrapper: React.FC<{
     const [localDomain, setLocalDomain] = useState<[number, number] | null>(null);
     const dragRef = useRef<{ startX: number; domainMin: number; domainMax: number } | null>(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [selectBox, setSelectBox] = useState<{ startPct: number; endPct: number } | null>(null);
+    const selectRef = useRef<{ startX: number; startPct: number } | null>(null);
+    const isSelectDragRef = useRef(false);
 
-    const dataRange = useMemo(() => {
-        if (!data || data.length === 0 || !xCol) return null;
-        let min: number | null = null;
-        let max: number | null = null;
-        for (const row of data) {
-            const val = getTimeValue(row[xCol]);
-            if (!isNaN(val)) {
-                if (min === null || val < min) min = val;
-                if (max === null || val > max) max = val;
-            }
-        }
-        return min !== null && max !== null ? { min, max } : null;
-    }, [data, xCol]);
+    const dataRange = useMemo(() => computeDataRange(data, xCol), [data, xCol]);
 
-    const isZoomed = localDomain !== null && dataRange !== null &&
-        (localDomain[0] !== dataRange.min || localDomain[1] !== dataRange.max);
+    const localDomainRef = useRef(localDomain);
+    localDomainRef.current = localDomain;
+    const dataRangeRef = useRef(dataRange);
+    dataRangeRef.current = dataRange;
 
-    const clampDomain = useCallback((newMin: number, newMax: number): [number, number] => {
-        if (!dataRange) return [newMin, newMax];
-        const range = newMax - newMin;
-        const dataSpan = dataRange.max - dataRange.min;
-        let finalMin = newMin;
-        let finalMax = newMax;
-        if (newMin < dataRange.min) { finalMin = dataRange.min; finalMax = dataRange.min + range; }
-        if (newMax > dataRange.max) { finalMax = dataRange.max; finalMin = dataRange.max - range; }
-        if (dataSpan < finalMax - finalMin) {
-            const center = Math.max(dataRange.min + dataSpan / 2, Math.min(dataRange.max - dataSpan / 2, (finalMin + finalMax) / 2));
-            finalMin = center - dataSpan / 2;
-            finalMax = center + dataSpan / 2;
-        }
-        if (finalMin >= finalMax) return [dataRange.min, dataRange.max];
-        return [finalMin, finalMax];
-    }, [dataRange]);
+    const applyDomain = useCallback((newMin: number, newMax: number) => {
+        setLocalDomain(clampDomain(newMin, newMax, dataRangeRef.current, true));
+    }, []);
 
     useEffect(() => {
         const el = wrapperRef.current;
         if (!el) return;
         const onWheel = (e: WheelEvent) => {
-            // Require Shift key so normal page scroll still works.
             if (!e.shiftKey) return;
             e.preventDefault();
             e.stopPropagation();
-
-            const rangeArr: [number, number] | null = dataRange ? [dataRange.min, dataRange.max] : null;
-            const [currentMin, currentMax] = localDomain ?? rangeArr ?? [0, 1];
+            const dr = dataRangeRef.current;
+            const [currentMin, currentMax] = localDomainRef.current ?? (dr ? [dr.min, dr.max] : [0, 1]);
             const rect = el.getBoundingClientRect();
             if (rect.width <= 0) return;
             const mouseX = e.clientX - rect.left;
@@ -380,36 +437,72 @@ const StandaloneZoomWrapper: React.FC<{
             const mousePercent = Math.max(0, Math.min(1, mouseX / rect.width));
             const mouseValue = currentMin + currentRange * mousePercent;
             let newRange = e.deltaY < 0 ? currentRange / zoomFactor : currentRange * zoomFactor;
-            if (dataRange && newRange > (dataRange.max - dataRange.min)) newRange = dataRange.max - dataRange.min;
-            const newMin = mouseValue - newRange * mousePercent;
-            const newMax = newMin + newRange;
-            setLocalDomain(clampDomain(newMin, newMax));
+            if (dr && newRange > dr.max - dr.min) newRange = dr.max - dr.min;
+            applyDomain(mouseValue - newRange * mousePercent, mouseValue - newRange * mousePercent + newRange);
         };
         el.addEventListener('wheel', onWheel, { passive: false });
         return () => el.removeEventListener('wheel', onWheel);
-    }, [localDomain, dataRange, clampDomain]);
+    }, [applyDomain]);
 
-    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         if (e.button !== 0) return;
         if ((e.target as HTMLElement).closest('button')) return;
-        const rangeArr: [number, number] | null = dataRange ? [dataRange.min, dataRange.max] : null;
-        const [currentMin, currentMax] = localDomain ?? rangeArr ?? [0, 1];
-        dragRef.current = { startX: e.clientX, domainMin: currentMin, domainMax: currentMax };
-        setIsDragging(true);
+        const rect = wrapperRef.current?.getBoundingClientRect();
+        if (!rect || rect.width <= 0) return;
+        const dr = dataRangeRef.current;
+        const [currentMin, currentMax] = localDomainRef.current ?? (dr ? [dr.min, dr.max] : [0, 1]);
+        if (e.shiftKey) {
+            isSelectDragRef.current = true;
+            const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            selectRef.current = { startX: e.clientX, startPct: pct };
+            setSelectBox({ startPct: pct, endPct: pct });
+        } else {
+            dragRef.current = { startX: e.clientX, domainMin: currentMin, domainMax: currentMax };
+            setIsDragging(true);
+        }
         e.preventDefault();
-    };
+    }, []);
 
-    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!dragRef.current || !wrapperRef.current) return;
-        const rect = wrapperRef.current.getBoundingClientRect();
-        if (rect.width <= 0) return;
+    const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        const rect = wrapperRef.current?.getBoundingClientRect();
+        if (!rect || rect.width <= 0) return;
+        if (isSelectDragRef.current && selectRef.current) {
+            const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            setSelectBox({ startPct: selectRef.current.startPct, endPct: pct });
+            return;
+        }
+        if (!dragRef.current) return;
         const { startX, domainMin, domainMax } = dragRef.current;
         const range = domainMax - domainMin;
-        const domainDelta = -((e.clientX - startX) / rect.width) * range;
-        setLocalDomain(clampDomain(domainMin + domainDelta, domainMax + domainDelta));
-    };
+        applyDomain(domainMin - ((e.clientX - startX) / rect.width) * range,
+                    domainMax - ((e.clientX - startX) / rect.width) * range);
+    }, [applyDomain]);
 
-    const handleMouseUp = () => { dragRef.current = null; setIsDragging(false); };
+    const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (isSelectDragRef.current && selectRef.current) {
+            const rect = wrapperRef.current?.getBoundingClientRect();
+            if (rect && rect.width > 0) {
+                const { startPct } = selectRef.current;
+                const endPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                const lo = Math.min(startPct, endPct);
+                const hi = Math.max(startPct, endPct);
+                if (hi - lo > 0.01) {
+                    const dr = dataRangeRef.current;
+                    const [currentMin, currentMax] = localDomainRef.current ?? (dr ? [dr.min, dr.max] : [0, 1]);
+                    const span = currentMax - currentMin;
+                    applyDomain(currentMin + lo * span, currentMin + hi * span);
+                }
+            }
+            isSelectDragRef.current = false;
+            selectRef.current = null;
+            setSelectBox(null);
+        }
+        dragRef.current = null;
+        setIsDragging(false);
+    }, [applyDomain]);
+
+    const isZoomed = localDomain !== null && dataRange !== null &&
+        (localDomain[0] !== dataRange.min || localDomain[1] !== dataRange.max);
 
     return (
         <div
@@ -418,19 +511,26 @@ const StandaloneZoomWrapper: React.FC<{
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            style={{ width: '100%', height: '100%', cursor: isDragging ? 'grabbing' : isZoomed ? 'grab' : 'default' }}
-            className="relative group"
+            style={{ width: '100%', height: '100%', position: 'relative',
+                cursor: isSelectDragRef.current ? 'col-resize' : isDragging ? 'grabbing' : isZoomed ? 'grab' : 'default' }}
+            className="group"
         >
+            {selectBox && (
+                <div style={{
+                    position: 'absolute', top: 0, bottom: 0, zIndex: 20, pointerEvents: 'none',
+                    left: `${Math.min(selectBox.startPct, selectBox.endPct) * 100}%`,
+                    width: `${Math.abs(selectBox.endPct - selectBox.startPct) * 100}%`,
+                    background: 'rgba(6,182,212,0.15)', border: '1px solid rgba(6,182,212,0.6)',
+                }} />
+            )}
             <div className="absolute top-1 right-1 z-10 flex items-center gap-1">
                 <span className="text-[10px] text-gray-400 bg-gray-800/70 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                    ⇧ scroll = zoom · drag = pan
+                    drag=pan · ⇧drag=select · ⇧scroll=zoom
                 </span>
                 {isZoomed && (
-                    <button
-                        onClick={() => setLocalDomain(null)}
+                    <button onClick={() => setLocalDomain(null)}
                         className="text-[10px] px-1.5 py-0.5 bg-cyan-800/70 hover:bg-cyan-700/80 text-cyan-200 rounded transition-colors"
-                        title="Reset zoom"
-                    >
+                        title="Reset zoom">
                         reset
                     </button>
                 )}
@@ -756,34 +856,39 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                             const brushHandler = brushVarName
                                 ? makeBrushVarHandler(brushVarName, leaf.brush!.mode)
                                 : undefined;
-                            let leafContent: React.ReactElement = (
-                                <PlotErrorBoundary>
-                                    <LeafComp
-                                        config={leafCfg}
-                                        data={leafData}
-                                        clauses={leaf}
-                                        isAnimationActive={true}
-                                        animationDuration={300}
-                                        {...(brushVarName ? {
-                                            gestureName: brushVarName.replace(/^\$/, ''),
-                                            onVariableChange: brushHandler,
-                                        } : {})}
-                                        {...(getLinkYDomain(leaf) ? { domainY: getLinkYDomain(leaf) } : {})}
-                                    />
-                                </PlotErrorBoundary>
+                            const leafPlotEl = (
+                                <LeafComp
+                                    config={leafCfg}
+                                    data={leafData}
+                                    clauses={leaf}
+                                    isAnimationActive={true}
+                                    animationDuration={300}
+                                    {...(brushVarName ? {
+                                        gestureName: brushVarName.replace(/^\$/, ''),
+                                        onVariableChange: brushHandler,
+                                    } : {})}
+                                    {...(getLinkYDomain(leaf) ? { domainY: getLinkYDomain(leaf) } : {})}
+                                />
                             );
+                            let leafContent: React.ReactElement;
                             if (leaf.linkX) {
                                 leafContent = (
-                                    <InteractivePlotWrapper linkX={leaf.linkX} linkXClamp={!!leaf.linkXClamp} data={leafData} xCol={(leafCfg as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
-                                        {leafContent}
-                                    </InteractivePlotWrapper>
+                                    <PlotErrorBoundary>
+                                        <InteractivePlotWrapper linkX={leaf.linkX} linkXClamp={!!leaf.linkXClamp} data={leafData} xCol={(leafCfg as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
+                                            {leafPlotEl}
+                                        </InteractivePlotWrapper>
+                                    </PlotErrorBoundary>
                                 );
-                            } else if ((leafCfg as any).x && leafData && leafData.length > 0) {
+                            } else if (leafReg.supportsZoom && leafData && leafData.length > 0) {
                                 leafContent = (
-                                    <StandaloneZoomWrapper data={leafData} xCol={(leafCfg as any).x}>
-                                        {leafContent}
-                                    </StandaloneZoomWrapper>
+                                    <PlotErrorBoundary>
+                                        <StandaloneZoomWrapper data={leafData} xCol={(leafCfg as any).x}>
+                                            {leafPlotEl}
+                                        </StandaloneZoomWrapper>
+                                    </PlotErrorBoundary>
                                 );
+                            } else {
+                                leafContent = <PlotErrorBoundary>{leafPlotEl}</PlotErrorBoundary>;
                             }
                             if (leaf.linkScroll) {
                                 leafContent = (
@@ -847,35 +952,39 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                             ? makeBrushVarHandler(singleBrushVarName, parsedCall.brush!.mode)
                             : undefined;
 
-                        let plotContent: React.ReactElement = (
-                            <PlotErrorBoundary>
-                                <PlotComponent
-                                    config={parsedConfig}
-                                    data={singlePlotData}
-                                    clauses={parsedCall}
-                                    isAnimationActive={true}
-                                    animationDuration={300}
-                                    {...(singleBrushVarName ? {
-                                        gestureName: singleBrushVarName.replace(/^\$/, ''),
-                                        onVariableChange: singleBrushHandler,
-                                    } : {})}
-                                    {...(getLinkYDomain(parsedCall) ? { domainY: getLinkYDomain(parsedCall) } : {})}
-                                />
-                            </PlotErrorBoundary>
+                        const singlePlotEl = (
+                            <PlotComponent
+                                config={parsedConfig}
+                                data={singlePlotData}
+                                clauses={parsedCall}
+                                isAnimationActive={true}
+                                animationDuration={300}
+                                {...(singleBrushVarName ? {
+                                    gestureName: singleBrushVarName.replace(/^\$/, ''),
+                                    onVariableChange: singleBrushHandler,
+                                } : {})}
+                                {...(getLinkYDomain(parsedCall) ? { domainY: getLinkYDomain(parsedCall) } : {})}
+                            />
                         );
-
+                        let plotContent: React.ReactElement;
                         if (linkX) {
                             plotContent = (
-                                <InteractivePlotWrapper linkX={linkX} linkXClamp={!!linkXClamp} data={singlePlotData} xCol={(parsedConfig as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
-                                    {plotContent}
-                                </InteractivePlotWrapper>
+                                <PlotErrorBoundary>
+                                    <InteractivePlotWrapper linkX={linkX} linkXClamp={!!linkXClamp} data={singlePlotData} xCol={(parsedConfig as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
+                                        {singlePlotEl}
+                                    </InteractivePlotWrapper>
+                                </PlotErrorBoundary>
                             );
-                        } else if ((parsedConfig as any).x && singlePlotData && singlePlotData.length > 0) {
+                        } else if (reg.supportsZoom && singlePlotData && singlePlotData.length > 0) {
                             plotContent = (
-                                <StandaloneZoomWrapper data={singlePlotData} xCol={(parsedConfig as any).x}>
-                                    {plotContent}
-                                </StandaloneZoomWrapper>
+                                <PlotErrorBoundary>
+                                    <StandaloneZoomWrapper data={singlePlotData} xCol={(parsedConfig as any).x}>
+                                        {singlePlotEl}
+                                    </StandaloneZoomWrapper>
+                                </PlotErrorBoundary>
                             );
+                        } else {
+                            plotContent = <PlotErrorBoundary>{singlePlotEl}</PlotErrorBoundary>;
                         }
 
                         const displayTitle = title || (parsedConfig as any).title || (isMulti ? plotTypeName : undefined);

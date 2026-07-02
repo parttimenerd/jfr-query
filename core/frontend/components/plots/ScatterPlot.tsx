@@ -86,6 +86,7 @@ export const scatterPlot: PlotRegistration<ScatterPlotConfig> = {
   name: 'SCATTER_PLOT',
   description: 'Plots individual data points by two numeric axes — great for spotting correlations (e.g. pause duration vs. bytes reclaimed). Add a third numeric column as `size` for bubble charts.',
   params: withCommonParams(params),
+  supportsZoom: true,
   template: 'SCATTER_PLOT(x: , y: )',
   examples: [
     { 

@@ -129,6 +129,7 @@ export const lineChartPlot: PlotRegistration<Config> = {
     description:'Lines over time — ideal for CPU, memory, GC activity, or any metric that changes continuously. Supports zoom, pan, dual Y-axis, and reference lines.',
     params: withCommonParams(params),
     supportsMultiQuery:true,
+    supportsZoom:true,
     template:'LINE_CHART(x: , y: [])', 
     examples:[
         {
