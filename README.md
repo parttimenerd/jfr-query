@@ -1,175 +1,164 @@
-JFR Query
-=========
+# JFR Query
 
-![Duke, the Java mascot riding a duck](img/duck_duke.jpeg)
-
-Working on JFR files using SQL. Essentially transforming JFR files into a DuckDB database
-and then using [DuckDB](https://duckdb.org/) to query it, with support for all JFR views.
-
-Previously, we tried to use the JFR query language directly, but it is quite limited.
-
-The purpose of this project is to ease the pain of exploring JFR files and finding interesting
-patterns in them.
-
-_If you are looking for the tool based on the JFR internal language, you can find it at
-[jfr-query-experiments](https://github.com/parttimenerd/jfr-query-experiments)._
-
-**This is an early prototype, to see what's possible. The database schema might change at any point.**
+Query Java Flight Recorder files with SQL — load a `.jfr` recording into DuckDB, write queries,
+and visualise the results as interactive charts in a notebook UI.
 
 **[→ Live web app](https://parttimenerd.github.io/jfr-query/) · [Documentation](https://parttimenerd.github.io/jfr-query/docs/)**
 
-## Features
+![JFR Query Notebook — line chart, flamegraph, bar chart, heatmap, pie chart, histogram](docs-site/page-full.png)
 
-![JFR Query Notebook UI](page-full.png)
+> **Early prototype.** The database schema may change at any point.
 
-- **Notebook-style analysis** — compose SQL cells, prose, and charts in a single document
-- **Built-in templates** — ready-made analyses for GC, heap allocation, threading, and exceptions
-- **Interactive charts** — line, bar, scatter, heatmap, and flame graphs with brushable time ranges
-- **Variable controls** — parameterised queries with sliders, dropdowns, and text inputs
-- **Inline scalars** — embed `${SELECT …}` query results directly in prose
-- **AI-assisted queries** — context-aware SQL suggestions powered by Google Gemini
+---
 
-Try it out
-----------
+## What it does
 
-**Web UI (recommended):** `java -jar query.jar serve myrecording.jfr` then open [http://localhost:4244](http://localhost:4244).
+JFR recordings are rich but hard to explore. JFR Query converts a recording into a DuckDB
+database and lets you write plain SQL against it — plus a full set of built-in views so you can
+ask questions like "what are the hottest methods?" or "how long did each GC phase take?" without
+knowing the raw event schema.
 
-Download the [latest release](https://github.com/parttimenerd/jfr-query/releases/download/snapshot/query.jar) or use [jbang](https://www.jbang.dev/):
+The web UI wraps that into a notebook where each cell can be a SQL query, a prose paragraph, or a
+chart — all live-linked so changing a query instantly updates every downstream chart and scalar.
+
+---
+
+## Quick start
+
+Download the [latest release](https://github.com/parttimenerd/jfr-query/releases/download/snapshot/query.jar)
+or run with [jbang](https://www.jbang.dev/):
 
 ```shell
 jbang jfr-query@parttimenerd/jfr-query
 ```
 
-Build
------
+**Start the notebook UI:**
+
+```shell
+java -jar query.jar serve myrecording.jfr
+# → open http://localhost:4244
+```
+
+**Run a query directly from the terminal:**
+
+```shell
+java -jar query.jar query myrecording.jfr "hot-methods"
+```
+
+```
+Method                                                              Samples  Percent
+------------------------------------------------------------------- -------  -------
+java.util.concurrent.ForkJoinPool.deactivate(...)                     1066    8.09%
+scala.collection.immutable.RedBlackTree$.lookup(...)                   695    5.27%
+akka.actor.dungeon.Children.initChild(ActorRef)                        678    5.14%
+```
+
+View names expand to `SELECT * FROM <view>`, so `hot-methods` is shorthand for the built-in view.
+Run `java -jar query.jar views` to list all views, `macros` to list SQL macros.
+
+---
+
+## Features
+
+### Notebook-style analysis
+
+Compose SQL queries, prose, and charts in a single document. Cells share data through named
+aliases — one cell can feed multiple charts, and inline `${SELECT …}` expressions embed query
+results directly in text.
+
+### 12 chart types
+
+| | |
+|---|---|
+| ![Line chart](docs-site/img/plots/LINE_CHART-0.png) | ![Flamegraph](docs-site/img/plots/FLAMEGRAPH-0.png) |
+| Line, area, scatter — time-series and correlation | Interactive flamegraph with % parent / % total |
+| ![Bar chart](docs-site/img/plots/BAR_CHART-0.png) | ![Heatmap](docs-site/img/plots/HEATMAP-0.png) |
+| Bar (grouped, stacked, horizontal) and bar+line | 2D heatmap for cross-dimensional intensity |
+| ![Pie chart](docs-site/img/plots/PIE_CHART-0.png) | ![Histogram](docs-site/img/plots/HISTOGRAM-0.png) |
+| Pie and donut charts | Histogram with optional log-scale bins |
+
+Also: `BOX_PLOT`, `GANTT`, `RANGE` (confidence bands), `TABLE`.
+See the [Plot DSL reference](https://parttimenerd.github.io/jfr-query/docs/reference/plot-dsl/) for full syntax.
+
+### Variable controls
+
+Parameterise queries with sliders, dropdowns, and text inputs. Every chart and inline scalar
+re-evaluates automatically when a variable changes.
+
+### Built-in templates
+
+The UI ships with ready-made notebooks for GC analysis, heap allocation, threading, and
+exceptions. Open them from the **New from template** button. Point `--templates-dir` at your
+own folder to add team-shared templates:
+
+```shell
+java -jar query.jar serve --templates-dir ~/jfr-templates myrecording.jfr
+```
+
+### AI-assisted queries
+
+Context-aware SQL completions powered by Google Gemini or OpenAI — the assistant knows your
+views, macros, and loaded schema.
+
+---
+
+## CLI reference
+
+```
+Usage: query.jar [-hV] [COMMAND]
+
+Commands:
+  import   Import a JFR recording into a DuckDB database file
+  query    Run a SQL query or built-in view on a JFR recording
+  serve    Start the notebook web UI
+  macros   List available SQL macros
+  views    List available SQL views
+  context  Dump table/view/macro descriptions for AI prompt injection
+  help     Display help for a command
+```
+
+**Import once, query many times:**
+
+```shell
+java -jar query.jar import myrecording.jfr mydb.db
+duckdb mydb.db "SELECT * FROM hot_methods"
+# or: duckdb -ui mydb.db   (browser-based DuckDB UI)
+```
+
+**Flags for `query`:**
+
+| Flag | Meaning |
+|------|---------|
+| `--csv` | Output as CSV |
+| `-o FILE` / `--output FILE` | Write results to a file |
+| `-n` / `--no-cache` | Skip writing the `.db` cache file |
+
+**Flags for `serve`:**
+
+| Flag | Meaning |
+|------|---------|
+| `-p PORT` / `--port PORT` | Listen port (default 4244) |
+| `--no-open` | Don't auto-open the browser |
+| `--templates-dir DIR` | Extra template directory |
+
+---
+
+## Building from source
 
 ```shell
 mvn clean package
 ```
 
-Main Usage
-----------
-
-Transform a JFR file into a DuckDB database file:
-
-```shell
-> java -jar target/query.jar duckdb import jfr_files/default.jfr duckdb.db
-> duckdb duckdb.db "SELECT * FROM Events";
-┌───────────────────────────────┬───────┐
-│             name              │ count │
-│            varchar            │ int32 │
-├───────────────────────────────┼───────┤
-│ GCPhaseParallel               │ 69426 │
-│ ObjectAllocationSample        │  6273 │
-```
-
-Use `duckdb -ui duckdb.db` to get a web-based UI to explore the database.
-
-Directly query a JFR file (implicitly creating a DuckDB file, disable via `--no-cache`):
-
-```
-> java -jar target/query.jar query jfr_files/metal.jfr "hot-methods" 
-Method                                                                                                   Samples Percent
--------------------------------------------------------------------------------------------------------- ------- -------
-java.util.concurrent.ForkJoinPool.deactivate(ForkJoinPool.WorkQueue, int)                                   1066   8.09%
-scala.collection.immutable.RedBlackTree$.lookup(RedBlackTree.Tree, Object, Ordering)                         695   5.27%
-akka.actor.dungeon.Children.initChild(ActorRef)                                                              678   5.14%
-scala.collection.immutable.RedBlackTree$.upd(RedBlackTree.Tree, Object, Object, boolean, Ordering)           453   3.44%
-akka.actor.dungeon.Children.reserveChild(String)                                                             379   2.88%
-```
-
-View names are directly replaced by `SELECT * FROM <view name>`, so `hot-methods` is
-`SELECT * FROM hot-methods`.
-
-The full list of views is available via the `views` command the full list of macros `macros`.
-
-All Commands
-------------
-```shell
-> java -jar target/query.jar 
-Usage: query.jar [-hV] [COMMAND]
-Querying JFR recordings with DuckDB
-  -h, --help      Show this help message and exit.
-  -V, --version   Print version information and exit.
-Commands:
-  import   Import a JFR recording into a DuckDB database
-  query    Execute a SQL query or view on the JFR DuckDB database and print the
-             results.
-  macros   List available SQL macros (views) for JFR analysis.
-  views    List available SQL views for JFR analysis.
-  context  Create a description of the tables, macros and views for generating
-             SQL queries using AI
-  help     Display help information about the specified command.
-```
-
-Limitations
------------
-
-- Stack traces are stored a fixed size (10 frames by default) and only have methods in their frames
-   - so no line number, bytecode index or the type of the frame
-   - this saves a lot of space and makes queries faster
-- Only basic support for JFR specific datatypes, as we have to map them to DuckDB types
-
-
-Notebook templates
-------------------
-
-The web UI ships with a small catalog of built-in notebook templates (GC analysis, heap allocation,
-threading, exceptions). Open them via the "New from template" button in the topbar; pick **Replace**,
-**Append**, or **Insert at top** when applying.
-
-To make additional templates available, pass `--templates-dir` to the `serve` command:
-
-```shell
-java -jar target/query.jar serve --templates-dir ~/jfr-templates --port 4244
-```
-
-Any `.md` file at the top level of that directory is exposed under a "user" badge in the gallery.
-
-A template is a markdown notebook with optional YAML front-matter:
-
-```markdown
----
-title: My Analysis
-description: One-line summary shown in the gallery
-tags: [gc, performance]
-license: MIT
-variables:
-  $$threshold_ms: '100'
-cellConditions:
-  long-pauses: 'SELECT max(duration_ms) > $$threshold_ms FROM gc_pauses'
 ---
 
-<!-- @cell name=long-pauses -->
+## Known limitations
 
-You had ${SELECT count(*) FROM gc_pauses WHERE duration_ms > $$threshold_ms} long pauses.
+- Stack traces are stored at a fixed depth (10 frames by default) — no line numbers, bytecode
+  indices, or frame types. This keeps the database compact and queries fast.
+- JFR-specific datatypes are mapped to the closest DuckDB equivalent; some precision may be lost.
 
-```{if SELECT max(duration_ms) > $$threshold_ms FROM gc_pauses}
-### Long pauses detected
-```
+---
 
-<!-- @cell name=pauses-query -->
+## License
 
-```sql
--- alias gc_pauses
-SELECT * FROM GarbageCollection
-```
-```
-
-Syntax cheat-sheet:
-
-- `<!-- @cell name=… -->` — stable cell handle; required for `cellConditions` keys and for
-  cell-qualified references (`<cell_name>.<alias>`).
-- `${SELECT … }` — inline scalar expression rendered in prose. Optional `| format` suffix
-  (e.g. `${SELECT max(duration_ms) FROM gc_pauses | duration_ms}`).
-- `` ```{if SELECT … } `` … `` ``` `` — block conditional; body is shown only when the query's first
-  cell is truthy.
-- `-- alias <name>` as the first SQL line registers the cell's result as a DuckDB temp view,
-  reusable from any other cell (bare `<name>` or qualified `<cell_handle>.<name>`).
-
-Built-in templates must declare `license: MIT`; user-folder templates are accepted as-is.
-
-
-License
--------
-GPL-2.0, Copyright 2017 - 2025 SAP SE or an SAP affiliate company and contributors.
+GPL-2.0 — Copyright 2017–2025 SAP SE or an SAP affiliate company and contributors.
