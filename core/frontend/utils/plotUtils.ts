@@ -283,7 +283,7 @@ export const buildSmartTemplate = (plotName: string, columns: string[], sampleRo
         }
         case 'HISTOGRAM': {
             const valCol = numericCols[0] ?? columns[0];
-            return `HISTOGRAM(value: ${q(valCol)})`;
+            return `HISTOGRAM(x: ${q(valCol)})`;
         }
         case 'BOX_PLOT': {
             const catCol = categoryCols[0] ?? columns[0];

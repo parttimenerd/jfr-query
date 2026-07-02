@@ -353,7 +353,7 @@ describe('buildSmartTemplate', () => {
     it('HISTOGRAM returns value col', () => {
         const result = buildSmartTemplate('HISTOGRAM', cols, sampleRow);
         expect(result).toContain('HISTOGRAM');
-        expect(result).toContain('value:');
+        expect(result).toContain('x:');
     });
 
     it('FLAMEGRAPH picks frame col by name heuristic', () => {

@@ -100,6 +100,13 @@ export const compareValues = (a: any, b: any, ascending: boolean): number => {
     if (b == null) return -1;
     // B-114: use BigInt comparison to avoid precision loss for nanosecond timestamps.
     if (typeof a === 'bigint' && typeof b === 'bigint') return (a < b ? -1 : a > b ? 1 : 0) * asc;
+    // Mixed BigInt/number: promote both to BigInt for a precision-safe comparison.
+    if (typeof a === 'bigint' || typeof b === 'bigint') {
+        try {
+            const ba = BigInt(a), bb = BigInt(b);
+            return (ba < bb ? -1 : ba > bb ? 1 : 0) * asc;
+        } catch { /* fall through to Number comparison */ }
+    }
     if ((typeof a === 'number' || typeof a === 'bigint') &&
         (typeof b === 'number' || typeof b === 'bigint')) return (Number(a) - Number(b)) * asc;
     return String(a).localeCompare(String(b)) * asc;
