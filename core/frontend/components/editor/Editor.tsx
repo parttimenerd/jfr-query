@@ -204,7 +204,15 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
           // React already owns the new value; re-calling onChange would trigger
           // a redundant setState inside a CM update cycle (React warning).
           const isProgrammatic = update.transactions.some(tr => tr.annotation(programmaticChange));
-          if (!isProgrammatic) onChangeRef.current(update.state.doc.toString());
+          if (!isProgrammatic) {
+            // Defer the React setState out of the synchronous CM update cycle.
+            // Calling setState synchronously here (while _EditorView.update is on
+            // the stack) causes React to attempt a flush inside the CM dispatch,
+            // which leads to "Maximum update depth exceeded" when the component
+            // tree is complex (e.g. a cell with multiple SQL blocks).
+            const newValue = update.state.doc.toString();
+            queueMicrotask(() => { onChangeRef.current?.(newValue); });
+          }
         }
         if (update.focusChanged && !update.view.hasFocus && onBlurRef.current) {
           onBlurRef.current();
