@@ -125,6 +125,8 @@ const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimati
     const { settings } = useContext(SettingsContext);
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
     const yDomainFromClause = clauses?.axisY?.domain as [any, any] | undefined;
+    const xLabelFromClause = clauses?.axisX?.label;
+    const yLabelFromClause = clauses?.axisY?.label;
 
     const chartData = useMemo(() => {
         if (!data || data.length === 0) return [];
@@ -162,8 +164,8 @@ const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimati
             <ResponsiveContainer minHeight={200}>
                 <BarChart data={chartData} barCategoryGap="30%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
-                    <XAxis dataKey="category" stroke="#9ca3af" tick={{ fontSize: 12 }} />
-                    <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={numberFormatter} domain={(domainY ?? yDomainFromClause) ?? ['dataMin', 'dataMax']} allowDataOverflow />
+                    <XAxis dataKey="category" stroke="#9ca3af" tick={{ fontSize: 12 }} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined} />
+                    <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={numberFormatter} domain={(domainY ?? yDomainFromClause) ?? ['dataMin', 'dataMax']} allowDataOverflow label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined} />
                     <Tooltip 
                         content={<CustomBoxPlotTooltip formatter={numberFormatter} />}
                         cursor={{ fill: 'rgba(130, 202, 157, 0.1)' }}

@@ -1440,6 +1440,12 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `clauses?.axisX?.label` was never read — `xLabelFromClause` was not computed. Additionally, the horizontal bar chart's `YAxis` (which carries the categorical x-column) had no label prop at all. The horizontal `XAxis` (value axis) incorrectly inherited `yLabelFromClause` which is correct behavior for the value axis, but the categorical axis label was missing entirely.
 **Fix:** Added `xLabelFromClause = clauses?.axisX?.label` extraction. Wired it into the `XAxis` of the normal bar chart and the `YAxis` of the horizontal bar chart.
 
+### 🟡 [B-242] `ScatterPlot`, `HistogramPlot`, `BoxPlot` — `AXIS-X LABEL` and `AXIS-Y LABEL` clauses ignored ✅ FIXED
+**Where:** `components/plots/ScatterPlot.tsx:38-70`; `components/plots/HistogramPlot.tsx:38-80`; `components/plots/BoxPlot.tsx:127-166`
+**Repro:** `SCATTER_PLOT(x: "latency", y: "cpu") AXIS-X LABEL "Latency (ms)" AXIS-Y LABEL "CPU %"` — neither label appears. Same for `HISTOGRAM(x: "duration") AXIS-X LABEL "Duration"`. `BOX_PLOT(category: "event", value: "duration") AXIS-Y LABEL "Duration (ns)"` — label missing.
+**Observed:** `ScatterPlot` read `axisX.domain` and `axisY.domain` but never `axisX.label` / `axisY.label`. `HistogramPlot` and `BoxPlot` had neither X nor Y label support. Histogram hardcoded `'Frequency'` as the Y label, ignoring `AXIS-Y LABEL` override.
+**Fix:** Added `xLabelFromClause` and `yLabelFromClause` extraction in all three components. Wired labels into the respective `XAxis`/`YAxis` `label` props. Histogram Y label falls back to `'Frequency'` when clause is absent.
+
 ### 🟡 [B-236] `RangePlot`, `GanttChartPlot` — `AXIS-X DOMAIN`, `AXIS-X LABEL`, `AXIS-Y DOMAIN/LABEL` clauses ignored ✅ FIXED
 **Where:** `components/plots/RangePlot.tsx:97-117`; `components/plots/GanttChartPlot.tsx:135-142`
 **Repro:** `RANGE_PLOT(x: "time", low: "p10", high: "p90") AXIS-X LABEL "Time"` — label never appears; `GANTT_CHART(lane: "l", start: "s", end: "e") AXIS-X DOMAIN [0, 1000]` — domain ignored.

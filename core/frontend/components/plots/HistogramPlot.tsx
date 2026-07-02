@@ -36,6 +36,8 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
     const effectiveLogScale = clauses?.axisY?.type === 'log' ? true : config.logScale;
     const yDomainFromClause = clauses?.axisY?.domain as [any, any] | undefined;
+    const xLabelFromClause = clauses?.axisX?.label;
+    const yLabelFromClause = clauses?.axisY?.label;
 
     const chartData = useMemo(() => {
         const values = data.map(r => parseFloat(r[config.x])).filter(v => !isNaN(v));
@@ -76,8 +78,8 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
             <ResponsiveContainer minHeight={200}>
                 <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 50 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568"/>
-                    <XAxis dataKey="range" stroke="#9ca3af" tick={{fontSize:12}} angle={-45} textAnchor="end" interval="preserveStartEnd" domain={domainX ?? config.xDomain ?? ['auto', 'auto']}/>
-                    <YAxis stroke="#9ca3af" tick={{fontSize:12}} label={{value:'Frequency',angle:-90,position:'insideLeft',fill:'#9ca3af'}} scale={effectiveLogScale?"log":"auto"} domain={yDomainFromClause ?? (effectiveLogScale?[0.1,'dataMax']:[0,'dataMax'])} allowDataOverflow/>
+                    <XAxis dataKey="range" stroke="#9ca3af" tick={{fontSize:12}} angle={-45} textAnchor="end" interval="preserveStartEnd" domain={domainX ?? config.xDomain ?? ['auto', 'auto']} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined}/>
+                    <YAxis stroke="#9ca3af" tick={{fontSize:12}} label={{value: yLabelFromClause || 'Frequency', angle:-90, position:'insideLeft', fill:'#9ca3af'}} scale={effectiveLogScale?"log":"auto"} domain={yDomainFromClause ?? (effectiveLogScale?[0.1,'dataMax']:[0,'dataMax'])} allowDataOverflow/>
                     <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}}/>
                     <Bar dataKey="count" fill="#8884d8" isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>
                 </BarChart>
