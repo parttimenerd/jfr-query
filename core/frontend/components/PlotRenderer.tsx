@@ -246,8 +246,13 @@ const InteractivePlotWrapper: React.FC<{
         const k0 = linkX[0], k1 = linkX[1];
         const kk0 = toDouble(k0), kk1 = toDouble(k1);
         if (domain) {
+            // $var  → ISO string so toSqlVariables wraps it in quotes; DuckDB
+            //         casts the quoted ISO string to TIMESTAMP automatically,
+            //         making `WHERE startTime BETWEEN $start AND $end` work.
+            // $$var → raw epoch-ms float for `epoch_ms(col) BETWEEN $$start AND $$end`.
+            const toIso = (ms: number) => new Date(ms).toISOString();
             onVariableChangeRef.current({
-                [k0]: String(domain[0]), [k1]: String(domain[1]),
+                [k0]: toIso(domain[0]), [k1]: toIso(domain[1]),
                 [kk0]: String(domain[0]), [kk1]: String(domain[1]),
             });
         } else {
