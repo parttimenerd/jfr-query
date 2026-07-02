@@ -3,6 +3,7 @@ import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec } from '../../utils/plotUtils';
+import type { ParsedPlotCall } from '../../utils/plotParser';
 
 interface HeatmapConfig {
   x: string;
@@ -19,8 +20,10 @@ const params: PlotParameter[] = [
 const parseConfig = createConfigParser<HeatmapConfig>(buildParserSpec(params));
 
 
-const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; }> = ({ config, data, isAnimationActive, animationDuration }) => {
+const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; clauses?: ParsedPlotCall; }> = ({ config, data, isAnimationActive, animationDuration, clauses }) => {
   const { x, y, value: valueCol } = config;
+  const xLabelFromClause = clauses?.axisX?.label;
+  const yLabelFromClause = clauses?.axisY?.label;
 
   const { chartData, xLabels, yLabels, min, max } = useMemo(() => {
     const xLabels = [...new Set(data.map(item => item[x]))].sort();
@@ -62,11 +65,11 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
       <ResponsiveContainer width="100%" height="100%" minHeight={200}>
         <ScatterChart margin={{ top: 20, right: 30, bottom: 60, left: 80 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
-          <XAxis 
-            type="number" 
-            dataKey="x" 
-            name={x} 
-            stroke="#9ca3af" 
+          <XAxis
+            type="number"
+            dataKey="x"
+            name={x}
+            stroke="#9ca3af"
             tick={{ fontSize: 10 }}
             domain={[-0.5, xLabels.length - 0.5]}
             ticks={xLabels.map((_, i) => i)}
@@ -75,18 +78,20 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
             angle={-45}
             textAnchor="end"
             height={60}
+            label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined}
           />
-          <YAxis 
-            type="number" 
-            dataKey="y" 
-            name={y} 
-            stroke="#9ca3af" 
+          <YAxis
+            type="number"
+            dataKey="y"
+            name={y}
+            stroke="#9ca3af"
             tick={{ fontSize: 10 }}
             domain={[-0.5, yLabels.length - 0.5]}
             ticks={yLabels.map((_, i) => i)}
             tickFormatter={(tick) => String(yLabels[tick])}
             interval={0}
             width={80}
+            label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined}
           />
           <Tooltip 
             cursor={{ strokeDasharray: '3 3' }} 

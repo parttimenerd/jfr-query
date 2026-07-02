@@ -1482,3 +1482,15 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Repro:** Type `LINE_CHART(x: "t", y: ["v"]) LEGEND ` and trigger autocomplete — only `@const` suggestions appear; no `AT NONE`, `AT TOP`, etc.  Type `… PALETTE ` — no palette names suggested.
 **Observed:** `completeTailValue` treated LEGEND and PALETTE as generic `valueType: 'string'` tails with no special handling.
 **Fix:** Added early-return branches for `LEGEND` (suggests `AT NONE/TOP/BOTTOM/LEFT/RIGHT` and `HIDDEN`) and `PALETTE` (suggests the five named palettes).
+
+### 🟡 [B-247] SQL autocomplete — variables stored without `$` prefix (e.g. `session_start`, `session_end`) never appear in completions ✅ FIXED
+**Where:** `components/editor/completions.ts:170-183`
+**Repro:** Open a notebook with a loaded JFR file; type `WHERE ts > $session` in a SQL cell — no completion for `$session_start` or `$session_end`.
+**Observed:** `App.tsx` injects `session_start` and `session_end` into the variables map without a `$` prefix (`variables.session_start = v`). The completion block at line 170 iterated the map keys and compared `name.toLowerCase().startsWith(lc)` where `lc` was `"$session"`. Since `"session_start"` does not start with `"$session"`, those variables were never suggested.
+**Fix:** Added `const displayName = name.startsWith('$') ? name : \`$\${name}\`` to normalise each key to its `$`-prefixed display form before the `startsWith` check. Labels, apply values, and details all use `displayName`.
+
+### 🟡 [B-248] `HeatmapPlot` — `clauses` prop not accepted; PALETTE, LEGEND, AXIS-X/Y LABEL/DOMAIN clauses silently ignored ✅ FIXED
+**Where:** `components/plots/HeatmapPlot.tsx:22`
+**Repro:** `HEATMAP(x: "thread", y: "lock", value: "ms") TITLE "Lock Contention" LEGEND HIDDEN` — legend is still shown (or PALETTE clause is ignored).
+**Observed:** `HeatmapComponent`'s props interface and destructuring do not include `clauses?: ParsedPlotCall`. `PlotRenderer` passes `clauses` to every component at render time, but `HeatmapPlot` drops it silently. As a result, all cross-cutting clauses — PALETTE, LEGEND, AXIS-X LABEL/DOMAIN, AXIS-Y LABEL/DOMAIN — are no-ops on heatmaps.
+**Fix:** Added `clauses?: ParsedPlotCall` to `HeatmapComponent`'s props, extracted `xLabelFromClause` and `yLabelFromClause`, and wired them into the `XAxis`/`YAxis` `label` props.
