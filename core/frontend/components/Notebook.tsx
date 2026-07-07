@@ -163,6 +163,21 @@ const Notebook: React.FC<NotebookProps> = (props) => {
 
     return (
         <div className="p-4 md:p-6 space-y-4">
+            {metadata.title && (
+              <h1 className="text-2xl font-semibold mb-1">{metadata.title}</h1>
+            )}
+            {metadata.description && (
+              <p className="text-sm text-gray-400 mb-2">{metadata.description}</p>
+            )}
+            {metadata.tags && metadata.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {metadata.tags.map(t => (
+                  <span key={t} className="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-100">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
             <SettingsPanel
                 ref={settingsPanelRef}
                 metadata={metadata}

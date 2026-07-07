@@ -35,6 +35,30 @@ export interface ParsedNotebook {
 const FRONT_MATTER_DELIMITER = '---';
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 
+const parseInlineYamlList = (raw: string): string[] | null => {
+    const t = raw.trim();
+    if (!t.startsWith('[') || !t.endsWith(']')) return null;
+    const inner = t.slice(1, -1).trim();
+    if (inner === '') return [];
+    const out: string[] = [];
+    let cur = '';
+    let inQ: '"' | "'" | null = null;
+    for (const ch of inner) {
+        if (inQ) {
+            if (ch === inQ) inQ = null; else cur += ch;
+        } else if (ch === '"' || ch === "'") {
+            inQ = ch as '"' | "'";
+        } else if (ch === ',') {
+            out.push(cur.trim());
+            cur = '';
+        } else {
+            cur += ch;
+        }
+    }
+    if (cur.trim() !== '' || out.length > 0) out.push(cur.trim());
+    return out.map(s => s.replace(/^["'](.*)["']$/, '$1'));
+};
+
 const parseFrontMatter = (fmString: string): NotebookMetadata => {
     // B-120: This is a hand-rolled line-by-line YAML parser, not a full YAML parser.
     // It handles the specific subset of YAML used in notebook front matter (scalar
@@ -55,7 +79,8 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
     /** When parsing a `cellConditions:` block-scalar value (`key: |`), this is the key being built. */
     let cellConditionMultilineKey: string | null = null;
 
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         if (line.trim() === '' && !multilineKey && !cellConditionMultilineKey) continue;
         const indent = line.length - line.trimStart().length;
         const trimmedLine = line.trim();
@@ -83,6 +108,24 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
             } else if (keyTrimmed === 'customSystemPrompt' && value === '|') {
                  multilineKey = keyTrimmed;
                  result.customSystemPrompt = '';
+            } else if (keyTrimmed === 'tags') {
+                const inline = parseInlineYamlList(value);
+                if (inline !== null) {
+                    result.tags = inline;
+                } else {
+                    // Block list: consume following "  - item" lines
+                    const items: string[] = [];
+                    while (i + 1 < lines.length) {
+                        const nxt = lines[i + 1];
+                        const m = nxt?.match(/^\s+-\s+(.+)$/);
+                        if (!m) break;
+                        i++;
+                        items.push(m[1].trim().replace(/^["'](.*)["']$/, '$1'));
+                    }
+                    if (items.length > 0) result.tags = items;
+                }
+            } else if (keyTrimmed === 'title' || keyTrimmed === 'description' || keyTrimmed === 'license') {
+                (result as any)[keyTrimmed] = value.replace(/^["'](.*)["']$/, '$1');
             } else if (keyTrimmed) {
                 // Single-quoted YAML scalar: strip outer quotes and unescape '' → '
                 const unquoted = value.replace(/^['"]|['"]$/g, '');

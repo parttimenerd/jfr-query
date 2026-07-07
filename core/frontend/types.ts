@@ -100,4 +100,12 @@ export interface NotebookMetadata {
   variables?: Record<string, string>;
   /** Keyed by cell `name` or fallback `cell_<1-based-index>`; SQL returning truthy → cell rendered, else collapsed. */
   cellConditions?: Record<string, string>;
+  /** Human-readable notebook title (falls back to first H2/H1 heading in intro cell). */
+  title?: string;
+  /** Optional short description shown in the sidebar / intro. */
+  description?: string;
+  /** Categorization tags; parsed from inline `[a, b]` or block YAML list. */
+  tags?: string[];
+  /** SPDX identifier or free-text license note. */
+  license?: string;
 }
