@@ -400,6 +400,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         return next;
     }, [parsed.plotBlocksWithSqlIndex]);
 
+    const parsedStandalonePlotsRef = useRef<string[]>(parsed.standalonePlots);
+    const parsedStandalonePlots = useMemo(() => {
+        const next = parsed.standalonePlots;
+        const prev = parsedStandalonePlotsRef.current;
+        if (next.length === prev.length && next.every((v, i) => v === prev[i])) return prev;
+        parsedStandalonePlotsRef.current = next;
+        return next;
+    }, [parsed.standalonePlots]);
+
     // P7 — Notebook-wide plot scope (named plots, query refs, variables, brushes).
     // The scope is rebuilt only when cells BEFORE the current cell change or
     // allVariables changes. Changes to cells after this cell are invisible here.
@@ -686,10 +695,28 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     next[`${pi}:${name}`] = rows ?? [];
                 } catch { /* renderer falls back to query-result data */ }
             }
+            // Also fetch DATASET data for standalone plots (no preceding SQL).
+            for (let si = 0; si < parsedStandalonePlots.length; si++) {
+                const config = parsedStandalonePlots[si];
+                if (!config || !config.trim()) continue;
+                try {
+                    const expanded = expandPlotConstants(config);
+                    const firstConfig = expanded.expanded.split(/\n\s*\n/)[0].trim();
+                    const parsed2 = parsePlotCall(firstConfig);
+                    if (!parsed2.dataset) continue;
+                    const name = parsed2.dataset;
+                    if (!/^[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)?$/.test(name)) continue;
+                    const parts = name.split('.');
+                    const ident = parts.map(p => `"${p.replace(/"/g, '""')}"`).join('.');
+                    const rows = await dbQuery(`SELECT * FROM ${ident}`);
+                    if (cancelled) return;
+                    next[`standalone-${si}:${name}`] = rows ?? [];
+                } catch { /* no data — plot renders empty */ }
+            }
             if (!cancelled) setDatasetResults(next);
         })();
         return () => { cancelled = true; };
-    }, [parsedPlotBlocks, aliasVersionSum, dbQuery]);
+    }, [parsedPlotBlocks, parsedStandalonePlots, aliasVersionSum, dbQuery]);
 
     const handleRun = useCallback(async (sql: string, index: number) => {
         if (runTimersRef.current[index]) clearTimeout(runTimersRef.current[index]);
@@ -1042,6 +1069,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                         const items: React.ReactNode[] = [];
                         let sqlIdx = -1;
                         let plotIdx = -1;
+                        let standaloneIdx = -1;
 
                         segments.forEach((seg, segIdx) => {
                             // Render inline markdown segments (prose inserted between code blocks).
@@ -1204,7 +1232,105 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                             } else if (seg.type === 'plot') {
                                 plotIdx++;
                                 const plotInfo = parsedPlotBlocksWithSqlIndex[plotIdx];
-                                if (!plotInfo) return;
+                                if (!plotInfo) {
+                                    // Standalone plot (no preceding SQL block).
+                                    standaloneIdx++;
+                                    const si = standaloneIdx;
+                                    const config = parsedStandalonePlots[si] ?? '';
+                                    const capturedSegIdx = segIdx;
+
+                                    // Resolve DATASET data for standalone plot.
+                                    let standaloneData: any[] | null = null;
+                                    try {
+                                        const configToCheck = config.trim() || 'TABLE()';
+                                        const expanded = expandPlotConstants(configToCheck);
+                                        const firstConfig = expanded.expanded.split(/\n\s*\n/)[0].trim();
+                                        const parsed2 = parsePlotCall(firstConfig);
+                                        if (parsed2.dataset) {
+                                            standaloneData = datasetResults[`standalone-${si}:${parsed2.dataset}`] ?? null;
+                                        }
+                                    } catch { /* no data */ }
+
+                                    const plotDataCols = (standaloneData && standaloneData.length > 0 && !standaloneData[0]?.error)
+                                        ? Object.keys(standaloneData[0])
+                                        : [];
+                                    const configToRender = config.trim() || 'TABLE()';
+
+                                    const handleStandalonePlotChange = (newConfig: string) => {
+                                        const newSegments = [...segmentsRef.current];
+                                        if (newSegments[capturedSegIdx]?.type === 'plot') {
+                                            newSegments[capturedSegIdx] = { type: 'plot', content: '\n' + newConfig + '\n' };
+                                            handleSegmentsUpdate(newSegments);
+                                        }
+                                    };
+
+                                    if (!presenterMode) {
+                                        items.push(
+                                            <CollapsibleBlock key={`standalone-plot-${si}`}
+                                                title={<span className="cursor-pointer">{`Plot ${si + 1}`}</span>}
+                                                preview={config.replace(/\s+/g, ' ').substring(0, 60)}
+                                                isCollapsed={collapsedStates[`standalone-plot-${si}`] ?? false}
+                                                onToggle={() => toggleCollapse(`standalone-plot-${si}`)}
+                                                controls={
+                                                    <button onClick={() => { const ns = [...segmentsRef.current]; ns.splice(capturedSegIdx, 1); handleSegmentsUpdate(ns); }}
+                                                        className="p-0.5 rounded hover:bg-red-900/40" title="Delete plot" aria-label="Delete plot">
+                                                        <TrashIcon className="w-3.5 h-3.5 text-gray-400 hover:text-red-400" />
+                                                    </button>
+                                                }
+                                            >
+                                                {plotDataCols.length > 0 && (
+                                                    <div className="px-2 pt-1.5 pb-0.5 flex flex-wrap gap-1 items-center border-b border-gray-700/60">
+                                                        <span className="text-[10px] text-gray-600 mr-0.5">columns:</span>
+                                                        {plotDataCols.slice(0, 12).map(col => (
+                                                            <button key={col}
+                                                                onClick={() => navigator.clipboard.writeText(`"${col}"`).catch(() => {})}
+                                                                title={`Copy "${col}" to clipboard`}
+                                                                className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/60 hover:bg-cyan-800/50 text-gray-400 hover:text-cyan-300 font-mono transition-colors"
+                                                            >{col}</button>
+                                                        ))}
+                                                        {plotDataCols.length > 12 && <span className="text-[10px] text-gray-600">+{plotDataCols.length - 12} more</span>}
+                                                        <span className="text-[10px] text-gray-600 ml-1">— click to copy</span>
+                                                    </div>
+                                                )}
+                                                <PlotConfigEditor
+                                                    value={config}
+                                                    onChange={handleStandalonePlotChange}
+                                                    index={-1}
+                                                    data={standaloneData}
+                                                />
+                                            </CollapsibleBlock>
+                                        );
+                                    }
+
+                                    // Show plot result (both in edit mode and presenter mode).
+                                    const standaloneIsCollapsed = !presenterMode && (collapsedStates[`standalone-plot-${si}`] ?? false);
+                                    if (standaloneData && !standaloneIsCollapsed) {
+                                        items.push(
+                                            <div key={`standalone-result-${si}`}
+                                                className="group/result rounded-md border border-gray-700/60 overflow-hidden relative"
+                                                style={{ minHeight: `${resultHeight}px` }}>
+                                                <div id={`result-container-${cell.id}-standalone-${si}`}
+                                                    className="flex-grow overflow-auto"
+                                                    style={{ minHeight: `${resultHeight}px` }}>
+                                                    <PlotRenderer
+                                                        config={configToRender}
+                                                        data={standaloneData}
+                                                        dataByQueryRef={dataByQueryRef}
+                                                        sql={''}
+                                                        cellContext={cellContext}
+                                                        onApplyFix={c => handleStandalonePlotChange(c)}
+                                                        isAiFeatureActive={isAiFeatureActive}
+                                                        metadata={metadata}
+                                                        onMetadataChange={onMetadataChange}
+                                                        onCellVariableChange={handleCellVariableChange}
+                                                        allVariables={allVariables}
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return;
+                                }
                                 const pi = plotIdx;
                                 const config = plotInfo.config;
                                 const defaultSqlIndex = plotInfo.sqlIndex;
