@@ -230,42 +230,6 @@ FROM ActiveSetting
 GROUP BY id
 ORDER BY "Event Type"`,
 
-  `CREATE OR REPLACE VIEW "allocation-by-class" AS
-SELECT cls.javaName as "Object Type", format_percentage(pressure) as "Allocation Pressure" FROM (SELECT
-    objectClass AS _objectType,
-    SUM(weight) / (SELECT SUM(weight) FROM ObjectAllocationSample) AS pressure
-FROM ObjectAllocationSample
-GROUP BY objectClass
-ORDER BY pressure DESC
-LIMIT 25), Class cls
-WHERE _objectType = cls._id
-ORDER BY pressure DESC`,
-
-  `CREATE OR REPLACE VIEW "allocation-by-thread" AS
-SELECT th.javaName AS "Thread", format_percentage(pressure) AS "Allocation Pressure" FROM (SELECT
-    eventThread AS _thread,
-    SUM(weight) / (SELECT SUM(weight) FROM ObjectAllocationSample) AS pressure
-FROM ObjectAllocationSample
-GROUP BY eventThread
-ORDER BY pressure DESC
-LIMIT 25), Thread th
-WHERE _thread = th._id
-ORDER BY pressure DESC`,
-
-  `CREATE OR REPLACE VIEW "allocation-by-site" AS
-SELECT "Method", format_percentage(pressure) AS "Allocation Pressure" FROM
-(SELECT
-    (c.javaName || m.name || m.descriptor) AS "Method",
-    SUM(weight) / (SELECT SUM(weight) FROM ObjectAllocationSample) AS pressure
-FROM ObjectAllocationSample
-LEFT JOIN Method m ON m._id = stackTrace$topMethod
-LEFT JOIN Class c ON c._id = m.type
-GROUP BY stackTrace$topMethod, c.javaName, m.name, m.descriptor
-ORDER BY pressure DESC
-LIMIT 25
-)
-ORDER BY pressure DESC`,
-
   `CREATE OR REPLACE VIEW "blocked-by-system-gc" AS
 SELECT
     startTime AS "Time",
@@ -607,19 +571,6 @@ JOIN Class c ON fs.finalizableClass = c._id
 GROUP BY fs.finalizableClass, c.javaName
 ORDER BY LAST(objects) DESC`,
 
-  `CREATE OR REPLACE VIEW "gc" AS
-SELECT
-    G.startTime                          AS "Start",
-    G.gcId                               AS "GC ID",
-    COALESCE(G.name, 'Unknown')          AS "Type",
-    format_memory(B.heapUsed)            AS "Heap Before GC",
-    format_memory(A.heapUsed)            AS "Heap After GC",
-    format_duration(G.longestPause)      AS "Longest Pause"
-FROM GarbageCollection G
-JOIN GCHeapSummary B ON G.gcId = B.gcId AND B.when = 'Before GC'
-JOIN GCHeapSummary A ON G.gcId = A.gcId AND A.when = 'After GC'
-ORDER BY G.gcId`,
-
   `CREATE OR REPLACE VIEW "gc-concurrent-phases" AS
 SELECT
     name AS "Name",
@@ -779,61 +730,6 @@ SELECT
 FROM GarbageCollection
 GROUP BY cause
 ORDER BY SUM(sumOfPauses) DESC`,
-
-  `CREATE OR REPLACE VIEW "gc-efficiency" AS
-SELECT
-    g.gcId AS "GC ID",
-    g.cause AS "Cause",
-    format_duration(g.sumOfPauses) AS "Pause",
-    format_memory(before.heapUsed - after.heapUsed) AS "Reclaimed",
-    CASE WHEN g.sumOfPauses > 0 THEN
-        round((before.heapUsed - after.heapUsed) / (1024.0 * 1024.0)
-            / g.sumOfPauses, 1)
-    ELSE 0 END AS "MB/s reclaimed"
-FROM GarbageCollection g
-JOIN GCHeapSummary before ON g.gcId = before.gcId AND before."when" = 'Before GC'
-JOIN GCHeapSummary after  ON g.gcId = after.gcId  AND after."when"  = 'After GC'
-ORDER BY g.gcId`,
-
-  `CREATE OR REPLACE VIEW "heap-summary-over-time" AS
-SELECT
-    g.startTime AS "Time",
-    h.gcId AS "GC ID",
-    h."when" AS "When",
-    format_memory(h.heapUsed) AS "Heap Used"
-FROM GCHeapSummary h
-JOIN GarbageCollection g ON g.gcId = h.gcId
-ORDER BY g.startTime`,
-
-  `CREATE OR REPLACE VIEW "heap-committed-vs-used" AS
-SELECT
-    g.startTime AS "Time",
-    h."when" AS "Phase",
-    h.heapUsed / (1024.0 * 1024.0) AS "Used MB",
-    h.heapCommitted / (1024.0 * 1024.0) AS "Committed MB"
-FROM GCHeapSummary h
-JOIN GarbageCollection g ON g.gcId = h.gcId
-ORDER BY g.startTime`,
-
-  `CREATE OR REPLACE VIEW "allocation-rate" AS
-SELECT
-    bucket_ms(startTime, 1000) AS "Bucket",
-    SUM(weight) / (1024.0 * 1024.0) AS "Sample MB/s",
-    COUNT(*) AS "Samples"
-FROM ObjectAllocationSample
-GROUP BY bucket_ms(startTime, 1000)
-ORDER BY 1`,
-
-  `CREATE OR REPLACE VIEW "allocation-by-class-detail" AS
-SELECT
-    objectClass AS "Class",
-    COUNT(*) AS "Sample Events",
-    format_memory(SUM(weight)) AS "Sampled Bytes",
-    format_memory(AVG(weight)) AS "Avg Sample Weight"
-FROM ObjectAllocationSample
-GROUP BY objectClass
-ORDER BY SUM(weight) DESC
-LIMIT 30`,
 
   `CREATE OR REPLACE VIEW "gc-concurrent-phases-detail" AS
 SELECT
@@ -1394,15 +1290,6 @@ WHERE es.state = 'STATE_RUNNABLE'
 GROUP BY es."stackTrace$methods"
 ORDER BY value DESC`,
 
-  `CREATE OR REPLACE VIEW "alloc-flamegraph" AS
-SELECT
-  stack_frames(oas."stackTrace$methods") AS frame,
-  ROUND(SUM(oas.weight) / 1048576.0, 4) AS value
-FROM ObjectAllocationSample oas
-WHERE oas."stackTrace$methods" IS NOT NULL
-GROUP BY oas."stackTrace$methods"
-ORDER BY value DESC`,
-
   `CREATE OR REPLACE VIEW "lock-flamegraph" AS
 SELECT
   stack_frames(jme."stackTrace$methods") AS frame,
@@ -1432,4 +1319,148 @@ FROM (
 ) t
 GROUP BY t."stackTrace$methods"
 ORDER BY value DESC`,
+];
+
+/**
+ * Views that depend on tables not present in all recordings (e.g. ZGC does not emit
+ * GCHeapSummary or ObjectAllocationSample).  These are created conditionally — only
+ * when the required source table exists in the loaded recording.
+ *
+ * Each entry is { requires: tableName, sql: CREATE VIEW statement }.
+ * The loader checks `duckdb_tables()` before executing each group.
+ */
+export const CONDITIONAL_VIEWS_SQL: Array<{ requires: string; sql: string }> = [
+  {
+    requires: 'GCHeapSummary',
+    sql: `CREATE OR REPLACE VIEW "heap-summary-over-time" AS
+SELECT
+    g.startTime AS "Time",
+    h.gcId AS "GC ID",
+    h."when" AS "When",
+    format_memory(h.heapUsed) AS "Heap Used"
+FROM GCHeapSummary h
+JOIN GarbageCollection g ON g.gcId = h.gcId
+ORDER BY g.startTime`,
+  },
+  {
+    requires: 'GCHeapSummary',
+    sql: `CREATE OR REPLACE VIEW "heap-committed-vs-used" AS
+SELECT
+    g.startTime AS "Time",
+    h."when" AS "Phase",
+    h.heapUsed / (1024.0 * 1024.0) AS "Used MB",
+    h.heapCommitted / (1024.0 * 1024.0) AS "Committed MB"
+FROM GCHeapSummary h
+JOIN GarbageCollection g ON g.gcId = h.gcId
+ORDER BY g.startTime`,
+  },
+  {
+    requires: 'ObjectAllocationSample',
+    sql: `CREATE OR REPLACE VIEW "allocation-rate" AS
+SELECT
+    bucket_ms(startTime, 1000) AS "Bucket",
+    SUM(weight) / (1024.0 * 1024.0) AS "Sample MB/s",
+    COUNT(*) AS "Samples"
+FROM ObjectAllocationSample
+GROUP BY bucket_ms(startTime, 1000)
+ORDER BY 1`,
+  },
+  {
+    requires: 'ObjectAllocationSample',
+    sql: `CREATE OR REPLACE VIEW "allocation-by-class-detail" AS
+SELECT
+    objectClass AS "Class",
+    COUNT(*) AS "Sample Events",
+    format_memory(SUM(weight)) AS "Sampled Bytes",
+    format_memory(AVG(weight)) AS "Avg Sample Weight"
+FROM ObjectAllocationSample
+GROUP BY objectClass
+ORDER BY SUM(weight) DESC
+LIMIT 30`,
+  },
+  {
+    requires: 'GCHeapSummary',
+    sql: `CREATE OR REPLACE VIEW "gc" AS
+SELECT
+    G.startTime                          AS "Start",
+    G.gcId                               AS "GC ID",
+    COALESCE(G.name, 'Unknown')          AS "Type",
+    format_memory(B.heapUsed)            AS "Heap Before GC",
+    format_memory(A.heapUsed)            AS "Heap After GC",
+    format_duration(G.longestPause)      AS "Longest Pause"
+FROM GarbageCollection G
+JOIN GCHeapSummary B ON G.gcId = B.gcId AND B.when = 'Before GC'
+JOIN GCHeapSummary A ON G.gcId = A.gcId AND A.when = 'After GC'
+ORDER BY G.gcId`,
+  },
+  {
+    requires: 'GCHeapSummary',
+    sql: `CREATE OR REPLACE VIEW "gc-efficiency" AS
+SELECT
+    g.gcId AS "GC ID",
+    g.cause AS "Cause",
+    format_duration(g.sumOfPauses) AS "Pause",
+    format_memory(before.heapUsed - after.heapUsed) AS "Reclaimed",
+    CASE WHEN g.sumOfPauses > 0 THEN
+        round((before.heapUsed - after.heapUsed) / (1024.0 * 1024.0)
+            / g.sumOfPauses, 1)
+    ELSE 0 END AS "MB/s reclaimed"
+FROM GarbageCollection g
+JOIN GCHeapSummary before ON g.gcId = before.gcId AND before."when" = 'Before GC'
+JOIN GCHeapSummary after  ON g.gcId = after.gcId  AND after."when"  = 'After GC'
+ORDER BY g.gcId`,
+  },
+  {
+    requires: 'ObjectAllocationSample',
+    sql: `CREATE OR REPLACE VIEW "allocation-by-class" AS
+SELECT cls.javaName as "Object Type", format_percentage(pressure) as "Allocation Pressure" FROM (SELECT
+    objectClass AS _objectType,
+    SUM(weight) / (SELECT SUM(weight) FROM ObjectAllocationSample) AS pressure
+FROM ObjectAllocationSample
+GROUP BY objectClass
+ORDER BY pressure DESC
+LIMIT 25), Class cls
+WHERE _objectType = cls._id
+ORDER BY pressure DESC`,
+  },
+  {
+    requires: 'ObjectAllocationSample',
+    sql: `CREATE OR REPLACE VIEW "allocation-by-thread" AS
+SELECT th.javaName AS "Thread", format_percentage(pressure) AS "Allocation Pressure" FROM (SELECT
+    eventThread AS _thread,
+    SUM(weight) / (SELECT SUM(weight) FROM ObjectAllocationSample) AS pressure
+FROM ObjectAllocationSample
+GROUP BY eventThread
+ORDER BY pressure DESC
+LIMIT 25), Thread th
+WHERE _thread = th._id
+ORDER BY pressure DESC`,
+  },
+  {
+    requires: 'ObjectAllocationSample',
+    sql: `CREATE OR REPLACE VIEW "allocation-by-site" AS
+SELECT "Method", format_percentage(pressure) AS "Allocation Pressure" FROM
+(SELECT
+    (c.javaName || m.name || m.descriptor) AS "Method",
+    SUM(weight) / (SELECT SUM(weight) FROM ObjectAllocationSample) AS pressure
+FROM ObjectAllocationSample
+LEFT JOIN Method m ON m._id = stackTrace$topMethod
+LEFT JOIN Class c ON c._id = m.type
+GROUP BY stackTrace$topMethod, c.javaName, m.name, m.descriptor
+ORDER BY pressure DESC
+LIMIT 25
+)
+ORDER BY pressure DESC`,
+  },
+  {
+    requires: 'ObjectAllocationSample',
+    sql: `CREATE OR REPLACE VIEW "alloc-flamegraph" AS
+SELECT
+  stack_frames(oas."stackTrace$methods") AS frame,
+  ROUND(SUM(oas.weight) / 1048576.0, 4) AS value
+FROM ObjectAllocationSample oas
+WHERE oas."stackTrace$methods" IS NOT NULL
+GROUP BY oas."stackTrace$methods"
+ORDER BY value DESC`,
+  },
 ];

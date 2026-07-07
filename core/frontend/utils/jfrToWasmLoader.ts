@@ -1,5 +1,5 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
-import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL } from '../data/builtinSql';
+import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL, CONDITIONAL_VIEWS_SQL } from '../data/builtinSql';
 
 const PERF_KEY = 'jfr_import_ms_per_byte';
 
@@ -14,9 +14,9 @@ function getMaxWorkers(): number {
   const override = new URLSearchParams(location.search).get('maxWorkers');
   const n = parseInt(override, 10);
   if (override && !isNaN(n)) return Math.max(1, Math.min(4, n));
-  const mem = (navigator as any).deviceMemory as number | undefined;
-  if (mem !== undefined && mem >= 16) return 3;
-  return 2;
+  // Default to 1 worker to bound peak GraalVM WASM memory (~300-600 MB per worker).
+  // Users on high-memory machines can override with ?maxWorkers=2.
+  return 1;
 }
 
 // ── WASM worker pool ──────────────────────────────────────────────────────────
@@ -799,6 +799,60 @@ async function mergeEventTablesForBatch(
 }
 
 /**
+ * Drops all user tables and views from the DuckDB WASM instance and terminates
+ * any pooled JFR import workers, preparing for a fresh re-import.
+ *
+ * Call this before loading a new file when a DB is already loaded to prevent
+ * old tables from doubling memory usage alongside the new import.
+ */
+export async function resetWasmDatabase(conn: AsyncDuckDBConnection): Promise<void> {
+  // Terminate all pooled workers and clear pool — their connections are about
+  // to become invalid once we drop the tables they were created against.
+  for (const pw of workerPool) {
+    pw.worker.terminate();
+    pw.conn.close().catch(() => {});
+  }
+  workerPool.length = 0;
+
+  // Drop all user views first (views may reference tables).
+  const viewsResult = await conn.query(
+    `SELECT view_name FROM information_schema.views WHERE table_schema='main'`
+  ).catch(() => null);
+  if (viewsResult) {
+    const viewNames = viewsResult.toArray().map((r: any) => `"${String(r.view_name).replace(/"/g, '""')}"`);
+    if (viewNames.length > 0) {
+      await conn.query(`DROP VIEW IF EXISTS ${viewNames.join(', ')}`).catch(() => {});
+    }
+  }
+
+  // Drop all user tables.
+  const tablesResult = await conn.query(
+    `SELECT table_name FROM information_schema.tables WHERE table_schema='main' AND table_type='BASE TABLE'`
+  ).catch(() => null);
+  if (tablesResult) {
+    const tableNames = tablesResult.toArray().map((r: any) => `"${String(r.table_name).replace(/"/g, '""')}"`);
+    // Drop in batches to avoid huge SQL strings.
+    const BATCH = 50;
+    for (let i = 0; i < tableNames.length; i += BATCH) {
+      const batch = tableNames.slice(i, i + BATCH);
+      await conn.query(`DROP TABLE IF EXISTS ${batch.join(', ')}`).catch(() => {});
+    }
+  }
+
+  // Drop all user macros.
+  const macrosResult = await conn.query(
+    `SELECT function_name FROM duckdb_functions() WHERE function_type='macro' AND database_name='memory'`
+  ).catch(() => null);
+  if (macrosResult) {
+    const macroNames = macrosResult.toArray().map((r: any) => String(r.function_name));
+    for (const name of macroNames) {
+      await conn.query(`DROP MACRO IF EXISTS "${name.replace(/"/g, '""')}"`).catch(() => {});
+      await conn.query(`DROP MACRO TABLE IF EXISTS "${name.replace(/"/g, '""')}"`).catch(() => {});
+    }
+  }
+}
+
+/**
  * Imports a JFR file or byte array into the given DuckDB WASM connection via Web Workers.
  *
  * Multi-chunk JFR files (common for recordings >~5 MB) are parsed into their
@@ -837,14 +891,15 @@ export async function loadJfrIntoWasm(
     : parseJfrChunks(source);
   const chunks = rawChunks.slice().sort((a, b) => (b.end - b.start) - (a.end - a.start));
   const numChunks = chunks.length;
-  const useParallel = numChunks > 1;
   const maxWorkers = getMaxWorkers();
   const numWorkers = Math.min(numChunks, maxWorkers);
 
   console.log(`[jfr-import] ${numChunks} chunk(s), using up to ${numWorkers} parallel worker(s)`);
 
   // Reset semaphore for this import session.
-  insertSemaphore = new InsertSemaphore(4);
+  // Single slot: one Arrow IPC insert in flight at a time. Keeps peak memory
+  // (worker WASM linear mem + Arrow buffer + DuckDB) bounded on memory-constrained tabs.
+  insertSemaphore = new InsertSemaphore(2);
 
   // Progress phases:
   //   0–5%:  initialization / pool warm
@@ -871,72 +926,27 @@ export async function loadJfrIntoWasm(
 
   onProgress?.(0.03);
 
-  // For single-chunk files, warm a persistent pool worker (reused across re-imports).
-  // For multi-chunk files, workers are created fresh per-batch (see below).
-  if (!useParallel) {
-    const toCreate = 1 - workerPool.length;
-    if (toCreate > 0) {
-      const newWorkers = await Promise.all(
-        Array.from({ length: toCreate }, () => createPooledWorker(db, wasmModule, importerSrc)),
-      );
-      workerPool.push(...newWorkers);
-    }
-  }
-  const tPoolReady = performance.now();
-  console.log(`[jfr-perf] pool ready: ${(tPoolReady - tWasmCompile).toFixed(0)}ms`);
-
-  onProgress?.(0.05);
-
   // All insert promises collected across all batches, for final drain accounting.
   let allInsertPromises: Promise<void>[] = [];
 
-  if (!useParallel) {
-    // Single-chunk path — reuse persistent pool worker
-    const pooled = workerPool[0];
-    const chunkBytes = await loadChunkBytes(source, chunks[0].start, chunks[0].end);
-    const buf = chunkBytes.buffer.byteLength === chunkBytes.byteLength ? chunkBytes.buffer : chunkBytes.slice().buffer;
-    const insertPs = await dispatchToPooledWorker(pooled, new Uint8Array(buf), '', stacktraceDepth, reportParseProgress);
-    allInsertPromises = insertPs;
-    await Promise.all(insertPs);
-  } else {
-    // Multi-chunk parallel path.
-    //
-    // Workers are EPHEMERAL: created fresh for each batch and terminated after
-    // the WASM parse phase completes. This releases GraalVM linear memory
-    // (~300–600 MB per worker) before DuckDB drain, preventing renderer OOM
-    // on large recordings.
-    //
-    // PIPELINE: while batch N drains inserts into DuckDB, batch N+1 workers
-    // are created and begin their WASM parse in parallel. Worker creation only
-    // costs ~300ms (WASM instantiation; compilation is pre-done, source is cached).
-    // The insert semaphore(4) naturally backpressures both batches if drain lags.
+  // Both single-chunk and multi-chunk use EPHEMERAL workers — created for one import,
+  // terminated immediately after the WASM parse phase. This releases GraalVM linear
+  // memory (~300–600 MB per worker) before DuckDB drain, preventing OOM on dense recordings.
+  // Worker creation only costs ~300ms (WASM instantiation; compilation is pre-done, source is cached).
+  // Workers are created strictly sequentially: one batch at a time, no pre-creation pipelining.
+  // This ensures at most maxWorkers WASM instances are alive at any point.
+  {
     let globalWorkerIdx = 0;
-    const totalBatches = Math.ceil(chunks.length / maxWorkers);
-
-    // Pre-create first batch's workers before the loop.
-    const firstBatchChunks = chunks.slice(0, maxWorkers);
-    let nextBatchWorkers: Promise<PooledWorker[]> = Promise.all(
-      firstBatchChunks.map(() => createPooledWorker(db, wasmModule, importerSrc)),
-    );
+    const totalBatches = Math.ceil(chunks.length / Math.max(1, maxWorkers));
 
     for (let batchStart = 0; batchStart < chunks.length; batchStart += maxWorkers) {
       const batchChunks = chunks.slice(batchStart, batchStart + maxWorkers);
       const batchIdx = batchStart / maxWorkers;
 
-      const tBatchStart = performance.now();
-
-      // Await the workers we pre-created for this batch.
-      const batchWorkers = await nextBatchWorkers;
-
-      // Immediately kick off pre-creation of the NEXT batch's workers in the background.
-      // This overlaps with the current batch's parse + drain phases.
-      const nextBatchStart = batchStart + maxWorkers;
-      if (nextBatchStart < chunks.length) {
-        const nextBatchChunks = chunks.slice(nextBatchStart, nextBatchStart + maxWorkers);
-        nextBatchWorkers = Promise.all(
-          nextBatchChunks.map(() => createPooledWorker(db, wasmModule, importerSrc)),
-        );
-      }
+      // Create workers for this batch only after the previous batch is fully complete.
+      const batchWorkers = await Promise.all(
+        batchChunks.map(() => createPooledWorker(db, wasmModule, importerSrc)),
+      );
 
       // Parse chunks in parallel. Load each chunk's bytes on demand (File.slice)
       // so the main thread never holds the full file buffer. Terminate workers
@@ -954,8 +964,6 @@ export async function loadJfrIntoWasm(
       const tParseMs = performance.now() - tParse0;
 
       // Drain inserts (Arrow IPC → DuckDB) for this batch.
-      // The semaphore bounds concurrent in-flight Arrow buffers across both this
-      // batch's drain and next batch's parse (if it started early).
       const tDrain0 = performance.now();
       const batchInserts = batchInsertArrays.flat();
       allInsertPromises.push(...batchInserts);
@@ -983,17 +991,16 @@ export async function loadJfrIntoWasm(
 
   onProgress?.(0.70);
 
-  // Final drain: wait for any remaining inserts (single-chunk path already drained,
-  // parallel path drained per-batch — this is a safety net).
+  // Final drain: wait for any remaining inserts (drained per-batch — this is a safety net).
   const tDrainStart = performance.now();
   await Promise.all(allInsertPromises);
   const tDrainDone = performance.now();
 
   onProgress?.(0.85);
 
-  // Multi-chunk: merge prefixed tables into final tables
+  // Merge all chunk-prefixed tables into final tables (handles both single and multi-chunk).
   let mergeMs = 0;
-  if (useParallel) {
+  {
     const tMergeStart = performance.now();
     await mergeChunkTables(conn, db, numChunks);
     mergeMs = performance.now() - tMergeStart;
@@ -1026,7 +1033,8 @@ export async function loadJfrIntoWasm(
   const PARALLELISM = new URL(location.href).searchParams.has('sqlSerial') ? 1 : 4;
   const runSql = (c: typeof conn, sql: string) =>
     c.query(sql).catch((e: any) => {
-      if (!String(e?.message ?? e).includes('Catalog Error')) console.warn('builtin sql failed:', e);
+      const msg = String(e?.message ?? e);
+      if (!msg.includes('Catalog Error') && !msg.includes('Binder Error')) console.warn('builtin sql failed:', e);
     });
   // Phase 1: macros — sequential on the main connection so they're visible to all
   for (const sql of BUILTIN_MACROS_SQL) {
@@ -1052,6 +1060,19 @@ export async function loadJfrIntoWasm(
   } finally {
     for (const c of extraConns) {
       c.close().catch(() => {});
+    }
+  }
+  // Phase 3: conditional views — only created when their required source table exists.
+  // This ensures views like "heap-committed-vs-used" are not created on ZGC recordings
+  // (which don't emit GCHeapSummary), preventing Catalog Errors at query time.
+  const tableNames = new Set<string>(
+    (await conn.query(`SELECT table_name FROM duckdb_tables()`).catch(() => ({ toArray: () => [] })))
+      .toArray()
+      .map((r: any) => r.table_name as string),
+  );
+  for (const { requires, sql } of CONDITIONAL_VIEWS_SQL) {
+    if (tableNames.has(requires)) {
+      await runSql(conn, sql);
     }
   }
   const sqlMs = performance.now() - tSqlStart;
