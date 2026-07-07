@@ -246,7 +246,7 @@ SCATTER_PLOT(x: "reclaimedMb", y: "duration")
 ```plot
 SCATTER_PLOT(x: "heapUsed", y: "allocRate")
   TITLE "Heap Used vs Allocation Rate"
-  LINK_XY($zoom)
+  LINK_X($zoom_start, $zoom_end)
 ```
 ````
 
@@ -547,9 +547,6 @@ Tail clauses come after the closing paren of the plot type and each other, in an
 ### Linking / brushing
 
 - `LINK_X($start, $end, [master], [clamp])` — link the X zoom range to variables `$start` and `$end`. Optional `master` marks this plot as the driver. Optional `clamp` prevents zooming beyond the data domain.
-- `LINK_Y($var)` — link Y axis zoom to a variable.
-- `LINK_XY($var)` — link both axes to a variable.
-- `LINK_SCROLL "group"` — synchronise scroll position with other plots in the same named group.
 - `BRUSH $var MODE X | Y | XY` — capture user brush selection into `$var`. `$var.lo` / `$var.hi` hold the range for X/Y; `$var.x_lo` / `$var.x_hi` / `$var.y_lo` / `$var.y_hi` for XY.
 
 ### Axes
