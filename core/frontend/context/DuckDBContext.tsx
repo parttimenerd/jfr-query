@@ -2,9 +2,9 @@ import React, { createContext, useState, useCallback, useMemo, ReactNode, useEff
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
 import { TableSchema, ViewSchema, MacroSchema } from '../types';
 import { initDuckDBWasm, loadDuckDbFileIntoWasm } from '../utils/duckdbWasmLoader';
-import { loadJfrIntoWasm } from '../utils/jfrToWasmLoader';
+import { loadJfrIntoWasm, resetWasmDatabase } from '../utils/jfrToWasmLoader';
 import { DEMO_SETUP_SQL } from '../data/demoNotebook';
-import { BUILTIN_MACROS_SQL } from '../data/builtinSql';
+import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL, CONDITIONAL_VIEWS_SQL } from '../data/builtinSql';
 
 const QUERY_ENDPOINT = `/api/query`;
 
@@ -406,6 +406,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           wasmDbRef.current = await initDuckDBWasm();
           wasmConnRef.current = await wasmDbRef.current.connect();
         }
+      } else {
+        // DB already loaded — drop all existing tables/views before the new import
+        // to avoid doubled memory usage (old tables + new tables simultaneously).
+        await resetWasmDatabase(wasmConnRef.current!);
       }
       const conn = wasmConnRef.current!;
       const isJfr = fileName.toLowerCase().endsWith('.jfr');
@@ -442,6 +446,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           wasmDbRef.current = await initDuckDBWasm();
           wasmConnRef.current = await wasmDbRef.current.connect();
         }
+      } else {
+        await resetWasmDatabase(wasmConnRef.current!);
       }
       const conn = wasmConnRef.current!;
       // Execute each statement in DEMO_SETUP_SQL individually
@@ -454,6 +460,26 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       for (const sql of BUILTIN_MACROS_SQL) {
         try { await conn.query(sql); } catch (e: any) {
           if (!String(e?.message ?? e).includes('Catalog Error')) console.warn('builtin macro failed:', e);
+        }
+      }
+      // Register built-in views (same as JFR import path).
+      for (const sql of BUILTIN_VIEWS_SQL) {
+        try { await conn.query(sql); } catch (e: any) {
+          if (!String(e?.message ?? e).includes('Catalog Error')) console.warn('builtin view failed:', e);
+        }
+      }
+      // Register conditional views only when their required source table exists.
+      const tableNames = new Set<string>(
+        (await conn.query(`SELECT table_name FROM duckdb_tables()`).catch(() => ({ toArray: () => [] })))
+          .toArray()
+          .map((r: any) => r.table_name as string),
+      );
+      for (const { requires, sql } of CONDITIONAL_VIEWS_SQL) {
+        if (tableNames.has(requires)) {
+          try { await conn.query(sql); } catch (e: any) {
+            const msg = String(e?.message ?? e);
+            if (!msg.includes('Catalog Error') && !msg.includes('Binder Error')) console.warn('conditional view failed:', e);
+          }
         }
       }
       setSourceType('jfr');

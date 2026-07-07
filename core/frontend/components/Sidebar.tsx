@@ -88,6 +88,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
     }
   }, [schema, selectedItem]);
 
+  useEffect(() => { setTooltip(null); }, [schema]);
 
   const handleShowTooltip = (e: React.MouseEvent, content: React.ReactNode) => {
     if (hideTimeout.current) clearTimeout(hideTimeout.current);
@@ -303,7 +304,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
             >
             <TableIcon className="w-4 h-4 flex-shrink-0" />
             <span className="truncate">{table.name}</span>
-            <span className="ml-auto text-xs text-gray-500 font-mono pr-2">{typeof table.rowCount === 'number' ? table.rowCount.toLocaleString() : '-'}</span>
+            <span className="ml-auto text-xs text-gray-500 font-mono pr-2 shrink-0" data-row-count={table.rowCount}>{typeof table.rowCount === 'number' ? table.rowCount.toLocaleString() : '-'}</span>
             </button>
         </li>
         ))}

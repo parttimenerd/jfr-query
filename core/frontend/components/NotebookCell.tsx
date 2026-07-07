@@ -13,7 +13,7 @@ import { substituteVariables, toSqlVariables } from '../utils/variableSubstituti
 import { expandBrushOperator } from '../services/variableExpander';
 import { parsePlotCall } from '../utils/plotParser';
 import { expandPlotConstants } from '../utils/plotConstants';
-import { cleanDuckDBError, heuristicTip, parseCandidateBindings } from '../utils/sqlErrorMessage';
+import { cleanDuckDBError, heuristicTip, parseCandidateBindings, isExpectedMissingTable } from '../utils/sqlErrorMessage';
 import { aiService } from '../services/AiService';
 
 // Module-level cache so repeated identical errors (same sql + message) skip the
@@ -169,6 +169,9 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const [isPlotHelpModalOpen, setIsPlotHelpModalOpen] = useState(false);
     const [isBeingDragged, setIsBeingDragged] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState<'top' | 'bottom' | null>(null);
+    const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
+    const deleteConfirmRef = useRef(false);
+    deleteConfirmRef.current = isDeleteConfirming;
     const [resultHeight, setResultHeight] = useState(250);
     const resultResizeRef = useRef<{ startY: number; startH: number } | null>(null);
     const resultHeightUserSet = useRef(false);
@@ -1013,7 +1016,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     {!presenterMode && <button onClick={()=>{ const next = !isCellCollapsed; setIsCellCollapsed(next); onCellCollapseChange?.(cell.id, next); }} className="p-1 text-gray-400 hover:text-gray-300 flex-shrink-0" title={isCellCollapsed ? "Expand cell" : "Collapse cell"}>{isCellCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5"/> : <ChevronUpIcon className="w-3.5 h-3.5"/>}</button>}
                     {isEditingTitle ? <input type="text" value={editingTitleValue} onChange={e=>setEditingTitleValue(e.target.value)} onBlur={()=>handleTitleBlur(editingTitleValue)} onKeyDown={handleTitleKeyDown} className="text-base font-semibold bg-gray-900 border border-cyan-500 rounded-md px-2 py-0.5 w-full" autoFocus/> : <h2 onClick={()=>{if(!presenterMode){setEditingTitleValue(title||'');setIsEditingTitle(true);}}} className={`text-base font-semibold w-full text-gray-100 ${presenterMode ? '' : 'cursor-pointer'}`}>{title}</h2>}
                 </div>
-                {!presenterMode && <div className="flex items-center gap-1 flex-shrink-0"><button onClick={()=>setIsRawEditing(!isRawEditing)} className="p-1.5 hover:bg-cyan-600/30 rounded-md" title={isRawEditing?"Rich View":"Raw Markdown"}>{isRawEditing ? <EyeIcon className="w-4 h-4 text-cyan-300"/>:<CodeBracketIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>{if(window.confirm('Delete this cell?'))onDeleteCell(cell.id);}} className="p-1.5 hover:bg-red-600/50 rounded-md" title="Delete Cell" aria-label="Delete Cell"><TrashIcon className="w-4 h-4 text-gray-400"/></button></div>}
+                {!presenterMode && <div className="flex items-center gap-1 flex-shrink-0"><button onClick={()=>setIsRawEditing(!isRawEditing)} className="p-1.5 hover:bg-cyan-600/30 rounded-md" title={isRawEditing?"Rich View":"Raw Markdown"}>{isRawEditing ? <EyeIcon className="w-4 h-4 text-cyan-300"/>:<CodeBracketIcon className="w-4 h-4 text-gray-400"/>}</button>{isDeleteConfirming ? (<div className="flex items-center gap-1"><span className="text-xs text-red-400">Delete?</span><button onClick={()=>{setIsDeleteConfirming(false);onDeleteCell(cell.id);}} className="px-1.5 py-0.5 text-xs bg-red-700 hover:bg-red-600 text-white rounded">Yes</button><button onClick={()=>setIsDeleteConfirming(false)} className="px-1.5 py-0.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded">No</button></div>) : (<button onClick={()=>setIsDeleteConfirming(true)} className="p-1.5 hover:bg-red-600/50 rounded-md" title="Delete Cell" aria-label="Delete Cell"><TrashIcon className="w-4 h-4 text-gray-400"/></button>)}</div>}
             </div>
             {!isCellCollapsed && (isRawEditing ? <div className="p-2"><SQLEditor value={cellContextContent} onChange={handleRawContentChange} mode="markdown"/></div> : <div className="p-3 space-y-3">
                  <MarkdownSectionEditor
@@ -1028,7 +1031,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     presenterMode={presenterMode}
                 />
 
-                {Object.keys(parsed.variables||{}).length > 0 || (parsed.variableWarnings?.length ?? 0) > 0
+                {!presenterMode && (Object.keys(parsed.variables||{}).length > 0 || (parsed.variableWarnings?.length ?? 0) > 0)
                     ? <CollapsibleBlock title={`Variables (${Object.keys(parsed.variables||{}).length})`} isCollapsed={isVariablesCollapsed} onToggle={()=>setIsVariablesCollapsed(!isVariablesCollapsed)} preview="" controls={<button onClick={handleAddVariable} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700/80 rounded-md"><PlusIcon className="w-3 h-3"/> Add</button>}><div className="p-2"><div className="space-y-2">{Object.entries(parsed.variables||{}).map(([k,v])=><VariableEditor key={k} varKey={k} varValue={v} usedIn={variableUsage[k]} onChange={handleVariableChange} onDelete={handleDeleteVariable} inputRef={el => { variableInputRefs.current[k] = el; }}/>)}</div>{parsed.variableWarnings?.map((w,i)=><p key={i} className="text-xs text-yellow-400 mt-1 font-mono">{w}</p>)}</div></CollapsibleBlock>
                     : null
                 }
@@ -1153,11 +1156,12 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 if (!presenterMode) {
                                     items.push(
                                         <CollapsibleBlock key={`sql-${i}`} title={sqlTitleNode} preview={sql.replace(/\s+/g,' ').substring(0,60)} isCollapsed={!!collapsedStates[`sql-${i}`]} onToggle={()=>toggleCollapse(`sql-${i}`)} statusIndicator={runningStates[i]?(<div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"/>):pendingRunStates[i]?(<div className="w-4 h-4 text-gray-500 animate-pulse">...</div>):null} controls={<><button onClick={()=>handleRun(sql,i)} disabled={runningStates[i]||pendingRunStates[i]} title="Run query (Cmd+Enter)" aria-label="Run query (Cmd+Enter)" className="p-1.5 rounded-md disabled:opacity-50"><PlayIcon className="w-4 h-4 text-green-400"/></button><button onClick={()=>handleFormat(sql,'sql',i)} title="Format SQL" aria-label="Format SQL" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSuggest(sql,i)} title="Suggest plot with AI" aria-label="Suggest plot with AI" className="p-1.5 rounded-md"><SparklesIcon className="w-4 h-4 text-yellow-400"/></button><button onClick={()=>setActiveChat(p=>p===`sql-${i}`?null:`sql-${i}`)} title="Refine with AI" aria-label="Refine with AI" className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>handleCopySql(sql,i)} title="Copy SQL" aria-label="Copy SQL" className="p-1.5 rounded-md">{copiedSql===i ? <CheckCircleIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4 text-gray-400"/>}</button><button onClick={()=>onDeleteQueryBlock(cell.id, i)} title="Delete query block" aria-label="Delete query block" className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
-                                            <SQLEditor value={sql} onChange={handleSqlChange} index={i} variables={allVariables} onVariableClick={handleVariableClick} metadata={metadata} onRun={() => handleRun(sql, i)} error={errSpec} notebookPlotScope={plotScopeView} />
+                                            <SQLEditor value={sql} onChange={handleSqlChange} index={i} variables={allVariables} onVariableClick={handleVariableClick} metadata={metadata} onRun={() => handleRun(sql, i)} error={errSpec && !isExpectedMissingTable(errSpec.message) ? errSpec : null} notebookPlotScope={plotScopeView} />
                                             {errSpec && (
-                                                <div className="mt-1 px-2 py-1.5 text-xs text-red-300 bg-red-900/25 border-l-2 border-red-500/60 font-mono whitespace-pre-wrap rounded-r animate-fade-in" title={errSpec.line ? `LINE ${errSpec.line}${errSpec.column ? `:${errSpec.column}` : ''}` : undefined}>
-                                                    {errSpec.message}
+                                                <div className={`mt-1 px-2 py-1.5 text-xs font-mono whitespace-pre-wrap rounded-r animate-fade-in ${isExpectedMissingTable(errSpec.message) ? 'text-gray-400 bg-gray-800/60 border-l-2 border-gray-600/60' : 'text-red-300 bg-red-900/25 border-l-2 border-red-500/60'}`} title={errSpec.line ? `LINE ${errSpec.line}${errSpec.column ? `:${errSpec.column}` : ''}` : undefined}>
+                                                    {isExpectedMissingTable(errSpec.message) ? heuristicTip(errSpec.message) || errSpec.message : errSpec.message}
                                                     {(() => {
+                                                        if (isExpectedMissingTable(errSpec.message)) return null;
                                                         const tip = heuristicTip(errSpec.message);
                                                         const candidates = parseCandidateBindings(errSpec.message);
                                                         const aiSugg = aiErrorSuggestions[i];
@@ -1228,7 +1232,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
                                 const resolvedData = datasetData ?? results[dataIndex];
                                 const resolvedSql = parsedSqlBlocks[dataIndex] ?? parsedSqlBlocks[defaultSqlIndex] ?? '';
-                                const plotDataCols = (resolvedData && resolvedData.length > 0) ? Object.keys(resolvedData[0]) : [];
+                                const plotDataCols = (resolvedData && resolvedData.length > 0 && !resolvedData[0]?.error) ? Object.keys(resolvedData[0]) : [];
                                 const plotAlias = parsed.plotAliases[pi] ?? null;
                                 const isEditingPlotName = editingBlockName?.type === 'plot' && editingBlockName.idx === pi;
                                 const plotTitleNode = isEditingPlotName ? (
@@ -1280,7 +1284,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                             <button title="Download as PNG" aria-label="Download as PNG" className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-${pi}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-${pi + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                             </button>
-                                            <div id={`result-container-${cell.id}-${pi}`} className="flex-grow overflow-auto">
+                                            <div id={`result-container-${cell.id}-${pi}`} className="flex-grow overflow-auto" style={{ minHeight: 200 }}>
                                                 <PlotRenderer config={configToRender} data={resolvedData} dataByQueryRef={dataByQueryRef} sql={resolvedSql} cellContext={cellContext} onApplyFix={c => handleApplyPlotFix(c, defaultSqlIndex)} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange} onCellVariableChange={handleCellVariableChange} allVariables={allVariables} />
                                             </div>
                                         </div>

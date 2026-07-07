@@ -89,6 +89,12 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
         if (el) { el.focus(); el.select(); pendingFocusVar.current = null; }
     }, [metadata.variables, isVariablesCollapsed]);
 
+    // Clear any stale tooltip when the view/macro list changes (e.g., after deletion).
+    useEffect(() => {
+        if (hideTimeout.current) clearTimeout(hideTimeout.current);
+        setTooltip(null);
+    }, [metadata.views, metadata.macros]);
+
     const globalVars = metadata.variables || {};
     const handleAddGlobalVariable = () => {
         let name = 'newVar';

@@ -105,6 +105,7 @@ const App: React.FC = () => {
     const hasAiWorkedBefore = useRef(false);
     const [aiFailureMessage, setAiFailureMessage] = useState<string | null>(null);
     const [probeToastDismissed, setProbeToastDismissed] = useState(false);
+    const [invalidFileToast, setInvalidFileToast] = useState<string | null>(null);
 
     const [isAiEnabled, setIsAiEnabled] = usePersistentState('jfr-notebook-ai-enabled', true);
     const isAiFeatureActive = isAiAvailable && isAiEnabled;
@@ -147,7 +148,7 @@ const App: React.FC = () => {
     }, [settings]);
 
 
-    const [notebookMarkdown, setNotebookMarkdown, undo, redo, canUndo, canRedo, flushHistory] = useHistoryState<string>(initialNotebook, 'jfr-notebook-content');
+    const [notebookMarkdown, setNotebookMarkdown, undo, redo, canUndo, canRedo, flushHistory, resetNotebookHistory] = useHistoryState<string>(initialNotebook, 'jfr-notebook-content');
     const [results, setResults] = useState<Record<string, (any[] | null)[]>>({});
     // Parallel timing state: [cellId][queryIndex] = elapsed ms for the last successful run.
     const [queryTimings, setQueryTimings] = useState<Record<string, (number | null)[]>>({});
@@ -160,12 +161,15 @@ const App: React.FC = () => {
     // the previous cells array so consumers that check allCells === allCells
     // (arePropsEqual, useMemo deps) short-circuit without any work.
     const prevCellsRef = useRef<NotebookCellData[]>([]);
+    const savedMarkdownRef = useRef<string>(notebookMarkdown);
 
     const loadNotebook = useCallback((source: string) => {
-        setNotebookMarkdown(source);
+        resetNotebookHistory(source);
         setResults({});
         setQueryTimings({});
-    }, [setNotebookMarkdown]);
+        // Mark as saved so beforeunload doesn't fire just from loading a file.
+        savedMarkdownRef.current = source;
+    }, [resetNotebookHistory]);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = usePersistentState('jfr-ui-sidebarCollapsed', false);
     const [isChatPanelCollapsed, setIsChatPanelCollapsed] = usePersistentState('jfr-ui-chatPanelCollapsed', true);
     const [isAutoRunEnabled, setIsAutoRunEnabled] = usePersistentState('jfr-ui-autoRunEnabled', true);
@@ -178,7 +182,6 @@ const App: React.FC = () => {
     const [isTemplateGalleryOpen, setIsTemplateGalleryOpen] = useState(false);
 
     const notebookFileInputRef = useRef<HTMLInputElement>(null);
-    const savedMarkdownRef = useRef<string>(notebookMarkdown);
     // Always-fresh ref so addCellFromTool reads current markdown without stale closures.
     const notebookMarkdownRef = useRef<string>(notebookMarkdown);
     notebookMarkdownRef.current = notebookMarkdown;
@@ -223,16 +226,22 @@ const App: React.FC = () => {
     };
 
     // Drag-and-drop .md anywhere in the app loads it as the notebook.
-    // (JFR/duckdb files are still handled by JFRDropZone on the initial screen.)
+    // JFR/duckdb drops anywhere in the app reload the database.
     const [isMdDragOver, setIsMdDragOver] = useState(false);
+    const [pendingJfrFile, setPendingJfrFile] = useState<{ file: File; sizeMb: number } | null>(null);
+    const [pendingJfrDepth, setPendingJfrDepth] = useState(10);
+
+    const JFR_MAGIC = [0x46, 0x4c, 0x52, 0x00];
+    const DUCKDB_MAGIC = [0x44, 0x55, 0x43, 0x4b];
+    const sniffFile = async (f: File): Promise<'jfr' | 'duckdb' | 'unknown'> => {
+        const buf = await f.slice(0, 4).arrayBuffer();
+        const b = new Uint8Array(buf);
+        if (JFR_MAGIC.every((v, i) => b[i] === v)) return 'jfr';
+        if (DUCKDB_MAGIC.every((v, i) => b[i] === v)) return 'duckdb';
+        return 'unknown';
+    };
+
     useEffect(() => {
-        const hasMd = (e: DragEvent) =>
-            Array.from(e.dataTransfer?.items || []).some(it =>
-                it.kind === 'file' && (
-                    it.type === 'text/markdown' ||
-                    /\.(md|markdown)$/i.test((it as any).getAsFile?.()?.name || '')
-                ),
-            );
         const onDragOver = (e: DragEvent) => {
             if (!e.dataTransfer) return;
             const types = Array.from(e.dataTransfer.types || []);
@@ -261,15 +270,40 @@ const App: React.FC = () => {
             }
             setIsMdDragOver(false);
             const files = Array.from(e.dataTransfer?.files || []);
+            // Prefer .md over JFR/duckdb if multiple files are dropped.
             const md = files.find(f => /\.(md|markdown)$/i.test(f.name) || f.type === 'text/markdown');
-            if (!md) return;
-            e.preventDefault();
-            const reader = new FileReader();
-            reader.onload = ev => {
-                const text = ev.target?.result;
-                if (typeof text === 'string') loadNotebook(text);
-            };
-            reader.readAsText(md);
+            if (md) {
+                e.preventDefault();
+                const reader = new FileReader();
+                reader.onload = ev => {
+                    const text = ev.target?.result;
+                    if (typeof text === 'string') loadNotebook(text);
+                };
+                reader.readAsText(md);
+                return;
+            }
+            const dataFile = files.find(f => /\.(jfr|duckdb|db)$/i.test(f.name));
+            if (dataFile) {
+                e.preventDefault();
+                void (async () => {
+                    const kind = await sniffFile(dataFile);
+                    if (kind === 'unknown') {
+                        setInvalidFileToast(`Unrecognised file: "${dataFile.name}". Drop a .jfr or .duckdb file.`);
+                        return;
+                    }
+                    const sizeMb = dataFile.size / (1024 * 1024);
+                    if (kind === 'jfr' && sizeMb > 20) {
+                        setPendingJfrFile({ file: dataFile, sizeMb });
+                        setPendingJfrDepth(10);
+                    } else {
+                        void loadFile(dataFile, dataFile.name, 10);
+                    }
+                })();
+            } else if (files.length > 0) {
+                e.preventDefault();
+                const name = files[0].name;
+                setInvalidFileToast(`Unsupported file type: "${name}". Drop a .jfr or .duckdb file.`);
+            }
         };
         window.addEventListener('dragover', onDragOver);
         window.addEventListener('dragleave', onDragLeave);
@@ -279,7 +313,8 @@ const App: React.FC = () => {
             window.removeEventListener('dragleave', onDragLeave);
             window.removeEventListener('drop', onDrop);
         };
-    }, [loadNotebook]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loadNotebook, loadFile]);
 
 
     //   ?notebook=<https-url>          fetch markdown notebook
@@ -369,7 +404,9 @@ const App: React.FC = () => {
         const onKeyDown = (e: KeyboardEvent) => {
             const meta = e.metaKey || e.ctrlKey;
             if (!meta) return;
-            const inEditor = e.target instanceof HTMLElement && e.target.closest('.CodeMirror');
+            const inEditor = e.target instanceof HTMLElement && e.target.closest('.cm-editor');
+            // Let CodeMirror handle Ctrl+A — it selects within the focused editor only.
+            if (inEditor && (e.key === 'a' || e.key === 'A')) return;
             if (e.key === 's' || e.key === 'S') {
                 e.preventDefault();
                 handleSaveNotebook();
@@ -454,6 +491,8 @@ const App: React.FC = () => {
     const customViewsKey = useMemo(() => JSON.stringify(metadata.views || []), [metadata.views]);
     const customMacrosKey = useMemo(() => JSON.stringify(metadata.macros || []), [metadata.macros]);
     const customVarsKey = useMemo(() => JSON.stringify(metadata.variables || {}), [metadata.variables]);
+    const prevViewNamesRef = useRef<Set<string>>(new Set());
+    const prevMacroNamesRef = useRef<Set<string>>(new Set());
     useEffect(() => {
         if (dbState !== DBState.READY) return;
         let cancelled = false;
@@ -461,6 +500,25 @@ const App: React.FC = () => {
             const vars = metadata.variables || {};
             const sqlVars = toSqlVariables(vars);
             let changed = false;
+
+            const currentViewNames = new Set((metadata.views || []).map(v => v.name).filter(Boolean));
+            const currentMacroNames = new Set((metadata.macros || []).map(m => m.name).filter(Boolean));
+
+            // Drop views that were removed from metadata.
+            for (const name of prevViewNamesRef.current) {
+                if (!currentViewNames.has(name)) {
+                    try { await query(`DROP VIEW IF EXISTS "${name.replace(/"/g, '""')}"`); changed = true; } catch {}
+                }
+            }
+            // Drop macros that were removed from metadata.
+            for (const name of prevMacroNamesRef.current) {
+                if (!currentMacroNames.has(name)) {
+                    try { await query(`DROP MACRO IF EXISTS "${name.replace(/"/g, '""')}"`); changed = true; } catch {}
+                }
+            }
+
+            prevViewNamesRef.current = currentViewNames;
+            prevMacroNamesRef.current = currentMacroNames;
 
             // Topo-sort views by includes dependencies (simple DFS).
             const viewsInOrder = topoSort(metadata.views || [], 'views');
@@ -653,7 +711,7 @@ const App: React.FC = () => {
         const newCell: NotebookCellData = {
             id: `cell-${Date.now()}`,
             title: ``,
-            content: '# New Cell\n\n'
+            content: '## New Cell\n\n'
         };
         updateCellsAndMarkdown([...cellsRef.current, newCell]);
     }, [updateCellsAndMarkdown]);
@@ -983,7 +1041,10 @@ const App: React.FC = () => {
     }, [loadNotebook]);
 
     // Seed session_start / session_end variables from recording bounds when a
-    // JFR file is loaded and the variables haven't been set yet.
+    // JFR file is loaded OR when a new notebook template is applied (which clears
+    // the variables). Re-runs whenever either bound changes OR either var is missing.
+    const sessionStartMissing = !metadata.variables?.['$session_start'];
+    const sessionEndMissing   = !metadata.variables?.['$session_end'];
     useEffect(() => {
         if (recordingStart == null && recordingEnd == null) return;
         const current = metadata.variables ?? {};
@@ -995,10 +1056,8 @@ const App: React.FC = () => {
         });
         setNotebookMarkdown(newNotebookMarkdown);
         void refreshSchema();
-    // Run whenever recording bounds first arrive; cellsContent and metadata are
-    // stable until the user edits them, so this only fires on file load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [recordingStart, recordingEnd]);
+    }, [recordingStart, recordingEnd, sessionStartMissing, sessionEndMissing]);
 
     if (dbState !== DBState.READY) {
         // Show the drop zone during initial probe (mode still null) so the user sees the UI immediately
@@ -1038,6 +1097,31 @@ const App: React.FC = () => {
                     </div>
                 </div>
             )}
+            {pendingJfrFile && (
+                <div className="fixed inset-0 z-50 bg-gray-900/80 flex items-center justify-center">
+                    <div className="bg-gray-800 border border-amber-500/40 rounded-lg p-5 max-w-sm w-full mx-4">
+                        <p className="text-amber-300 font-semibold text-sm mb-1">Large file detected</p>
+                        <p className="text-gray-400 text-xs mb-4">
+                            <span className="text-white font-medium">{pendingJfrFile.file.name}</span> is{' '}
+                            {pendingJfrFile.sizeMb.toFixed(0)} MB. Choose how many stack frames to store per event.
+                        </p>
+                        <p className="text-gray-300 text-xs font-medium mb-2">Stack trace depth</p>
+                        <div className="flex flex-col gap-2">
+                            {[{value:50,label:'50 frames',description:'Full depth — slowest'},{value:10,label:'10 frames',description:'Default'},{value:5,label:'5 frames',description:'Faster'},{value:0,label:'Skip',description:'No call stack — fastest'}].map(opt => (
+                                <label key={opt.value} className={`flex items-center gap-3 p-2.5 rounded border cursor-pointer transition-colors ${pendingJfrDepth===opt.value?'border-cyan-500 bg-cyan-900/20 text-white':'border-gray-600 bg-gray-700/30 text-gray-400 hover:border-gray-500'}`}>
+                                    <input type="radio" name="app-depth" value={opt.value} checked={pendingJfrDepth===opt.value} onChange={() => setPendingJfrDepth(opt.value)} className="accent-cyan-400"/>
+                                    <span className="text-sm font-medium w-20">{opt.label}</span>
+                                    <span className="text-xs text-gray-500">{opt.description}</span>
+                                </label>
+                            ))}
+                        </div>
+                        <div className="mt-4 flex gap-3">
+                            <button onClick={() => { const f = pendingJfrFile; setPendingJfrFile(null); void loadFile(f.file, f.file.name, pendingJfrDepth); }} className="flex-1 py-2 px-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm font-medium">Import</button>
+                            <button onClick={() => setPendingJfrFile(null)} className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-sm">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <SettingsModal isOpen={isSettingsModalOpen} onClose={handleCloseSettingsModal} />
             <TemplateGalleryModal
                 isOpen={isTemplateGalleryOpen}
@@ -1049,6 +1133,7 @@ const App: React.FC = () => {
             <CommandPalette isOpen={isCmdPaletteOpen} onClose={handleCloseCommandPalette} actions={cmdActions} cells={cmdCells} onRunQuery={cmdRunQuery} onAiAddCell={cmdAiAddCell} onAddSqlCell={cmdAddSqlCell} isAiAvailable={isAiFeatureActive} />
             {aiFailureMessage && <ToastNotification title="AI Assistant Alert" message={aiFailureMessage} onClose={() => setAiFailureMessage(null)} action={{ label: 'Open Settings →', onClick: () => setIsSettingsModalOpen(true) }} />}
             {serverProbeError && !probeToastDismissed && <ToastNotification title="Running in WASM mode" message={`Server probe failed: ${serverProbeError}. Drop a .jfr or .duckdb file to get started.`} onClose={() => setProbeToastDismissed(true)} duration={5000} />}
+            {invalidFileToast && <ToastNotification title="Unsupported file" message={invalidFileToast} onClose={() => setInvalidFileToast(null)} duration={5000} />}
 
             <header className="flex-shrink-0 h-12 bg-gray-900/80 border-b border-gray-700/80 flex items-center justify-between px-4 z-30">
                 <div className="flex items-center gap-3">
@@ -1084,16 +1169,16 @@ const App: React.FC = () => {
                             <div className="w-px h-5 bg-gray-700 mx-1" />
                             <SessionDateChip
                                 label="$session_start"
-                                value={(metadata.variables ?? {})['session_start'] ?? ''}
-                                onChange={v => void handleMetadataChange({ ...metadata, variables: { ...(metadata.variables ?? {}), session_start: v } })}
+                                value={(metadata.variables ?? {})['$session_start'] ?? ''}
+                                onChange={v => void handleMetadataChange({ ...metadata, variables: { ...(metadata.variables ?? {}), '$session_start': v } })}
                                 min={recordingStart}
                                 max={recordingEnd}
                                 defaultIfEmpty={recordingStart}
                             />
                             <SessionDateChip
                                 label="$session_end"
-                                value={(metadata.variables ?? {})['session_end'] ?? ''}
-                                onChange={v => void handleMetadataChange({ ...metadata, variables: { ...(metadata.variables ?? {}), session_end: v } })}
+                                value={(metadata.variables ?? {})['$session_end'] ?? ''}
+                                onChange={v => void handleMetadataChange({ ...metadata, variables: { ...(metadata.variables ?? {}), '$session_end': v } })}
                                 min={recordingStart}
                                 max={recordingEnd}
                                 defaultIfEmpty={recordingEnd}
@@ -1106,7 +1191,7 @@ const App: React.FC = () => {
                         <button onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)" aria-label="Redo" className="p-1.5 rounded-md disabled:opacity-30 text-gray-400 disabled:text-gray-600 hover:enabled:bg-gray-700/50"><ArrowUturnRightIcon className="w-4 h-4"/></button>
                     </div>
                     <div className="flex items-center gap-1">
-                        <button onClick={() => setIsAutoRunEnabled(!isAutoRunEnabled)} className={`p-1.5 rounded-md ${isAutoRunEnabled ? 'text-cyan-300' : 'text-gray-400'}`} title={isAutoRunEnabled ? "Disable Auto-Run" : "Enable Auto-Run"} aria-label={isAutoRunEnabled ? "Disable Auto-Run" : "Enable Auto-Run"}>
+                        <button onClick={() => setIsAutoRunEnabled(!isAutoRunEnabled)} className={`p-1.5 rounded-md transition-colors ${isAutoRunEnabled ? 'text-cyan-300 bg-cyan-900/30' : 'text-gray-400 hover:bg-gray-700/50'}`} title={isAutoRunEnabled ? "Auto-Run enabled — click to disable" : "Auto-Run disabled — click to enable"} aria-label={isAutoRunEnabled ? "Disable Auto-Run" : "Enable Auto-Run"}>
                             {isAutoRunEnabled ? <PauseCircleIcon className="w-4 h-4" /> : <PlayCircleIcon className="w-4 h-4" />}
                         </button>
                         <button onClick={handleRunAll} disabled={isRunningAll} title="Run All Queries" aria-label="Run All Queries" className={`p-1.5 rounded-md disabled:opacity-50 ${isRunningAll ? 'text-green-400 animate-pulse' : 'text-gray-400 hover:text-green-400'}`}>
@@ -1124,7 +1209,7 @@ const App: React.FC = () => {
                     <button onClick={() => setIsTemplateGalleryOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-cyan-300" title="New from template" aria-label="New from template"><DocumentTextIcon className="w-4 h-4"/></button>
                     <button onClick={() => loadNotebook(gcAnalysisNotebook)} className="p-1.5 rounded-md text-gray-400 hover:text-emerald-400" title="New GC Analysis Notebook" aria-label="New GC Analysis Notebook"><BeakerIcon className="w-4 h-4"/></button>
                     <button onClick={handleSaveNotebook} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Save Notebook (⌘S)" aria-label="Save Notebook"><ArrowDownTrayIcon className="w-4 h-4"/></button>
-                    <button onClick={() => setIsMarkdownMode(!isMarkdownMode)} className={`p-1.5 rounded-md ${isMarkdownMode ? 'text-cyan-300' : 'text-gray-400'} hover:text-cyan-300`} title={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown"} aria-label={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown"}><CodeBracketIcon className="w-4 h-4"/></button>
+                    <button onClick={() => setIsMarkdownMode(!isMarkdownMode)} className={`p-1.5 rounded-md ${isMarkdownMode ? 'text-cyan-300' : 'text-gray-400'} hover:text-cyan-300`} title={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown (split preview)"} aria-label={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown"}><CodeBracketIcon className="w-4 h-4"/></button>
                     {isAiAvailable && (
                         <button onClick={() => setIsAiEnabled(!isAiEnabled)} className={`p-1.5 rounded-md ${isAiEnabled ? 'text-yellow-400' : 'text-gray-400'}`} title={isAiEnabled ? "Disable AI Features" : "Enable AI Features"} aria-label={isAiEnabled ? "Disable AI Features" : "Enable AI Features"}>
                             <SparklesIcon className="w-4 h-4"/>
@@ -1154,7 +1239,7 @@ const App: React.FC = () => {
                     side="left"
                     initialWidth={320}
                     minWidth={250}
-                    isCollapsed={isSidebarCollapsed}
+                    isCollapsed={isSidebarCollapsed || presenterMode}
                     onCollapseToggle={handleToggleSidebar}
                 >
                     <Sidebar metadata={metadata} />

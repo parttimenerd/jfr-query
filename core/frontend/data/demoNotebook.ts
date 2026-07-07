@@ -74,7 +74,7 @@ SELECT gcId, "when", heapUsed, heapCommitted FROM (VALUES
 ) t(gcId, "when", heapUsed, heapCommitted);
 
 CREATE OR REPLACE TABLE GCPhasePause AS
-SELECT gcId, name, duration FROM (VALUES
+SELECT p.gcId, p.name, p.duration, g.startTime FROM (VALUES
   (1,  'Pre Evacuate Collection Set',  0.000180),
   (1,  'Merge Heap Roots',             0.000340),
   (1,  'Evacuate Collection Set',      0.009120),
@@ -115,36 +115,42 @@ SELECT gcId, name, duration FROM (VALUES
   (19, 'Evacuate Collection Set',      0.025640),
   (19, 'Post Evacuate Collection Set', 0.002840),
   (19, 'Other',                        0.001330)
-) t(gcId, name, duration);
+) p(gcId, name, duration)
+JOIN GarbageCollection g ON p.gcId = g.gcId;
 
 CREATE OR REPLACE TABLE ObjectAllocationSample AS
-SELECT objectClass, weight FROM (VALUES
-  ('byte[]',                           8192),
-  ('byte[]',                          16384),
-  ('byte[]',                           4096),
-  ('char[]',                           2048),
-  ('char[]',                           4096),
-  ('java.lang.String',                 1024),
-  ('java.lang.String',                 2048),
-  ('java.lang.String',                  512),
-  ('java.util.HashMap$Node[]',        32768),
-  ('java.util.HashMap$Node[]',        65536),
-  ('java.util.HashMap$Node',            256),
-  ('java.util.ArrayList',               128),
-  ('java.util.concurrent.ConcurrentHashMap$Node', 512),
-  ('int[]',                            8192),
-  ('int[]',                            4096),
-  ('java.lang.Object[]',               2048),
-  ('com.example.MyService',             128),
-  ('com.example.RequestContext',        256),
-  ('java.nio.HeapByteBuffer',          8192),
-  ('java.nio.HeapByteBuffer',         16384),
-  ('sun.nio.cs.UTF_8$Encoder',           64),
-  ('java.lang.StringBuilder',           256),
-  ('java.lang.StringBuilder',           128),
-  ('java.util.LinkedList$Node',          64),
-  ('com.example.CacheEntry',            512)
-) t(objectClass, weight);
+SELECT
+  objectClass,
+  weight,
+  epoch_ms(1710497200000 + offset_s * 1000)::TIMESTAMPTZ AS startTime,
+  thread AS eventThread
+FROM (VALUES
+  ('byte[]',                           8192,   0, 'main'),
+  ('byte[]',                          16384,  30, 'main'),
+  ('byte[]',                           4096,  60, 'worker-1'),
+  ('char[]',                           2048,  90, 'worker-1'),
+  ('char[]',                           4096, 120, 'main'),
+  ('java.lang.String',                 1024, 150, 'main'),
+  ('java.lang.String',                 2048, 180, 'worker-2'),
+  ('java.lang.String',                  512, 210, 'worker-2'),
+  ('java.util.HashMap$Node[]',        32768, 240, 'main'),
+  ('java.util.HashMap$Node[]',        65536, 270, 'main'),
+  ('java.util.HashMap$Node',            256, 300, 'worker-1'),
+  ('java.util.ArrayList',               128, 330, 'worker-1'),
+  ('java.util.concurrent.ConcurrentHashMap$Node', 512, 360, 'worker-2'),
+  ('int[]',                            8192, 390, 'main'),
+  ('int[]',                            4096, 420, 'main'),
+  ('java.lang.Object[]',               2048, 450, 'worker-1'),
+  ('com.example.MyService',             128, 480, 'worker-2'),
+  ('com.example.RequestContext',        256, 510, 'main'),
+  ('java.nio.HeapByteBuffer',          8192, 540, 'main'),
+  ('java.nio.HeapByteBuffer',         16384, 570, 'worker-1'),
+  ('sun.nio.cs.UTF_8$Encoder',           64, 600, 'worker-2'),
+  ('java.lang.StringBuilder',           256, 630, 'main'),
+  ('java.lang.StringBuilder',           128, 660, 'main'),
+  ('java.util.LinkedList$Node',          64, 690, 'worker-1'),
+  ('com.example.CacheEntry',            512, 720, 'worker-2')
+) t(objectClass, weight, offset_s, thread);
 
 CREATE OR REPLACE TABLE HeapSnapshot AS
 SELECT
@@ -180,19 +186,12 @@ FROM HeapSnapshot
 ORDER BY startTime;
 
 CREATE OR REPLACE VIEW "allocation-rate" AS
-WITH buckets AS (
-  SELECT
-    epoch_ms(startTime) / 10000 AS bucket_key,
-    SUM(CAST(weight AS DOUBLE)) AS total_bytes
-  FROM ObjectAllocationSample CROSS JOIN HeapSnapshot
-  GROUP BY 1
-)
 SELECT
-  to_timestamp(bucket_key * 10)::TIMESTAMPTZ AS "Bucket",
-  round(total_bytes / (10.0 * 1024 * 1024), 2) AS "Sample MB/s"
-FROM buckets
-ORDER BY bucket_key
-LIMIT 90;
+  epoch_ms(CAST((epoch_ms(startTime) / 30000) AS BIGINT) * 30000)::TIMESTAMPTZ AS "Bucket",
+  round(SUM(CAST(weight AS DOUBLE)) / (30.0 * 1024 * 1024), 2) AS "Sample MB/s"
+FROM ObjectAllocationSample
+GROUP BY 1
+ORDER BY 1;
 
 CREATE OR REPLACE VIEW "gc-concurrent-phases-detail" AS
 SELECT
