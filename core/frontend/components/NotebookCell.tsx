@@ -951,7 +951,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         newSegments.splice(segmentIndex, 0, { type, content } as CellSegment);
         handleSegmentsUpdate(newSegments);
     }, [handleSegmentsUpdate]);
-    const handleAddPlot = () => { /* No-op, plot change creates plot blocks */ };
+    const handleAddPlot = () => {
+        handleSegmentsUpdate([
+            ...segmentsRef.current,
+            { type: 'markdown', content: '\n\n' },
+            { type: 'plot', content: '\nTABLE() DATASET GarbageCollection\n' },
+        ]);
+    };
     const handleTitleBlur = (newTitle: string) => { setIsEditingTitle(false); if (newTitle.trim() && newTitle !== title) { const introSegmentIndex = segments.findIndex(s=>s.type==='markdown'); if(introSegmentIndex!==-1){const newSegments=[...segments]; const intro=newSegments[introSegmentIndex]; if(intro.type==='if') return; const newContent=intro.content.replace(/^(?:#|##|###)\s*(.*)/,`## ${newTitle}`); newSegments[introSegmentIndex]={...intro, content:newContent}; handleSegmentsUpdate(newSegments);} }};
     const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { handleTitleBlur(editingTitleValue); } else if (e.key === 'Escape') { setIsEditingTitle(false); } };
     const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', cell.id); e.dataTransfer.effectAllowed = 'move'; setIsBeingDragged(true); };
@@ -1424,6 +1430,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     {!presenterMode && (
                         <div className="flex justify-end gap-3">
                             <button onClick={handleAddVariable} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add variable</button>
+                            <button onClick={handleAddPlot} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add Plot</button>
                             <button onClick={handleAddSql} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add SQL</button>
                         </div>
                     )}
