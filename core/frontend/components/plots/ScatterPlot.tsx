@@ -6,6 +6,7 @@ import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
+import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 
 interface ScatterPlotConfig {
   x: string;
@@ -64,12 +65,12 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
   }, [data, config.size]);
 
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-      <ResponsiveContainer minHeight={200}>
+    <div style={{ width: '100%', minHeight: 200 }}>
+      <ResponsiveContainer width="100%" minHeight={200}>
         <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
-          <XAxis allowDataOverflow type="number" dataKey={config.x} name={config.x} tickFormatter={numberFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={xDomainFromClause || domainX} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined} />
-          <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={yFormatter} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={yDomainFromClause || domainY} allowDataOverflow label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined} />
+          <XAxis allowDataOverflow type="number" dataKey={config.x} name={config.x} tickFormatter={makeTickFormatter(clauses?.axisX) ?? numberFormatter} scale={mapAxisScale(clauses?.axisX)} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={xDomainFromClause || domainX} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined} />
+          <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={makeTickFormatter(clauses?.axisY) ?? yFormatter} scale={mapAxisScale(clauses?.axisY)} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={yDomainFromClause || domainY} allowDataOverflow label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined} />
           {config.size && <ZAxis type="number" dataKey={config.size} name={config.size} range={[10, 200]} domain={sizeDomain} />}
           <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} formatter={yFormatter} />
           {showLegend && <Legend wrapperStyle={{ fontSize: "12px" }} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'} />}

@@ -8,6 +8,7 @@ import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn, getTimeValue, getPaletteColors } from '../../utils/plotUtils';
 import { usePlotGestures } from '../../hooks/usePlotGestures';
 import type { ParsedPlotCall } from '../../utils/plotParser';
+import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
@@ -108,9 +109,9 @@ const GanttChartComponent: React.FC<{
     return { chartData: transformed, isTime: isTimeAxis, startCol: sCol, endCol: eCol, rowCol: rCol, colorCategories: colorCats };
   }, [data, config]);
 
-  const tickFormatter = isTime
+  const tickFormatter = makeTickFormatter(clauses?.axisX) ?? (isTime
     ? (v: any) => formatTimestamp(v, 'HH:mm:ss.SS')
-    : (v: any) => numberFormatter(v);
+    : (v: any) => numberFormatter(v));
 
   const tooltipFormatter = (_value: any, _name: string, props: any) => {
     const row = props?.payload;
@@ -139,6 +140,7 @@ const GanttChartComponent: React.FC<{
             stroke="#9ca3af"
             tick={{ fontSize: 11 }}
             tickFormatter={tickFormatter}
+            scale={mapAxisScale(clauses?.axisX)}
             domain={xDomainFromClause ?? ['dataMin', 'dataMax']}
             allowDataOverflow
             label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 11, offset: -5 } : undefined}

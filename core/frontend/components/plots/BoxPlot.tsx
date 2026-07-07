@@ -6,6 +6,7 @@ import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
+import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 
 interface BoxPlotConfig {
   category?: string;
@@ -160,12 +161,12 @@ const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimati
      if (chartData.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">No valid data for Box Plot.</div>;
 
     return (
-        <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-            <ResponsiveContainer minHeight={200}>
+        <div style={{ width: '100%', minHeight: 200 }}>
+            <ResponsiveContainer width="100%" minHeight={200}>
                 <BarChart data={chartData} barCategoryGap="30%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
-                    <XAxis dataKey="category" stroke="#9ca3af" tick={{ fontSize: 12 }} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined} />
-                    <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={numberFormatter} domain={(domainY ?? yDomainFromClause) ?? ['dataMin', 'dataMax']} allowDataOverflow label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined} />
+                    <XAxis dataKey="category" stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={makeTickFormatter(clauses?.axisX) ?? undefined} scale={mapAxisScale(clauses?.axisX)} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined} />
+                    <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={makeTickFormatter(clauses?.axisY) ?? numberFormatter} scale={mapAxisScale(clauses?.axisY)} domain={(domainY ?? yDomainFromClause) ?? ['dataMin', 'dataMax']} allowDataOverflow label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined} />
                     <Tooltip 
                         content={<CustomBoxPlotTooltip formatter={numberFormatter} />}
                         cursor={{ fill: 'rgba(130, 202, 157, 0.1)' }}

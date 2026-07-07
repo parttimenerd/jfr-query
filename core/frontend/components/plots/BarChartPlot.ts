@@ -6,6 +6,7 @@ import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn, findColumns, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
+import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
@@ -58,6 +59,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
     const legendPos = clauses?.legend;
     const showLegend = legendPos !== 'none';
     const axisYClause = clauses?.axisY;
+    const axisXClause = clauses?.axisX;
     const effectiveLogScale = axisYClause?.type === 'log' ? true : config.logScale;
     const yDomainFromClause = axisYClause?.domain as [any, any] | undefined;
     const yLabelFromClause = axisYClause?.label;
@@ -121,8 +123,8 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         type: "number" as const,
         stroke: "#9ca3af",
         tick: { fontSize: 12 },
-        tickFormatter: numberFormatter,
-        scale: effectiveLogScale ? "log" as const : "auto" as const,
+        tickFormatter: makeTickFormatter(axisYClause) ?? numberFormatter,
+        scale: mapAxisScale(axisYClause) ?? (effectiveLogScale ? "log" as const : "auto" as const),
         domain: (domainY ?? (effectiveLogScale && yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : yDomainFromClause) ?? (effectiveLogScale ? [0.1, 'dataMax'] : [0, 'dataMax'])) as any,
         allowDataOverflow: true,
     };
@@ -155,6 +157,8 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
             textAnchor: "end",
             interval: 0,
             height: 60,
+            tickFormatter: makeTickFormatter(axisXClause) ?? undefined,
+            scale: mapAxisScale(axisXClause),
             label: xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined
         }),
         React.createElement(YAxis, {
@@ -205,8 +209,8 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         ...lineElements
     ];
 
-    return React.createElement('div', { style: { width: '100%', height: '100%', minHeight: 200 } },
-        React.createElement(ResponsiveContainer, { minHeight: 200 } as any,
+    return React.createElement('div', { style: { width: '100%', minHeight: 200 } },
+        React.createElement(ResponsiveContainer, { width: '100%', minHeight: 200 } as any,
             React.createElement(BarChart, {
                 data: chartData,
                 layout: config.horizontal ? 'vertical' : 'horizontal',

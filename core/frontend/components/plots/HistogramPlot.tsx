@@ -4,6 +4,7 @@ import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
+import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 
@@ -74,12 +75,12 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
     if (chartData.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">No valid data.</div>;
 
     return (
-        <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-            <ResponsiveContainer minHeight={200}>
+        <div style={{ width: '100%', minHeight: 200 }}>
+            <ResponsiveContainer width="100%" minHeight={200}>
                 <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 50 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568"/>
-                    <XAxis dataKey="range" stroke="#9ca3af" tick={{fontSize:12}} angle={-45} textAnchor="end" interval="preserveStartEnd" domain={domainX ?? config.xDomain ?? ['auto', 'auto']} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined}/>
-                    <YAxis stroke="#9ca3af" tick={{fontSize:12}} label={{value: yLabelFromClause || 'Frequency', angle:-90, position:'insideLeft', fill:'#9ca3af'}} scale={effectiveLogScale?"log":"auto"} domain={effectiveLogScale && yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : (yDomainFromClause ?? (effectiveLogScale?[0.1,'dataMax']:[0,'dataMax']))} allowDataOverflow/>
+                    <XAxis dataKey="range" stroke="#9ca3af" tick={{fontSize:12}} angle={-45} textAnchor="end" interval="preserveStartEnd" domain={domainX ?? config.xDomain ?? ['auto', 'auto']} tickFormatter={makeTickFormatter(clauses?.axisX) ?? undefined} scale={mapAxisScale(clauses?.axisX)} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined}/>
+                    <YAxis stroke="#9ca3af" tick={{fontSize:12}} tickFormatter={makeTickFormatter(clauses?.axisY) ?? numberFormatter} label={{value: yLabelFromClause || 'Frequency', angle:-90, position:'insideLeft', fill:'#9ca3af'}} scale={mapAxisScale(clauses?.axisY) ?? (effectiveLogScale?"log":"auto")} domain={effectiveLogScale && yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : (yDomainFromClause ?? (effectiveLogScale?[0.1,'dataMax']:[0,'dataMax']))} allowDataOverflow/>
                     <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}}/>
                     <Bar dataKey="count" fill="#8884d8" isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>
                 </BarChart>

@@ -10,6 +10,7 @@ import { usePlotGestures } from '../../hooks/usePlotGestures';
 import { warnDeprecated } from './deprecation';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { lttb } from '../../services/plot/decimation';
+import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 
 const AREA_SOFT_CAP_PER_SERIES = 5000;
 
@@ -148,9 +149,12 @@ const AreaChartComponent: React.FC<{
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
   const colors = getPaletteColors(clauses?.palette, COLORS);
 
+  const xTickFmt = makeTickFormatter(clauses?.axisX) ?? (isTime ? (t: any) => formatTimestamp(t, 'HH:mm:ss.SS') : undefined);
+  const yTickFmt = makeTickFormatter(clauses?.axisY);
+
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-      <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+    <div style={{ width: '100%', minHeight: 200 }}>
+      <ResponsiveContainer width="100%" minHeight={200}>
         <AreaChart
           data={chartData}
           margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
@@ -164,7 +168,8 @@ const AreaChartComponent: React.FC<{
             dataKey={finalXCol}
             type={isTime ? 'number' : 'category'}
             domain={xDomainFromClause || domainX || (isTime ? ['dataMin', 'dataMax'] : undefined)}
-            tickFormatter={isTime ? (t: any) => formatTimestamp(t, 'HH:mm:ss.SS') : undefined}
+            tickFormatter={xTickFmt}
+            scale={mapAxisScale(clauses?.axisX)}
             stroke="#9ca3af"
             tick={{ fontSize: 12 }}
             label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined}
@@ -172,13 +177,13 @@ const AreaChartComponent: React.FC<{
           <YAxis
             stroke="#9ca3af"
             tick={{ fontSize: 12 }}
-            tickFormatter={yFormatter}
+            tickFormatter={yTickFmt ?? yFormatter}
             label={
               (yLabelFromClause || config.yAxisLabel)
                 ? { value: yLabelFromClause || config.yAxisLabel, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 }
                 : undefined
             }
-            scale={effectiveYScale === 'log' ? 'log' : 'auto'}
+            scale={mapAxisScale(clauses?.axisY) ?? (effectiveYScale === 'log' ? 'log' : 'auto')}
             domain={domainY ?? (effectiveYScale === 'log' ? (yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : [0.1, 'dataMax']) : yDomainFromClause)}
             allowDataOverflow
           />

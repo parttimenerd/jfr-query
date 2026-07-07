@@ -8,6 +8,7 @@ import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn, getTimeValue } from '../../utils/plotUtils';
 import { usePlotGestures } from '../../hooks/usePlotGestures';
 import type { ParsedPlotCall } from '../../utils/plotParser';
+import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 
 interface Config {
   x: string;
@@ -90,7 +91,7 @@ const RangePlotComponent: React.FC<{
   const color = config.color || '#8884d8';
 
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
+    <div style={{ width: '100%', minHeight: 200 }}>
       <ResponsiveContainer width="100%" height={320}>
         <ComposedChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
           onMouseMove={gestures.onMouseMove}
@@ -103,7 +104,8 @@ const RangePlotComponent: React.FC<{
             dataKey={finalXCol}
             type={isTime ? 'number' : 'category'}
             domain={xDomainFromClause || domainX || (isTime ? ['dataMin', 'dataMax'] : undefined)}
-            tickFormatter={isTime ? (t: any) => formatTimestamp(t, 'HH:mm:ss.SS') : undefined}
+            tickFormatter={makeTickFormatter(clauses?.axisX) ?? (isTime ? (t: any) => formatTimestamp(t, 'HH:mm:ss.SS') : undefined)}
+            scale={mapAxisScale(clauses?.axisX)}
             stroke="#9ca3af"
             tick={{ fontSize: 12 }}
             label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined}
@@ -111,7 +113,8 @@ const RangePlotComponent: React.FC<{
           <YAxis
             stroke="#9ca3af"
             tick={{ fontSize: 12 }}
-            tickFormatter={numberFormatter}
+            tickFormatter={makeTickFormatter(clauses?.axisY) ?? numberFormatter}
+            scale={mapAxisScale(clauses?.axisY)}
             domain={yDomainFromClause || domainY}
             allowDataOverflow
             label={

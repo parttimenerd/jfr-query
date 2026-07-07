@@ -7,6 +7,7 @@ import { formatTimestamp } from '../../utils/timeFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn, findColumns, getTimeValue, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds, getPaletteColors } from '../../utils/plotUtils';
 import { lttb } from '../../services/plot/decimation';
+import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 
 const LINE_SOFT_CAP_PER_SERIES = 5000;
 
@@ -104,13 +105,16 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
   const y2Formatter = y2IsDuration ? formatDurationNs : numberFormatter;
   const colors = getPaletteColors(clauses?.palette, COLORS);
 
+  const xTickFmt = makeTickFormatter(axisXClause) ?? (isTime ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined);
+  const yTickFmt = makeTickFormatter(axisYClause);
+
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-      <ResponsiveContainer minHeight={200}>
+    <div style={{ width: '100%', minHeight: 200 }}>
+      <ResponsiveContainer width="100%" minHeight={200}>
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568"/>
-          <XAxis allowDataOverflow dataKey={finalXCol} type={isTime?'number':'category'} domain={xDomainFromClause || domainX || (isTime?['dataMin','dataMax']:undefined)} tickFormatter={isTime?(t:any)=>formatTimestamp(t,"HH:mm:ss.SS"):undefined} stroke="#9ca3af" tick={{fontSize:12}} label={xLabel?{value:xLabel,position:'insideBottom',fill:'#9ca3af',fontSize:12,offset:-5}:undefined}/>
-          <YAxis yAxisId="left" stroke="#9ca3af" tick={{fontSize:12}} tickFormatter={yFormatter} label={(yLabelFromClause || config.yAxisLabel)?{value:yLabelFromClause || config.yAxisLabel,angle:-90,position:'insideLeft',fill:'#9ca3af',fontSize:12}:undefined} scale={effectiveYScale === 'log' ? "log" : "auto"} domain={effectiveYScale === 'log' ? (domainY ?? (yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : [0.1,'dataMax'])) : (domainY ?? yDomainFromClause ?? config.yDomain) as any} allowDataOverflow/>
+          <XAxis allowDataOverflow dataKey={finalXCol} type={isTime?'number':'category'} domain={xDomainFromClause || domainX || (isTime?['dataMin','dataMax']:undefined)} tickFormatter={xTickFmt} scale={mapAxisScale(axisXClause)} stroke="#9ca3af" tick={{fontSize:12}} label={xLabel?{value:xLabel,position:'insideBottom',fill:'#9ca3af',fontSize:12,offset:-5}:undefined}/>
+          <YAxis yAxisId="left" stroke="#9ca3af" tick={{fontSize:12}} tickFormatter={yTickFmt ?? yFormatter} scale={mapAxisScale(axisYClause) ?? (effectiveYScale === 'log' ? "log" : "auto")} label={(yLabelFromClause || config.yAxisLabel)?{value:yLabelFromClause || config.yAxisLabel,angle:-90,position:'insideLeft',fill:'#9ca3af',fontSize:12}:undefined} domain={effectiveYScale === 'log' ? (domainY ?? (yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : [0.1,'dataMax'])) : (domainY ?? yDomainFromClause ?? config.yDomain) as any} allowDataOverflow/>
           {allY2.length>0 && <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" tick={{fontSize:12}} tickFormatter={y2Formatter} label={config.y2AxisLabel?{value:config.y2AxisLabel,angle:90,position:'insideRight',fill:'#82ca9d',fontSize:12}:undefined} scale={config.y2Scale === 'log' ? "log" : "auto"} domain={config.y2Scale === 'log' ? [0.1,'dataMax'] : config.y2Domain as any} allowDataOverflow/>}
           <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}} formatter={(v,n)=>[(allY2.includes(String(n)) ? y2Formatter : yFormatter)(v),String(n).replace(/_/g,' ')]} labelFormatter={isTime?(l)=>formatTimestamp(l,settings.timeFormat):undefined}/>
           {showLegend && <Legend wrapperStyle={{fontSize:"12px"}} formatter={v=>String(v).replace(/_/g,' ')} verticalAlign={legendPos === 'top' ? 'top' : legendPos === 'bottom' ? 'bottom' : 'middle'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'}/>}
