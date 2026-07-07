@@ -147,8 +147,8 @@ const CLAUSES: ClauseSpec[] = [
     { key: 'legend', regex: /(?<!\w)LEGEND\s+HIDDEN\s*$/i, processor: () => 'none' as LegendPosition },
     { key: 'legend', regex: /(?<!\w)LEGEND\s+AT\s+(RIGHT|LEFT|TOP|BOTTOM|NONE)\s*$/i, processor: (m) => m[1].toLowerCase() as LegendPosition },
     { key: 'palette', regex: /(?<!\w)PALETTE\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
-    { key: 'linkY', regex: /(?<!\w)LINK-Y\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)'|(\$[A-Za-z_][\w]*))\s*$/i, processor: (m) => m[1] ?? m[2] ?? m[3] },
-    { key: 'linkXY', regex: /(?<!\w)LINK-XY\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)'|(\$[A-Za-z_][\w]*))\s*$/i, processor: (m) => m[1] ?? m[2] ?? m[3] },
+    { key: 'linkY', regex: /(?<!\w)LINK[-_]Y\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)'|(\$[A-Za-z_][\w]*))\s*$/i, processor: (m) => m[1] ?? m[2] ?? m[3] },
+    { key: 'linkXY', regex: /(?<!\w)LINK[-_]XY\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)'|(\$[A-Za-z_][\w]*))\s*$/i, processor: (m) => m[1] ?? m[2] ?? m[3] },
     { key: 'linkScroll', regex: /(?<!\w)LINK[_-]SCROLL\s+(?:"([^"]*)"|'([^']*)'|([A-Za-z_][\w]*))\s*$/i, processor: (m) => m[1] ?? m[2] ?? m[3] },
     { key: 'tooltipColumns', regex: /(?<!\w)TOOLTIP\s+COLUMNS\s+\[([^\]]+)\]\s*$/i, processor: (m) => m[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean) },
     { key: 'onHoverTooltip', regex: /(?<!\w)ON\s+HOVER\s+TOOLTIP\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
@@ -157,8 +157,8 @@ const CLAUSES: ClauseSpec[] = [
     // DATASET <name> — references a cell alias view by name (bare or qualified).
     { key: 'dataset', regex: /(?<!\w)DATASET\s+([A-Za-z_][\w.-]*)\s*$/i, processor: (m) => m[1] },
     // AXIS-X / AXIS-Y — sub-clauses (DOMAIN, LABEL, TYPE, FORMAT) merge into the same axisX/axisY object.
-    { key: 'axisX', regex: new RegExp(`(?<!\\w)AXIS-X\\s+${AXIS_SUB.source}\\s*$`, 'i'), processor: buildAxisProcessor('axisX'), merge: true },
-    { key: 'axisY', regex: new RegExp(`(?<!\\w)AXIS-Y\\s+${AXIS_SUB.source}\\s*$`, 'i'), processor: buildAxisProcessor('axisY'), merge: true },
+    { key: 'axisX', regex: new RegExp(`(?<!\\w)AXIS[-_]X\\s+${AXIS_SUB.source}\\s*$`, 'i'), processor: buildAxisProcessor('axisX'), merge: true },
+    { key: 'axisY', regex: new RegExp(`(?<!\\w)AXIS[-_]Y\\s+${AXIS_SUB.source}\\s*$`, 'i'), processor: buildAxisProcessor('axisY'), merge: true },
     // LET — multiple LETs stack into a single record. Right-hand-side is a non-greedy expression captured up to end-of-string.
     {
         key: 'let',

@@ -254,4 +254,24 @@ describe('parsePlotCall — LINK-Y / LINK-XY one-var semantics', () => {
         expect(children[1].linkXY).toBe('$memDomain');
         expect(children[1].linkY).toBeUndefined();
     });
+
+    it('parses LINK_Y with underscore', () => {
+        const res = parsePlotCall('LINE_CHART X time Y v LINK_Y $ydom');
+        expect(res.linkY).toBe('$ydom');
+    });
+
+    it('parses LINK_XY with underscore', () => {
+        const res = parsePlotCall('LINE_CHART X time Y v LINK_XY $xy');
+        expect(res.linkXY).toBe('$xy');
+    });
+
+    it('parses AXIS_X sub-clause with underscore', () => {
+        const res = parsePlotCall('LINE_CHART X time Y v AXIS_X LABEL "T"');
+        expect(res.axisX?.label).toBe('T');
+    });
+
+    it('parses AXIS_Y sub-clause with underscore', () => {
+        const res = parsePlotCall('LINE_CHART X time Y v AXIS_Y TYPE log');
+        expect(res.axisY?.type).toBe('log');
+    });
 });
