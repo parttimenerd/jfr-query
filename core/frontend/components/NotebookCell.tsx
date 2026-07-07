@@ -921,6 +921,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         handleSegmentsUpdate(newSegments);
     }, [handleSegmentsUpdate]);
 
+    const handleStandalonePlotChangeAt = useCallback((segIdx: number, newConfig: string) => {
+        const newSegments = [...segmentsRef.current];
+        if (newSegments[segIdx]?.type === 'plot') {
+            newSegments[segIdx] = { type: 'plot', content: '\n' + newConfig + '\n' };
+            handleSegmentsUpdate(newSegments);
+        }
+    }, [handleSegmentsUpdate]);
 
     const handleRawContentChange = useCallback((newContent: string) => {
         const newSegments = tokenizeCellContent(newContent);
@@ -1271,13 +1278,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                         : [];
                                     const configToRender = config.trim() || 'TABLE()';
 
-                                    const handleStandalonePlotChange = (newConfig: string) => {
-                                        const newSegments = [...segmentsRef.current];
-                                        if (newSegments[capturedSegIdx]?.type === 'plot') {
-                                            newSegments[capturedSegIdx] = { type: 'plot', content: '\n' + newConfig + '\n' };
-                                            handleSegmentsUpdate(newSegments);
-                                        }
-                                    };
+                                    const handleStandalonePlotChange = (newConfig: string) => handleStandalonePlotChangeAt(capturedSegIdx, newConfig);
 
                                     if (!presenterMode) {
                                         items.push(
