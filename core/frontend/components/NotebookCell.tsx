@@ -1268,12 +1268,14 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
                                     // Resolve DATASET data for standalone plot.
                                     let standaloneData: any[] | null = null;
+                                    let standaloneDataset: string | null = null;
                                     try {
                                         const configToCheck = config.trim() || 'TABLE()';
                                         const expanded = expandPlotConstants(configToCheck);
                                         const firstConfig = expanded.expanded.split(/\n\s*\n/)[0].trim();
                                         const parsed2 = parsePlotCall(firstConfig);
                                         if (parsed2.dataset) {
+                                            standaloneDataset = parsed2.dataset;
                                             standaloneData = datasetResults[`standalone-${si}:${parsed2.dataset}`] ?? null;
                                         }
                                     } catch { /* no data */ }
@@ -1355,6 +1357,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                         allVariables={allVariables}
                                                     />
                                                 </div>
+                                            </div>
+                                        );
+                                    } else if (standaloneDataset && !standaloneIsCollapsed) {
+                                        items.push(
+                                            <div key={`standalone-result-${si}`}
+                                                className="rounded-md border border-gray-700/40 px-3 py-2 text-xs text-gray-500 italic">
+                                                Table <span className="font-mono text-gray-400">{standaloneDataset}</span> not found — check the DATASET name
                                             </div>
                                         );
                                     }
