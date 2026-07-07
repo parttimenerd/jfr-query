@@ -8,8 +8,6 @@ Open a notebook, drop a `.jfr` file, and start writing SQL cells that query the 
 
 - **Left sidebar** — file explorer, variable controls, schema browser, and AI chat.
 - **Main area** — the notebook itself: a stack of cells with SQL, plots, and Markdown.
-- **Right rail** — issues panel, dependency graph overlay, and cell metadata.
-- **Top bar** — recording selector, workspace globals, baseline attach.
 
 ## Cells
 

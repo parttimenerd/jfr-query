@@ -187,6 +187,25 @@ $window: [0, 1000]
 
 Notebook-level variables (`$$name`) are declared in the front matter `variables:` map, not in a variables block.
 
+## Standalone plot blocks
+
+A `plot` block that appears **before any SQL block** in the cell is a *standalone plot*. It fetches data directly from a DuckDB table or view using a `DATASET` clause, without needing a preceding SQL query:
+
+````
+```plot
+LINE_CHART(x: "startTime", y: ["heapUsed", "heapCommitted"])
+  DATASET heap-committed-vs-used
+  TITLE "Heap over time"
+```
+````
+
+- The `DATASET <name>` clause names any DuckDB table, view, or alias visible in the current session.
+- Standalone plots appear at the top of the cell, above any SQL blocks.
+- They update automatically when the underlying table changes (e.g. after a new JFR file is loaded).
+- Use `+ Add Plot` at the bottom of any cell to insert a standalone plot pre-filled with the first available table.
+
+Standalone plots support all the same plot types, inner arguments, and tail clauses as SQL-attached plots — except `ON` (no SQL query to reference).
+
 ## Rendering rules
 
 - Markdown outside code blocks is rendered as GFM.

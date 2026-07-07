@@ -177,13 +177,14 @@ SELECT P95(duration_ms) FROM gc
 - `recording_end()` — timestamp of the last event.
 - `relative_ms(ts)` — milliseconds since `recording_start()`.
 - `time_since(prev_ts, ts)` — elapsed time between two timestamps.
-- `time_bucket(ts, width_ms)` — bucket a timestamp into fixed-width windows.
+- `bucket_ms(ts, width_ms)` — bucket a timestamp into fixed-width windows of `width_ms` milliseconds.
 - `in_range(ts, t_start, t_end)` — boolean range test.
 
 ### Event & stack helpers
 
 - `EVENT_TYPE_LABEL(et)` — human-readable label for an event type id.
 - `EVENT_NAME_FOR_ID(id)` — event name for an event id.
+- `stack_frames(col)` — extracts frame list from a stack-trace column for use with FLAMEGRAPH.
 
 ### Introspection
 
