@@ -561,12 +561,28 @@ Tail clauses come after the closing paren of the plot type and each other, in an
 - `AXIS_Y TYPE LINEAR | LOG | TIME | BAND` — Y scale type.
 - `AXIS_Y FORMAT "fmt"` — Y tick format string.
 
-Multiple axis modifiers may be chained: `AXIS_Y DOMAIN [0, 100] LABEL "ms" TYPE LOG`.
+Multiple axis modifiers may be chained on a single `AXIS_Y` (or `AXIS_X`) line in any order:
+
+```
+AXIS_Y DOMAIN [0, 100] LABEL "ms" TYPE LOG
+AXIS_Y TYPE LOG LABEL "ms (log scale)"
+AXIS_Y LABEL "Duration" FORMAT ".2f"
+```
+
+The `FORMAT` string uses [d3-format](https://d3js.org/d3-format) syntax for numeric axes (e.g. `".2f"` = two decimal places, `",.0f"` = thousands separator, `".2s"` = SI prefix). For `TYPE TIME` axes, the format string uses `HH:mm:ss.SSS` tokens.
 
 ### Tooltips
 
-- `TOOLTIP COLUMNS [col1, col2, ...]` — restrict tooltip to specific columns.
-- `ON HOVER TOOLTIP "format"` — custom tooltip format string with `{column}` placeholders.
+- `TOOLTIP COLUMNS [col1, col2, ...]` — restrict the default tooltip to only the listed columns.
+- `ON HOVER TOOLTIP "format"` — custom tooltip format string. Use `{columnName}` placeholders for any column in the data row, including the X-axis column.
+
+Example:
+
+```plot
+BAR_CHART(x: "cause", y: ["avg_ms"])
+  ON HOVER TOOLTIP "Cause: {cause} — avg: {avg_ms} ms"
+  TOOLTIP COLUMNS [cause, avg_ms]
+```
 
 ### Constants
 

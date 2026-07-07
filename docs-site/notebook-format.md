@@ -38,7 +38,7 @@ The front matter is standard YAML between two `---` fences at the top of the fil
 | `variables` | map | Notebook-level variables, keyed by `$$name`. Values are strings, numbers, booleans, or ISO datetime strings. |
 | `views` | list of `{name, sql}` | Custom views available to every SQL cell. |
 | `macros` | list of `{name, sql}` | Custom macros available to every SQL cell. |
-| `cellConditions` | map | Visibility conditions per cell handle. Value is a SQL predicate. |
+| `cellConditions` | map | Visibility conditions per cell handle. Value is a SQL predicate. When the predicate returns a falsy value the cell collapses to a minimal stub instead of rendering its content. Re-evaluated whenever a dependency changes. |
 | `customSystemPrompt` | string | Custom AI system prompt for the chat panel. |
 
 ### Example
