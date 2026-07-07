@@ -68,7 +68,6 @@ The DSL is: SHAPE(param: value, ...) followed by optional tail clauses.
 
 Supported tail clauses (all uppercase, after the closing paren):
   TITLE "str"          — chart title
-  SUBTITLE "str"       — chart subtitle
   NAME "alias"         — name this plot so other plots can reference it
   WIDTH Npx            — fixed pixel width (e.g. WIDTH 600px)
   HEIGHT Npx           — fixed pixel height (e.g. HEIGHT 300px)

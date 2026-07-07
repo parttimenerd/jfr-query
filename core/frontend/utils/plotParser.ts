@@ -34,7 +34,6 @@ export interface ParsedPlotCall {
     linkScroll?: string; // group name
     tooltipColumns?: string[];
     onHoverTooltip?: string;
-    onClickNavigate?: string;
     brush?: BrushSpec;
     cellName?: string;
     let?: Record<string, string>;
@@ -153,7 +152,6 @@ const CLAUSES: ClauseSpec[] = [
     { key: 'linkScroll', regex: /(?<!\w)LINK[_-]SCROLL\s+(?:"([^"]*)"|'([^']*)'|([A-Za-z_][\w]*))\s*$/i, processor: (m) => m[1] ?? m[2] ?? m[3] },
     { key: 'tooltipColumns', regex: /(?<!\w)TOOLTIP\s+COLUMNS\s+\[([^\]]+)\]\s*$/i, processor: (m) => m[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean) },
     { key: 'onHoverTooltip', regex: /(?<!\w)ON\s+HOVER\s+TOOLTIP\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
-    { key: 'onClickNavigate', regex: /(?<!\w)ON\s+CLICK\s+NAVIGATE\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     { key: 'brush', regex: /(?<!\w)BRUSH\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)')\s+MODE\s+(X|Y|XY)\s*$/i, processor: (m): BrushSpec => ({ name: m[1] ?? m[2], mode: m[3].toLowerCase() as BrushSpec['mode'] }) },
     { key: 'cellName', regex: /(?<!\w)NAME\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     // DATASET <name> — references a cell alias view by name (bare or qualified).

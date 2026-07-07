@@ -16,7 +16,6 @@ export interface ParsedPlotCall {
     height?: string;
     zoom?: number;
     title?: string;
-    subtitle?: string;
     linkX?: [string, string];
     linkXMaster?: boolean;
     linkXClamp?: boolean;
@@ -203,10 +202,6 @@ function applyTails(result: ParsedPlotCall, tails: PlotNode[]): void {
         switch (key) {
             case 'title': {
                 if (arg) result.title = String(jsValue(arg));
-                break;
-            }
-            case 'subtitle': {
-                if (arg) result.subtitle = String(jsValue(arg));
                 break;
             }
             case 'name': {

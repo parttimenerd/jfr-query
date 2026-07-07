@@ -45,11 +45,6 @@ describe('parsePlotCall — new showcase clauses', () => {
         expect(p.onHoverTooltip).toBe('value={{cpu}}');
     });
 
-    it('parses ON CLICK NAVIGATE "..."', () => {
-        const p = parsePlotCall('LINE_CHART(x:"t",y:["c"]) ON CLICK NAVIGATE "/host/{{host}}"');
-        expect(p.onClickNavigate).toBe('/host/{{host}}');
-    });
-
     it('parses BRUSH "$var" MODE X', () => {
         const p = parsePlotCall('LINE_CHART(x:"t",y:["c"]) BRUSH "$sel" MODE X');
         expect(p.brush).toEqual({ name: '$sel', mode: 'x' });

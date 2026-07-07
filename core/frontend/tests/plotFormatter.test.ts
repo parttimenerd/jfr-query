@@ -42,7 +42,6 @@ const CASES: Case[] = [
 
     // ---- 31-40: tail keywords (uppercase form) ----
     { name: 'tail-title', in: 'table() title "My Title"', out: 'TABLE() TITLE "My Title"' },
-    { name: 'tail-subtitle', in: 'table() subtitle "Sub"', out: 'TABLE() SUBTITLE "Sub"' },
     { name: 'tail-name', in: 'table() name "x"', out: 'TABLE() NAME "x"' },
     { name: 'tail-width', in: 'table() width "500px"', out: 'TABLE() WIDTH "500px"' },
     { name: 'tail-height', in: 'table() height "300px"', out: 'TABLE() HEIGHT "300px"' },

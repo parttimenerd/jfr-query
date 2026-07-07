@@ -34,7 +34,7 @@ const KNOWN_SHAPES = new Set(Object.keys(SHAPE_NORMALIZE));
 // Tail keywords (uppercase form). These can follow a `)` in uppercase plot
 // calls and are *not* arguments.
 const UPPERCASE_TAIL_KEYWORDS = new Set([
-    'TITLE', 'SUBTITLE', 'NAME', 'ZOOM',
+    'TITLE', 'NAME', 'ZOOM',
     'WIDTH', 'HEIGHT', 'ON', 'DISABLED',
     'LINK_X', 'LINK_Y', 'LINK_XY', 'LINK_SCROLL',
 ]);
@@ -42,7 +42,7 @@ const UPPERCASE_TAIL_KEYWORDS = new Set([
 // Recognised lowercase tail keys (after `|`). Hyphenated `link-x` etc. are
 // recognised by the tokenizer as single idents.
 const LOWERCASE_TAIL_KEYS = new Set([
-    'title', 'subtitle', 'name', 'zoom', 'width', 'height',
+    'title', 'name', 'zoom', 'width', 'height',
     'on', 'disabled', 'link-x', 'link-y', 'link-xy', 'link-scroll',
 ]);
 
@@ -816,7 +816,7 @@ class PlotParser {
 
     private tailValueType(keyword: string): 'string' | 'number' | 'dimension' | 'identList' | 'linkArgs' {
         const u = keyword.toUpperCase();
-        if (u === 'TITLE' || u === 'SUBTITLE' || u === 'NAME') return 'string';
+        if (u === 'TITLE' || u === 'NAME') return 'string';
         if (u === 'ZOOM') return 'number';
         if (u === 'WIDTH' || u === 'HEIGHT') return 'dimension';
         if (u === 'ON') return 'identList';
@@ -912,7 +912,7 @@ class PlotParser {
             return node;
         }
 
-        // Other tails (TITLE, SUBTITLE, NAME, ZOOM, WIDTH, HEIGHT) — single value.
+        // Other tails (TITLE, NAME, ZOOM, WIDTH, HEIGHT) — single value.
         const v = this.parseValueWithDimensionFusion();
         if (v) {
             node.children.push(v);

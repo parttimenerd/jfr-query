@@ -182,10 +182,6 @@ describe('plotTokenize', () => {
             expect(firstKind('title')).toBe('ident');
         });
 
-        it('subtitle tokenizes as ident', () => {
-            expect(firstKind('subtitle')).toBe('ident');
-        });
-
         it('name tokenizes as ident', () => {
             expect(firstKind('name')).toBe('ident');
         });
@@ -1152,12 +1148,6 @@ describe('plotParse', () => {
             expect(lit?.literalValue).toBe('My Title');
         });
 
-        it('SUBTITLE tail parses', () => {
-            const call = firstChild('table() SUBTITLE "Sub"');
-            const tail = call.children.find(c => c.kind === 'tail');
-            expect(tail?.key).toBe('subtitle');
-        });
-
         it('NAME tail parses', () => {
             const call = firstChild('table() NAME "gc"');
             const tail = call.children.find(c => c.kind === 'tail');
@@ -1232,12 +1222,6 @@ describe('plotParse', () => {
             const tail = call.children.find(c => c.kind === 'tail');
             const lit = tail!.children.find(c => c.kind === 'literal');
             expect(lit?.literalValue).toBe('My Title');
-        });
-
-        it('lowercase pipe tail: | subtitle: "Sub"', () => {
-            const call = firstChild('table() | subtitle: "Sub"');
-            const tail = call.children.find(c => c.kind === 'tail');
-            expect(tail?.key).toBe('subtitle');
         });
 
         it('lowercase pipe tail: | name: gc', () => {
