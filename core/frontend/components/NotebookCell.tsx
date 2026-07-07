@@ -1473,7 +1473,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                         </div>
                     )}
                     {/* Drag handle to resize result panels */}
-                    {results && results.some(r => r) && (
+                    {(results?.some(r => r) || Object.keys(datasetResults).some(k => k.startsWith('standalone-'))) && (
                         <div onMouseDown={handleResultResizeStart} className="h-1.5 mt-0.5 cursor-row-resize rounded-full bg-gray-700 hover:bg-cyan-600/50 transition-colors" title="Drag to resize results" aria-label="Drag to resize results" />
                     )}
                 </div>
