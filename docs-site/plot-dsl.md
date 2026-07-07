@@ -547,6 +547,7 @@ Tail clauses come after the closing paren of the plot type and each other, in an
 ### Linking / brushing
 
 - `LINK_X($start, $end, [master], [clamp])` — link the X zoom range to variables `$start` and `$end`. Optional `master` marks this plot as the driver. Optional `clamp` prevents zooming beyond the data domain.
+- `LINK_Y($var)` — link Y axis zoom to a variable. *(not yet implemented)*
 - `BRUSH $var MODE X | Y | XY` — capture user brush selection into `$var`. `$var.lo` / `$var.hi` hold the range for X/Y; `$var.x_lo` / `$var.x_hi` / `$var.y_lo` / `$var.y_hi` for XY.
 
 ### Axes
