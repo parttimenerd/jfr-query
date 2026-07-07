@@ -92,7 +92,7 @@ describe('Notebook Parser', () => {
         expect(rebuilt).toBe(md);
     });
 
-    it('Fix2: plot block before any sql block is collected into standalonePlots (not stored at index -1)', () => {
+    it('Fix2: plot block before any sql block is now collected into standalonePlots (not dropped)', () => {
         const input = '```plot\nLINE_CHART(x: "t")\n```\n```sql\nSELECT 1\n```';
         const segments = tokenizeCellContent(input);
         const parsed = parseCellContent(segments);
