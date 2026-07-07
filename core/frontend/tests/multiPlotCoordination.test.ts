@@ -585,3 +585,17 @@ describe('applyPlot — plotBlockIndex segment selection', () => {
         expect(result).not.toContain('SCATTER_PLOT');
     });
 });
+
+import { shouldPublishLinkX } from '../utils/linkXMaster';
+
+describe('LINK_X master semantics', () => {
+  it('followers do not publish', () => {
+    expect(shouldPublishLinkX(['$a', '$b'], false)).toBe(false);
+  });
+  it('masters publish', () => {
+    expect(shouldPublishLinkX(['$a', '$b'], true)).toBe(true);
+  });
+  it('legacy peers publish', () => {
+    expect(shouldPublishLinkX(['$a', '$b'], undefined)).toBe(true);
+  });
+});

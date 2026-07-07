@@ -295,7 +295,7 @@ function applyLink(result: ParsedPlotCall, tail: PlotNode, key: 'linkX' | 'linkY
     if (vars.length >= 2) {
         (result as any)[key] = [vars[0], vars[1]];
         if (key === 'linkX') {
-            result.linkXMaster = opts.includes('master');
+            result.linkXMaster = opts.includes('master') ? true : undefined;
             result.linkXClamp = opts.includes('clamp');
         }
     } else if (vars.length === 1 && (key === 'linkY' || key === 'linkXY')) {

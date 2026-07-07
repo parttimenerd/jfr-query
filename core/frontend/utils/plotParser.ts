@@ -218,7 +218,7 @@ export const parsePlotCall = (configLine: string): ParsedPlotCall => {
         remainingConfig = remainingConfig.substring(0, linkXMatch.index).trim();
         if (variables.length >= 2) {
             result.linkX = [variables[0], variables[1]];
-            result.linkXMaster = options.includes('master');
+            result.linkXMaster = options.includes('master') ? true : undefined;
             result.linkXClamp = options.includes('clamp');
         }
     }

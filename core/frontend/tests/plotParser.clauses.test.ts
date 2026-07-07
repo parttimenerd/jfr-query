@@ -274,4 +274,15 @@ describe('parsePlotCall — LINK-Y / LINK-XY one-var semantics', () => {
         const res = parsePlotCall('LINE_CHART X time Y v AXIS_Y TYPE log');
         expect(res.axisY?.type).toBe('log');
     });
+
+    it('sets linkXMaster undefined when master keyword absent', () => {
+        const res = parsePlotCall('LINE_CHART X t Y v LINK_X($a, $b)');
+        expect(res.linkX).toEqual(['$a', '$b']);
+        expect(res.linkXMaster).toBeUndefined();
+    });
+
+    it('sets linkXMaster true when master keyword present', () => {
+        const res = parsePlotCall('LINE_CHART X t Y v LINK_X($a, $b, master)');
+        expect(res.linkXMaster).toBe(true);
+    });
 });

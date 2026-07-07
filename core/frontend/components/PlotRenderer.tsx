@@ -16,6 +16,7 @@ import { useScrollProducer } from '../hooks/useScrollProducer';
 import { plotBrushStore } from '../services/plotBrushStore';
 import type { BrushMode } from '../services/plotBrushStore';
 import { linkXStore } from '../services/linkXStore';
+import { shouldPublishLinkX } from '../utils/linkXMaster';
 
 /**
  * Split a multi-plot config string on blank lines, but only when the blank
@@ -203,11 +204,12 @@ const InteractivePlotWrapper: React.FC<{
     children: React.ReactElement;
     linkX: [string, string];
     linkXClamp: boolean;
+    linkXMaster: boolean | undefined;
     data: any[];
     xCol: string;
     allVariables: Record<string, string>;
     onVariableChange: (vars: Record<string, string>) => void;
-}> = ({ children, linkX, linkXClamp, data, xCol, allVariables, onVariableChange }) => {
+}> = ({ children, linkX, linkXClamp, linkXMaster, data, xCol, allVariables, onVariableChange }) => {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const [isLocked, setIsLocked] = useState(false);
     const [localDomain, setLocalDomain] = useState<[number, number] | null>(null);
@@ -266,7 +268,9 @@ const InteractivePlotWrapper: React.FC<{
         if (newMin >= newMax) return;
         const clamped = clampDomain(newMin, newMax, dataRangeRef.current, linkXClampRef.current);
         setLocalDomain(clamped);
-        linkXStore.publish(linkX, clamped);
+        if (shouldPublishLinkX(linkX, linkXMaster)) {
+            linkXStore.publish(linkX, clamped);
+        }
         if (isGestureEnd) {
             // Commit immediately on gesture end (pointer-up / area-select complete).
             if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
@@ -292,7 +296,9 @@ const InteractivePlotWrapper: React.FC<{
         const rawMax = allVariables[maxVar];
         if (rawMin === '' || rawMax === '') {
             setLocalDomain(null);
-            linkXStore.publish(linkX, null);
+            if (shouldPublishLinkX(linkX, linkXMaster)) {
+                linkXStore.publish(linkX, null);
+            }
         }
     }, [allVariables, linkX]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -422,7 +428,9 @@ const InteractivePlotWrapper: React.FC<{
                 {isZoomed && !isLocked && (
                     <button onClick={() => {
                         setLocalDomain(null);
-                        linkXStore.publish(linkX, null);
+                        if (shouldPublishLinkX(linkX, linkXMaster)) {
+                            linkXStore.publish(linkX, null);
+                        }
                         const toD = (v: string) => v.startsWith('$$') ? v : `$${v}`;
                         onVariableChange({ [linkX[0]]: '', [linkX[1]]: '', [toD(linkX[0])]: '', [toD(linkX[1])]: '' });
                     }}
@@ -925,7 +933,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                             if (leaf.linkX) {
                                 leafContent = (
                                     <PlotErrorBoundary>
-                                        <InteractivePlotWrapper linkX={leaf.linkX} linkXClamp={!!leaf.linkXClamp} data={leafData} xCol={(leafCfg as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
+                                        <InteractivePlotWrapper linkX={leaf.linkX} linkXClamp={!!leaf.linkXClamp} linkXMaster={leaf.linkXMaster} data={leafData} xCol={(leafCfg as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
                                             {leafPlotEl}
                                         </InteractivePlotWrapper>
                                     </PlotErrorBoundary>
@@ -987,7 +995,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                         mainConfig = parsedCall.mainConfig;
                         outerClauses = singleConfig.substring(mainConfig.length);
 
-                        const { width, height, zoom, title, linkX, linkXClamp, linkScroll } = parsedCall;
+                        const { width, height, zoom, title, linkX, linkXClamp, linkXMaster, linkScroll } = parsedCall;
                         const plotTypeName = normalizePlotName(mainConfig.match(/^(\w+)/)?.[1] || 'TABLE');
                         const reg = plotRegistry[plotTypeName];
                         if (!reg) throw new Error(`Unknown plot type "${plotTypeName}". Available types: ${Object.keys(plotRegistry).filter(k => k !== 'FLAME_GRAPH').join(', ')}.`);
@@ -1021,7 +1029,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                         if (linkX) {
                             plotContent = (
                                 <PlotErrorBoundary>
-                                    <InteractivePlotWrapper linkX={linkX} linkXClamp={!!linkXClamp} data={singlePlotData} xCol={(parsedConfig as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
+                                    <InteractivePlotWrapper linkX={linkX} linkXClamp={!!linkXClamp} linkXMaster={linkXMaster} data={singlePlotData} xCol={(parsedConfig as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
                                         {singlePlotEl}
                                     </InteractivePlotWrapper>
                                 </PlotErrorBoundary>
