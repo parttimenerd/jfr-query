@@ -18,6 +18,8 @@
  * `TemplatedMarkdown.tsx`.
  */
 
+import { formatTimestamp } from '../../utils/timeFormatter';
+
 export interface FormatSettings {
     /** Active timeFormat from notebook metadata (e.g. `HH:mm:ss`). */
     timeFormat?: string;
@@ -91,10 +93,11 @@ export const formatValue = (
         case 'float':
             return numIsValid ? formatFloat(num, settings.decimalPlaces ?? 2) : String(value);
         case 'time':
-            // For now defer to the JS Date stringifier; the existing
-            // `timeFormat` helpers in utils/ can be plugged in when wired.
-            try { return new Date(value as any).toISOString(); }
-            catch { return String(value); }
+            try {
+                return formatTimestamp(value as number, settings.timeFormat ?? 'HH:mm:ss.SSS');
+            } catch {
+                return String(value);
+            }
     }
 
     // No format hint — infer minimally.
