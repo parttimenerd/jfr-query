@@ -668,7 +668,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
     const { registerAlias, unregisterCell } = useCellAliasActions();
     const aliases = useCellAliases();
-    const { query: dbQuery, refreshSchema } = useContext(DataContext);
+    const { query: dbQuery, refreshSchema, schema } = useContext(DataContext);
     // Phase 5 — DATASET clause results, keyed by `<plotIndex>:<datasetName>`.
     const [datasetResults, setDatasetResults] = useState<Record<string, any[]>>({});
     const { awaitUpstream } = useExecutor();
@@ -971,10 +971,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         const segs = segmentsRef.current;
         const firstSqlIdx = segs.findIndex(s => s.type === 'sql');
         const insertAt = firstSqlIdx >= 0 ? firstSqlIdx : segs.length;
+        const defaultDataset = schema?.tables[0]?.name ?? schema?.views[0]?.name ?? 'GarbageCollection';
         const newSegs = [...segs];
         newSegs.splice(insertAt, 0,
             { type: 'markdown', content: '\n\n' } as CellSegment,
-            { type: 'plot', content: '\nTABLE() DATASET GarbageCollection\n' } as CellSegment,
+            { type: 'plot', content: `\nTABLE() DATASET ${defaultDataset}\n` } as CellSegment,
         );
         handleSegmentsUpdate(newSegs);
     };
@@ -1292,10 +1293,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                 isCollapsed={collapsedStates[`standalone-plot-${si}`] ?? false}
                                                 onToggle={() => toggleCollapse(`standalone-plot-${si}`)}
                                                 controls={
-                                                    <button onClick={() => { const ns = [...segmentsRef.current]; ns.splice(capturedSegIdx, 1); handleSegmentsUpdate(ns); }}
-                                                        className="p-0.5 rounded hover:bg-red-900/40" title="Delete plot" aria-label="Delete plot">
-                                                        <TrashIcon className="w-3.5 h-3.5 text-gray-400 hover:text-red-400" />
-                                                    </button>
+                                                    <>
+                                                        <button onClick={async () => { const f = await onFormatCode(config, 'plot'); if (f) handleStandalonePlotChangeAt(capturedSegIdx, f); }} title="Format plot" aria-label="Format plot" className="p-1.5 rounded-md">
+                                                            <DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/>
+                                                        </button>
+                                                        <button onClick={() => { const ns = [...segmentsRef.current]; ns.splice(capturedSegIdx, 1); handleSegmentsUpdate(ns); }}
+                                                            className="p-1.5 rounded-md" title="Delete plot" aria-label="Delete plot">
+                                                            <TrashIcon className="w-4 h-4 text-gray-400" />
+                                                        </button>
+                                                    </>
                                                 }
                                             >
                                                 {plotDataCols.length > 0 && (
@@ -1327,11 +1333,14 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                     if (standaloneData && !standaloneIsCollapsed) {
                                         items.push(
                                             <div key={`standalone-result-${si}`}
-                                                className="group/result rounded-md border border-gray-700/60 overflow-hidden relative"
-                                                style={{ minHeight: `${resultHeight}px` }}>
+                                                className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative"
+                                                style={{ height: `${resultHeight}px` }}>
+                                                <button title="Download as PNG" aria-label="Download as PNG" className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-standalone-${si}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-standalone-${si + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                </button>
                                                 <div id={`result-container-${cell.id}-standalone-${si}`}
                                                     className="flex-grow overflow-auto"
-                                                    style={{ minHeight: `${resultHeight}px` }}>
+                                                    style={{ minHeight: 200 }}>
                                                     <PlotRenderer
                                                         config={configToRender}
                                                         data={standaloneData}
