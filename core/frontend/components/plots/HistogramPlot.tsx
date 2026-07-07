@@ -5,6 +5,7 @@ import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
+import { PlotTooltip } from './PlotTooltip';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 
@@ -81,7 +82,7 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568"/>
                     <XAxis dataKey="range" stroke="#9ca3af" tick={{fontSize:12}} angle={-45} textAnchor="end" interval="preserveStartEnd" domain={domainX ?? config.xDomain ?? ['auto', 'auto']} tickFormatter={makeTickFormatter(clauses?.axisX) ?? undefined} scale={mapAxisScale(clauses?.axisX)} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined}/>
                     <YAxis stroke="#9ca3af" tick={{fontSize:12}} tickFormatter={makeTickFormatter(clauses?.axisY) ?? numberFormatter} label={{value: yLabelFromClause || 'Frequency', angle:-90, position:'insideLeft', fill:'#9ca3af'}} scale={mapAxisScale(clauses?.axisY) ?? (effectiveLogScale?"log":"auto")} domain={effectiveLogScale && yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : (yDomainFromClause ?? (effectiveLogScale?[0.1,'dataMax']:[0,'dataMax']))} allowDataOverflow/>
-                    <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}}/>
+                    <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}} content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />) : undefined}/>
                     <Bar dataKey="count" fill="#8884d8" isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>
                 </BarChart>
             </ResponsiveContainer>

@@ -7,6 +7,7 @@ import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn, findColumns, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
+import { PlotTooltip } from './PlotTooltip';
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
@@ -203,7 +204,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
     const chartChildren = [
         React.createElement(CartesianGrid, { key: 'grid', strokeDasharray: "3 3", stroke: "#4a5568" }),
         ...axisElements,
-        React.createElement(Tooltip, { key: 'tooltip', content: React.createElement(CustomTooltip, { formatter: numberFormatter }) }),
+        React.createElement(Tooltip, { key: 'tooltip', content: (clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => React.createElement(PlotTooltip, { ...props, onHoverTooltip: clauses?.onHoverTooltip, tooltipColumns: clauses?.tooltipColumns }) : React.createElement(CustomTooltip, { formatter: numberFormatter }) }),
         ...(showLegend ? [React.createElement(Legend as any, { key: 'legend', wrapperStyle: { fontSize: "12px" }, formatter: (v: string) => String(v).replace(/_/g, ' '), verticalAlign: legendPos === 'top' ? 'top' : 'bottom', align: legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center' })] : []),
         ...barElements,
         ...lineElements

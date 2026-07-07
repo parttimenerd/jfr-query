@@ -9,6 +9,7 @@ import { buildParserSpec, findColumn, getTimeValue } from '../../utils/plotUtils
 import { usePlotGestures } from '../../hooks/usePlotGestures';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
+import { PlotTooltip } from './PlotTooltip';
 
 interface Config {
   x: string;
@@ -133,6 +134,7 @@ const RangePlotComponent: React.FC<{
               return [numberFormatter(v), String(n).replace(/_/g, ' ')];
             }}
             labelFormatter={isTime ? (l) => formatTimestamp(l, settings.timeFormat) : undefined}
+            content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} labelFormatter={isTime ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined} />) : undefined}
           />
           {showLegend && <Legend
             wrapperStyle={{ fontSize: '12px' }}

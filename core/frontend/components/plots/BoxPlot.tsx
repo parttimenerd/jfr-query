@@ -7,6 +7,7 @@ import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
+import { PlotTooltip } from './PlotTooltip';
 
 interface BoxPlotConfig {
   category?: string;
@@ -167,8 +168,8 @@ const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimati
                     <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
                     <XAxis dataKey="category" stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={makeTickFormatter(clauses?.axisX) ?? undefined} scale={mapAxisScale(clauses?.axisX)} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined} />
                     <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={makeTickFormatter(clauses?.axisY) ?? numberFormatter} scale={mapAxisScale(clauses?.axisY)} domain={(domainY ?? yDomainFromClause) ?? ['dataMin', 'dataMax']} allowDataOverflow label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined} />
-                    <Tooltip 
-                        content={<CustomBoxPlotTooltip formatter={numberFormatter} />}
+                    <Tooltip
+                        content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />) : <CustomBoxPlotTooltip formatter={numberFormatter} />}
                         cursor={{ fill: 'rgba(130, 202, 157, 0.1)' }}
                         isAnimationActive={isAnimationActive}
                         animationDuration={animationDuration}

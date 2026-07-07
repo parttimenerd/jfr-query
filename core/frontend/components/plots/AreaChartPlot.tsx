@@ -11,6 +11,7 @@ import { warnDeprecated } from './deprecation';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { lttb } from '../../services/plot/decimation';
 import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
+import { PlotTooltip } from './PlotTooltip';
 
 const AREA_SOFT_CAP_PER_SERIES = 5000;
 
@@ -191,6 +192,7 @@ const AreaChartComponent: React.FC<{
             contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
             formatter={(v, n) => [yFormatter(v), String(n).replace(/_/g, ' ')]}
             labelFormatter={isTime ? (l) => formatTimestamp(l, settings.timeFormat) : undefined}
+            content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} labelFormatter={isTime ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined} />) : undefined}
           />
           {showLegend && <Legend wrapperStyle={{ fontSize: '12px' }} formatter={v => String(v).replace(/_/g, ' ')} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'} />}
           {allY.map((y, i) => {
