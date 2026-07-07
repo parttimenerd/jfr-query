@@ -968,11 +968,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         handleSegmentsUpdate(newSegments);
     }, [handleSegmentsUpdate]);
     const handleAddPlot = () => {
-        handleSegmentsUpdate([
-            ...segmentsRef.current,
-            { type: 'markdown', content: '\n\n' },
-            { type: 'plot', content: '\nTABLE() DATASET GarbageCollection\n' },
-        ]);
+        const segs = segmentsRef.current;
+        const firstSqlIdx = segs.findIndex(s => s.type === 'sql');
+        const insertAt = firstSqlIdx >= 0 ? firstSqlIdx : segs.length;
+        const newSegs = [...segs];
+        newSegs.splice(insertAt, 0,
+            { type: 'markdown', content: '\n\n' } as CellSegment,
+            { type: 'plot', content: '\nTABLE() DATASET GarbageCollection\n' } as CellSegment,
+        );
+        handleSegmentsUpdate(newSegs);
     };
     const handleTitleBlur = (newTitle: string) => { setIsEditingTitle(false); if (newTitle.trim() && newTitle !== title) { const introSegmentIndex = segments.findIndex(s=>s.type==='markdown'); if(introSegmentIndex!==-1){const newSegments=[...segments]; const intro=newSegments[introSegmentIndex]; if(intro.type==='if') return; const newContent=intro.content.replace(/^(?:#|##|###)\s*(.*)/,`## ${newTitle}`); newSegments[introSegmentIndex]={...intro, content:newContent}; handleSegmentsUpdate(newSegments);} }};
     const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { handleTitleBlur(editingTitleValue); } else if (e.key === 'Escape') { setIsEditingTitle(false); } };
