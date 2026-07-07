@@ -92,11 +92,13 @@ describe('Notebook Parser', () => {
         expect(rebuilt).toBe(md);
     });
 
-    it('Fix2: plot block before any sql block is silently dropped (not stored at index -1)', () => {
+    it('Fix2: plot block before any sql block is collected into standalonePlots (not stored at index -1)', () => {
         const input = '```plot\nLINE_CHART(x: "t")\n```\n```sql\nSELECT 1\n```';
         const segments = tokenizeCellContent(input);
         const parsed = parseCellContent(segments);
-        // The plot before any SQL is an orphan and must be dropped
+        // The plot before any SQL is standalone — collected, not dropped
+        expect(parsed.standalonePlots).toHaveLength(1);
+        expect(parsed.standalonePlots[0]).toBe('LINE_CHART(x: "t")');
         expect(parsed.plotBlocks.length).toBe(1);
         // The plot for the SQL block has no config (empty string), not the orphan
         expect(parsed.plotBlocks[0]).toBe('');
@@ -179,5 +181,56 @@ views:
         const rebuilt = reconstructNotebook(parsed);
         expect(rebuilt).not.toContain('params:');
         expect(rebuilt).not.toContain('includes:');
+    });
+
+    describe('standalone plots (no preceding SQL)', () => {
+        it('collects a standalone plot into standalonePlots', () => {
+            const input = '```plot\nTABLE() DATASET GarbageCollection\n```';
+            const segments = tokenizeCellContent(input);
+            const parsed = parseCellContent(segments);
+            expect(parsed.standalonePlots).toHaveLength(1);
+            expect(parsed.standalonePlots[0]).toBe('TABLE() DATASET GarbageCollection');
+            expect(parsed.sqlBlocks).toHaveLength(0);
+            expect(parsed.plotBlocks).toHaveLength(0);
+        });
+
+        it('standalone plot does not appear in plotBlocks', () => {
+            const input = '```plot\nTABLE() DATASET GarbageCollection\n```\n```sql\nSELECT 1\n```';
+            const segments = tokenizeCellContent(input);
+            const parsed = parseCellContent(segments);
+            expect(parsed.standalonePlots).toHaveLength(1);
+            expect(parsed.standalonePlots[0]).toBe('TABLE() DATASET GarbageCollection');
+            // The sql block has no following plot, so plotBlocks[0] = ''
+            expect(parsed.plotBlocks[0]).toBe('');
+        });
+
+        it('multiple standalone plots are all collected', () => {
+            const input = '```plot\nTABLE() DATASET GarbageCollection\n```\n```plot\nLINE_CHART(x: "t") DATASET HeapSnapshot\n```';
+            const segments = tokenizeCellContent(input);
+            const parsed = parseCellContent(segments);
+            expect(parsed.standalonePlots).toHaveLength(2);
+        });
+
+        it('standalone plot coexists with sql-attached plot', () => {
+            const input = '```sql\nSELECT 1\n```\n```plot\nTABLE()\n```\n```plot\nLINE_CHART() DATASET HeapSnapshot\n```';
+            const segments = tokenizeCellContent(input);
+            const parsed = parseCellContent(segments);
+            // TABLE() is attached to the SQL block
+            expect(parsed.plotBlocks[0]).toBe('TABLE()');
+            // LINE_CHART() DATASET comes after the sql-attached plot — it's a standalone
+            // (no second sql block to attach to)
+            expect(parsed.standalonePlots).toHaveLength(1);
+            expect(parsed.standalonePlots[0]).toBe('LINE_CHART() DATASET HeapSnapshot');
+        });
+
+        it('roundtrip: standalone plot survives reconstructCellContent', () => {
+            const input = '```plot\nTABLE() DATASET GarbageCollection\n```\n';
+            const segments = tokenizeCellContent(input);
+            const rebuilt = reconstructCellContent(segments);
+            expect(rebuilt).toContain('TABLE() DATASET GarbageCollection');
+            // Re-tokenize and re-parse to confirm no data loss
+            const reparsed = parseCellContent(tokenizeCellContent(rebuilt));
+            expect(reparsed.standalonePlots[0]).toBe('TABLE() DATASET GarbageCollection');
+        });
     });
 });

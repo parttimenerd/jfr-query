@@ -19,6 +19,8 @@ export interface ParsedContent {
     /** All plot blocks in document order with their associated SQL block index. */
     plotBlocksWithSqlIndex: Array<{ config: string; sqlIndex: number }>;
     conclusion: MarkdownSection | null;
+    /** Plot blocks with no preceding SQL block, collected in document order. */
+    standalonePlots: string[];
 }
 
 export type NotebookMetadata = NotebookMetadataType;
@@ -220,6 +222,8 @@ const stringifyFrontMatter = (metadata: NotebookMetadata): string => {
         if (parts.length > 0) parts.push(''); // Add separator
         parts.push('variables:');
         for (const [k, v] of Object.entries(metadata.variables)) {
+            // Skip placeholder variables that were never named/filled in.
+            if (!k || /^newVar\d*$/.test(k) && v === '') continue;
             parts.push(`  ${k}: '${String(v).replace(/'/g, "''")}'`);
         }
     }
@@ -372,6 +376,7 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
         plotAliases: [],
         plotBlocksWithSqlIndex: [],
         conclusion: null,
+        standalonePlots: [],
     };
     
     let firstCodeBlockIndex = segments.findIndex(s => s.type !== 'markdown');
@@ -457,13 +462,6 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
             result.queryAliasMaterialized.push(materialized);
             currentSqlIndex++;
         } else if (seg.type === 'plot') {
-            if (currentSqlIndex < 0) {
-                // No preceding SQL block - skip this orphaned plot block
-                continue;
-            }
-            while (result.plotBlocks.length <= currentSqlIndex) {
-                result.plotBlocks.push('');
-            }
             let plotContent = seg.content;
             let plotAlias: string | null = null;
 
@@ -477,9 +475,19 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
             if (plotLines.length > 0 && plotLines[0].trim() === '') plotLines.shift();
             if (plotLines.length > 0 && plotLines[plotLines.length - 1].trim() === '') plotLines.pop();
             const plotConfig = plotLines.join('\n');
-            result.plotBlocks[currentSqlIndex] = plotConfig;
-            result.plotAliases.push(plotAlias);
-            result.plotBlocksWithSqlIndex.push({ config: plotConfig, sqlIndex: currentSqlIndex });
+
+            if (currentSqlIndex < 0 || (result.plotBlocks[currentSqlIndex] !== undefined && result.plotBlocks[currentSqlIndex] !== '')) {
+                // No preceding SQL block, or the preceding SQL's plot slot is already filled:
+                // this is a standalone plot.
+                result.standalonePlots.push(plotConfig);
+            } else {
+                while (result.plotBlocks.length <= currentSqlIndex) {
+                    result.plotBlocks.push('');
+                }
+                result.plotBlocks[currentSqlIndex] = plotConfig;
+                result.plotAliases.push(plotAlias);
+                result.plotBlocksWithSqlIndex.push({ config: plotConfig, sqlIndex: currentSqlIndex });
+            }
         }
     }
 
