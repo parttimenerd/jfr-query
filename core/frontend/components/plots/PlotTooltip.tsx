@@ -27,8 +27,14 @@ const lookup = (payload: PlotTooltipEntry[], key: string): unknown => {
 
 const formatPlaceholders = (fmt: string, payload: PlotTooltipEntry[]): string =>
     fmt.replace(/\{([A-Za-z_][\w]*)\}/g, (_m, key: string) => {
-        const v = lookup(payload, key);
-        return v === undefined ? '' : String(v);
+        const fromPayload = lookup(payload, key);
+        if (fromPayload !== undefined) return String(fromPayload);
+        // Recharts passes the full data row as entry.payload — check there for X-axis columns too
+        for (const e of payload) {
+            const raw = (e as any).payload;
+            if (raw && key in raw) return String(raw[key]);
+        }
+        return '';
     });
 
 export const PlotTooltip: React.FC<PlotTooltipProps> = ({

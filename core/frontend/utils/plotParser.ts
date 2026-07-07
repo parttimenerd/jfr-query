@@ -114,23 +114,36 @@ type ClauseSpec = {
     merge?: boolean;
 };
 
-const AXIS_SUB = /(DOMAIN\s+(\[[^\]]+\])|LABEL\s+(?:"([^"]*)"|'([^']*)')|TYPE\s+(LINEAR|LOG|TIME|BAND)|FORMAT\s+(?:"([^"]*)"|'([^']*)'))/i;
+// One sub-clause token. Used both for the single-sub and multi-sub AXIS regexes.
+const AXIS_SUB_TOKEN = /(?:DOMAIN\s+(\[[^\]]+\])|LABEL\s+(?:"([^"]*)"|'([^']*)')|TYPE\s+(LINEAR|LOG|TIME|BAND)|FORMAT\s+(?:"([^"]*)"|'([^']*)'))/i;
 
-const buildAxisProcessor = (axis: 'axisX' | 'axisY') => (match: RegExpMatchArray, result: ParsedPlotCall) => {
-    // match[2] = DOMAIN bracketed expr, [3]/[4] = LABEL strings,
-    // [5] = TYPE keyword, [6]/[7] = FORMAT strings.
-    const existing = (result[axis] as AxisSpec | undefined) ?? {};
-    if (match[2]) {
-        const dom = parseDomainPair(match[2]);
-        if (dom) existing.domain = dom;
-    } else if (match[3] !== undefined || match[4] !== undefined) {
-        existing.label = match[3] ?? match[4];
-    } else if (match[5]) {
-        existing.type = match[5].toLowerCase() as AxisSpec['type'];
-    } else if (match[6] !== undefined || match[7] !== undefined) {
-        existing.format = match[6] ?? match[7];
+// Regex that matches AXIS_X/AXIS_Y followed by ONE OR MORE space-separated sub-clauses.
+// Captured group 1 = the entire sub-clause tail.
+const buildAxisRegex = (axis: 'X' | 'Y') =>
+    new RegExp(`(?<!\\w)AXIS[-_]${axis}\\s+((?:(?:DOMAIN\\s+\\[[^\\]]+\\]|LABEL\\s+(?:"[^"]*"|'[^']*')|TYPE\\s+(?:LINEAR|LOG|TIME|BAND)|FORMAT\\s+(?:"[^"]*"|'[^']*'))\\s*)+)$`, 'i');
+
+const applyAxisSubClauses = (existing: AxisSpec, tail: string): AxisSpec => {
+    // Iterate over all sub-clause tokens in the tail string.
+    const re = new RegExp(AXIS_SUB_TOKEN.source, 'gi');
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(tail)) !== null) {
+        if (m[1]) {
+            const dom = parseDomainPair(m[1]);
+            if (dom) existing.domain = dom;
+        } else if (m[2] !== undefined || m[3] !== undefined) {
+            existing.label = m[2] ?? m[3];
+        } else if (m[4]) {
+            existing.type = m[4].toLowerCase() as AxisSpec['type'];
+        } else if (m[5] !== undefined || m[6] !== undefined) {
+            existing.format = m[5] ?? m[6];
+        }
     }
     return existing;
+};
+
+const buildAxisProcessor = (axis: 'axisX' | 'axisY') => (match: RegExpMatchArray, result: ParsedPlotCall) => {
+    const existing = (result[axis] as AxisSpec | undefined) ?? {};
+    return applyAxisSubClauses(existing, match[1] ?? '');
 };
 
 // Regexes are anchored to the end of the string to be matched and stripped safely.
@@ -156,9 +169,9 @@ const CLAUSES: ClauseSpec[] = [
     { key: 'cellName', regex: /(?<!\w)NAME\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     // DATASET <name> — references a cell alias view by name (bare or qualified).
     { key: 'dataset', regex: /(?<!\w)DATASET\s+([A-Za-z_][\w.-]*)\s*$/i, processor: (m) => m[1] },
-    // AXIS-X / AXIS-Y — sub-clauses (DOMAIN, LABEL, TYPE, FORMAT) merge into the same axisX/axisY object.
-    { key: 'axisX', regex: new RegExp(`(?<!\\w)AXIS[-_]X\\s+${AXIS_SUB.source}\\s*$`, 'i'), processor: buildAxisProcessor('axisX'), merge: true },
-    { key: 'axisY', regex: new RegExp(`(?<!\\w)AXIS[-_]Y\\s+${AXIS_SUB.source}\\s*$`, 'i'), processor: buildAxisProcessor('axisY'), merge: true },
+    // AXIS-X / AXIS-Y — one or more sub-clauses (DOMAIN, LABEL, TYPE, FORMAT) in any order, all merged.
+    { key: 'axisX', regex: buildAxisRegex('X'), processor: buildAxisProcessor('axisX'), merge: true },
+    { key: 'axisY', regex: buildAxisRegex('Y'), processor: buildAxisProcessor('axisY'), merge: true },
     // LET — multiple LETs stack into a single record. Right-hand-side is a non-greedy expression captured up to end-of-string.
     {
         key: 'let',
