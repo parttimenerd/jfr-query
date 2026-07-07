@@ -1,11 +1,13 @@
 
-import React, { useRef, useMemo, useCallback } from 'react';
+import React, { useRef, useMemo, useCallback, useState, useEffect } from 'react';
 import type { NotebookCellData, NotebookMetadata } from '../types';
 import NotebookCell from './NotebookCell';
 import SettingsPanel from './SettingsPanel';
 import { PlusIcon } from './icons/PlusIcon';
 import SQLEditor from './SQLEditor';
 import { parseCellContent, tokenizeCellContent } from '../utils/notebookParser';
+import { cellHandle } from '../utils/cellHandle';
+import { resolveCellVisibility } from '../utils/cellVisibility';
 
 interface NotebookProps {
     notebookMarkdown: string;
@@ -59,6 +61,33 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     // Stable empty array — avoids creating a new reference on every render for
     // cells that have no results yet, which would cause useEffect deps to fire.
     const emptyResults = useMemo(() => [], []);
+
+    // cellConditions: evaluate each cell's SQL predicate to decide visibility.
+    const [cellVisibility, setCellVisibility] = useState<Record<string, boolean>>({});
+
+    useEffect(() => {
+        if (!metadata.cellConditions || Object.keys(metadata.cellConditions).length === 0) {
+            setCellVisibility({});
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            const next: Record<string, boolean> = {};
+            for (let idx = 0; idx < cells.length; idx++) {
+                const c = cells[idx];
+                const name = cellHandle(c, idx);
+                next[name] = await resolveCellVisibility(
+                    name,
+                    metadata.cellConditions,
+                    metadata.variables ?? {},
+                    onRunPreviewQuery,
+                );
+            }
+            if (!cancelled) setCellVisibility(next);
+        })();
+        return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cells, metadata.cellConditions, metadata.variables]);
 
     // B-161/cross-cell ON routing: build a map from SQL alias name → dataset so
     // plots in any cell can reference results from other cells via ON <alias>.
@@ -123,38 +152,51 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                             onRunPreviewQuery={onRunPreviewQuery}
                             isAiFeatureActive={isAiFeatureActive}
                         />
-                        {cells.map(cell => (
-                            <NotebookCell
-                                key={cell.id}
-                                cell={cell}
-                                allCells={cells}
-                                metadata={metadata}
-                                results={results[cell.id] ?? emptyResults}
-                                queryTimings={queryTimings?.[cell.id]}
-                                crossCellQueryRefs={crossCellQueryRefs}
-                                isAutoRunEnabled={isAutoRunEnabled}
-                                collapseTrigger={collapseTrigger}
-                                allCollapsed={allCollapsed}
-                                isAiFeatureActive={isAiFeatureActive}
-                                initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
-                                onCellCollapseChange={handleCellCollapseChange}
-                                clearResultsTrigger={clearResultsTrigger}
-                                onRunQuery={onRunQuery}
-                                onUpdateCell={onUpdateCell}
-                                onAddCellFromTool={onAddCellFromTool}
-                                onDeleteCell={onDeleteCell}
-                                onDeleteQueryBlock={onDeleteQueryBlock}
-                                onMoveCell={onMoveCell}
-                                onSuggestPlot={onSuggestPlot}
-                                onFormatCode={onFormatCode}
-                                onRunPreviewQuery={onRunPreviewQuery}
-                                onGlobalVariableClick={handleGlobalVariableClick}
-                                onMetadataChange={onMetadataChange}
-                                presenterMode={presenterMode}
-                                onPopChatToSidebar={onPopChatToSidebar}
-                                onNavigateRef={onNavigateRef}
-                            />
-                        ))}
+                        {cells.map((cell, idx) => {
+                            const name = cellHandle(cell, idx);
+                            const visible = cellVisibility[name] ?? true;
+                            if (!visible) {
+                                return (
+                                    <details key={cell.id} className="opacity-60 py-1">
+                                        <summary className="text-xs text-gray-400 cursor-pointer select-none">
+                                            {name} <span className="italic">(hidden by cellCondition)</span>
+                                        </summary>
+                                    </details>
+                                );
+                            }
+                            return (
+                                <NotebookCell
+                                    key={cell.id}
+                                    cell={cell}
+                                    allCells={cells}
+                                    metadata={metadata}
+                                    results={results[cell.id] ?? emptyResults}
+                                    queryTimings={queryTimings?.[cell.id]}
+                                    crossCellQueryRefs={crossCellQueryRefs}
+                                    isAutoRunEnabled={isAutoRunEnabled}
+                                    collapseTrigger={collapseTrigger}
+                                    allCollapsed={allCollapsed}
+                                    isAiFeatureActive={isAiFeatureActive}
+                                    initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
+                                    onCellCollapseChange={handleCellCollapseChange}
+                                    clearResultsTrigger={clearResultsTrigger}
+                                    onRunQuery={onRunQuery}
+                                    onUpdateCell={onUpdateCell}
+                                    onAddCellFromTool={onAddCellFromTool}
+                                    onDeleteCell={onDeleteCell}
+                                    onDeleteQueryBlock={onDeleteQueryBlock}
+                                    onMoveCell={onMoveCell}
+                                    onSuggestPlot={onSuggestPlot}
+                                    onFormatCode={onFormatCode}
+                                    onRunPreviewQuery={onRunPreviewQuery}
+                                    onGlobalVariableClick={handleGlobalVariableClick}
+                                    onMetadataChange={onMetadataChange}
+                                    presenterMode={presenterMode}
+                                    onPopChatToSidebar={onPopChatToSidebar}
+                                    onNavigateRef={onNavigateRef}
+                                />
+                            );
+                        })}
                     </div>
                 </div>
             </div>
@@ -185,38 +227,51 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                 onRunPreviewQuery={onRunPreviewQuery}
                 isAiFeatureActive={isAiFeatureActive}
             />
-            {cells.map(cell => (
-                <NotebookCell
-                    key={cell.id}
-                    cell={cell}
-                    allCells={cells}
-                    metadata={metadata}
-                    results={results[cell.id] ?? emptyResults}
-                    queryTimings={queryTimings?.[cell.id] ?? emptyResults as any}
-                    crossCellQueryRefs={crossCellQueryRefs}
-                    isAutoRunEnabled={isAutoRunEnabled}
-                    collapseTrigger={collapseTrigger}
-                    allCollapsed={allCollapsed}
-                    isAiFeatureActive={isAiFeatureActive}
-                    initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
-                    onCellCollapseChange={handleCellCollapseChange}
-                    clearResultsTrigger={clearResultsTrigger}
-                    onRunQuery={onRunQuery}
-                    onUpdateCell={onUpdateCell}
-                    onAddCellFromTool={onAddCellFromTool}
-                    onDeleteCell={onDeleteCell}
-                    onDeleteQueryBlock={onDeleteQueryBlock}
-                    onMoveCell={onMoveCell}
-                    onSuggestPlot={onSuggestPlot}
-                    onFormatCode={onFormatCode}
-                    onRunPreviewQuery={onRunPreviewQuery}
-                    onGlobalVariableClick={handleGlobalVariableClick}
-                    onMetadataChange={onMetadataChange}
-                    presenterMode={presenterMode}
-                    onPopChatToSidebar={onPopChatToSidebar}
-                    onNavigateRef={onNavigateRef}
-                />
-            ))}
+            {cells.map((cell, idx) => {
+                const name = cellHandle(cell, idx);
+                const visible = cellVisibility[name] ?? true;
+                if (!visible) {
+                    return (
+                        <details key={cell.id} className="opacity-60 py-1">
+                            <summary className="text-xs text-gray-400 cursor-pointer select-none">
+                                {name} <span className="italic">(hidden by cellCondition)</span>
+                            </summary>
+                        </details>
+                    );
+                }
+                return (
+                    <NotebookCell
+                        key={cell.id}
+                        cell={cell}
+                        allCells={cells}
+                        metadata={metadata}
+                        results={results[cell.id] ?? emptyResults}
+                        queryTimings={queryTimings?.[cell.id] ?? emptyResults as any}
+                        crossCellQueryRefs={crossCellQueryRefs}
+                        isAutoRunEnabled={isAutoRunEnabled}
+                        collapseTrigger={collapseTrigger}
+                        allCollapsed={allCollapsed}
+                        isAiFeatureActive={isAiFeatureActive}
+                        initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
+                        onCellCollapseChange={handleCellCollapseChange}
+                        clearResultsTrigger={clearResultsTrigger}
+                        onRunQuery={onRunQuery}
+                        onUpdateCell={onUpdateCell}
+                        onAddCellFromTool={onAddCellFromTool}
+                        onDeleteCell={onDeleteCell}
+                        onDeleteQueryBlock={onDeleteQueryBlock}
+                        onMoveCell={onMoveCell}
+                        onSuggestPlot={onSuggestPlot}
+                        onFormatCode={onFormatCode}
+                        onRunPreviewQuery={onRunPreviewQuery}
+                        onGlobalVariableClick={handleGlobalVariableClick}
+                        onMetadataChange={onMetadataChange}
+                        presenterMode={presenterMode}
+                        onPopChatToSidebar={onPopChatToSidebar}
+                        onNavigateRef={onNavigateRef}
+                    />
+                );
+            })}
             <div className="flex justify-center py-4">
                 <button
                     onClick={onAddCell}
