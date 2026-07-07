@@ -21,6 +21,8 @@ export interface ParsedContent {
     conclusion: MarkdownSection | null;
     /** Plot blocks with no preceding SQL block, collected in document order. */
     standalonePlots: string[];
+    /** One entry per plot segment in encounter order: true = standalone, false = SQL-attached. */
+    plotIsStandalone: boolean[];
 }
 
 export type NotebookMetadata = NotebookMetadataType;
@@ -377,6 +379,7 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
         plotBlocksWithSqlIndex: [],
         conclusion: null,
         standalonePlots: [],
+        plotIsStandalone: [],
     };
     
     let firstCodeBlockIndex = segments.findIndex(s => s.type !== 'markdown');
@@ -476,10 +479,10 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
             if (plotLines.length > 0 && plotLines[plotLines.length - 1].trim() === '') plotLines.pop();
             const plotConfig = plotLines.join('\n');
 
-            if (currentSqlIndex < 0 || (result.plotBlocks[currentSqlIndex] !== undefined && result.plotBlocks[currentSqlIndex] !== '')) {
-                // No preceding SQL block, or the preceding SQL's plot slot is already filled:
-                // this is a standalone plot.
+            if (currentSqlIndex < 0) {
+                // No preceding SQL block: this is a standalone plot.
                 result.standalonePlots.push(plotConfig);
+                result.plotIsStandalone.push(true);
             } else {
                 while (result.plotBlocks.length <= currentSqlIndex) {
                     result.plotBlocks.push('');
@@ -487,6 +490,7 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
                 result.plotBlocks[currentSqlIndex] = plotConfig;
                 result.plotAliases.push(plotAlias);
                 result.plotBlocksWithSqlIndex.push({ config: plotConfig, sqlIndex: currentSqlIndex });
+                result.plotIsStandalone.push(false);
             }
         }
     }

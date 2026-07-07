@@ -212,15 +212,14 @@ views:
         });
 
         it('standalone plot coexists with sql-attached plot', () => {
-            const input = '```sql\nSELECT 1\n```\n```plot\nTABLE()\n```\n```plot\nLINE_CHART() DATASET HeapSnapshot\n```';
+            const input = '```plot\nLINE_CHART() DATASET HeapSnapshot\n```\n```sql\nSELECT 1\n```\n```plot\nTABLE()\n```';
             const segments = tokenizeCellContent(input);
             const parsed = parseCellContent(segments);
-            // TABLE() is attached to the SQL block
-            expect(parsed.plotBlocks[0]).toBe('TABLE()');
-            // LINE_CHART() DATASET comes after the sql-attached plot — it's a standalone
-            // (no second sql block to attach to)
+            // LINE_CHART before sql → standalone
             expect(parsed.standalonePlots).toHaveLength(1);
             expect(parsed.standalonePlots[0]).toBe('LINE_CHART() DATASET HeapSnapshot');
+            // TABLE() after sql → attached
+            expect(parsed.plotBlocks[0]).toBe('TABLE()');
         });
 
         it('roundtrip: standalone plot survives reconstructCellContent', () => {

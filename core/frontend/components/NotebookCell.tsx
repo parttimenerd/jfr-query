@@ -409,6 +409,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         return next;
     }, [parsed.standalonePlots]);
 
+    const parsedPlotIsStandaloneRef = useRef<boolean[]>(parsed.plotIsStandalone);
+    const parsedPlotIsStandalone = useMemo(() => {
+        const next = parsed.plotIsStandalone;
+        const prev = parsedPlotIsStandaloneRef.current;
+        if (next.length === prev.length && next.every((v, i) => v === prev[i])) return prev;
+        parsedPlotIsStandaloneRef.current = next;
+        return next;
+    }, [parsed.plotIsStandalone]);
+
     // P7 — Notebook-wide plot scope (named plots, query refs, variables, brushes).
     // The scope is rebuilt only when cells BEFORE the current cell change or
     // allVariables changes. Changes to cells after this cell are invisible here.
@@ -1075,6 +1084,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                         const items: React.ReactNode[] = [];
                         let sqlIdx = -1;
                         let plotIdx = -1;
+                        let sqlAttachedPlotIdx = -1;
                         let standaloneIdx = -1;
 
                         segments.forEach((seg, segIdx) => {
@@ -1237,8 +1247,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 }
                             } else if (seg.type === 'plot') {
                                 plotIdx++;
-                                const plotInfo = parsedPlotBlocksWithSqlIndex[plotIdx];
-                                if (!plotInfo) {
+                                if (parsedPlotIsStandalone[plotIdx]) {
                                     // Standalone plot (no preceding SQL block).
                                     standaloneIdx++;
                                     const si = standaloneIdx;
@@ -1337,7 +1346,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                     }
                                     return;
                                 }
-                                const pi = plotIdx;
+                                sqlAttachedPlotIdx++;
+                                const plotInfo = parsedPlotBlocksWithSqlIndex[sqlAttachedPlotIdx];
+                                if (!plotInfo) {
+                                    // Defensive: should not happen when plotIsStandalone is aligned.
+                                    return;
+                                }
+                                const pi = plotInfo.sqlIndex;
                                 const config = plotInfo.config;
                                 const defaultSqlIndex = plotInfo.sqlIndex;
                                 // Capture segIdx for delete handler closure.
