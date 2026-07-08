@@ -1700,3 +1700,257 @@ test.describe.serial('Plot: PALETTE clause', () => {
     expect(fill, 'fill is truthy').toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 32: AXIS_Y FORMAT
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: AXIS_Y FORMAT', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('AF1. AXIS_Y FORMAT ".2f" renders tick labels with decimal point', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 15`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'LINE_CHART(x:"startTime", y:["duration_ms"])\n  TITLE "AXIS_Y FORMAT"\n  AXIS_Y LABEL "ms" FORMAT ".2f"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // ".2f" format produces tick labels with a decimal point (e.g. "25.00", "50.00")
+    const hasFormattedTick = await page.evaluate(() => {
+      const cs = [...document.querySelectorAll('div[id^="result-container-"]')];
+      const c = cs[cs.length - 1];
+      if (!c) return false;
+      const ticks = [...c.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value, .recharts-yAxis text')];
+      return ticks.some(t => /\d+\.\d+/.test(t.textContent ?? ''));
+    });
+    expect(hasFormattedTick, 'Y axis ticks formatted with decimal places').toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 33: BAR_CHART lineY overlay
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: BAR_CHART lineY overlay', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('BL1. BAR_CHART with lineY renders both bar and line series', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT cause, COUNT(*) AS cnt, AVG(duration_ms) AS avg_ms
+       FROM GarbageCollection GROUP BY cause ORDER BY cnt DESC LIMIT 5`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x:"cause", y:["cnt"], lineY:["avg_ms"])\n  TITLE "BAR with lineY"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // Both a bar series and a line series should be rendered
+    const hasBars = await container.locator('.recharts-bar').count();
+    const hasLine = await container.locator('.recharts-line').count();
+    expect(hasBars, 'bar series rendered').toBeGreaterThan(0);
+    expect(hasLine, 'line overlay rendered').toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 34: LET @constant in plot expressions
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: LET @constant', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('LC1. LET @name = value substitutes constant in tail clauses', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 10`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'LINE_CHART(x:"startTime", y:["duration_ms"])\n  TITLE "LET Test"\n  LET @thresh = 50\n  AXIS_Y DOMAIN [0, @thresh]');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // With AXIS_Y DOMAIN [0, 50] the Y axis max tick should be ≤ 50
+    const maxTick = await page.evaluate(() => {
+      const cs = [...document.querySelectorAll('div[id^="result-container-"]')];
+      const c = cs[cs.length - 1];
+      if (!c) return null;
+      const ticks = [...c.querySelectorAll('.recharts-yAxis text')].map(t => parseFloat(t.textContent ?? ''));
+      return ticks.filter(v => !isNaN(v)).reduce((a, b) => Math.max(a, b), 0);
+    });
+    expect(maxTick, 'Y axis capped at @thresh=50').toBeLessThanOrEqual(50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 35: Cell deletion workflow
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Notebook: cell deletion', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('CD1. Delete Cell button shows Yes/No confirmation then removes cell', async () => {
+    // Add a fresh cell to delete
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const countBefore = await page.evaluate(() =>
+      document.querySelectorAll('[data-cell-id]').length
+    );
+
+    // Find the newly added cell (last one with a Delete Cell button)
+    const newCellId = await page.evaluate(() => {
+      const cells = [...document.querySelectorAll('[data-cell-id]')];
+      // Last cell that has Delete Cell button
+      const withDelete = cells.filter(c =>
+        c.querySelector('[aria-label="Delete Cell"]')
+      );
+      return withDelete[withDelete.length - 1]?.getAttribute('data-cell-id') ?? null;
+    });
+    if (!newCellId) { test.skip(); return; }
+
+    // Scroll to cell and click Delete Cell
+    const deleteBtn = page.locator(`[data-cell-id="${newCellId}"] [aria-label="Delete Cell"]`).first();
+    await deleteBtn.scrollIntoViewIfNeeded();
+    await deleteBtn.click();
+    await page.waitForTimeout(300);
+
+    // Confirmation (Yes/No) should now be visible inside the cell
+    const yesBtn = page.locator(`[data-cell-id="${newCellId}"] button:has-text("Yes")`).first();
+    await expect(yesBtn).toBeVisible({ timeout: 3_000 });
+
+    // Click Yes to confirm deletion
+    await yesBtn.click();
+    await page.waitForTimeout(500);
+
+    const countAfter = await page.evaluate(() =>
+      document.querySelectorAll('[data-cell-id]').length
+    );
+    expect(countAfter, 'cell removed after confirming delete').toBe(countBefore - 1);
+
+    // Cell should no longer exist in the DOM
+    const stillExists = await page.evaluate((id) =>
+      !!document.querySelector(`[data-cell-id="${id}"]`), newCellId
+    );
+    expect(stillExists, 'deleted cell gone from DOM').toBe(false);
+  });
+
+  test('CD2. Clicking No on confirmation cancels the deletion', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const countBefore = await page.evaluate(() =>
+      document.querySelectorAll('[data-cell-id]').length
+    );
+
+    const newCellId = await page.evaluate(() => {
+      const cells = [...document.querySelectorAll('[data-cell-id]')];
+      const withDelete = cells.filter(c => c.querySelector('[aria-label="Delete Cell"]'));
+      return withDelete[withDelete.length - 1]?.getAttribute('data-cell-id') ?? null;
+    });
+    if (!newCellId) { test.skip(); return; }
+
+    const deleteBtn = page.locator(`[data-cell-id="${newCellId}"] [aria-label="Delete Cell"]`).first();
+    await deleteBtn.scrollIntoViewIfNeeded();
+    await deleteBtn.click();
+    await page.waitForTimeout(300);
+
+    // Click No to cancel
+    const noBtn = page.locator(`[data-cell-id="${newCellId}"] button:has-text("No")`).first();
+    await expect(noBtn).toBeVisible({ timeout: 3_000 });
+    await noBtn.click();
+    await page.waitForTimeout(300);
+
+    const countAfter = await page.evaluate(() =>
+      document.querySelectorAll('[data-cell-id]').length
+    );
+    expect(countAfter, 'cell count unchanged after cancel').toBe(countBefore);
+  });
+});
