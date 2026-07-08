@@ -33,14 +33,27 @@ const params: PlotParameter[] = [
 
 const parseConfig = createConfigParser<Config>(buildParserSpec(params));
 
+const MIN_LABEL_WIDTH = 30; // px — don't draw text if bar is too narrow
+
 /** Custom bar shape that renders only the "duration" portion, skipping the transparent offset. */
 const GanttBarShape = (props: any) => {
   const { x, y, width, height, fill, fillOpacity, payload } = props;
   if (!payload || payload.__isOffset) {
-    // Transparent offset bar — render nothing visible
     return React.createElement('rect', { x, y, width, height, fill: 'transparent' });
   }
-  return React.createElement('rect', { x, y, width, height, fill, fillOpacity: fillOpacity ?? 0.85, rx: 2 });
+  const rect = React.createElement('rect', { x, y, width, height, fill, fillOpacity: fillOpacity ?? 0.85, rx: 2 });
+  const label = payload.__label;
+  if (!label || width < MIN_LABEL_WIDTH) return rect;
+  const text = React.createElement('text', {
+    x: x + width / 2,
+    y: y + height / 2,
+    textAnchor: 'middle',
+    dominantBaseline: 'central',
+    fill: '#fff',
+    fontSize: Math.min(11, height - 2),
+    style: { pointerEvents: 'none', userSelect: 'none' },
+  }, label.length > 20 ? label.slice(0, 18) + '…' : label);
+  return React.createElement('g', {}, rect, text);
 };
 
 const GanttChartComponent: React.FC<{
