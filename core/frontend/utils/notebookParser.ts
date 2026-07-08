@@ -469,7 +469,7 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
                 const trimmed = line.trim();
                 if (trimmed === '' || trimmed.startsWith('#')) return;
                 // Accept both `$name = value` and bare `name = value` (auto-prepend $).
-                const match = trimmed.match(/^(\$(?!\$)\w+|\w+)\s*=\s*(.*)$/);
+                const match = trimmed.match(/^(\$(?!\$)\w+|\w+)\s*[=:]\s*(.*)$/);
                 if (match) {
                     const key = match[1].startsWith('$') ? match[1] : `$${match[1]}`;
                     result.variables[key] = match[2].trim();
