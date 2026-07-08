@@ -764,8 +764,22 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
             const gestureName = brushVarName.replace(/^\$/, '');
             const raw = vars[`${gestureName}.brush`];
             if (raw && typeof raw === 'object') {
-                const { lo, hi } = raw as { lo?: unknown; hi?: unknown };
-                if (lo != null && hi != null) {
+                const brushObj = raw as Record<string, unknown>;
+                const { lo, hi, x_lo, x_hi, y_lo, y_hi } = brushObj;
+                if (mode === 'xy' && x_lo != null && x_hi != null && y_lo != null && y_hi != null) {
+                    handleVariableChange({
+                        [`${brushVarName}.brush.x_lo`]: String(x_lo),
+                        [`${brushVarName}.brush.x_hi`]: String(x_hi),
+                        [`${brushVarName}.brush.y_lo`]: String(y_lo),
+                        [`${brushVarName}.brush.y_hi`]: String(y_hi),
+                    });
+                    plotBrushStore.publish({
+                        name: brushVarName,
+                        domain: [parseFloat(String(x_lo)), parseFloat(String(x_hi))],
+                        mode,
+                        cellName: cellNameRef.current,
+                    });
+                } else if (lo != null && hi != null) {
                     const loStr = String(lo);
                     const hiStr = String(hi);
                     handleVariableChange({

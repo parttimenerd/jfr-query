@@ -33,7 +33,6 @@ variables:
 ```variables
 $limit: 100
 $event_type: "GC"
-$brush: {lo: 0, hi: 1000}
 ```
 ````
 
@@ -53,8 +52,8 @@ Before a SQL query, plot expression, or conditional predicate is executed, jfr-q
 
 Struct-typed variables (e.g. from `BRUSH $range`) expose fields with dot notation:
 
-- `$range.lo`, `$range.hi` — X mode.
-- `$range.x_lo`, `$range.x_hi`, `$range.y_lo`, `$range.y_hi` — XY mode.
+- `$range.brush.lo`, `$range.brush.hi` — X or Y mode.
+- `$range.brush.x_lo`, `$range.brush.x_hi`, `$range.brush.y_lo`, `$range.brush.y_hi` — XY mode.
 
 ## Variable controls
 
@@ -111,7 +110,7 @@ LINE(x=timestamp, y=duration_ms)
 ```
 ```sql
 -- alias selected
-SELECT * FROM gc WHERE timestamp BETWEEN $sel.lo AND $sel.hi
+SELECT * FROM gc WHERE timestamp BETWEEN $sel.brush.lo AND $sel.brush.hi
 ```
 ```plot
 TABLE() ON selected
