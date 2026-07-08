@@ -1322,3 +1322,381 @@ test.describe.serial('Plot: BRUSH MODE X', () => {
     expect(hasSelectBox, 'brush selection overlay visible after drag').toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 26: BAR_CHART layout variants (stacked, grouped, horizontal)
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: BAR_CHART layout variants', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('BA1. BAR_CHART layout:stacked renders without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT bucket_ms(startTime, 10000) AS ts, cause, COUNT(*) AS cnt
+       FROM GarbageCollection GROUP BY ts, cause ORDER BY ts`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x:"ts", y:["cnt"], color:"cause", layout:"stacked")\n  TITLE "Stacked Bar"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+  });
+
+  test('BA2. BAR_CHART layout:grouped renders without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT cause, COUNT(*) AS cnt FROM GarbageCollection GROUP BY cause ORDER BY cnt DESC LIMIT 5`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x:"cause", y:["cnt"], layout:"grouped")\n  TITLE "Grouped Bar"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+  });
+
+  test('BA3. BAR_CHART horizontal:true renders without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT cause, COUNT(*) AS cnt FROM GarbageCollection GROUP BY cause ORDER BY cnt DESC LIMIT 5`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x:"cause", y:["cnt"], horizontal:true)\n  TITLE "Horizontal Bar"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+    // Horizontal bar uses a BarChart with layout="vertical" in recharts,
+    // which renders bar rectangles just like a normal bar chart
+    const hasBars = await container.locator('.recharts-bar').count();
+    expect(hasBars, 'bar elements rendered').toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 27: GANTT with color column
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: GANTT color column', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('GC1. GANTT with color= column renders colored bars without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT startTime, endTime, cause AS lane, cause AS color_col
+       FROM GarbageCollection ORDER BY startTime LIMIT 8`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'GANTT(start:"startTime", end:"endTime", lane:"lane", color:"color_col")\n  TITLE "GANTT Color"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    await expect(container.locator('text=GANTT Color')).toBeVisible({ timeout: 5_000 });
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 28: AXIS_X LABEL + DOMAIN
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: AXIS_X LABEL and DOMAIN', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('AX1. AXIS_X LABEL renders the label text in SVG', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT cause, COUNT(*) AS cnt FROM GarbageCollection GROUP BY cause ORDER BY cnt DESC LIMIT 5`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x:"cause", y:["cnt"])\n  TITLE "AXIS_X Label Test"\n  AXIS_X LABEL "GC Cause"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // The AXIS_X label is rendered as an SVG <text> element
+    const hasLabel = await page.evaluate(() => {
+      const cs = [...document.querySelectorAll('div[id^="result-container-"]')];
+      const c = cs[cs.length - 1];
+      if (!c) return false;
+      return [...c.querySelectorAll('text')].some(t => t.textContent?.trim() === 'GC Cause');
+    });
+    expect(hasLabel, 'AXIS_X label text in SVG').toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 29: LEGEND AT RIGHT / TOP
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: LEGEND AT RIGHT and TOP', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('LR1. LEGEND AT RIGHT renders legend without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT cause, COUNT(*) AS cnt FROM GarbageCollection GROUP BY cause`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x:"cause", y:["cnt"])\n  TITLE "Legend Right"\n  LEGEND AT RIGHT');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+    const legendCount = await container.locator('.recharts-legend-wrapper').count();
+    expect(legendCount, 'legend wrapper present').toBeGreaterThan(0);
+  });
+
+  test('LR2. LEGEND AT TOP renders legend without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT cause, COUNT(*) AS cnt FROM GarbageCollection GROUP BY cause`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x:"cause", y:["cnt"])\n  TITLE "Legend Top"\n  LEGEND AT TOP');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+    const legendCount = await container.locator('.recharts-legend-wrapper').count();
+    expect(legendCount, 'legend wrapper present').toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 30: ZOOM clause
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: ZOOM clause', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('ZM1. ZOOM 1.5 applies scale transform to the inner chart div', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 10`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'LINE_CHART(x:"startTime", y:["duration_ms"])\n  TITLE "Zoom Test"\n  ZOOM 1.5');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // PlotRenderer wraps content in: <div style="width:66.67%;...transform:scale(1.5);...">
+    const hasScale = await page.evaluate(() => {
+      const cs = [...document.querySelectorAll('div[id^="result-container-"]')];
+      const c = cs[cs.length - 1];
+      if (!c) return false;
+      return [...c.querySelectorAll('div[style]')].some(d =>
+        (d.getAttribute('style') || '').includes('scale(1.5)')
+      );
+    });
+    expect(hasScale, 'scale(1.5) transform applied').toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 31: PALETTE clause
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: PALETTE clause', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('PL1. PALETTE "dark2" produces non-default bar fill colour', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT cause, COUNT(*) AS cnt FROM GarbageCollection GROUP BY cause`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x:"cause", y:["cnt"])\n  TITLE "Palette dark2"\n  PALETTE "dark2"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // dark2 first colour is #1b9e77 — not the default category10 #8884d8
+    const fill = await page.evaluate(() => {
+      const cs = [...document.querySelectorAll('div[id^="result-container-"]')];
+      const c = cs[cs.length - 1];
+      if (!c) return null;
+      const rect = c.querySelector('.recharts-bar-rectangle path, .recharts-rectangle');
+      return rect ? (rect as SVGElement).getAttribute('fill') : null;
+    });
+    expect(fill, 'palette fill applied').not.toBe('#8884d8');
+    expect(fill, 'fill is truthy').toBeTruthy();
+  });
+});
