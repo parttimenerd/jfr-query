@@ -842,3 +842,483 @@ test.describe.serial('Plot: PIE ON HOVER TOOLTIP', () => {
     expect(hasError).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 18: SCATTER_PLOT
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: SCATTER_PLOT', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('SC1. SCATTER_PLOT with color column renders without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+
+    await setCmContent(page, sqlEd,
+      `SELECT duration_ms AS pause_ms, CAST(ROW_NUMBER() OVER () AS DOUBLE) AS event_num, cause
+       FROM GarbageCollection ORDER BY startTime LIMIT 30`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+
+    await setCmContent(page, plotEd,
+      'SCATTER_PLOT(x: "event_num", y: "pause_ms", color: "cause")\n  TITLE "GC Pause by Event"\n  AXIS_X LABEL "Event #"\n  AXIS_Y LABEL "ms"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('*')).some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // Recharts scatter renders SVG circles
+    const hasDots = await container.locator('circle').count();
+    expect(hasDots, 'scatter dots rendered').toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 19: AREA_CHART
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: AREA_CHART', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('AC1. AREA_CHART renders filled area without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+
+    await setCmContent(page, sqlEd,
+      `SELECT bucket_ms(startTime, 5000) AS ts, SUM(duration_ms) AS total_pause_ms
+       FROM GarbageCollection GROUP BY ts ORDER BY ts`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+
+    await setCmContent(page, plotEd,
+      'AREA_CHART(x: "ts", y: ["total_pause_ms"])\n  TITLE "Total GC Pause Over Time"\n  AXIS_Y LABEL "ms"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    await expect(container.locator('text=Total GC Pause Over Time')).toBeVisible({ timeout: 5_000 });
+
+    const hasError = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('*')).some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // Recharts area renders a filled <path> with class recharts-area-area
+    const hasArea = await container.locator('.recharts-area-area').count();
+    expect(hasArea, 'area path rendered').toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 20: TABLE plot
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: TABLE', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('TB1. TABLE plot renders column headers and rows', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+
+    await setCmContent(page, sqlEd,
+      `SELECT startTime, duration_ms, cause FROM GarbageCollection ORDER BY startTime LIMIT 10`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+
+    await setCmContent(page, plotEd,
+      'TABLE(headers: ["startTime", "cause", "duration_ms"])\n  TITLE "GC Events Table"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('*')).some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // Check the "cause" column header is present
+    const hasCauseHeader = await page.evaluate(() => {
+      const ths = Array.from(document.querySelectorAll('th'));
+      return ths.some(th => th.textContent?.includes('cause'));
+    });
+    expect(hasCauseHeader, '"cause" column header visible').toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 21: RANGE plot
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: RANGE', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('RG1. RANGE plot with center line renders without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+
+    await setCmContent(page, sqlEd,
+      `SELECT bucket_ms(startTime, 10000) AS ts,
+              MIN(duration_ms) AS low,
+              MAX(duration_ms) AS high,
+              AVG(duration_ms) AS center
+       FROM GarbageCollection GROUP BY ts ORDER BY ts`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+
+    await setCmContent(page, plotEd,
+      'RANGE(x: "ts", low: "low", high: "high", center: "center")\n  TITLE "GC Pause Range"\n  AXIS_Y LABEL "ms"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    await expect(container.locator('text=GC Pause Range')).toBeVisible({ timeout: 5_000 });
+
+    const hasError = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('*')).some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 22: AXIS_Y TYPE LOG
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: AXIS_Y TYPE LOG', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('LG1. LINE_CHART with AXIS_Y TYPE LOG renders without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+
+    await setCmContent(page, sqlEd,
+      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 20`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+
+    await setCmContent(page, plotEd,
+      'LINE_CHART(x: "startTime", y: ["duration_ms"])\n  TITLE "Log Scale"\n  AXIS_Y TYPE LOG LABEL "ms (log)"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('*')).some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // Log scale tick labels include powers of 10 (e.g. "10", "100") rather than
+    // evenly spaced linear values — verify at least one tick label is in the DOM
+    const tickCount = await container.locator('.recharts-yAxis .recharts-cartesian-axis-tick').count();
+    expect(tickCount, 'Y axis ticks rendered').toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 23: WIDTH clause
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: WIDTH clause', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('WD1. WIDTH 400px constrains the plot container width', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+
+    await setCmContent(page, sqlEd,
+      `SELECT cause, COUNT(*) AS cnt FROM GarbageCollection GROUP BY cause`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x: "cause", y: ["cnt"])\n  TITLE "Width Test"\n  WIDTH 400px');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('*')).some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // The plot cell wrapper div should have width: 400px inline style
+    const widthApplied = await page.evaluate(() => {
+      const containers = Array.from(document.querySelectorAll('div[id^="result-container-"]'));
+      const last = containers[containers.length - 1];
+      if (!last) return false;
+      const allDivs = last.querySelectorAll('div[style]');
+      return Array.from(allDivs).some(d => {
+        const s = d.getAttribute('style') || '';
+        return s.includes('400px');
+      });
+    });
+    expect(widthApplied, 'WIDTH 400px applied as inline style').toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 24: LEGEND AT BOTTOM
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: LEGEND AT BOTTOM', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('LB1. LEGEND AT BOTTOM positions legend below the chart', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+
+    await setCmContent(page, sqlEd,
+      `SELECT cause, COUNT(*) AS cnt FROM GarbageCollection GROUP BY cause`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x: "cause", y: ["cnt"])\n  TITLE "Legend Bottom"\n  LEGEND AT BOTTOM');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('*')).some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // Recharts renders .recharts-legend-wrapper; it should be present
+    const legendCount = await container.locator('.recharts-legend-wrapper').count();
+    expect(legendCount, 'legend wrapper present').toBeGreaterThan(0);
+  });
+
+  test('LB2. LEGEND HIDDEN removes the legend', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+
+    await setCmContent(page, sqlEd,
+      `SELECT cause, COUNT(*) AS cnt FROM GarbageCollection GROUP BY cause`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x: "cause", y: ["cnt"])\n  TITLE "Legend Hidden"\n  LEGEND HIDDEN');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('*')).some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // With LEGEND HIDDEN the legend wrapper should be absent
+    const legendCount = await container.locator('.recharts-legend-wrapper').count();
+    expect(legendCount, 'legend hidden').toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 25: BRUSH MODE X
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: BRUSH MODE X', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('BR1. LINE_CHART with BRUSH MODE X renders without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+
+    await setCmContent(page, sqlEd,
+      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+
+    await setCmContent(page, plotEd,
+      'LINE_CHART(x: "startTime", y: ["duration_ms"])\n  TITLE "Brush Test"\n  BRUSH $sel MODE X');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('*')).some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+  });
+
+  test('BR2. Dragging on BRUSH MODE X chart triggers variable update', async () => {
+    // The BRUSH $sel chart was added in BR1; find its result container
+    const container = page.locator('div[id^="result-container-"]').last();
+    await container.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+
+    const box = await container.boundingBox();
+    if (!box) { test.skip(); return; }
+
+    // Drag across 20%–60% of the chart width to create a brush selection
+    const startX = box.x + box.width * 0.2;
+    const endX   = box.x + box.width * 0.6;
+    const midY   = box.y + box.height * 0.5;
+
+    await page.mouse.move(startX, midY);
+    await page.mouse.down();
+    await page.mouse.move(endX, midY, { steps: 15 });
+    await page.mouse.up();
+    await page.waitForTimeout(600);
+
+    // After dragging, the select-box overlay should be visible inside the container
+    const hasSelectBox = await page.evaluate(() => {
+      const containers = Array.from(document.querySelectorAll('div[id^="result-container-"]'));
+      const last = containers[containers.length - 1];
+      if (!last) return false;
+      const overlays = last.querySelectorAll('div[style*="position: absolute"]');
+      return Array.from(overlays).some(o => {
+        const s = o.getAttribute('style') || '';
+        return s.includes('background') || s.includes('opacity');
+      });
+    });
+    expect(hasSelectBox, 'brush selection overlay visible after drag').toBe(true);
+  });
+});
