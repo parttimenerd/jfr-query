@@ -616,6 +616,20 @@ const ScrollSyncWrapper: React.FC<{ group: string | null; children: React.ReactN
 };
 
 
+/**
+ * Merge multiple named query-source datasets into a single flat array.
+ * When sources.length > 1, each row gets a `__source` string column.
+ * When sources.length === 1, the single dataset is returned as-is.
+ */
+export function mergeDatasets(sources: Array<{ ref: string; data: any[] }>): any[] {
+    if (sources.length === 0) return [];
+    if (sources.length === 1) return sources[0].data;
+    return sources.flatMap(({ ref, data }) =>
+        data.map(row => ({ ...row, __source: ref }))
+    );
+}
+
+
 interface PlotRendererProps {
     config: string;
     data: any[] | null;
@@ -721,13 +735,19 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
      * Falls back to the primary `data` prop if the ref doesn't resolve.
      */
     const resolveLeafData = (on: string[] | undefined): any[] => {
-        if (on && on.length > 0 && dataByQueryRef) {
-            const ref = on[0].replace(/^#/, '');
+        if (!on || on.length === 0 || !dataByQueryRef) return data ?? [];
+        const sources: Array<{ ref: string; data: any[] }> = [];
+        for (const rawRef of on) {
+            const ref = rawRef.replace(/^#/, '');
             const asNum = parseInt(ref, 10);
-            if (!isNaN(asNum) && dataByQueryRef[asNum] != null) return dataByQueryRef[asNum];
-            if (dataByQueryRef[ref] != null) return dataByQueryRef[ref];
+            if (!isNaN(asNum) && dataByQueryRef[asNum] != null) {
+                sources.push({ ref, data: dataByQueryRef[asNum] });
+            } else if (dataByQueryRef[ref] != null) {
+                sources.push({ ref, data: dataByQueryRef[ref] });
+            }
         }
-        return data ?? [];
+        if (sources.length === 0) return data ?? [];
+        return mergeDatasets(sources);
     };
 
     // Keep the last successfully-rendered plot content so we can show it while the
