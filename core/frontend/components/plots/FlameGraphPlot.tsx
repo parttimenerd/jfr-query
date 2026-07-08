@@ -459,9 +459,11 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
     const r: FlameGraphNodeData = { name: 'root', value: 0, children: [] };
     let totalValue = 0;
     for (const row of data) {
-      const stack = (row[framesCol] || '').split(';');
+      const rawFrames = row[framesCol];
+      if (!rawFrames) continue;
+      const stack = Array.isArray(rawFrames) ? rawFrames.map(String) : String(rawFrames).split(';');
       const valueNum = Number(row[valueCol]);
-      if (isNaN(valueNum) || !row[framesCol]) continue;
+      if (isNaN(valueNum)) continue;
       totalValue += valueNum;
       let cur: FlameGraphNodeData = r;
       for (const frame of stack) {
