@@ -1,7 +1,7 @@
 import React, { useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { EditorState, Compartment, Extension, Annotation } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, dropCursor, highlightActiveLine, lineNumbers } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, selectAll } from '@codemirror/commands';
 import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
 import { searchKeymap } from '@codemirror/search';
 import { editorHighlight, editorTheme } from './theme';
@@ -183,6 +183,9 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
       // effects. No-op when no orchestrator is wired or when the toggle is off.
       aiGhostTextExtension,
       keymap.of([
+        // Intercept Ctrl-A / Cmd-A before defaultKeymap so it selects all text
+        // within this editor only — not across all cells.
+        { key: 'Mod-a', run: selectAll },
         ...defaultKeymap,
         ...historyKeymap,
         ...searchKeymap,
@@ -211,7 +214,12 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
             // which leads to "Maximum update depth exceeded" when the component
             // tree is complex (e.g. a cell with multiple SQL blocks).
             const newValue = update.state.doc.toString();
-            queueMicrotask(() => { onChangeRef.current?.(newValue); });
+            // setTimeout(0) rather than queueMicrotask: microtasks can still
+            // fire within React's concurrent-mode reconciliation pass when
+            // keystrokes arrive faster than frames, causing "Maximum update
+            // depth exceeded". A macrotask (setTimeout) guarantees we're past
+            // React's current flush before calling setState.
+            setTimeout(() => { onChangeRef.current?.(newValue); }, 0);
           }
         }
         if (update.focusChanged && !update.view.hasFocus && onBlurRef.current) {
