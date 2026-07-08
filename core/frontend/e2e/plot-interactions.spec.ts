@@ -1954,3 +1954,246 @@ test.describe.serial('Notebook: cell deletion', () => {
     expect(countAfter, 'cell count unchanged after cancel').toBe(countBefore);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 36: SCATTER_PLOT size (bubble chart)
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: SCATTER_PLOT size (bubble)', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('SB1. SCATTER_PLOT with size= column renders circle markers', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT duration_ms AS pause_ms,
+              CAST(ROW_NUMBER() OVER () AS DOUBLE) AS ev,
+              duration_ms AS sz,
+              cause
+       FROM GarbageCollection ORDER BY startTime LIMIT 20`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'SCATTER_PLOT(x:"ev", y:"pause_ms", size:"sz", color:"cause")\n  TITLE "Bubble Chart"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // Bubble chart still renders as circles in recharts scatter
+    const circleCount = await container.locator('circle').count();
+    expect(circleCount, 'bubble circles rendered').toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 37: AREA_CHART stacked layout
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: AREA_CHART stacked', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('AS1. AREA_CHART layout:stacked renders multiple area series', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT bucket_ms(startTime, 10000) AS ts,
+              SUM(duration_ms) AS g1_evac,
+              COUNT(*) AS g1_hum
+       FROM GarbageCollection GROUP BY ts ORDER BY ts`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'AREA_CHART(x:"ts", y:["g1_evac","g1_hum"], layout:"stacked")\n  TITLE "Stacked Area"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+    await expect(container.locator('text=Stacked Area')).toBeVisible({ timeout: 5_000 });
+
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // Two stacked areas = two recharts-area-area paths
+    const areaCount = await container.locator('.recharts-area-area').count();
+    expect(areaCount, 'two stacked area paths').toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 38: LINE_CHART connectNulls
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: LINE_CHART connectNulls', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('CN1. LINE_CHART connectNulls:true renders without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 10`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'LINE_CHART(x:"startTime", y:["duration_ms"], connectNulls:true)\n  TITLE "connectNulls"');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // Line path should be present
+    const lineCount = await container.locator('.recharts-line-curve').count();
+    expect(lineCount, 'line curve rendered').toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 39: AXIS_X TYPE BAND
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: AXIS_X TYPE BAND', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('AB1. AXIS_X TYPE BAND renders categorical axis without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT cause, COUNT(*) AS cnt FROM GarbageCollection GROUP BY cause ORDER BY cnt DESC LIMIT 5`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'BAR_CHART(x:"cause", y:["cnt"])\n  TITLE "AXIS_X BAND"\n  AXIS_X TYPE BAND');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    const tickCount = await container.locator('.recharts-xAxis .recharts-cartesian-axis-tick').count();
+    expect(tickCount, 'X axis ticks rendered').toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 40: LINK_Y zoom variable
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: LINK_Y', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('LY1. LINE_CHART with LINK_Y renders without error', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 15`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'LINE_CHART(x:"startTime", y:["duration_ms"])\n  TITLE "LINK_Y Test"\n  LINK_Y($y_zoom)');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+  });
+});
