@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec } from '../../utils/plotUtils';
+import type { ParsedPlotCall } from '../../utils/plotParser';
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -444,8 +445,9 @@ const parseConfig = createConfigParser<FlameGraphConfig>(buildParserSpec(params)
 
 const CANVAS_THRESHOLD = 2000;
 
-const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; domainX?: [any, any]; }> = ({ config, data }) => {
+const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; domainX?: [any, any]; clauses?: ParsedPlotCall; }> = ({ config, data, clauses }) => {
   const { frames: framesCol, value: valueCol, direction = 'down', minFrameWidth = 0.1, search: initialSearch } = config;
+  const containerHeight = clauses?.height ? parseInt(clauses.height, 10) : undefined;
   const [searchTerm, setSearchTerm] = useState(initialSearch ?? '');
   const [zoomStack, setZoomStack] = useState<FlameGraphNodeData[]>([]);
   const [hoveredName, setHoveredName] = useState<string | null>(null);
@@ -551,7 +553,7 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
   }, [zoomStack.length, contextMenu]);
 
   return (
-    <div className="w-full h-full flex flex-col bg-gray-900" onClick={() => contextMenu && setContextMenu(null)}>
+    <div className="w-full h-full flex flex-col bg-gray-900" style={containerHeight ? { height: containerHeight } : undefined} onClick={() => contextMenu && setContextMenu(null)}>
       {/* Toolbar */}
       <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-gray-700 flex-wrap">
         {/* Back button + Breadcrumbs */}

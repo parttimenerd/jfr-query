@@ -7,6 +7,7 @@ import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { topN } from '../../services/plot/decimation';
+import { PlotTooltip } from './PlotTooltip';
 
 const PIE_SOFT_CAP = 12;
 
@@ -73,8 +74,8 @@ const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnima
         : String(name);
 
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-      <ResponsiveContainer minHeight={200}>
+    <div style={{ width: '100%', minHeight: 200 }}>
+      <ResponsiveContainer width="100%" minHeight={200}>
         <PieChart>
           <Pie
             data={chartData}
@@ -92,7 +93,16 @@ const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnima
           >
             {chartData.map((_, index) => <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />)}
           </Pie>
-          <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} itemStyle={{ color: '#e5e7eb' }} formatter={(value: number) => formatNumber(value, settings.decimalPlaces)} />
+          <Tooltip
+            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
+            itemStyle={{ color: '#e5e7eb' }}
+            formatter={(value: number) => formatNumber(value, settings.decimalPlaces)}
+            content={
+              (clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0))
+                ? (props: any) => <PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />
+                : undefined
+            }
+          />
           {showLegend && <Legend wrapperStyle={{fontSize: "12px"}} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'}/>}
         </PieChart>
       </ResponsiveContainer>

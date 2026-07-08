@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec } from '../../utils/plotUtils';
+import { buildParserSpec, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
+import { PlotTooltip } from './PlotTooltip';
 
 interface HeatmapConfig {
   x: string;
@@ -24,6 +25,8 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
   const { x, y, value: valueCol } = config;
   const xLabelFromClause = clauses?.axisX?.label;
   const yLabelFromClause = clauses?.axisY?.label;
+  const legendPos = clauses?.legend;
+  const showLegend = legendPos !== 'none' && legendPos !== undefined;
 
   const { chartData, xLabels, yLabels, min, max } = useMemo(() => {
     const xLabels = [...new Set(data.map(item => item[x]))].sort();
@@ -61,8 +64,8 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
   }
 
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
-      <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+    <div style={{ width: '100%', minHeight: 200 }}>
+      <ResponsiveContainer width="100%" minHeight={200}>
         <ScatterChart margin={{ top: 20, right: 30, bottom: 60, left: 80 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
           <XAxis
@@ -93,10 +96,15 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
             width={80}
             label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined}
           />
-          <Tooltip 
-            cursor={{ strokeDasharray: '3 3' }} 
+          <Tooltip
+            cursor={{ strokeDasharray: '3 3' }}
             contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
             itemStyle={{ color: '#e5e7eb' }}
+            content={
+              (clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0))
+                ? (props: any) => <PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />
+                : undefined
+            }
             formatter={(value, name, props) => [props.payload[valueCol], valueCol]}
             labelFormatter={(label, payload) => {
                 if(payload && payload[0]?.payload) return `${x}: ${payload[0].payload[x]}, ${y}: ${payload[0].payload[y]}`;
@@ -106,6 +114,13 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
             isAnimationActive={isAnimationActive}
             animationDuration={animationDuration}
           />
+          {showLegend && (
+            <Legend
+              wrapperStyle={{ fontSize: '12px' }}
+              verticalAlign={legendPos === 'top' ? 'top' : 'bottom'}
+              align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'}
+            />
+          )}
           <Scatter data={chartData} shape="square" legendType='none' isAnimationActive={isAnimationActive} animationDuration={animationDuration}>
              {chartData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={colorScale(entry.z)} />

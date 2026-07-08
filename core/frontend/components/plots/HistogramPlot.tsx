@@ -2,7 +2,7 @@ import React, { useMemo, useContext } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec } from '../../utils/plotUtils';
+import { buildParserSpec, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 import { PlotTooltip } from './PlotTooltip';
@@ -40,6 +40,8 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
     const yDomainFromClause = clauses?.axisY?.domain as [any, any] | undefined;
     const xLabelFromClause = clauses?.axisX?.label;
     const yLabelFromClause = clauses?.axisY?.label;
+    const DEFAULT_HISTOGRAM_COLORS = ['#8884d8'];
+    const colors = getPaletteColors(clauses?.palette, DEFAULT_HISTOGRAM_COLORS);
 
     const chartData = useMemo(() => {
         const values = data.map(r => parseFloat(r[config.x])).filter(v => !isNaN(v));
@@ -83,7 +85,7 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
                     <XAxis dataKey="range" stroke="#9ca3af" tick={{fontSize:12}} angle={-45} textAnchor="end" interval="preserveStartEnd" domain={domainX ?? config.xDomain ?? ['auto', 'auto']} tickFormatter={makeTickFormatter(clauses?.axisX) ?? undefined} scale={mapAxisScale(clauses?.axisX)} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined}/>
                     <YAxis stroke="#9ca3af" tick={{fontSize:12}} tickFormatter={makeTickFormatter(clauses?.axisY) ?? numberFormatter} label={{value: yLabelFromClause || 'Frequency', angle:-90, position:'insideLeft', fill:'#9ca3af'}} scale={mapAxisScale(clauses?.axisY) ?? (effectiveLogScale?"log":"auto")} domain={effectiveLogScale && yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : (yDomainFromClause ?? (effectiveLogScale?[0.1,'dataMax']:[0,'dataMax']))} allowDataOverflow/>
                     <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}} content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />) : undefined}/>
-                    <Bar dataKey="count" fill="#8884d8" isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>
+                    <Bar dataKey="count" fill={colors[0]} isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>
                 </BarChart>
             </ResponsiveContainer>
         </div>
