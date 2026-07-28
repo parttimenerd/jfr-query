@@ -299,11 +299,11 @@ describe('getTimeValue', () => {
         expect(getTimeValue(epochSeconds)).toBeCloseTo(epochSeconds * 1000, 0);
     });
 
-    it('does not multiply a plain 10-digit integer by 1000 (it is already ms)', () => {
-        // An integer 10-digit number is ambiguous but we treat it as ms (not seconds)
-        // because seconds would only be ~year 2001-2033; those come as floats from DuckDB
-        const tenDigitMs = 1716574783; // integer, no fractional part
-        expect(getTimeValue(tenDigitMs)).toBe(tenDigitMs);
+    it('multiplies a plain 10-digit integer by 1000 (epoch seconds → ms)', () => {
+        // A 10-digit integer represents epoch-seconds (e.g. 1716574783 = May 2024).
+        // DuckDB returns TIMESTAMP as fractional floats; integer form indicates seconds.
+        const tenDigitSec = 1716574783;
+        expect(getTimeValue(tenDigitSec)).toBe(tenDigitSec * 1000);
     });
 });
 

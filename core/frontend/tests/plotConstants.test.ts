@@ -67,8 +67,8 @@ describe('expandPlotConstants — error cases', () => {
         const r = expandPlotConstants('LET @x = 1\nLET @x = 2\nF(p: @x)');
         expect(r.errors.length).toBe(1);
         expect(r.errors[0]).toMatch(/redefinition of @x/);
-        // Second definition wins
-        expect(r.expanded).toBe('F(p: 2)');
+        // First definition wins; redefinition is silently ignored after the error.
+        expect(r.expanded).toBe('F(p: 1)');
     });
 
     it('error message includes line number', () => {

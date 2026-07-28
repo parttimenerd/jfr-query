@@ -45,8 +45,8 @@ describe('isDurationLike — B-113: upper cap raised to 1e12', () => {
         expect(isDurationLike('duration', { duration: -1 })).toBe(false);
     });
 
-    it('rejects zero', () => {
-        expect(isDurationLike('duration', { duration: 0 })).toBe(false);
+    it('accepts zero (zero is a valid duration value)', () => {
+        expect(isDurationLike('duration', { duration: 0 })).toBe(true);
     });
 
     it('accepts fractional-second JFR duration (0.012 s = 12 ms)', () => {

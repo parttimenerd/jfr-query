@@ -70,9 +70,8 @@ describe('runBtwCall', () => {
 
     it('parses zero-hint fence as a clean success (no escalation)', async () => {
         // An empty-hints fence is still a successful parse — `parseBtwHintsFromText`
-        // returns [] but it found the fence. Today's runBtwCall treats hints.length === 0
-        // as a miss and escalates; this test pins that behavior so future tuning is
-        // intentional.
+        // returns [] but it found the fence. Zero hints means nothing to act on,
+        // so no tier escalation occurs.
         const svc = mockServiceWithResponses([
             '```jfr-btw\n{ "hints": [] }\n```',
             '```jfr-btw\n{ "hints": [] }\n```',
@@ -85,7 +84,7 @@ describe('runBtwCall', () => {
             visibility: 'full',
             tier: 'basic',
         });
-        expect(out.finalTier).toBe('advanced');
+        expect(out.finalTier).toBe('basic');
         expect(out.hints).toEqual([]);
     });
 });

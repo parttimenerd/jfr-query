@@ -27,8 +27,8 @@ describe('Duration Parser', () => {
         expect(parseDuration('1h')).toBe(3600000);
     });
 
-    it('returns null for zero value (explicitly returns null when total is 0)', () => {
-        expect(parseDuration('0ms')).toBeNull();
+    it('returns 0 for zero value (zero is a valid parse result)', () => {
+        expect(parseDuration('0ms')).toBe(0);
     });
 
     it('handles whitespace variants', () => {
