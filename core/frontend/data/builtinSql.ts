@@ -1349,7 +1349,7 @@ SELECT
     g.startTime AS "Time",
     h."when" AS "Phase",
     h.heapUsed / (1024.0 * 1024.0) AS "Used MB",
-    h.heapCommitted / (1024.0 * 1024.0) AS "Committed MB"
+    h."heapSpace$committedSize" / (1024.0 * 1024.0) AS "Committed MB"
 FROM GCHeapSummary h
 JOIN GarbageCollection g ON g.gcId = h.gcId
 ORDER BY g.startTime`,
