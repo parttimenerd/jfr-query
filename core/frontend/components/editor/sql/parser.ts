@@ -630,7 +630,41 @@ class Parser {
                 continue;
             }
             if (this.isKw('NOT') && (this.isKw('LIKE', 1) || this.isKw('ILIKE', 1) || this.isKw('IN', 1) || this.isKw('BETWEEN', 1))) {
-                this.advance(); // NOT — fall through to next iter
+                this.advance(); // NOT
+                // Re-enter the comparison loop body for the following operator so
+                // the positive form is built, then wrap it in a unaryExpr for NOT.
+                // We do this by falling into a mini-inline dispatch rather than
+                // `continue` (which would discard the NOT from the AST).
+                let positive: Node | null = null;
+                if (this.isKw('LIKE') || this.isKw('ILIKE') || this.isKw('GLOB') || this.isKw('REGEXP')) {
+                    this.advance();
+                    const right = this.parseConcat();
+                    positive = makeNode('binaryExpr', null, [left, right], this.source);
+                } else if (this.isKw('IN')) {
+                    this.advance();
+                    if (this.eatPunct('(')) {
+                        const items: Node[] = [];
+                        if (!this.isPunctTok(')')) {
+                            do { items.push(this.parseExpression()); } while (this.eatPunct(','));
+                        }
+                        this.eatPunct(')');
+                        positive = makeNode('binaryExpr', null, [left, makeNode('list', null, items, this.source)], this.source);
+                    } else {
+                        const right = this.parseConcat();
+                        positive = makeNode('binaryExpr', null, [left, right], this.source);
+                    }
+                } else if (this.isKw('BETWEEN')) {
+                    this.advance();
+                    const lo = this.parseConcat();
+                    if (this.isKw('AND')) {
+                        this.advance();
+                        const hi = this.parseConcat();
+                        positive = makeNode('binaryExpr', null, [left, lo, hi], this.source);
+                    } else {
+                        positive = makeNode('binaryExpr', null, [left, lo], this.source);
+                    }
+                }
+                if (positive) left = makeNode('unaryExpr', null, [positive], this.source);
                 continue;
             }
             if (this.isKw('LIKE') || this.isKw('ILIKE') || this.isKw('GLOB') || this.isKw('REGEXP')) {
