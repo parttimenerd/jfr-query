@@ -656,6 +656,8 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                         });
                         if (proposal.kind === 'auto-read') {
                             setProposals(prev => applyApprovalAction(prev, { type: 'approve', id: chunk.id }));
+                            approvalResolvers.current.get(chunk.id)?.resolve();
+                            approvalResolvers.current.delete(chunk.id);
                         }
                     }
                 } else if (chunk.kind === 'tool_result') {

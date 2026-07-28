@@ -222,7 +222,8 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
         // so renamed or removed aliases don't accumulate as stale entries.
         const slotKey = `${cellId}::${sqlIndex}`;
         const prevSlot = slotOwnership.current[slotKey];
-        if (prevSlot && prevSlot.qualKey !== qualKey) {
+        const prevMaterialized = aliasesRef.current[prevSlot?.qualKey ?? '']?.materialized ?? false;
+        if (prevSlot && (prevSlot.qualKey !== qualKey || prevMaterialized !== materialized)) {
             const prevObjectKind = aliasesRef.current[prevSlot.qualKey]?.materialized ? 'TABLE' : 'VIEW';
             if (prevSlot.qualKey.includes('.')) {
                 const dotIdx = prevSlot.qualKey.indexOf('.');

@@ -157,9 +157,9 @@ export class GeminiProvider implements IAiProvider {
                 config: { systemInstruction, temperature: 0 }
             })
         );
-        return response.text.trim();
+        return response.text != null ? response.text.trim() : null;
     }
-    
+
     async getSuggestPlot(systemInstruction: string, sql: string, model: string = 'gemini-2.5-flash'): Promise<string | null> {
         const response: GenerateContentResponse = await this.handleApiCall(() =>
             this.ai.models.generateContent({
@@ -168,7 +168,7 @@ export class GeminiProvider implements IAiProvider {
                 config: { systemInstruction, temperature: 0 }
             })
         );
-        return response.text.trim();
+        return response.text != null ? response.text.trim() : null;
     }
 
     async getPlotFixSuggestion(systemInstruction: string, model: string = 'gemini-2.5-flash'): Promise<AIPlotFixResponse> {
