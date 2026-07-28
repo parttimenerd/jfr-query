@@ -223,9 +223,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         setChannels(prev => prev.map(c => c.id === activeChannelId ? { ...c, messages: updater(c.messages) } : c));
     }, [activeChannelId]);
 
-    const addChannel = useCallback((label: string, initial?: ChatMessage[], id?: string) => {
+    const addChannel = useCallback((label?: string, initial?: ChatMessage[], id?: string) => {
         const newId = id ?? `channel-${Date.now()}`;
-        setChannels(prev => [...prev, { id: newId, label, messages: initial ?? initialConversation, fromInline: !!id }]);
+        setChannels(prev => {
+            const channelLabel = label ?? `Channel ${prev.length + 1}`;
+            return [...prev, { id: newId, label: channelLabel, messages: initial ?? initialConversation, fromInline: !!id }];
+        });
         setActiveChannelId(newId);
         return newId;
     }, []);
@@ -1120,7 +1123,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                 <div className="flex justify-between items-center gap-2">
                     <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2"><SparklesIcon className="w-5 h-5 text-yellow-400"/>AI Assistant</h2>
                     <div className="flex items-center gap-1">
-                        <button onClick={() => addChannel(`Channel ${channels.length + 1}`)} title="New chat channel" aria-label="New chat channel" className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-md"><PlusIcon className="w-4 h-4"/></button>
+                        <button onClick={() => addChannel()} title="New chat channel" aria-label="New chat channel" className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-md"><PlusIcon className="w-4 h-4"/></button>
                         <button onClick={handleReset} title="Reset Conversation" aria-label="Reset Conversation" className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-md"><ArrowCounterclockwiseIcon className="w-4 h-4"/></button>
                     </div>
                 </div>

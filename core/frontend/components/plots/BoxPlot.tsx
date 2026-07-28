@@ -89,7 +89,7 @@ const Box = (props: any) => {
             <line x1={x + width * 0.25} y1={yMax} x2={x + width * 0.75} y2={yMax} stroke="#8884d8" />
             <line x1={x + width * 0.25} y1={yMin} x2={x + width * 0.75} y2={yMin} stroke="#8884d8" />
             {/* Box */}
-            <rect x={x} y={yQ3} width={width} height={height} fill="#8884d8" stroke="#fff" />
+            <rect x={x} y={yQ3} width={width} height={yQ1 - yQ3} fill="#8884d8" stroke="#fff" />
             {/* Median Line */}
             <line x1={x} y1={yMedian} x2={x + width} y2={yMedian} stroke="#fff" strokeWidth={2} />
         </g>

@@ -86,7 +86,7 @@ export function detectClause(textUpToCursor: string): SqlClause {
  * `JOIN x ON ...`, multiple comma-separated tables in FROM.
  */
 const FROM_JOIN_RE =
-  /\b(?:FROM|JOIN)\s+("[^"]+"|\w+)(?:\s+(?:AS\s+)?(\w+))?(?=\s*(?:,|ON|USING|WHERE|GROUP|ORDER|HAVING|LIMIT|JOIN|INNER|LEFT|RIGHT|FULL|CROSS|\)|;|$))/gi;
+  /\b(?:FROM|JOIN)\s+("[^"]+"|\w+)(?:\s+(?:AS\s+)?(\w+))?(?=\s*(?:,|\bON\b|\bUSING\b|\bWHERE\b|\bGROUP\b|\bORDER\b|\bHAVING\b|\bLIMIT\b|\bJOIN\b|\bINNER\b|\bLEFT\b|\bRIGHT\b|\bFULL\b|\bCROSS\b|\)|;|$))/gi;
 
 function unquote(s: string): string {
   return s.startsWith('"') && s.endsWith('"') ? s.slice(1, -1) : s;

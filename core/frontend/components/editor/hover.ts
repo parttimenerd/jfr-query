@@ -146,7 +146,7 @@ function classifyVariableScope(
   // $$globals
   if (p.kind === 'doubleDollarRef') {
     const v = variables[raw];
-    return { scope: 'workspace', value: v };
+    return v !== undefined ? { scope: 'workspace', value: v } : { scope: 'undefined' };
   }
   // Bare $foo — cell-local if defined in `variables`, else undefined.
   const v = variables[raw];
