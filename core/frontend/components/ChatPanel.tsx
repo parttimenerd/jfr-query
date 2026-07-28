@@ -137,9 +137,9 @@ const MAX_HISTORY_TURNS = 20;
 function compactHistory(history: ToolChatMessage[]): ToolChatMessage[] {
     if (history.length <= MAX_HISTORY_TURNS) return history;
     let dropCount = history.length - MAX_HISTORY_TURNS;
-    // Ensure kept[0] is always a user turn so the summary (role:'user') + kept
-    // array maintains strict role alternation required by all LLM APIs.
-    while (dropCount < history.length && history[dropCount]?.role !== 'user') dropCount++;
+    // Ensure kept[0] is always an assistant turn so the summary (role:'user')
+    // precedes an assistant message — strict role alternation required by all LLM APIs.
+    while (dropCount < history.length && history[dropCount]?.role !== 'assistant') dropCount++;
     if (dropCount >= history.length) return history; // nothing safe to drop
     const dropped = history.slice(0, dropCount);
     const kept = history.slice(dropCount);

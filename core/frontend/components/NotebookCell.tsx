@@ -521,8 +521,6 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 setAiErrorSuggestions(prev => { if (prev[i] !== undefined) { const n = { ...prev }; delete n[i]; return n; } return prev; });
                 return;
             }
-            // Skip if we already have a suggestion for this error text.
-            if (aiErrorSuggestions[i] !== undefined) return;
             const sql = parsedSqlBlocks[i] ?? '';
             const errorText = spec.message;
             const cacheKey = `${sql}::${errorText}`;

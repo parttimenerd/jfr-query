@@ -28,7 +28,9 @@ export const parseIntervalToSeconds = (value: any): number | null => {
 };
 
 export const isIntervalLike = (value: any): boolean => {
-    if (Array.isArray(value) && value.length >= 3) return true;
+    // DuckDB INTERVAL is stored as [µs: number, days: number, months: number].
+    // Guard against arbitrary array columns by requiring all elements to be numeric.
+    if (Array.isArray(value) && value.length >= 3 && value.every(v => typeof v === 'number' || typeof v === 'bigint')) return true;
     if (typeof value === 'string' && INTERVAL_RE.test(value)) return true;
     return false;
 };

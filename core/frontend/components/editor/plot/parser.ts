@@ -457,7 +457,7 @@ class PlotParser {
         if (this.at('number')) {
             const numTok = this.peek();
             const after = this.tokens[this.pos + 1];
-            if (after && after.kind === 'ident' && /^(?:px|%)$/.test(after.text) && after.from === numTok.to) {
+            if (after && after.kind === 'ident' && after.text === 'px' && after.from === numTok.to) {
                 this.consume(); // number
                 this.consume(); // unit
                 const node = makeNode('literal', numTok.from, after.to, this.src, {

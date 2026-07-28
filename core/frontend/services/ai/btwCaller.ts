@@ -88,7 +88,7 @@ export async function runBtwCall(input: BtwCallInput): Promise<BtwCallOutcome> {
     const escalatedHints = parseBtwHintsFromText(second.text);
     return {
         hints: escalatedHints,
-        finalTier: 'advanced',
+        finalTier: escalatedHints.length > 0 ? 'advanced' : initialTier,
         parseMiss: escalatedHints.length === 0,
     };
 }
