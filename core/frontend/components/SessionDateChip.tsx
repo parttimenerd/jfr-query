@@ -114,7 +114,7 @@ const SessionDateChip: React.FC<SessionDateChipProps> = ({ label, value, onChang
             const sign = tzOffset <= 0 ? '+' : '-';
             const abs = Math.abs(tzOffset);
             const tzStr = `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
-            return new Date(`${value}:00${tzStr}`).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            return new Date(`${value.slice(0, 16)}:00${tzStr}`).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         })()
         : (placeholder ?? '—');
 
