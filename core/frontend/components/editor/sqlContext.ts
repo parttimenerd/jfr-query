@@ -122,13 +122,13 @@ function detectStringValueColumn(stmt: string): { column: string; table: string 
   // Look at the last unclosed single quote.
   const lastQuote = stmt.lastIndexOf("'");
   if (lastQuote < 0) return null;
-  // Count quotes before — if even, we're inside a string.
+  // Count quotes before — if odd, lastQuote is closing a string; if even, lastQuote opens one (cursor is inside).
   const before = stmt.slice(0, lastQuote);
   let inside = 0;
-  for (let i = 0; i < stmt.length; i++) {
-    if (stmt[i] === "'" && stmt[i - 1] !== '\\') inside++;
+  for (let i = 0; i < before.length; i++) {
+    if (before[i] === "'" && before[i - 1] !== '\\') inside++;
   }
-  if (inside % 2 === 0) return null;
+  if (inside % 2 !== 0) return null;
   // Walk back from the opening quote to find an operator and column reference.
   const head = before.replace(/\s+$/, '');
   // Allow `=`, `<>`, `!=`, `IN (`, `LIKE`, `ILIKE`
