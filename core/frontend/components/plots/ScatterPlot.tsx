@@ -60,7 +60,7 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
     const allCols = Object.keys(data[0]);
     let resolvedSizeCol: string;
     try { resolvedSizeCol = findColumn(config.size, allCols); } catch { resolvedSizeCol = config.size; }
-    const values = data.map(d => d[resolvedSizeCol]).filter(v => typeof v === 'number');
+    const values = data.map(d => d[resolvedSizeCol]).filter(v => typeof v === 'number' && !isNaN(v));
     if(values.length === 0) return [10, 100];
     let min = values[0], max = values[0];
     for (let i = 1; i < values.length; i++) { if (values[i] < min) min = values[i]; if (values[i] > max) max = values[i]; }
