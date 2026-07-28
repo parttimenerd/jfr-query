@@ -193,7 +193,7 @@ export function applyRerankBoosts(
     const columnTypeMap = buildColumnTypeMap(ctx);
     const fnArg = inFunctionArg(ctx.cursorNode);
     const embRank = new Map<string, number>();
-    const N = embeddingOrder ? Math.max(embeddingOrder.length, 1) : 1;
+    const N = embeddingOrder ? Math.max(embeddingOrder.length - 1, 1) : 1;
     if (embeddingOrder) {
         embeddingOrder.forEach((label, i) => embRank.set(label, i));
     }
@@ -246,7 +246,7 @@ export function compareRanking(
     const columnTypeMap = structuralOff ? null : buildColumnTypeMap(ctx);
     const fnArg = structuralOff ? null : inFunctionArg(ctx.cursorNode);
     const embRank = new Map<string, number>();
-    const N = embeddingOrder ? Math.max(embeddingOrder.length, 1) : 1;
+    const N = embeddingOrder ? Math.max(embeddingOrder.length - 1, 1) : 1;
     if (embeddingOrder) {
         embeddingOrder.forEach((label, i) => embRank.set(label, i));
     }
