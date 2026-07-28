@@ -1198,13 +1198,14 @@ FROM ObjectAllocationOutsideTLAB)`,
 
   `CREATE OR REPLACE VIEW "thread-allocation" AS
 SELECT
-    thread AS "Thread",
-    LAST(allocated) AS "Allocated",
+    t.javaName AS "Thread",
+    LAST(s.allocated) AS "Allocated",
     format_percentage(
-        LAST(allocated) * 1.0 / SUM(LAST(allocated)) OVER ()
+        LAST(s.allocated) * 1.0 / SUM(LAST(s.allocated)) OVER ()
     ) AS "Percentage"
-FROM ThreadAllocationStatistics
-GROUP BY thread
+FROM ThreadAllocationStatistics s
+JOIN Thread t ON s.thread = t._id
+GROUP BY t.javaName
 ORDER BY "Allocated" DESC`,
 
   `CREATE OR REPLACE VIEW "thread-cpu-load" AS

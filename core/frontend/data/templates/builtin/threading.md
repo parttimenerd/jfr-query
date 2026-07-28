@@ -52,13 +52,14 @@ Threads blocked waiting on a monitor; the longest waits are the most interesting
 ```sql
 -- alias monitor_contention
 SELECT
-  monitorClass AS "Monitor",
+  c.javaName AS "Monitor",
   COUNT(*) AS "Events",
-  round(SUM(duration) / 1000000.0, 1) AS "Total Wait (ms)",
-  round(MAX(duration) / 1000000.0, 1) AS "Max Wait (ms)"
-FROM JavaMonitorEnter
-GROUP BY monitorClass
-ORDER BY SUM(duration) DESC
+  round(SUM(e.duration) * 1000.0, 1) AS "Total Wait (ms)",
+  round(MAX(e.duration) * 1000.0, 1) AS "Max Wait (ms)"
+FROM JavaMonitorEnter e
+JOIN Class c ON e.monitorClass = c._id
+GROUP BY c.javaName
+ORDER BY SUM(e.duration) DESC
 LIMIT $limit
 ```
 
