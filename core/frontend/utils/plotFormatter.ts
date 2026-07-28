@@ -314,7 +314,7 @@ function shouldBreakCallArgs(s: EState, tokens: PlotToken[], commaIdx: number): 
     }
     // Inline length = sum of raw token text lengths between paren-pair, plus separators.
     let len = 0;
-    for (let j = lparenIdx; j <= rparenIdx; j++) {
+    for (let j = lparenIdx; j < rparenIdx; j++) {
         len += tokens[j].text.length;
     }
     // Add ~2 chars per significant token for spaces/punctuation.
