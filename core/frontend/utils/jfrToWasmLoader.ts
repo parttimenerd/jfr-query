@@ -591,7 +591,7 @@ async function mergeChunkTables(
         for (const wi of workers) {
           const prefix = `chunk${wi}_`;
           // Remap each column: scalar FKs via JOIN, array FKs via unnest+re-aggregate subquery.
-          const selectExprs2 = allCols.map(col => {
+          const selectExprs2 = allCols.filter(col => col !== '_orig_worker').map(col => {
             const remap = colRemap.get(col);
             if (!remap) return `e."${col}"`;
             const { structTable, isArray } = remap;
@@ -635,7 +635,7 @@ async function mergeChunkTables(
 
         const selectList = ['_w', ...selectExprs].join(', ');
         await c.query(
-          `CREATE TABLE "${base}" AS SELECT ${allCols.map(col => `"${col}"`).join(', ')} FROM (SELECT ${selectList} FROM (${unionParts}) e\n${joins})`
+          `CREATE TABLE "${base}" AS SELECT ${allCols.filter(col => col !== '_orig_worker').map(col => `"${col}"`).join(', ')} FROM (SELECT ${selectList} FROM (${unionParts}) e\n${joins})`
         ).catch((e) => console.warn(`merge event ${base} failed:`, e));
       }
     }));
