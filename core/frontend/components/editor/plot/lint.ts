@@ -596,10 +596,12 @@ function isInColumnClause(node: PlotNode, deps: PlotLintDeps): boolean {
 
 function findClauseInsertPos(call: PlotNode): number {
     // Position just before the closing `)` or `}` of the call body.
-    const close = call.text.lastIndexOf(')');
-    if (close > 0) return call.from + close;
-    const closeBrace = call.text.lastIndexOf('}');
-    if (closeBrace > 0) return call.from + closeBrace;
+    // Use indexOf (not lastIndexOf) — trailing tail clauses like LINK_X($a,$b)
+    // also contain `)` and lastIndexOf would land inside a tail, not the body.
+    const close = call.text.indexOf(')');
+    if (close >= 0) return call.from + close;
+    const closeBrace = call.text.indexOf('}');
+    if (closeBrace >= 0) return call.from + closeBrace;
     return call.to;
 }
 
