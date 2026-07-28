@@ -57,9 +57,14 @@ export const PlotTooltip: React.FC<PlotTooltipProps> = ({
     if (tooltipColumns && tooltipColumns.length > 0) {
         const shown = payload.filter(e => {
             const stripped = e.dataKey.replace(/^\d+_/, '');
-            return tooltipColumns.includes(e.name) ||
-                   tooltipColumns.includes(e.dataKey) ||
-                   tooltipColumns.includes(stripped);
+            if (tooltipColumns.includes(e.name) ||
+                tooltipColumns.includes(e.dataKey) ||
+                tooltipColumns.includes(stripped)) return true;
+            // For plots that rename columns to internal keys (e.g. RangePlot uses
+            // __rangeLow/__rangeHigh), check if any user-specified column exists in
+            // the raw row payload so TOOLTIP COLUMNS still works.
+            const rowKeys = Object.keys((e as any).payload ?? {});
+            return tooltipColumns.some(col => rowKeys.includes(col));
         });
         return (
             <div className={boxCls}>

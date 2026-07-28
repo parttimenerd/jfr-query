@@ -421,7 +421,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         setProposals([]);
         setApproveAllReads(false);
         setMessages(prev => prev.slice(0, keepUpToOriginalIdx + 1));
-    }, [isLoading]);
+    }, [isLoading, setMessages]);
 
     const handleCancel = () => {
         cancelledRef.current = true;
@@ -1093,7 +1093,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     /** Apply a meta patch to a specific message by id (no-op if not found). */
     const patchMessageMeta = useCallback((id: string, patch: Partial<ChatMessageMeta>) => {
         setMessages(prev => prev.map(m => m.id === id ? { ...m, meta: { ...(m.meta ?? {}), ...patch } } : m));
-    }, []);
+    }, [setMessages]);
 
     // Plan execution — wraps the plan up as a hidden user message and re-sends in
     // normal mode so the assistant can actually call the mutating tools.
