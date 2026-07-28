@@ -547,7 +547,7 @@ function findValueAncestorClause(root: PlotNode, pos: number): {
     if (n.from > pos || pos > n.to) return;
     // Cursor must be after the colon position (i.e. in the value portion).
     if (n.colonFrom !== undefined && pos <= n.colonFrom) return;
-    if (!bestClause || (n.to - n.from) <= (bestClause.to - bestClause.from)) {
+    if (!bestClause || (n.to - n.from) < (bestClause.to - bestClause.from)) {
       bestClause = n;
     }
   });
