@@ -349,7 +349,22 @@ export function parseComposite(configLine: string): ParsedPlotCall {
     }
 
     // Single child — delegate to the existing single-call parser.
-    return parsePlotCall(trimmed);
+    const result = parsePlotCall(trimmed);
+
+    // After parsePlotCall strips trailing clauses (TITLE, WIDTH, etc.), the
+    // mainConfig may itself be a ROW/COL composite. Re-check and expand so
+    // that `ROW(A, B) TITLE "x"` is treated as a composite, not an unknown leaf.
+    const innerMatch = result.mainConfig?.trim().match(COMPOSITE_RE);
+    if (innerMatch) {
+        const direction = innerMatch[1].toLowerCase() as 'row' | 'col';
+        const childParts = splitTopLevelOp(innerMatch[2], ',')
+            .map(p => p.trim())
+            .filter(Boolean);
+        const children = childParts.map(p => parseComposite(p));
+        return { ...result, mainConfig: '', composite: { direction, children } };
+    }
+
+    return result;
 }
 
 // Plot types whose x-axis is categorical (band/discrete).

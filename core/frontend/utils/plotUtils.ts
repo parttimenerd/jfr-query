@@ -170,6 +170,8 @@ function normalizeEpochNumber(n: number): number {
     if (!Number.isInteger(n)) {
         const intPart = Math.trunc(Math.abs(n));
         const digits = intPart === 0 ? 1 : Math.floor(Math.log10(intPart)) + 1;
+        if (digits >= 18) return n / 1_000_000;
+        if (digits >= 15) return n / 1_000;
         if (digits === 10) return n * 1000;
         return n;
     }
