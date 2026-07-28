@@ -56,7 +56,7 @@ const parseDomainPair = (raw: string): [number | string, number | string] | unde
     if (parts.length !== 2) return undefined;
     const parseOne = (p: string): number | string => {
         const t = p.trim();
-        const q = t.match(/^(["'])(.+)\1$/);
+        const q = t.match(/^(["'])(.*)\1$/);
         if (q) return q[2];
         const n = Number(t);
         return isNaN(n) ? t : n;

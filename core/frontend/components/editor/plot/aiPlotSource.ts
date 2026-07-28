@@ -170,7 +170,7 @@ export function validatePlotStream(prefix: string, acc: string): PlotStreamValid
         if (boundary >= 0) {
             const truncated = acc.slice(0, boundary).trim();
             if (truncated.length === 0) return { status: 'discard' };
-            return { status: 'truncate', truncated: acc.slice(0, boundary) };
+            return { status: 'truncate', truncated };
         }
         return { status: 'discard' };
     }
