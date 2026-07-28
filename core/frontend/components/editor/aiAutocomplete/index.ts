@@ -203,12 +203,12 @@ export function aiAutocompleteExtension(deps: AiAutocompleteDeps): Extension {
         recent = null;
       }
 
-      this.abort = new AbortController();
-      const signal = this.abort.signal;
       const max = deps.maxChars ?? MAX_CHARS_DEFAULT;
 
       // In-flight dedup: if a stream for the same key is already running,
       // attach to its promise and serve the result when it lands.
+      // Must check before creating a new AbortController so we don't replace
+      // this.abort with an orphaned controller that controls no real stream.
       if (inflight.has(cacheKey)) {
         try {
           const result = await inflight.start(cacheKey, () => Promise.resolve(''));
@@ -219,6 +219,9 @@ export function aiAutocompleteExtension(deps: AiAutocompleteDeps): Extension {
         } catch { /* swallow */ }
         return;
       }
+
+      this.abort = new AbortController();
+      const signal = this.abort.signal;
 
       let acc = '';
       const activeModel = settings.aiAutocompleteModel as 'cloud-tiny' | 'browser';

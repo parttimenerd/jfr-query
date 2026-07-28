@@ -56,7 +56,7 @@ const RangePlotComponent: React.FC<{
 
   const { chartData, isTime, finalXCol, lowKey, highKey, centerKey } = useMemo(() => {
     if (!data || !data.length || !data[0] || !config.x) {
-      return { chartData: data, isTime: false, finalXCol: config.x, lowKey: config.low, highKey: config.high, centerKey: config.center };
+      return { chartData: [], isTime: false, finalXCol: config.x, lowKey: config.low, highKey: config.high, centerKey: config.center };
     }
 
     const allColumns = Object.keys(data[0]);
