@@ -40,12 +40,18 @@ export function lttb<T extends Record<string, any>>(data: T[], xCol: string, yCo
         const avgRangeEnd = Math.min(Math.floor((i + 2) * bucketSize) + 1, n);
         const avgRangeLength = avgRangeEnd - avgRangeStart;
         let avgX = 0, avgY = 0;
-        for (let j = avgRangeStart; j < avgRangeEnd; j++) {
-            avgX += Number(data[j][xCol]) || 0;
-            avgY += Number(data[j][yCol]) || 0;
+        if (avgRangeLength > 0) {
+            for (let j = avgRangeStart; j < avgRangeEnd; j++) {
+                avgX += Number(data[j][xCol]) || 0;
+                avgY += Number(data[j][yCol]) || 0;
+            }
+            avgX /= avgRangeLength;
+            avgY /= avgRangeLength;
+        } else {
+            // Degenerate bucket — use last data point as centroid (per LTTB paper).
+            avgX = Number(data[n - 1][xCol]) || 0;
+            avgY = Number(data[n - 1][yCol]) || 0;
         }
-        avgX /= avgRangeLength || 1;
-        avgY /= avgRangeLength || 1;
 
         // Range of the *current* bucket.
         const rangeStart = Math.floor(i * bucketSize) + 1;

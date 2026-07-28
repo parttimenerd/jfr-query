@@ -87,7 +87,7 @@ export const qualifiedColumnProvider: CompletionProvider = {
         let qualifier = '';
         let partial = '';
         let dotIndex = ctx.pos;
-        const isQuoted = false;
+        const isQuoted = ctx.token.startsWith('"');
 
         if (ctx.token.includes('.')) {
             const [q, rest] = ctx.token.split('.', 2);

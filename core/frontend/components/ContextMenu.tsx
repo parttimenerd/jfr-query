@@ -29,7 +29,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ items, x, y, onClose }) => {
                         item.isSeparator ? (
                            <li key={`sep-${index}`} className="h-px bg-gray-600 my-1" />
                         ) : (
-                            <li key={item.label}>
+                            <li key={index}>
                                 <button
                                     onClick={() => {
                                         item.onClick();

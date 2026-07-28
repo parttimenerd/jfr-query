@@ -44,6 +44,7 @@ async function tryLoadArtifacts(): Promise<void> {
         _matrix = new Float32Array(buf);
         _prompts = meta.prompts;
     } catch {
+        _loadAttempted = false;
         _matrix = null;
         _prompts = null;
     }

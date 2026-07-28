@@ -211,7 +211,8 @@ function applyTails(result: ParsedPlotCall, tails: PlotNode[]): void {
             case 'zoom': {
                 if (arg) {
                     const v = jsValue(arg);
-                    result.zoom = typeof v === 'number' ? v : parseFloat(String(v));
+                    const n = typeof v === 'number' ? v : parseFloat(String(v));
+                    if (!isNaN(n)) result.zoom = n;
                 }
                 break;
             }

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import DataTable from '../DataTable';
 import PlotRenderer from '../PlotRenderer';
 import { PlotErrorBoundary } from './PlotErrorBoundary';
@@ -32,12 +32,11 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
     // Stable id for the synthetic previewPlot cell when the runtime didn't
     // mint a previewId. Created once per InlinePreview instance so the
     // PlotRenderer's id-keyed state (brushes, cell vars) doesn't reset on
-    // every re-render. We always call useMemo (Rules of Hooks); the value is
+    // every re-render. We always call useRef (Rules of Hooks); the value is
     // only read inside the previewPlot branch.
-    const fallbackPreviewCellId = useMemo(
-        () => `chat-preview-${Math.random().toString(36).slice(2, 8)}`,
-        [],
-    );
+    const fallbackPreviewCellId = useRef(
+        `chat-preview-${Math.random().toString(36).slice(2, 8)}`
+    ).current;
 
     if (toolName === 'runQuery') {
         const sql = String(args?.sql ?? '');

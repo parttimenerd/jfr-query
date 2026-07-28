@@ -601,7 +601,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
             setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: hint }]);
             return;
         }
-        const conversationHistory: Content[] = messages.slice(1).map(m => ({
+        const conversationHistory: Content[] = messagesRef.current.slice(1).map(m => ({
             role: m.sender === MessageSender.User ? 'user' : 'model',
             parts: [{ text: m.code ? `${m.text}\n\`\`\`sql\n${m.code}\n\`\`\`\n\`\`\`plot\n${m.plotConfig}\n\`\`\`` : m.text }],
         }));

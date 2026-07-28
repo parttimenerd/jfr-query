@@ -37,12 +37,19 @@ const findExprStarts = (markdown: string): number[] => {
         }
         if (inFence) { i++; continue; }
 
-        // Inline code span — single backtick, ends at next single backtick on
-        // the same line (markdown-style). Walk through.
+        // Inline code span — single or double backtick, ends at matching delimiter
+        // on the same line (markdown-style). Walk through.
         if (markdown[i] === '`') {
-            i++;
-            while (i < n && markdown[i] !== '`' && markdown[i] !== '\n') i++;
-            if (i < n && markdown[i] === '`') i++;
+            if (markdown[i + 1] === '`') {
+                // Double-backtick span: walk until `` `` `` or newline.
+                i += 2;
+                while (i < n - 1 && !(markdown[i] === '`' && markdown[i + 1] === '`') && markdown[i] !== '\n') i++;
+                if (i < n - 1 && markdown[i] === '`') i += 2;
+            } else {
+                i++;
+                while (i < n && markdown[i] !== '`' && markdown[i] !== '\n') i++;
+                if (i < n && markdown[i] === '`') i++;
+            }
             continue;
         }
 

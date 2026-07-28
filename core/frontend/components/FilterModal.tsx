@@ -20,7 +20,7 @@ const FilterModal: React.FC<FilterModalProps> = ({ isOpen, onClose, onApply, rec
 
   useEffect(() => {
     if (isOpen) setTimeRange(initialValue);
-  }, [isOpen]);
+  }, [isOpen, initialValue]);
 
   if (!isOpen) return null;
 

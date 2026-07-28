@@ -26,7 +26,7 @@ export const tableProvider: CompletionProvider = {
         if (ctx.token.includes('.')) return false;
         // Offer tables in table-context clauses or when no clause is active
         // (top-level), and as a low-priority fallback in column contexts.
-        return isTableContext(ctx) || !isColumnContext(ctx) || isColumnContext(ctx);
+        return isTableContext(ctx) || !isColumnContext(ctx);
     },
 
     provide(node, ctx) {
@@ -62,7 +62,7 @@ export const viewProvider: CompletionProvider = {
 
     matches(node, ctx) {
         if (ctx.token.includes('.')) return false;
-        return isTableContext(ctx) || !isColumnContext(ctx) || isColumnContext(ctx);
+        return isTableContext(ctx) || !isColumnContext(ctx);
     },
 
     provide(node, ctx) {
