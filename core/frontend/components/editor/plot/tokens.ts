@@ -119,28 +119,8 @@ export function tokenize(src: string): PlotToken[] {
             }
         }
 
-        // Minus: either operator or part of negative number.
-        if (ch === '-') {
-            const next = src[i + 1];
-            if (next !== undefined && /[0-9.]/.test(next)) {
-                // Number with leading minus
-                const start = i;
-                i++; // consume -
-                while (i < n && /[0-9_]/.test(src[i])) i++;
-                if (src[i] === '.') {
-                    i++;
-                    while (i < n && /[0-9_]/.test(src[i])) i++;
-                }
-                if (src[i] === 'e' || src[i] === 'E') {
-                    i++;
-                    if (src[i] === '+' || src[i] === '-') i++;
-                    while (i < n && /[0-9]/.test(src[i])) i++;
-                }
-                push('number', start, i);
-                continue;
-            }
-            push('minus', i, i + 1); i++; continue;
-        }
+        // Minus: always emit as operator token; parseUnary handles negation.
+        if (ch === '-') { push('minus', i, i + 1); i++; continue; }
 
         // Dot — either standalone or start of decimal number (rare)
         if (ch === '.') {

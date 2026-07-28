@@ -195,7 +195,7 @@ export function cursorNode(root: PlotNode, pos: number): PlotNode {
                 n.from >= best.from && n.to <= best.to &&
                 !(n === root) &&
                 // only descend if it's tighter
-                (n.to - n.from) <= (best.to - best.from)
+                (n.to - n.from) < (best.to - best.from)
             ) {
                 best = n;
             }
