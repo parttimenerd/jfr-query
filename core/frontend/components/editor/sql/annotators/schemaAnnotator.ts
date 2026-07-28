@@ -168,11 +168,15 @@ function isDefinitionSite(n: Node): boolean {
         if (idents[0] === n) return true;
     }
 
-    // Alias slots in projection/tableRef: last identifier when there are 2+
-    // identifier-shaped children.
+    // Alias slots in projection/tableRef: when the source is itself an
+    // identifier (e.g. `col AS alias`), we need 2+ identifiers; when the
+    // source is a non-identifier expression (e.g. `count(*) AS n`, `a+b AS r`,
+    // `schema.table AS t`), the alias is the only identifier child.
     if (p.kind === 'projection' || p.kind === 'tableRef') {
         const idents = p.children.filter(c => c.kind === 'identifier');
-        if (idents.length >= 2 && idents[idents.length - 1] === n) return true;
+        const first = p.children[0];
+        const threshold = first?.kind === 'identifier' ? 2 : 1;
+        if (idents.length >= threshold && idents[idents.length - 1] === n) return true;
     }
 
     // Column-list children of cte / orderItem / etc.

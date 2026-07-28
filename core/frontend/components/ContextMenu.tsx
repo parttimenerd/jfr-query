@@ -32,8 +32,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ items, x, y, onClose }) => {
                             <li key={index} onClick={() => { if (item.disabled) onClose(); }}>
                                 <button
                                     onClick={() => {
-                                        item.onClick();
-                                        onClose();
+                                        try { item.onClick(); } finally { onClose(); }
                                     }}
                                     disabled={item.disabled}
                                     className="w-full text-left px-4 py-1.5 text-gray-200 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-transparent"

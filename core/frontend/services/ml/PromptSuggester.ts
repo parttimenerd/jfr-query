@@ -50,17 +50,23 @@ async function tryLoadArtifacts(): Promise<void> {
     }
 }
 
+let _embeddingPipeline: Promise<any> | null = null;
+
 async function defaultEmbed(text: string): Promise<Float32Array | null> {
     try {
         const { pipeline, env } = await import('@huggingface/transformers');
         env.allowLocalModels = false;
         env.useBrowserCache = true;
-        const ext = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-            dtype: 'q4',
-        });
+        if (!_embeddingPipeline) {
+            _embeddingPipeline = pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+                dtype: 'q4',
+            });
+        }
+        const ext = await _embeddingPipeline;
         const out: any = await ext([text], { pooling: 'mean', normalize: true });
         const flat = out.data as Float32Array;
-        return flat.subarray(0, DIM);
+        // Copy to detach from pipeline's internal buffer which may be reused.
+        return new Float32Array(flat.subarray(0, DIM));
     } catch {
         return null;
     }
