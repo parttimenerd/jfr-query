@@ -48,7 +48,6 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
         if (values.length === 0) return [];
         let min = values[0], max = values[0];
         for (let i = 1; i < values.length; i++) { if (values[i] < min) min = values[i]; if (values[i] > max) max = values[i]; }
-        if (min === max) return [{ range: numberFormatter(min), count: values.length }];
 
         // Resolve bin count. Accepts number, numeric string, or 'auto' (Freedman-Diaconis).
         const rawBins = config.bins as any;
