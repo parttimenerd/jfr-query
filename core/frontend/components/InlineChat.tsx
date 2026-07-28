@@ -618,13 +618,11 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     // B-197: if the user already cancelled while a prior tool was running,
                     // reject immediately so the tool loop doesn't hang waiting for approval.
                     if (cancelledRef.current) { reject(new Error('cancelled')); return; }
-                    const pending = [...proposalsRef.current].reverse().find(p => p.name === toolName && p.status === 'pending');
-                    if (pending) {
-                        approvalResolvers.current.set(pending.id, { resolve, reject });
-                        return;
+                    const pending = [...proposalsRef.current].reverse().find(p => p.name === toolName && p.status === 'pending' && shallowEqualArgs(p.args, args));
+                    const id = pending?.id ?? `proposal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                    if (!pending) {
+                        setProposals(prev => [...prev, { id, name: toolName, args, status: 'pending' }]);
                     }
-                    const id = `proposal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-                    setProposals(prev => [...prev, { id, name: toolName, args, status: 'pending' }]);
                     approvalResolvers.current.set(id, { resolve, reject });
                 }),
             };
