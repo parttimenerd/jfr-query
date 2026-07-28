@@ -28,17 +28,18 @@ export function toolsToGemini(tools: Tool[]): { functionDeclarations: GeminiFunc
     };
 }
 
+let _geminiCallSeq = 0;
+
 export function parseGeminiToolCalls(parts: any): ParsedToolCall[] {
     if (!Array.isArray(parts)) return [];
     const out: ParsedToolCall[] = [];
-    let idx = 0;
     for (const part of parts) {
         const fc = part?.functionCall;
         if (!fc?.name) continue;
         out.push({
             // Gemini doesn't return an id with the call; synthesize a stable one
-            // from the call name + index so we can correlate tool_result back.
-            id: `gemini-${fc.name}-${idx++}`,
+            // from the call name + a monotonic counter so IDs are unique across turns.
+            id: `gemini-${fc.name}-${_geminiCallSeq++}`,
             name: fc.name,
             args: fc.args ?? {},
         });

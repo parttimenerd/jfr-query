@@ -438,7 +438,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
             setCmdSuggestions([]);
             if (slashCmd.kind === 'clear') {
                 handleReset();
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'compact') {
                 const summary = messages
@@ -449,14 +449,14 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     sender: MessageSender.AI,
                     text: `**Conversation compacted.**\n\n${summary.slice(0, 600)}${summary.length > 600 ? '\n…' : ''}`,
                 }]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'help') {
                 setMessages(prev => [...prev,
                     { id: Date.now().toString(), sender: MessageSender.User, text: '/help' },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: slashCmd.text },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'mode') {
                 chatMode.setMode(slashCmd.mode);
@@ -468,7 +468,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     { id: Date.now().toString(), sender: MessageSender.User, text: `/${slashCmd.mode}` },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: label },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'model') {
                 if (!slashCmd.query) {
@@ -487,7 +487,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                         { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Switched to \`${newModelId}\`.` },
                     ]);
                 }
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'provider') {
                 if (!slashCmd.query) {
@@ -512,7 +512,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                         ]);
                     }
                 }
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'skills-list') {
                 const skillList = availableSkills.map(s =>
@@ -522,7 +522,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     { id: Date.now().toString(), sender: MessageSender.User, text: '/skills' },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `### Available Skills\n\n${skillList}` },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'skill-activate') {
                 const wasActive = isActive(slashCmd.skillName);
@@ -536,7 +536,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     { id: Date.now().toString(), sender: MessageSender.User, text: input },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: msg },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'skill-deactivate') {
                 deactivateSkill(slashCmd.skillName);
@@ -544,7 +544,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     { id: Date.now().toString(), sender: MessageSender.User, text: input },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Skill \`${slashCmd.skillName}\` deactivated.` },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'skill-sub') {
                 const loadedSkill = activeSkills.find(s => s.meta.name === slashCmd.skillName)
@@ -555,7 +555,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                         { id: Date.now().toString(), sender: MessageSender.User, text: input },
                         { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Unknown sub-command \`${slashCmd.subCommand}\`.` },
                     ]);
-                    return;
+                    return { ok: true };
                 }
                 let inserted = 0;
                 for (const cellName of cmd.cells) {
@@ -566,14 +566,14 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     { id: Date.now().toString(), sender: MessageSender.User, text: input },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Inserted ${inserted} cell${inserted !== 1 ? 's' : ''}.` },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'unknown') {
                 setMessages(prev => [...prev,
                     { id: Date.now().toString(), sender: MessageSender.User, text: slashCmd.input },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Unknown command \`${slashCmd.input}\`. Type \`/help\` for available commands.` },
                 ]);
-                return;
+                return { ok: true };
             }
         }
         } // end !override
