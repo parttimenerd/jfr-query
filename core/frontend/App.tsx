@@ -781,6 +781,7 @@ const App: React.FC = () => {
     const deleteCell = useCallback((cellId: string) => {
         const oldCells = cellsRef.current;
         const deletedIndex = oldCells.findIndex(c => c.id === cellId);
+        if (deletedIndex === -1) return;
         const newCells = oldCells.filter(cell => cell.id !== cellId);
         updateCellsAndMarkdown(newCells);
         // Remap results and timings: after deletion, cells at positions > deletedIndex

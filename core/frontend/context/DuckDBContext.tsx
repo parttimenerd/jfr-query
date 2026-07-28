@@ -548,7 +548,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!noLimitBypass) {
         const cleaned = trimmedSql.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
         const isSelect = /^(select|with)\b/i.test(cleaned);
-        const hasLimit = /\blimit\s+\d/i.test(cleaned);
+        const hasLimit = /\blimit\b/i.test(cleaned);
         if (isSelect && !hasLimit) {
           safeSql = `SELECT * FROM (\n${trimmedSql}\n) __q LIMIT ${MAX_QUERY_ROWS}`;
         }

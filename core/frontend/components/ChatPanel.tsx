@@ -208,6 +208,11 @@ export function listPlotsFromCells(cells: ReadonlyArray<{ id: string; content: s
     return out;
 }
 
+const ChatPanelCodeBlock: React.FC<{ code: string }> = ({ code }) => {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = () => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+    return (<div className="relative bg-gray-900 rounded-md my-2"><pre className="p-3 text-sm text-cyan-300 overflow-x-auto font-mono">{code}</pre><button onClick={handleCopy} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded-md"><ClipboardIcon className={`w-4 h-4 ${copied ? 'text-green-400' : 'text-gray-300'}`}/></button></div>);
+};
 
 const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells, onAddCell, onAddCellsBatch, onUpdateCell, onDeleteCell, onMoveCell, onMetadataChange, onNavigateRef, onUndoLastAction, onBeforeMutate, incomingChannel, onIncomingChannelConsumed }) => {
     const { schema, query } = useContext(DataContext);
@@ -1075,12 +1080,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         if (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent as any).isComposing) { e.preventDefault(); handleSend(); }
     };
 
-    const CodeBlock: React.FC<{ code: string }> = ({ code }) => {
-        const [copied, setCopied] = useState(false);
-        const handleCopy = () => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000); };
-        return (<div className="relative bg-gray-900 rounded-md my-2"><pre className="p-3 text-sm text-cyan-300 overflow-x-auto font-mono">{code}</pre><button onClick={handleCopy} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded-md"><ClipboardIcon className={`w-4 h-4 ${copied ? 'text-green-400' : 'text-gray-300'}`}/></button></div>);
-    };
-
     const cellById = useMemo(() => {
         const m = new Map<string, NotebookCellData>();
         (cells ?? []).forEach(c => m.set(c.id, c));
@@ -1280,7 +1279,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                                     {msg.sender === MessageSender.AI ? renderMarkdown(msg.text, onNavigateRef) : <span className="whitespace-pre-wrap">{msg.text}</span>}
                                                 </div>
                                                 {msg.meta?.plan && (<ChatPlanCard plan={msg.meta.plan} meta={msg.meta} getCellContent={getCellContent} onExecute={executePlanFor(msg.id)} onDiscard={discardPlanFor(msg.id)}/>)}
-                                                {msg.code && <CodeBlock code={msg.code}/>}
+                                                {msg.code && <ChatPanelCodeBlock code={msg.code}/>}
                                                 {addArgs && (<button data-testid="add-to-notebook" onClick={() => onAddCellFromAI(addArgs.code, addArgs.plotConfig, addArgs.title, addArgs.markdownText)} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-md text-sm font-semibold"><PlusIcon className="w-4 h-4"/>Add to Notebook</button>)}
                                                 {msg.sender === MessageSender.AI && (
                                                     <button

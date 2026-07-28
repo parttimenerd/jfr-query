@@ -325,7 +325,7 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
         }, 600);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rest, prefix, subBusy]);
+    }, [rest, prefix]);
 
     useEffect(() => {
         const el = listRef.current?.querySelector(`[data-idx="${selectedIdx}"]`) as HTMLElement | null;

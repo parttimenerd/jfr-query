@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDisplaySettings } from '../context/DisplaySettingsContext';
 import { parseDuration } from '../utils/durationParser';
 import { formatTimestamp } from '../utils/timeFormatter';
@@ -13,6 +13,7 @@ const TimeInput: React.FC<TimeInputProps> = ({ value, recordingStart, onChange }
   const { timeFormat } = useDisplaySettings();
   const [inputValue, setInputValue] = useState('');
   const [isValid, setIsValid] = useState(true);
+  const escapingRef = useRef(false);
 
   useEffect(() => {
     setInputValue(formatTimestamp(value, timeFormat));
@@ -20,6 +21,7 @@ const TimeInput: React.FC<TimeInputProps> = ({ value, recordingStart, onChange }
   }, [value, timeFormat]);
 
   const handleBlur = () => {
+    if (escapingRef.current) { escapingRef.current = false; return; }
     const trimmedValue = inputValue.trim();
     const durationMs = parseDuration(trimmedValue);
     if (durationMs !== null) {
@@ -41,6 +43,7 @@ const TimeInput: React.FC<TimeInputProps> = ({ value, recordingStart, onChange }
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
     else if (e.key === 'Escape') {
+      escapingRef.current = true;
       setInputValue(formatTimestamp(value, timeFormat));
       setIsValid(true);
       (e.target as HTMLInputElement).blur();
