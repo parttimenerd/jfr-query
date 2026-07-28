@@ -96,8 +96,8 @@ export const formatBytes = (bytes: number): string => {
 export const compareValues = (a: any, b: any, ascending: boolean): number => {
     const asc = ascending ? 1 : -1;
     if (a == null && b == null) return 0;
-    if (a == null) return 1;
-    if (b == null) return -1;
+    if (a == null) return 1 * asc;
+    if (b == null) return -1 * asc;
     // B-114: use BigInt comparison to avoid precision loss for nanosecond timestamps.
     if (typeof a === 'bigint' && typeof b === 'bigint') return (a < b ? -1 : a > b ? 1 : 0) * asc;
     // Mixed BigInt/number: promote both to BigInt for a precision-safe comparison.
