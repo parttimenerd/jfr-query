@@ -94,7 +94,7 @@ const GanttChartComponent: React.FC<{
     const timeVal = getTimeValue(firstStart);
     const isTimeAxis = !isNaN(timeVal);
 
-    const toNum = (v: any) => isTimeAxis ? getTimeValue(v) : Number(v);
+    const toNum = (v: any) => v == null ? NaN : (isTimeAxis ? getTimeValue(v) : Number(v));
 
     // Collect distinct color categories for the legend
     const colorCats: string[] = colorCol

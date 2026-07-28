@@ -265,6 +265,7 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
         const owned = cellOwnership.current[cellId];
         if (!owned || owned.size === 0) return;
         // Best-effort DROP; ignore failures (cell might never have created the view).
+        if (dbState === DBState.READY) {
         for (const key of owned) {
             try {
                 if (key.includes('.')) {
@@ -279,6 +280,7 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
                 }
             } catch { /* swallow */ }
         }
+        }
         delete cellOwnership.current[cellId];
         // Clean up per-slot tracking for all slots belonging to this cell.
         for (const slotKey of Object.keys(slotOwnership.current)) {
@@ -289,7 +291,7 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
             for (const key of owned) delete next[key];
             return next;
         });
-    }, [query]);
+    }, [query, dbState]);
 
     // Read aliases via ref so these callbacks don't rebuild when aliases change.
     const getByBare = useCallback((name: string) => aliasesRef.current[name], []);

@@ -62,10 +62,13 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
             min=posValues[0]; max=posValues[0];
             for (let i = 1; i < posValues.length; i++) { if (posValues[i] < min) min = posValues[i]; if (posValues[i] > max) max = posValues[i]; }
             if (min === max) return [{ range: numberFormatter(min), count: posValues.length }];
+            const logBinCount = typeof rawBins === 'string' && rawBins.toLowerCase() === 'auto'
+                ? freedmanDiaconisBins(posValues)
+                : binCount;
             const logMin=Math.log(min), logMax=Math.log(max);
-            const size=(logMax-logMin)/binCount;
-            const hist=Array(binCount).fill(0).map((_,i)=>({range:`${numberFormatter(Math.exp(logMin+i*size))}-${numberFormatter(Math.exp(logMin+(i+1)*size))}`, count:0}));
-            for(const v of posValues){ const i=Math.max(0, Math.min(binCount-1, Math.floor((Math.log(v)-logMin)/size))); if(hist[i]) hist[i].count++;}
+            const size=(logMax-logMin)/logBinCount;
+            const hist=Array(logBinCount).fill(0).map((_,i)=>({range:`${numberFormatter(Math.exp(logMin+i*size))}-${numberFormatter(Math.exp(logMin+(i+1)*size))}`, count:0}));
+            for(const v of posValues){ const i=Math.max(0, Math.min(logBinCount-1, Math.floor((Math.log(v)-logMin)/size))); if(hist[i]) hist[i].count++;}
             return hist;
         } else {
             if (min === max) return [{ range: numberFormatter(min), count: values.length }];

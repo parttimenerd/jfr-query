@@ -282,7 +282,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 const bounds = await runQuery(`SELECT MIN(lo) AS lo, MAX(hi) AS hi FROM (${unionParts.join(' UNION ALL ')})`);
                 if (bounds[0]?.lo != null) {
                   const s = new Date(bounds[0].lo).getTime(), e = new Date(bounds[0].hi).getTime();
-                  if (!isNaN(s) && !isNaN(e)) { setRecordingStart(s); setRecordingEnd(e); }
+                  if (!isNaN(s) && !isNaN(e) && s > 0 && e > 0) { setRecordingStart(s); setRecordingEnd(e); }
                 }
               }
             }

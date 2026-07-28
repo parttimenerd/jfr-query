@@ -77,8 +77,10 @@ const RangePlotComponent: React.FC<{
       if (isTimeAxis) {
         newRow[xCol] = getTimeValue(newRow[xCol]);
       }
-      const lo = Math.min(Number(row[lCol]), Number(row[hCol]));
-      const hi = Math.max(Number(row[lCol]), Number(row[hCol]));
+      const lNum = row[lCol] == null ? NaN : Number(row[lCol]);
+      const hNum = row[hCol] == null ? NaN : Number(row[hCol]);
+      const lo = Math.min(lNum, hNum);
+      const hi = Math.max(lNum, hNum);
       newRow.__rangeLow = lo;
       newRow.__rangeHigh = hi - lo; // band height for stacking (always ≥ 0)
       newRow.__rangeHighAbs = hi; // kept for tooltip display
