@@ -1481,9 +1481,20 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                             <button onClick={handleAddSql} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add SQL</button>
                         </div>
                     )}
-                    {/* Drag handle to resize result panels */}
+                    {/* Resize controls: size presets + drag handle */}
                     {(results?.some(r => r) || Object.keys(datasetResults).some(k => k.startsWith('standalone-'))) && (
-                        <div onMouseDown={handleResultResizeStart} className="h-1.5 mt-0.5 cursor-row-resize rounded-full bg-gray-700 hover:bg-cyan-600/50 transition-colors" title="Drag to resize results" aria-label="Drag to resize results" />
+                        <div className="flex items-center gap-1 mt-0.5">
+                            {([['S', 150], ['M', 250], ['L', 400], ['XL', 600], ['2XL', 900]] as [string, number][]).map(([label, px]) => (
+                                <button
+                                    key={label}
+                                    onClick={() => { resultHeightUserSet.current = true; setResultHeight(px); }}
+                                    title={`Set result height to ${px}px`}
+                                    aria-label={`Set result height to ${label}`}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${resultHeight === px ? 'bg-cyan-700/60 text-cyan-200' : 'text-gray-600 hover:text-gray-300 hover:bg-gray-700/50'}`}
+                                >{label}</button>
+                            ))}
+                            <div onMouseDown={handleResultResizeStart} className="flex-1 h-1.5 cursor-row-resize rounded-full bg-gray-700 hover:bg-cyan-600/50 transition-colors" title="Drag to resize results" aria-label="Drag to resize results" />
+                        </div>
                     )}
                 </div>
                  <MarkdownSectionEditor

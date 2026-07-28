@@ -719,33 +719,6 @@ SELECT
     LAST(javaArguments) AS "Program Arguments"
 FROM JVMInformation`,
 
-  `CREATE OR REPLACE VIEW "latencies-by-type" AS
-SELECT
-    eventType AS "Event Type",
-    COUNT(*) AS "Count",
-    format_duration(AVG(duration)) AS "Average",
-    format_duration(P99(duration)) AS "P 99",
-    format_duration(MAX(duration)) AS "Longest",
-    format_duration(SUM(duration)) AS "Total"
-FROM (
-    SELECT 'Java Monitor Wait' AS eventType, duration FROM JavaMonitorWait
-    UNION ALL
-    SELECT 'Java Monitor Enter' AS eventType, duration FROM JavaMonitorEnter
-    UNION ALL
-    SELECT 'Thread Park' AS eventType, duration FROM ThreadPark
-    UNION ALL
-    SELECT 'Thread Sleep' AS eventType, duration FROM ThreadSleep
-    UNION ALL
-    SELECT 'Socket Read' AS eventType, duration FROM SocketRead
-    UNION ALL
-    SELECT 'Socket Write' AS eventType, duration FROM SocketWrite
-    UNION ALL
-    SELECT 'File Write' AS eventType, duration FROM FileWrite
-    UNION ALL
-    SELECT 'File Read' AS eventType, duration FROM FileRead
-) latencies
-GROUP BY eventType
-ORDER BY SUM(duration) DESC`,
 
   `CREATE OR REPLACE VIEW "memory-leaks-by-class" AS
 SELECT
@@ -1074,10 +1047,18 @@ ORDER BY value DESC`,
  * GCHeapSummary or ObjectAllocationSample).  These are created conditionally — only
  * when the required source table exists in the loaded recording.
  *
- * Each entry is { requires: tableName, sql: CREATE VIEW statement }.
- * The loader checks `duckdb_tables()` before executing each group.
+ * Each entry is either:
+ *   { requires: tableName, sql: CREATE VIEW statement }
+ * or:
+ *   { requires: tableName, buildSql: (tables) => sql | null }
+ * The loader calls buildSql(allTableNames) and skips creation if it returns null.
+ * Use buildSql for UNION ALL views whose branches depend on multiple optional tables.
  */
-export const CONDITIONAL_VIEWS_SQL: Array<{ requires: string; sql: string }> = [
+export const CONDITIONAL_VIEWS_SQL: Array<{
+  requires: string;
+  sql?: string;
+  buildSql?: (tables: Set<string>) => string | null;
+}> = [
   {
     requires: 'GCHeapSummary',
     sql: `CREATE OR REPLACE VIEW "heap-summary-over-time" AS
