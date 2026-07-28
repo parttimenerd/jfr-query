@@ -357,10 +357,15 @@ function readTokenAt(view: EditorView, pos: number): { text: string; from: numbe
   return { text: text.slice(start, end), from: line.from + start, to: line.from + end };
 }
 
+// Memoized registry: plotRegistry is a module constant so the first call wins.
+let _cachedAdaptedRegistry: ShapeRegistry | null = null;
+let _cachedRawRegistry: Record<string, PlotRegistration<any>> | null = null;
+
 // Build a registry suitable for the plot annotators from the user-facing
 // `PlotRegistration` map. Kept in this module because the plot hover adapter
 // expects the annotator-shaped registry.
 function adaptShapeRegistry(reg: Record<string, PlotRegistration<any>>): ShapeRegistry {
+  if (_cachedRawRegistry === reg && _cachedAdaptedRegistry) return _cachedAdaptedRegistry;
   const out: ShapeRegistry = {};
   for (const [k, v] of Object.entries(reg)) {
     const requiredClauses = v.params.filter(p => p.required).map(p => p.name.toLowerCase());
@@ -383,6 +388,8 @@ function adaptShapeRegistry(reg: Record<string, PlotRegistration<any>>): ShapeRe
       })),
     };
   }
+  _cachedRawRegistry = reg;
+  _cachedAdaptedRegistry = out;
   return out;
 }
 
