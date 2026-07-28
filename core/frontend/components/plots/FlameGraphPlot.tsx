@@ -479,17 +479,6 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, framesCol, valueCol]);
 
-  if (root.value === 0) {
-    return (
-      <div className="p-4 text-center text-gray-500 text-sm">
-        No flame graph data. Ensure the <code className="text-gray-300">frames</code> column contains semicolon-separated stack frames and <code className="text-gray-300">value</code> is numeric.
-        <div className="mt-2 text-xs text-gray-600">For JFR data, use <code className="text-gray-400">stack_frames(es."stackTrace$methods")</code> to build the frames column.</div>
-      </div>
-    );
-  }
-
-  const currentRoot = zoomStack.length > 0 ? zoomStack[zoomStack.length - 1] : root;
-
   const handleZoom = useCallback((node: FlameGraphNodeData) => {
     if (node === root) return;
     setZoomStack(prev => [...prev, node]);
@@ -498,8 +487,6 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
   const handleGoUp = useCallback(() => {
     setZoomStack(prev => prev.slice(0, -1));
   }, []);
-
-  const handleBreadcrumb = (index: number) => setZoomStack(prev => prev.slice(0, index));
 
   const handleReset = useCallback(() => {
     setZoomStack([]);
@@ -511,29 +498,15 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
     setContextMenu({ x: e.clientX, y: e.clientY, node });
   }, []);
 
-  const matchRegex = (() => {
-    try { return searchTerm.length >= 2 ? new RegExp(searchTerm, 'i') : null; }
-    catch { return null; }
-  })();
-  const hasSearch = searchTerm.length >= 2;
-
-  const countMatches = (node: FlameGraphNodeData): number => {
-    const hit = hasSearch && (matchRegex ? matchRegex.test(node.name) : node.name.toLowerCase().includes(searchTerm.toLowerCase()));
-    let n = hit ? 1 : 0;
-    for (const child of node.children) n += countMatches(child);
-    return n;
-  };
-  const matchCount = hasSearch ? countMatches(root) : 0;
-
   // Choose DOM vs canvas based on visible node count.
+  const currentRootForCount = zoomStack.length > 0 ? zoomStack[zoomStack.length - 1] : root;
   const visibleCount = useMemo(
-    () => currentRoot.children.reduce(
-        (sum, child) => sum + countVisibleNodes(child, currentRoot.value, minFrameWidth, root.value, widthMode),
+    () => currentRootForCount.children.reduce(
+        (sum, child) => sum + countVisibleNodes(child, currentRootForCount.value, minFrameWidth, root.value, widthMode),
         0,
     ),
-    [currentRoot, minFrameWidth, root.value, widthMode]
+    [currentRootForCount, minFrameWidth, root.value, widthMode]
   );
-  const useCanvas = visibleCount > CANVAS_THRESHOLD;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -556,6 +529,34 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [zoomStack.length, contextMenu]);
+
+  if (root.value === 0) {
+    return (
+      <div className="p-4 text-center text-gray-500 text-sm">
+        No flame graph data. Ensure the <code className="text-gray-300">frames</code> column contains semicolon-separated stack frames and <code className="text-gray-300">value</code> is numeric.
+        <div className="mt-2 text-xs text-gray-600">For JFR data, use <code className="text-gray-400">stack_frames(es."stackTrace$methods")</code> to build the frames column.</div>
+      </div>
+    );
+  }
+
+  const currentRoot = zoomStack.length > 0 ? zoomStack[zoomStack.length - 1] : root;
+
+  const handleBreadcrumb = (index: number) => setZoomStack(prev => prev.slice(0, index));
+
+  const matchRegex = (() => {
+    try { return searchTerm.length >= 2 ? new RegExp(searchTerm, 'i') : null; }
+    catch { return null; }
+  })();
+  const hasSearch = searchTerm.length >= 2;
+
+  const countMatches = (node: FlameGraphNodeData): number => {
+    const hit = hasSearch && (matchRegex ? matchRegex.test(node.name) : node.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    let n = hit ? 1 : 0;
+    for (const child of node.children) n += countMatches(child);
+    return n;
+  };
+  const matchCount = hasSearch ? countMatches(root) : 0;
+  const useCanvas = visibleCount > CANVAS_THRESHOLD;
 
   return (
     <div className="w-full h-full flex flex-col bg-gray-900" style={containerHeight ? { height: containerHeight } : undefined} onClick={() => contextMenu && setContextMenu(null)}>

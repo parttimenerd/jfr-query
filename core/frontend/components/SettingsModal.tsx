@@ -57,7 +57,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         });
         testedKeys.current[provider] = undefined;
     }
-  }, [localSettings.aiProvider, localSettings.googleApiKey, localSettings.openaiApiKey, localSettings.gardenerApiKey, localSettings.localBaseUrl]);
+  }, [localSettings.aiProvider, localSettings.googleApiKey, localSettings.openaiApiKey, localSettings.anthropicApiKey, localSettings.gardenerApiKey, localSettings.localApiKey, localSettings.localBaseUrl]);
 
   useEffect(() => {
     if (!isOpen) return;

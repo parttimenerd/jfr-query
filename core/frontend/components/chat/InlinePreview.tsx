@@ -85,7 +85,7 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
         const syntheticCell: NotebookCellData = {
             id: previewId ?? fallbackPreviewCellId,
             title: '',
-            content: '```sql\n' + sql + '\n```\n```plot\n' + plotConfig + '\n```',
+            content: '```sql\n' + sql + '\n```\n\n```plot\n' + plotConfig + '\n```',
         };
         const combinedContent = '```sql\n' + sql + '\n```\n\n```plot\n' + plotConfig + '\n```';
         const fallbackMetadata: NotebookMetadata = metadata ?? { views: [], macros: [] };
