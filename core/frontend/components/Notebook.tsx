@@ -220,13 +220,15 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                 ))}
               </div>
             )}
-            <SettingsPanel
-                ref={settingsPanelRef}
-                metadata={metadata}
-                onMetadataChange={onMetadataChange}
-                onRunPreviewQuery={onRunPreviewQuery}
-                isAiFeatureActive={isAiFeatureActive}
-            />
+            {!presenterMode && (
+                <SettingsPanel
+                    ref={settingsPanelRef}
+                    metadata={metadata}
+                    onMetadataChange={onMetadataChange}
+                    onRunPreviewQuery={onRunPreviewQuery}
+                    isAiFeatureActive={isAiFeatureActive}
+                />
+            )}
             {cells.map((cell, idx) => {
                 const name = cellHandle(cell, idx);
                 const visible = cellVisibility[name] ?? true;
@@ -272,14 +274,16 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     />
                 );
             })}
-            <div className="flex justify-center py-4">
-                <button
-                    onClick={onAddCell}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-cyan-600/50 text-gray-300 hover:text-cyan-300 rounded-lg transition-colors font-semibold"
-                >
-                    <PlusIcon className="w-5 h-5" /> Add Cell
-                </button>
-            </div>
+            {!presenterMode && (
+                <div className="flex justify-center py-4">
+                    <button
+                        onClick={onAddCell}
+                        className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-cyan-600/50 text-gray-300 hover:text-cyan-300 rounded-lg transition-colors font-semibold"
+                    >
+                        <PlusIcon className="w-5 h-5" /> Add Cell
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

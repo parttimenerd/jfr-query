@@ -102,7 +102,9 @@ const InlineProse: React.FC<InlineProseProps> = ({ text, query, variables, forma
             for (const i of exprIndices) {
                 const p = parts[i] as { type: 'expr'; sql: string; format?: string };
                 const sub = substituteVariables(p.sql, toSqlVariables(variables));
-                const r = await evaluateScalar(query, sub);
+                const isQuery = /^\s*(select|with)\b/i.test(sub);
+                const evalSql = isQuery ? sub : `SELECT (${sub})`;
+                const r = await evaluateScalar(query, evalSql);
                 if (cancelled) return;
                 if (r.kind === 'ok') {
                     next[i] = formatValue(r.value, p.format, formatSettings);
@@ -140,7 +142,7 @@ const IfBlock: React.FC<IfBlockProps> = ({ condition, body, query, variables, fo
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            const sub = substituteVariables(condition, variables);
+            const sub = substituteVariables(condition, toSqlVariables(variables));
             const r = await evaluateCondition(query, sub);
             if (cancelled) return;
             if (r.kind === 'error') setState({ error: r.message });
