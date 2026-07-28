@@ -552,8 +552,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
             getMemory: () => channelMemoryRef.current[activeChannelId] ?? {},
             setMemory: (key, value) => setChannelMemory(prev => {
                 const cur = { ...(prev[activeChannelId] ?? {}) };
-                if (!(key in cur) && Object.keys(cur).length >= 10) {
-                    delete cur[Object.keys(cur)[0]]; // LRU: drop oldest
+                // Re-insert to move key to most-recently-used position (end).
+                delete cur[key];
+                if (Object.keys(cur).length >= 10) {
+                    delete cur[Object.keys(cur)[0]]; // evict oldest
                 }
                 cur[key] = value;
                 return { ...prev, [activeChannelId]: cur };

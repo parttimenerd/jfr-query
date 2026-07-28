@@ -67,8 +67,15 @@ function compactInlineHistory(history: ToolChatMessage[]): ToolChatMessage[] {
     const summary = dropped
         .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${(m.content || '').slice(0, 150)}`)
         .join('\n');
+    const summaryMsg = `[${dropped.length} earlier turns omitted]\n${summary}`;
+    // Anthropic requires strict role alternation. If kept[0] is also 'user', merge
+    // the summary into it to avoid two consecutive user messages.
+    if (kept.length > 0 && kept[0].role === 'user') {
+        const merged = { ...kept[0], content: `${summaryMsg}\n\n${kept[0].content ?? ''}` };
+        return [merged, ...kept.slice(1)];
+    }
     return [
-        { role: 'user', content: `[${dropped.length} earlier turns omitted]\n${summary}` },
+        { role: 'user', content: summaryMsg },
         ...kept,
     ];
 }
@@ -576,7 +583,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
             // provider isn't tool-capable.
             if (chatProvider === 'browser') {
                 await handleSendLegacy(inputText, effectiveVisibility);
-                return;
+                return { ok: true };
             }
 
             const deps = buildToolDeps();

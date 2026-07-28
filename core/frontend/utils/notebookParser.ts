@@ -63,7 +63,7 @@ const parseInlineYamlList = (raw: string): string[] | null => {
             cur += ch;
         }
     }
-    if (cur.trim() !== '' || out.length > 0) out.push(cur.trim());
+    if (cur.trim() !== '') out.push(cur.trim());
     return out.map(s => s.replace(/^(["'])(.*)\1$/, '$2'));
 };
 

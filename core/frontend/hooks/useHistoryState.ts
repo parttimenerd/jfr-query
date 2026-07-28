@@ -73,11 +73,12 @@ export const useHistoryState = <T,>(
         }
 
         _setState(prevState => {
-            // If we're in a debouncing session, modify the last history entry.
+            // If we're in a debouncing session, modify the current history entry
+            // (not necessarily the last one — user may have undone before typing).
             if (!createNewEntry) {
                 const newHistory = [...prevState.history];
-                newHistory[newHistory.length - 1] = value;
-                return { ...prevState, history: newHistory, currentIndex: newHistory.length - 1 };
+                newHistory[prevState.currentIndex] = value;
+                return { ...prevState, history: newHistory };
             }
 
             // Otherwise, it's a new action. Create a new history entry.

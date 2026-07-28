@@ -338,12 +338,12 @@ const App: React.FC = () => {
             try {
                 if (nb.startsWith('base64,')) {
                     const decoded = new TextDecoder().decode(Uint8Array.from(atob(nb.slice('base64,'.length)), c => c.charCodeAt(0)));
-                    setNotebookMarkdown(decoded);
+                    loadNotebook(decoded);
                 } else {
                     fetch(nb).then(r => {
                         if (!r.ok) throw new Error(`HTTP ${r.status}`);
                         return r.text();
-                    }).then(setNotebookMarkdown).catch(err => {
+                    }).then(loadNotebook).catch(err => {
                         console.error('Failed to load notebook from URL:', err);
                     });
                 }
@@ -351,7 +351,7 @@ const App: React.FC = () => {
                 console.error('Failed to decode notebook param:', err);
             }
         }
-    }, [setNotebookMarkdown]);
+    }, [loadNotebook]);
 
     // Auto-load JFR: only relevant in WASM mode, only if no DB yet.
     useEffect(() => {
@@ -779,11 +779,27 @@ const App: React.FC = () => {
 
 
     const deleteCell = useCallback((cellId: string) => {
-        const newCells = cellsRef.current.filter(cell => cell.id !== cellId);
+        const oldCells = cellsRef.current;
+        const deletedIndex = oldCells.findIndex(c => c.id === cellId);
+        const newCells = oldCells.filter(cell => cell.id !== cellId);
         updateCellsAndMarkdown(newCells);
+        // Remap results and timings: after deletion, cells at positions > deletedIndex
+        // shift down by one (cell-N becomes cell-(N-1)), so their result entries must
+        // be moved to the new keys to avoid showing the wrong cell's data.
         setResults(prev => {
-            const next = { ...prev };
-            delete next[cellId];
+            const next: typeof prev = {};
+            for (let i = 0; i < newCells.length; i++) {
+                const oldId = oldCells[i >= deletedIndex ? i + 1 : i].id;
+                if (prev[oldId] !== undefined) next[`cell-${i}`] = prev[oldId];
+            }
+            return next;
+        });
+        setQueryTimings(prev => {
+            const next: typeof prev = {};
+            for (let i = 0; i < newCells.length; i++) {
+                const oldId = oldCells[i >= deletedIndex ? i + 1 : i].id;
+                if (prev[oldId] !== undefined) next[`cell-${i}`] = prev[oldId];
+            }
             return next;
         });
     }, [updateCellsAndMarkdown]);

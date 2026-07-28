@@ -291,6 +291,9 @@ export function validateToolArgs(tool: Tool, args: any): string | null {
         if (prop.type === 'object' && (typeof value !== 'object' || value === null || Array.isArray(value))) {
             return `${key} must be an object`;
         }
+        if (prop.type === 'array' && !Array.isArray(value)) {
+            return `${key} must be an array`;
+        }
         if (prop.enum && !prop.enum.includes(value)) {
             return `${key} must be one of ${JSON.stringify(prop.enum)}`;
         }
