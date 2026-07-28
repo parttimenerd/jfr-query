@@ -1122,7 +1122,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                         const handleFix = (fixedCode: string) => {
                             const newRows = JSON.parse(JSON.stringify(rows));
                             newRows[rowIndex][colIndex] = fixedCode + outerClauses;
-                            stableOnApplyFix(newRows.map(row => row.join('; ')).join('\n\n'));
+                            stableOnApplyFix(newRows.map(row => row.join('; ')).join('\n\n\n'));
                         };
                         e.fixContext = { failedConfig: mainConfig, onFix: handleFix };
                         throw e;

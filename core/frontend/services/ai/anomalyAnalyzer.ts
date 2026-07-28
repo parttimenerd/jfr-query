@@ -74,7 +74,11 @@ function checkDominance(result: RecentResult): BtwHint[] {
         if (vals.length < 2) continue;
         const total = vals.reduce((a, b) => a + b, 0);
         if (total <= 0) continue;
-        const top = vals[0];
+        // Use the value from result.rows[0] directly — the function assumes the
+        // result is sorted descending, so rows[0] is the actual top row.
+        const topRaw = result.rows[0][col.name];
+        if (!isNumber(topRaw)) continue;
+        const top = topRaw as number;
         if (top / total > 0.7) {
             const pct = Math.round((top / total) * 100);
             out.push({

@@ -519,7 +519,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
        {tooltip?.visible && ReactDOM.createPortal(
             <div
                 style={{ top: tooltip.top, left: tooltip.left, maxHeight: '250px' }}
-                className="absolute z-[100] p-2 bg-gray-700 border border-gray-600 rounded shadow-lg w-auto max-w-xs animate-fade-in overflow-y-auto"
+                className="fixed z-[100] p-2 bg-gray-700 border border-gray-600 rounded shadow-lg w-auto max-w-xs animate-fade-in overflow-y-auto"
                 onMouseEnter={() => { if (hideTimeout.current) clearTimeout(hideTimeout.current); }}
                 onMouseLeave={handleHideTooltip}
             >
