@@ -1325,7 +1325,7 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** `closestMatch` for unknown param names searched `Object.keys(spec)` unfiltered, meaning it could suggest an alias (`color` → `category`) or deprecated param as a correction. The list of available params already filtered aliases but the suggestion did not.
 **Fix:** Both the available-params list and the `closestMatch` candidates now use the same filtered set (non-alias, non-deprecated keys only).
 
-### 🟠 [B-221] `LINE_CHART`, `AREA_CHART`, and `BAR_CHART` — `color` parameter declared but not implemented
+### 🟠 [B-221] `LINE_CHART`, `AREA_CHART`, and `BAR_CHART` — `color` parameter declared but not implemented ✅ FIXED
 **Where:** `components/plots/LineChartPlot.tsx:14,35-71`; `components/plots/AreaChartPlot.tsx:21,62-112`; `components/plots/BarChartPlot.ts:15,57-67`
 **Repro:** `LINE_CHART(x: "time", y: "val", color: "host")` — data is not split by `host` column; all rows are plotted as a single series as if `color` were absent.
 **Observed:** All three components declare `color?: string` in their `Config` interface and list a `color` param, but the `useMemo` that builds `chartData` / `allY` / `yCols` never reads `config.color`. The param is silently ignored.
@@ -1410,7 +1410,7 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 - FlameGraph: replaced `Math.max(...children.map(...))` pattern in `getDepth` with an iterative loop using a mutable max variable; same fix for `const maxDepth = Math.max(...currentRoot.children.map(...))`.
 - HeatmapPlot: replaced the intermediate `values` array + `Math.min/max(...values)` with a single-pass loop computing `min`/`max` inline. Also replaced `xLabels.indexOf(item[x])` (O(n) per cell) with a `Map`-based O(1) lookup, fixing an O(n²) slowdown for large heatmaps.
 
-### 🟠 [B-223] `LINE_CHART`, `AREA_CHART`, `BAR_CHART` — `PALETTE` clause parsed but not implemented
+### 🟠 [B-223] `LINE_CHART`, `AREA_CHART`, `BAR_CHART` — `PALETTE` clause parsed but not implemented ✅ FIXED
 **Where:** `utils/plotParser.ts:150`; `components/plots/LineChartPlot.tsx`, `AreaChartPlot.tsx`, `BarChartPlot.ts`
 **Repro:** `BAR_CHART(x: "label", y: ["v1", "v2"]) PALETTE "category10"` — bars use the default purple/green/amber colors, not the d3 category10 palette.
 **Observed:** `ParsedPlotCall.palette` is populated by the parser but no plot component reads `clauses?.palette`. The clause is a no-op.
@@ -1458,7 +1458,7 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** Large BigInt values like `1716584383215000000n` are displayed as `1716584383215000064` (rounded) instead of the exact value.
 **Fix:** Added an early-return for `typeof value === 'bigint'` that calls `value.toString()` directly, bypassing `Number()` conversion entirely.
 
-### 🔵 [B-245] `AXIS-X FORMAT` / `AXIS-Y FORMAT` clauses parsed but never applied to tick formatters
+### 🔵 [B-245] `AXIS-X FORMAT` / `AXIS-Y FORMAT` clauses parsed but never applied to tick formatters ✅ FIXED
 **Where:** `utils/plotParser.ts:118` (parses `FORMAT` sub-clause into `AxisSpec.format`); all plot components
 **Repro:** `LINE_CHART(x: "ts", y: ["v"]) AXIS-Y FORMAT ".2s"` — tick labels use default formatting, not the d3 format string.
 **Observed:** `AxisSpec.format` is populated by the parser but no plot component reads `clauses?.axisX?.format` or `clauses?.axisY?.format`. The clause is silently ignored.
