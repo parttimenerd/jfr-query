@@ -88,6 +88,10 @@ export async function ensureModelLoaded(
     if (loading.has(id)) {
         await loading.get(id)!;
         throwIfAborted(signal);
+        // If the concurrent load failed (warmup threw and evicted the cache),
+        // don't silently return — re-enter the full load path so the caller
+        // gets a proper error instead of believing the model is ready.
+        if (!cache.has(id)) throw new Error(`Model ${id} failed to load`);
         return;
     }
 

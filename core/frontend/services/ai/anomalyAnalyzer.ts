@@ -79,6 +79,7 @@ function checkDominance(result: RecentResult): BtwHint[] {
         const topRaw = result.rows[0][col.name];
         if (!isNumber(topRaw)) continue;
         const top = topRaw as number;
+        if (top <= 0 || top > total) continue; // guard against mixed-sign columns
         if (top / total > 0.7) {
             const pct = Math.round((top / total) * 100);
             out.push({
