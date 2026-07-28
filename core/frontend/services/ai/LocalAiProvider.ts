@@ -169,7 +169,7 @@ export class LocalAiProvider implements IAiProvider {
     async getAgentResponse(conversationHistory: Content[], systemInstruction: string, model: string = DEFAULT_GOOD_MODEL): Promise<AIResponse> {
         const messages = [
             { role: 'system', content: `${systemInstruction}\n\n${JSON_REQUIRED_INSTRUCTION}\nThe JSON object must have keys "text" (string), "code" (string or null), and "plotConfig" (string or null).` },
-            ...conversationHistory.map(c => ({ role: c.role === 'model' ? 'assistant' : c.role, content: c.parts.filter(p => typeof (p as any).text === 'string').map(p => (p as any).text).join('\n') })),
+            ...conversationHistory.map(c => ({ role: c.role === 'model' ? 'assistant' : c.role, content: (c.parts ?? []).filter(p => typeof (p as any).text === 'string').map(p => (p as any).text).join('\n') })),
         ];
         const raw = await this.sendWithRetry(this.buildBody(model, messages));
         return extractJson<AIResponse>(raw);
