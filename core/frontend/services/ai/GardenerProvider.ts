@@ -169,6 +169,7 @@ export class GardenerProvider implements IAiProvider {
         const wireMessages: any[] = [];
         if (opts?.systemInstruction) wireMessages.push({ role: 'system', content: opts.systemInstruction });
         for (const m of messages) {
+            if (m.role === 'system') continue; // already prepended above
             if (m.role === 'tool') {
                 for (const tr of m.toolResults ?? []) {
                     wireMessages.push({

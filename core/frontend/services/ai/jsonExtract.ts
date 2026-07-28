@@ -184,17 +184,17 @@ function findMatch(s: string, start: number): number {
     const open = s[start];
     const close = open === '{' ? '}' : ']';
     let depth = 0;
-    let inStr = false;
+    let inStr: string | null = null;
     let escape = false;
     for (let i = start; i < s.length; i++) {
         const c = s[i];
         if (inStr) {
             if (escape) { escape = false; continue; }
             if (c === '\\') { escape = true; continue; }
-            if (c === '"') inStr = false;
+            if (c === inStr) inStr = null;
             continue;
         }
-        if (c === '"') { inStr = true; continue; }
+        if (c === '"' || c === "'") { inStr = c; continue; }
         if (c === open) depth++;
         else if (c === close) {
             depth--;
