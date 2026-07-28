@@ -97,8 +97,8 @@ function buildSingleConfig(parsed: ParsedPlotCall): string {
 }
 
 /**
- * Reconstruct a lowercase DSL config string for composite (row/col) plots so
- * PlotRenderer can parse it back using parsePlotCall.
+ * Reconstruct a config string for composite (row/col) plots that parseComposite
+ * can parse back. Uses ROW(A, B) / COL(A, B) / A + B syntax.
  */
 function buildCompositeConfig(parsed: ParsedPlotCall): string {
     return serializeParsedPlot(parsed);
@@ -107,16 +107,16 @@ function buildCompositeConfig(parsed: ParsedPlotCall): string {
 function serializeParsedPlot(p: ParsedPlotCall): string {
     if (p.composite) {
         const { direction, children } = p.composite;
-        const inner = children.map(serializeParsedPlot).join('; ');
-        let result = `${direction} { ${inner} }`;
-        if (p.title) result += ` | title: "${p.title}"`;
-        if (p.width) result += ` | width: ${p.width}`;
-        if (p.height) result += ` | height: ${p.height}`;
+        const serializedChildren = children.map(serializeParsedPlot);
+        if (direction === 'overlay') {
+            return serializedChildren.join(' + ');
+        }
+        let result = `${direction.toUpperCase()}(${serializedChildren.join(', ')})`;
+        if (p.title) result += ` TITLE "${p.title}"`;
+        if (p.width) result += ` WIDTH ${p.width}`;
+        if (p.height) result += ` HEIGHT ${p.height}`;
         return result;
     }
-    // Single plot: use the mainConfig as a lowercase-style block.
-    // The mainConfig is already in UPPERCASE form (e.g. LINE_CHART(x: "time")),
-    // so we just return it as-is since parsePlotCall handles UPPERCASE.
     return buildSingleConfig(p);
 }
 
