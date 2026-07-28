@@ -33,6 +33,7 @@ function slugify(input: string): string {
 export function mentionCandidates(cells: NotebookCellData[] | undefined | null): MentionCandidate[] {
     if (!cells || cells.length === 0) return [];
     const seen = new Map<string, number>();
+    const assigned = new Set<string>();
     const out: MentionCandidate[] = [];
     cells.forEach((c, idx) => {
         const heading = c.content.match(/^##?\s+(.+)/m)?.[1]?.trim();
@@ -40,8 +41,12 @@ export function mentionCandidates(cells: NotebookCellData[] | undefined | null):
         const rawToken = c.name?.trim() || slugify(labelSource) || `cell-${idx + 1}`;
         const baseToken = rawToken || `cell-${idx + 1}`;
         const count = seen.get(baseToken) ?? 0;
-        const token = count === 0 ? baseToken : `${baseToken}-${count + 1}`;
-        seen.set(baseToken, count + 1);
+        let token = count === 0 ? baseToken : `${baseToken}-${count + 1}`;
+        // Guard against suffix collision with another cell's explicit name.
+        let n = count + 1;
+        while (assigned.has(token)) { n++; token = `${baseToken}-${n}`; }
+        seen.set(baseToken, n);
+        assigned.add(token);
         out.push({ token, label: labelSource, cellId: c.id });
     });
     return out;
