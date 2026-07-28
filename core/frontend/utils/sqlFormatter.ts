@@ -327,7 +327,7 @@ function emitOp(s: EmitterState, t: Token, prev: Token | undefined): void {
     // Star directly after `(` or `,` is `*` (column wildcard / `count(*)`) — emit verbatim without leading space.
     // Star after `SELECT` or `DISTINCT` is also a wildcard — add a single leading space.
     if (op === '*' && (!prev ||
-        (prev.kind === 'punct' && (prev.value === '(' || prev.value === ',')) ||
+        (prev.kind === 'punct' && (prev.value === '(' || prev.value === ',' || prev.value === '.')) ||
         (prev.kind === 'keyword' && (prev.value === 'SELECT' || prev.value === 'DISTINCT')))) {
         const needsSpace = !!prev && prev.kind === 'keyword' && !s.out.endsWith(' ') && !s.out.endsWith('\n');
         if (needsSpace) s.out += ' ';
