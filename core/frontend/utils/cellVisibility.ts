@@ -7,6 +7,7 @@ const isTruthy = (v: unknown): boolean => {
     if (typeof v === 'number') return v !== 0 && !Number.isNaN(v);
     if (typeof v === 'string') return v.length > 0 && v.toLowerCase() !== 'false' && v !== '0';
     if (typeof v === 'boolean') return v;
+    if (typeof v === 'bigint') return v !== 0n;
     return true;
 };
 

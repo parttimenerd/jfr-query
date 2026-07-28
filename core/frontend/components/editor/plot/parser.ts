@@ -955,8 +955,8 @@ class PlotParser {
         if (t.kind === 'number') {
             this.consume();
             const node = makeNode('literal', t.from, t.to, this.src, {
-                literalKind: 'string',
-                literalValue: t.text,
+                literalKind: 'number',
+                literalValue: parseFloat(t.text.replace(/_/g, '')),
             });
             this.setCursor(node);
             return node;

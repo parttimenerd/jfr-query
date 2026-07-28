@@ -180,6 +180,7 @@ function normalizeEpochNumber(n: number): number {
 function normalizeEpochInteger(n: number, digits: number): number {
     if (digits >= 18) return n / 1_000_000;
     if (digits >= 15) return n / 1_000;
+    if (digits === 10) return n * 1000;
     return n;
 }
 

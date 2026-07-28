@@ -478,7 +478,10 @@ async function mergeChunkTables(
         `CREATE TABLE "_idmap_${base}" AS
          SELECT s._worker, s._id AS old_id,
            CASE WHEN s._id = 0 THEN 0
-                ELSE DENSE_RANK() OVER (ORDER BY ${rankOrderBy}) END AS new_id
+                ELSE DENSE_RANK() OVER (
+                  PARTITION BY (s._id = 0)::INT
+                  ORDER BY ${rankOrderBy}
+                ) END AS new_id
          FROM ${rankFrom}`
       ).catch((e) => console.warn(`merge idmap failed for ${base}:`, e));
 

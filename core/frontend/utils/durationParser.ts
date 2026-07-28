@@ -40,5 +40,5 @@ export const parseDuration = (durationStr: string): number | null => {
     return null;
   }
 
-  return totalMilliseconds > 0 ? totalMilliseconds : null;
+  return totalMatchedChars !== sanitized.length ? null : totalMilliseconds;
 };
