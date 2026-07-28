@@ -56,11 +56,15 @@ const colorToRgb = (() => {
         if (cache.has(color)) return cache.get(color)!;
         if (!ctx) return [100, 100, 100];
         ctx.fillStyle = color;
-        const style = ctx.fillStyle; // canonical hex
-        const r = parseInt(style.slice(1, 3), 16);
-        const g = parseInt(style.slice(3, 5), 16);
-        const b = parseInt(style.slice(5, 7), 16);
-        const result: [number, number, number] = [r, g, b];
+        const style = ctx.fillStyle;
+        let result: [number, number, number];
+        if (style.startsWith('#')) {
+            result = [parseInt(style.slice(1, 3), 16), parseInt(style.slice(3, 5), 16), parseInt(style.slice(5, 7), 16)];
+        } else {
+            // Browsers serialize HSL/named colors as rgb(r, g, b)
+            const m = style.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+            result = m ? [+m[1], +m[2], +m[3]] : [100, 100, 100];
+        }
         cache.set(color, result);
         return result;
     };
