@@ -53,7 +53,7 @@ export const isDurationLike = (key: string, sample: any): boolean => {
     const num = Number(value);
     // Allow fractional-second values (e.g. JFR stores durations in seconds: 0.012 s = 12 ms).
     // Upper cap 1e12 excludes epoch-scale timestamps.
-    if (num <= 0 || num > 1e12) return false;
+    if (num < 0 || num > 1e12) return false;
     return true;
 };
 

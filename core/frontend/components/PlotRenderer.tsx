@@ -281,6 +281,12 @@ const InteractivePlotWrapper: React.FC<{
         }
     }, [linkX, commitToVariables]);
 
+    // Cancel any pending scroll-idle commit timer on unmount to avoid calling
+    // onVariableChange after the wrapper is gone.
+    useEffect(() => {
+        return () => { if (commitTimerRef.current) clearTimeout(commitTimerRef.current); };
+    }, []);
+
     // Subscribe to linkXStore for cross-cell sync (sibling plots sharing same vars).
     useEffect(() => {
         return linkXStore.subscribe(linkX, domain => {
@@ -797,7 +803,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                     });
                     plotBrushStore.publish({
                         name: brushVarName,
-                        domain: [parseFloat(String(x_lo)), parseFloat(String(x_hi))],
+                        domain: [parseFloat(String(y_lo)), parseFloat(String(y_hi))],
                         mode,
                         cellName: cellNameRef.current,
                     });
