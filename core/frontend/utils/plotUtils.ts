@@ -200,9 +200,9 @@ export function formatDurationNs(ns: any): string {
     const n = Number(ns);
     if (!Number.isFinite(n)) return String(ns);
     const abs = Math.abs(n);
-    if (abs >= 1e9) return `${(n / 1e9).toPrecision(3)}s`;
-    if (abs >= 1e6) return `${(n / 1e6).toPrecision(3)}ms`;
-    if (abs >= 1e3) return `${(n / 1e3).toPrecision(3)}µs`;
+    if (abs >= 1e9) return `${parseFloat((n / 1e9).toPrecision(3))}s`;
+    if (abs >= 1e6) return `${parseFloat((n / 1e6).toPrecision(3))}ms`;
+    if (abs >= 1e3) return `${parseFloat((n / 1e3).toPrecision(3))}µs`;
     return `${n}ns`;
 }
 

@@ -79,7 +79,7 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
     //   - Anchors, aliases, merge keys, or other advanced YAML features
     // Structured values for unsupported keys are stored as raw strings via the
     // `(result as any)[keyTrimmed] = value` fallback at indent==0 (line 72).
-    const lines = fmString.split('\n');
+    const lines = fmString.split(/\r?\n/);
     const result: NotebookMetadata = { views: [], macros: [] };
     let currentSection: 'views' | 'macros' | 'variables' | 'cellConditions' | null = null;
     let currentObject: any = null;

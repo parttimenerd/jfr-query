@@ -47,9 +47,10 @@ export function expandPlotConstants(config: string): ExpansionResult {
             const expandedValue = substituteRefs(rawValue, env, errors, i + 1);
             if (env[name] !== undefined) {
                 errors.push(`Line ${i + 1}: redefinition of @${name} (already defined above).`);
+            } else {
+                env[name] = expandedValue;
+                constants.push({ name, value: expandedValue });
             }
-            env[name] = expandedValue;
-            constants.push({ name, value: expandedValue });
             // LET lines do not contribute to the output config.
             continue;
         }

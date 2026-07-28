@@ -171,9 +171,12 @@ export function parseSkillBody(raw: string): { systemPrompt: string; cells: Map<
     // Strip front-matter
     const body = raw.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '');
 
-    // Extract ## System Prompt section
-    const sysMatch = body.match(/^## System Prompt\s*\n([\s\S]*?)(?=^## |\z)/m);
-    const systemPrompt = sysMatch ? sysMatch[1].trim() : '';
+    // Extract ## System Prompt section: split by ## headings and find the right section.
+    const sections = body.split(/\n(?=## )/);
+    const sysSection = sections.find(s => s.startsWith('## System Prompt'));
+    const systemPrompt = sysSection
+        ? sysSection.replace(/^## System Prompt[ \t]*\n/, '').trim()
+        : '';
 
     // Extract ## Cells section
     const cellsMatch = body.match(/^## Cells\s*\n([\s\S]*)$/m);
