@@ -23,8 +23,10 @@ export const useHistoryState = <T,>(
                 const parsed = JSON.parse(storedItem);
                 // Saved value is the current content (string or object), wrap in history stack.
                 // Guard against accidentally loading a stale history-object format.
-                if (parsed !== null && typeof parsed === 'object' && Array.isArray(parsed.history)) {
-                    return { history: [parsed.history[parsed.currentIndex ?? 0]], currentIndex: 0 };
+                if (parsed !== null && typeof parsed === 'object' && Array.isArray(parsed.history) && parsed.history.length > 0) {
+                    const idx = Math.min(Math.max(parsed.currentIndex ?? 0, 0), parsed.history.length - 1);
+                    const entry = parsed.history[idx];
+                    if (entry !== undefined) return { history: [entry], currentIndex: 0 };
                 }
                 return { history: [parsed], currentIndex: 0 };
             }
