@@ -147,6 +147,7 @@ export function suggestPlot(
         _debounceTimer = setTimeout(async () => {
             _debounceTimer = null;
             if (req.signal?.aborted) {
+                req.signal.removeEventListener('abort', onAbort);
                 if (_pendingResolve === resolve) _pendingResolve = null;
                 resolve(null);
                 return;
@@ -155,6 +156,7 @@ export function suggestPlot(
                 const result = await _route(req, deps);
                 _setCache(key, result);
                 if (_pendingResolve === resolve) _pendingResolve = null;
+                req.signal?.removeEventListener('abort', onAbort);
                 resolve(result);
             } catch (err) {
                 if (err instanceof AiOfflineEnforcedError) {
@@ -165,10 +167,12 @@ export function suggestPlot(
                     };
                     _setCache(key, degraded);
                     if (_pendingResolve === resolve) _pendingResolve = null;
+                    req.signal?.removeEventListener('abort', onAbort);
                     resolve(degraded);
                     return;
                 }
                 if (_pendingResolve === resolve) _pendingResolve = null;
+                req.signal?.removeEventListener('abort', onAbort);
                 resolve(null);
             }
         }, DEBOUNCE_MS);

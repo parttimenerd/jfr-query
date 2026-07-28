@@ -625,7 +625,7 @@ const App: React.FC = () => {
 
     const runQuery = useCallback(async (cellId: string, sql: string, queryIndex: number, allVariables: Record<string,string>) => {
         const runOnce = async (sqlToRun: string) => {
-            const subSql = expandBrushOperator(substituteVariables(sqlToRun, toSqlVariables(allVariables)), allVariables);
+            const subSql = substituteVariables(expandBrushOperator(sqlToRun, allVariables), toSqlVariables(allVariables));
             const remainingVars = findRemainingVariables(subSql);
             if (remainingVars.length > 0) {
                 const varList = remainingVars.join(', ');
