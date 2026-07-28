@@ -355,7 +355,7 @@ export function extractPlotMetadata(plotSrc: string): PlotMetadata {
                     }
                 }
                 if (key === 'link-x' || key === 'link-xy' || key === 'link-scroll') meta.linkedXVars = collected;
-                if (key === 'link-y' || key === 'link-xy') meta.linkedYVars = collected;
+                if (key === 'link-y') meta.linkedYVars = collected;
             }
         }
     });
