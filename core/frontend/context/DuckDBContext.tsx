@@ -474,9 +474,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .toArray()
           .map((r: any) => r.table_name as string),
       );
-      for (const { requires, sql } of CONDITIONAL_VIEWS_SQL) {
+      for (const { requires, sql, buildSql } of CONDITIONAL_VIEWS_SQL) {
         if (tableNames.has(requires)) {
-          try { await conn.query(sql); } catch (e: any) {
+          const stmt = sql ?? buildSql?.(tableNames);
+          if (!stmt) continue;
+          try { await conn.query(stmt); } catch (e: any) {
             const msg = String(e?.message ?? e);
             if (!msg.includes('Catalog Error') && !msg.includes('Binder Error')) console.warn('conditional view failed:', e);
           }
