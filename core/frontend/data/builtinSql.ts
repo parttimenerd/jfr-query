@@ -230,17 +230,6 @@ FROM ActiveSetting
 GROUP BY id
 ORDER BY "Event Type"`,
 
-  `CREATE OR REPLACE VIEW "blocked-by-system-gc" AS
-SELECT
-    startTime AS "Time",
-    format_duration(duration) AS "Duration",
-    (c.javaName || '.' || m.name || m.descriptor) AS "Stack Trace"
-FROM SystemGC sgc
-LEFT JOIN Method m ON m._id = sgc.stackTrace$topApplicationMethod
-LEFT JOIN Class c ON c._id = m.type
-WHERE invokedConcurrent = 'false'
-ORDER BY sgc.duration DESC
-LIMIT 25`,
 
   `CREATE OR REPLACE VIEW "class-loaders" AS
 SELECT
@@ -252,34 +241,6 @@ LEFT JOIN ClassLoader cl ON cls.classLoader = cl._id
 GROUP BY classLoader, cl.javaName
 ORDER BY "Classes" DESC`,
 
-  `CREATE OR REPLACE VIEW "class-modifications" AS
-SELECT
-    format_duration(duration) AS "Time",
-    (c.javaName || '.' || m.name || m.descriptor) AS "Requested By",
-    CASE
-        WHEN eventType = 'redefine' THEN 'Redefine Classes'
-        WHEN eventType = 'retransform' THEN 'Retransform Classes'
-        ELSE eventType
-    END AS "Operation",
-    classCount AS "Classes"
-FROM (
-    SELECT
-        'redefine' AS eventType,
-        duration,
-        stackTrace$topApplicationMethod,
-        classCount
-    FROM RedefineClasses
-    UNION ALL
-    SELECT
-        'retransform' AS eventType,
-        duration,
-        stackTrace$topApplicationMethod,
-        classCount
-    FROM RetransformClasses
-) AS combined
-LEFT JOIN Method m ON m._id = stackTrace$topApplicationMethod
-LEFT JOIN Class c ON c._id = m.type
-ORDER BY duration DESC`,
 
   `CREATE OR REPLACE VIEW "compiler-configuration" AS
 SELECT
@@ -302,58 +263,7 @@ SELECT
     format_memory(LAST(nmethodCodeSize)) AS "Compilation Resulting Code Size"
 FROM CompilerStatistics`,
 
-  `CREATE OR REPLACE VIEW "compiler-phases" AS
-SELECT
-    phaseLevel AS "Level",
-    phase AS "Phase",
-    format_duration(AVG(duration)) AS "Average",
-    format_duration(P95(duration)) AS "P95",
-    format_duration(MAX(duration)) AS "Longest",
-    COUNT(*) AS "Count",
-    format_duration(SUM(duration)) AS "Total"
-FROM CompilerPhase
-GROUP BY phase, phaseLevel
-ORDER BY phaseLevel ASC, SUM(duration) DESC`,
 
-  `CREATE OR REPLACE VIEW "container-configuration" AS
-SELECT
-    LAST(containerType) AS "Container Type",
-    format_duration(LAST(cpuSlicePeriod)) AS "CPU Slice Period",
-    format_duration(LAST(cpuQuota)) AS "CPU Quota",
-    LAST(cpuShares) AS "CPU Shares",
-    LAST(effectiveCpuCount) AS "Effective CPU Count",
-    format_memory(LAST(memorySoftLimit)) AS "Memory Soft Limit",
-    format_memory(LAST(memoryLimit)) AS "Memory Limit",
-    format_memory(LAST(swapMemoryLimit)) AS "Swap Memory Limit",
-    format_memory(LAST(hostTotalMemory)) AS "Host Total Memory"
-FROM ContainerConfiguration`,
-
-  `CREATE OR REPLACE VIEW "container-cpu-usage" AS
-SELECT
-    format_duration(LAST(cpuTime)) AS "CPU Time",
-    format_duration(LAST(cpuUserTime)) AS "CPU User Time",
-    format_duration(LAST(cpuSystemTime)) AS "CPU System Time"
-FROM ContainerCPUUsage`,
-
-  `CREATE OR REPLACE VIEW "container-memory-usage" AS
-SELECT
-    LAST(memoryFailCount) AS "Memory Fail Count",
-    format_memory(LAST(memoryUsage)) AS "Memory Usage",
-    format_memory(LAST(swapMemoryUsage)) AS "Swap Memory Usage"
-FROM ContainerMemoryUsage`,
-
-  `CREATE OR REPLACE VIEW "container-io-usage" AS
-SELECT
-    LAST(serviceRequests) AS "Service Requests",
-    format_memory(LAST(dataTransferred)) AS "Data Transferred"
-FROM ContainerIOUsage`,
-
-  `CREATE OR REPLACE VIEW "container-cpu-throttling" AS
-SELECT
-    LAST(cpuElapsedSlices) AS "CPU Elapsed Slices",
-    LAST(cpuThrottledSlices) AS "CPU Throttled Slices",
-    format_duration(LAST(cpuThrottledTime)) AS "CPU Throttled Time"
-FROM ContainerCPUThrottling`,
 
   `CREATE OR REPLACE VIEW "contention-by-thread" AS
 SELECT
@@ -402,18 +312,6 @@ JOIN Class c ON jme.monitorClass = c._id
 GROUP BY jme.address, c.javaName
 ORDER BY MAX(duration) DESC`,
 
-  `CREATE OR REPLACE VIEW "deprecated-methods-for-removal" AS
-SELECT
-    (c.javaName || '.' || m.name || m.descriptor) AS "Deprecated Method",
-    list(DISTINCT (cc.javaName) ORDER BY cc.javaName) AS "Called from Class"
-FROM DeprecatedInvocation di
-JOIN Method m ON di.method = m._id
-JOIN Class c ON m.type = c._id
-JOIN Method cm ON di.stackTrace$topMethod = cm._id
-JOIN Class cc ON cm.type = cc._id
-WHERE forRemoval = 'true'
-GROUP BY di.method, c.javaName, m.name, m.descriptor
-ORDER BY c.javaName, m.name, m.descriptor`,
 
   `CREATE OR REPLACE VIEW "cpu-information" AS
 SELECT
@@ -561,15 +459,6 @@ FROM FileWrite
 GROUP BY path
 ORDER BY SUM(bytesWritten) DESC`,
 
-  `CREATE OR REPLACE VIEW "finalizers" AS
-SELECT
-    c.javaName AS "Finalizable Class",
-    LAST(objects) AS "Objects",
-    LAST(totalFinalizersRun) AS "Total Finalizers Run"
-FROM FinalizerStatistics fs
-JOIN Class c ON fs.finalizableClass = c._id
-GROUP BY fs.finalizableClass, c.javaName
-ORDER BY LAST(objects) DESC`,
 
   `CREATE OR REPLACE VIEW "gc-concurrent-phases" AS
 SELECT
@@ -608,26 +497,6 @@ SELECT
     LAST(gcTimeRatio) AS "GC Time Ratio"
 FROM GCConfiguration`,
 
-  `CREATE OR REPLACE VIEW "gc-references" AS
-SELECT
-    FIRST(G.startTime) AS "Time",
-    G.gcId AS "GC ID",
-    S.count AS "Soft Ref.",
-    W.count AS "Weak Ref.",
-    P.count AS "Phantom Ref.",
-    F.count AS "Final Ref.",
-    (S.count + W.count + P.count + F.count) AS "Total Count"
-FROM GCReferenceStatistics S
-JOIN GCReferenceStatistics W ON S.gcId = W.gcId
-JOIN GCReferenceStatistics P ON S.gcId = P.gcId
-JOIN GCReferenceStatistics F ON S.gcId = F.gcId
-JOIN GCReferenceStatistics G ON S.gcId = G.gcId
-WHERE S.type = 'Soft reference'
-  AND W.type = 'Weak reference'
-  AND P.type = 'Phantom reference'
-  AND F.type = 'Final reference'
-GROUP BY G.gcId, S.count, W.count, P.count, F.count
-ORDER BY G.gcId ASC`,
 
   `CREATE OR REPLACE VIEW "gc-pause-phases" AS
 SELECT
@@ -740,27 +609,7 @@ SELECT
 FROM GCPhaseConcurrent
 ORDER BY startTime`,
 
-  `CREATE OR REPLACE VIEW "safepoint-overhead" AS
-SELECT
-    sb.startTime AS "Start",
-    sb.safepointId AS "Safepoint ID",
-    format_duration(ss.duration) AS "Sync Duration",
-    sb.initialThreadCount AS "Initial Threads",
-    sb.runningThreadCount AS "Running Threads"
-FROM SafepointBegin sb
-LEFT JOIN SafepointStateSynchronization ss ON sb.safepointId = ss.safepointId
-ORDER BY sb.startTime`,
 
-  `CREATE OR REPLACE VIEW "tlab-efficiency" AS
-SELECT
-    bucket_ms(startTime, 5000) AS "Bucket (5s)",
-    SUM(allocationSize) / NULLIF(SUM(tlabSize), 0) AS "Fill Ratio",
-    COUNT(*) AS "Allocations",
-    format_memory(SUM(tlabSize)) AS "Total TLAB",
-    format_memory(SUM(allocationSize)) AS "Total Allocated"
-FROM ObjectAllocationInNewTLAB
-GROUP BY bucket_ms(startTime, 5000)
-ORDER BY 1`,
 
   `CREATE OR REPLACE VIEW "gc-throughput" AS
 SELECT
@@ -823,18 +672,6 @@ SELECT
     (SELECT COUNT(*) FROM CPUTimeSample) AS "Total Samples",
     (SELECT SUM(lostSamples) FROM CPUTimeSamplesLost) AS "Lost Samples"`,
 
-  `CREATE OR REPLACE VIEW "jdk-agents" AS
-SELECT
-    t AS "Time",
-    format_duration(d) AS "Initialization",
-    name AS "Name",
-    o AS "Options"
-FROM (
-    SELECT LAST(initializationTime) AS t, LAST(initializationDuration) AS d, name, LAST(options) AS o FROM JavaAgent GROUP BY name
-    UNION ALL
-    SELECT LAST(initializationTime) AS t, LAST(initializationDuration) AS d, name, LAST(options) AS o FROM NativeAgent GROUP BY name
-) agents
-ORDER BY t`,
 
   `CREATE OR REPLACE VIEW "jvm-flags" AS
 SELECT
@@ -960,26 +797,7 @@ JOIN Class cc ON sm.type = cc._id
 GROUP BY mt.method, mt.stackTrace$topMethod, cm.javaName, m.name, m.descriptor, cc.javaName, sm.name, sm.descriptor
 ORDER BY COUNT(*) DESC`,
 
-  `CREATE OR REPLACE VIEW "modules" AS
-SELECT
-    LAST(m.name) AS "Module Name"
-FROM ModuleRequire
-JOIN Module m ON ModuleRequire.source = m._id
-GROUP BY source
-ORDER BY "Module Name" ASC`,
 
-  `CREATE OR REPLACE VIEW "monitor-inflation" AS
-SELECT
-    (c.javaName || '.' || m.name || m.descriptor) AS "Method",
-    mc.javaName AS "Monitor Class",
-    COUNT(*) AS "Count",
-    format_duration(SUM(jmi.duration)) AS "Total Duration"
-FROM JavaMonitorInflate jmi
-JOIN Method m ON jmi.stackTrace$topMethod = m._id
-JOIN Class c ON m.type = c._id
-JOIN Class mc ON jmi.monitorClass = mc._id
-GROUP BY jmi.stackTrace$topApplicationMethod, mc.javaName, c.javaName, m.name, m.descriptor
-ORDER BY SUM(jmi.duration) DESC`,
 
   `CREATE OR REPLACE VIEW "native-libraries" AS
 SELECT
@@ -990,40 +808,7 @@ FROM NativeLibrary
 GROUP BY name, baseAddress, topAddress
 ORDER BY name ASC`,
 
-  `CREATE OR REPLACE VIEW "native-library-failures" AS
-SELECT
-    eventType AS "Operation",
-    name AS "Library",
-    errorMessage AS "Error Message"
-FROM (
-    SELECT 'Native Library Unload' AS eventType, name, errorMessage, success FROM NativeLibraryUnload
-    UNION ALL
-    SELECT 'Native Library Load' AS eventType, name, errorMessage, success FROM NativeLibraryLoad
-) failures
-WHERE success = FALSE
-ORDER BY eventType ASC, name ASC`,
 
-  `CREATE OR REPLACE VIEW "native-memory-committed" AS
-SELECT
-    type AS "Memory Type",
-    FIRST(committed) AS "First Observed",
-    format_memory(AVG(committed)) AS "Average",
-    LAST(committed) AS "Last Observed",
-    format_memory(MAX(committed)) AS "Maximum"
-FROM NativeMemoryUsage
-GROUP BY type
-ORDER BY MAX(committed) DESC`,
-
-  `CREATE OR REPLACE VIEW "native-memory-reserved" AS
-SELECT
-    type AS "Memory Type",
-    FIRST(reserved) AS "First Observed",
-    format_memory(AVG(reserved)) AS "Average",
-    LAST(reserved) AS "Last Observed",
-    format_memory(MAX(reserved)) AS "Maximum"
-FROM NativeMemoryUsage
-GROUP BY type
-ORDER BY MAX(reserved) DESC`,
 
   `CREATE OR REPLACE VIEW "native-methods" AS
 SELECT
@@ -1036,16 +821,6 @@ JOIN Class c ON m.type = c._id
 GROUP BY nms.stackTrace$topMethod, c.javaName, m.name, m.descriptor
 ORDER BY COUNT(*) DESC`,
 
-  `CREATE OR REPLACE VIEW "network-utilization" AS
-SELECT
-    networkInterface AS "Network Interface",
-    format_memory(AVG(readRate) / 8) || '/s' AS "Avg. Read Rate",
-    format_memory(MAX(readRate) / 8) || '/s' AS "Max. Read Rate",
-    format_memory(AVG(writeRate) / 8) || '/s' AS "Avg. Write Rate",
-    format_memory(MAX(writeRate) / 8) || '/s' AS "Max. Write Rate"
-FROM NetworkUtilization
-GROUP BY networkInterface
-ORDER BY networkInterface ASC`,
 
   `CREATE OR REPLACE VIEW "object-statistics" AS
 SELECT "Class", "Count", "Heap Space", "Increase"
@@ -1095,19 +870,6 @@ SELECT
     dumpReason AS "Dump Reason"
 FROM RecordingInfo`,
 
-  `CREATE OR REPLACE VIEW "safepoints" AS
-SELECT
-    B.startTime AS "Start Time",
-    format_duration(epoch(E.startTime - B.startTime)) AS "Duration",
-    format_duration(S.duration) AS "State Synchronization",
-    format_duration(C.duration) AS "Cleanup",
-    jniCriticalThreadCount AS "JNI Critical Threads",
-    totalThreadCount AS "Total Threads"
-FROM SafepointBegin B
-JOIN SafepointEnd E ON B.safepointId = E.safepointId
-LEFT JOIN SafepointStateSynchronization S ON B.safepointId = S.safepointId
-LEFT JOIN SafepointCleanup C ON B.safepointId = C.safepointId
-ORDER BY B.startTime ASC`,
 
   `CREATE OR REPLACE VIEW "longest-compilations" AS
 SELECT
@@ -1180,21 +942,6 @@ FROM SystemProcess
 GROUP BY pid
 ORDER BY FIRST(startTime) ASC`,
 
-  `CREATE OR REPLACE VIEW "tlabs" AS
-SELECT * FROM (SELECT
-    COUNT(tlabSize) AS "Inside Count",
-    format_memory(MIN(tlabSize)) AS "Inside Minimum Size",
-    format_memory(AVG(tlabSize)) AS "Inside Average Size",
-    format_memory(MAX(tlabSize)) AS "Inside Maximum Size",
-    format_memory(SUM(tlabSize)) AS "Inside Total Allocation"
-FROM ObjectAllocationInNewTLAB),
-(SELECT
-    COUNT(allocationSize) AS "Outside Count",
-    format_memory(MIN(allocationSize)) AS "Outside Minimum Size",
-    format_memory(AVG(allocationSize)) AS "Outside Average Size",
-    format_memory(MAX(allocationSize)) AS "Outside Maximum Size",
-    format_memory(SUM(allocationSize)) AS "Outside Total Allocation"
-FROM ObjectAllocationOutsideTLAB)`,
 
   `CREATE OR REPLACE VIEW "thread-allocation" AS
 SELECT
@@ -1464,5 +1211,319 @@ FROM ObjectAllocationSample oas
 WHERE oas."stackTrace$methods" IS NOT NULL
 GROUP BY oas."stackTrace$methods"
 ORDER BY value DESC`,
+  },
+  {
+    requires: 'SafepointBegin',
+    sql: `CREATE OR REPLACE VIEW "safepoint-overhead" AS
+SELECT
+    sb.startTime AS "Start",
+    sb.safepointId AS "Safepoint ID",
+    format_duration(ss.duration) AS "Sync Duration",
+    sb.initialThreadCount AS "Initial Threads",
+    sb.runningThreadCount AS "Running Threads"
+FROM SafepointBegin sb
+LEFT JOIN SafepointStateSynchronization ss ON sb.safepointId = ss.safepointId
+ORDER BY sb.startTime`,
+  },
+  {
+    requires: 'SafepointEnd',
+    sql: `CREATE OR REPLACE VIEW "safepoints" AS
+SELECT
+    B.startTime AS "Start Time",
+    format_duration(epoch(E.startTime - B.startTime)) AS "Duration",
+    format_duration(S.duration) AS "State Synchronization",
+    format_duration(C.duration) AS "Cleanup",
+    jniCriticalThreadCount AS "JNI Critical Threads",
+    totalThreadCount AS "Total Threads"
+FROM SafepointBegin B
+JOIN SafepointEnd E ON B.safepointId = E.safepointId
+LEFT JOIN SafepointStateSynchronization S ON B.safepointId = S.safepointId
+LEFT JOIN SafepointCleanup C ON B.safepointId = C.safepointId
+ORDER BY B.startTime ASC`,
+  },
+  {
+    requires: 'SystemGC',
+    sql: `CREATE OR REPLACE VIEW "blocked-by-system-gc" AS
+SELECT
+    startTime AS "Time",
+    format_duration(duration) AS "Duration",
+    (c.javaName || '.' || m.name || m.descriptor) AS "Stack Trace"
+FROM SystemGC sgc
+LEFT JOIN Method m ON m._id = sgc.stackTrace$topApplicationMethod
+LEFT JOIN Class c ON c._id = m.type
+WHERE invokedConcurrent = 'false'
+ORDER BY sgc.duration DESC
+LIMIT 25`,
+  },
+  {
+    requires: 'RedefineClasses',
+    sql: `CREATE OR REPLACE VIEW "class-modifications" AS
+SELECT
+    format_duration(duration) AS "Time",
+    (c.javaName || '.' || m.name || m.descriptor) AS "Requested By",
+    CASE
+        WHEN eventType = 'redefine' THEN 'Redefine Classes'
+        WHEN eventType = 'retransform' THEN 'Retransform Classes'
+        ELSE eventType
+    END AS "Operation",
+    classCount AS "Classes"
+FROM (
+    SELECT
+        'redefine' AS eventType,
+        duration,
+        stackTrace$topApplicationMethod,
+        classCount
+    FROM RedefineClasses
+    UNION ALL
+    SELECT
+        'retransform' AS eventType,
+        duration,
+        stackTrace$topApplicationMethod,
+        classCount
+    FROM RetransformClasses
+) AS combined
+LEFT JOIN Method m ON m._id = stackTrace$topApplicationMethod
+LEFT JOIN Class c ON c._id = m.type
+ORDER BY duration DESC`,
+  },
+  {
+    requires: 'CompilerPhase',
+    sql: `CREATE OR REPLACE VIEW "compiler-phases" AS
+SELECT
+    phaseLevel AS "Level",
+    phase AS "Phase",
+    format_duration(AVG(duration)) AS "Average",
+    format_duration(P95(duration)) AS "P95",
+    format_duration(MAX(duration)) AS "Longest",
+    COUNT(*) AS "Count",
+    format_duration(SUM(duration)) AS "Total"
+FROM CompilerPhase
+GROUP BY phase, phaseLevel
+ORDER BY phaseLevel ASC, SUM(duration) DESC`,
+  },
+  {
+    requires: 'ContainerConfiguration',
+    sql: `CREATE OR REPLACE VIEW "container-configuration" AS
+SELECT
+    LAST(containerType) AS "Container Type",
+    format_duration(LAST(cpuSlicePeriod)) AS "CPU Slice Period",
+    format_duration(LAST(cpuQuota)) AS "CPU Quota",
+    LAST(cpuShares) AS "CPU Shares",
+    LAST(effectiveCpuCount) AS "Effective CPU Count",
+    format_memory(LAST(memorySoftLimit)) AS "Memory Soft Limit",
+    format_memory(LAST(memoryLimit)) AS "Memory Limit",
+    format_memory(LAST(swapMemoryLimit)) AS "Swap Memory Limit",
+    format_memory(LAST(hostTotalMemory)) AS "Host Total Memory"
+FROM ContainerConfiguration`,
+  },
+  {
+    requires: 'ContainerCPUUsage',
+    sql: `CREATE OR REPLACE VIEW "container-cpu-usage" AS
+SELECT
+    format_duration(LAST(cpuTime)) AS "CPU Time",
+    format_duration(LAST(cpuUserTime)) AS "CPU User Time",
+    format_duration(LAST(cpuSystemTime)) AS "CPU System Time"
+FROM ContainerCPUUsage`,
+  },
+  {
+    requires: 'ContainerMemoryUsage',
+    sql: `CREATE OR REPLACE VIEW "container-memory-usage" AS
+SELECT
+    LAST(memoryFailCount) AS "Memory Fail Count",
+    format_memory(LAST(memoryUsage)) AS "Memory Usage",
+    format_memory(LAST(swapMemoryUsage)) AS "Swap Memory Usage"
+FROM ContainerMemoryUsage`,
+  },
+  {
+    requires: 'ContainerIOUsage',
+    sql: `CREATE OR REPLACE VIEW "container-io-usage" AS
+SELECT
+    LAST(serviceRequests) AS "Service Requests",
+    format_memory(LAST(dataTransferred)) AS "Data Transferred"
+FROM ContainerIOUsage`,
+  },
+  {
+    requires: 'ContainerCPUThrottling',
+    sql: `CREATE OR REPLACE VIEW "container-cpu-throttling" AS
+SELECT
+    LAST(cpuElapsedSlices) AS "CPU Elapsed Slices",
+    LAST(cpuThrottledSlices) AS "CPU Throttled Slices",
+    format_duration(LAST(cpuThrottledTime)) AS "CPU Throttled Time"
+FROM ContainerCPUThrottling`,
+  },
+  {
+    requires: 'DeprecatedInvocation',
+    sql: `CREATE OR REPLACE VIEW "deprecated-methods-for-removal" AS
+SELECT
+    (c.javaName || '.' || m.name || m.descriptor) AS "Deprecated Method",
+    list(DISTINCT (cc.javaName) ORDER BY cc.javaName) AS "Called from Class"
+FROM DeprecatedInvocation di
+JOIN Method m ON di.method = m._id
+JOIN Class c ON m.type = c._id
+JOIN Method cm ON di.stackTrace$topMethod = cm._id
+JOIN Class cc ON cm.type = cc._id
+WHERE forRemoval = 'true'
+GROUP BY di.method, c.javaName, m.name, m.descriptor
+ORDER BY c.javaName, m.name, m.descriptor`,
+  },
+  {
+    requires: 'FinalizerStatistics',
+    sql: `CREATE OR REPLACE VIEW "finalizers" AS
+SELECT
+    c.javaName AS "Finalizable Class",
+    LAST(objects) AS "Objects",
+    LAST(totalFinalizersRun) AS "Total Finalizers Run"
+FROM FinalizerStatistics fs
+JOIN Class c ON fs.finalizableClass = c._id
+GROUP BY fs.finalizableClass, c.javaName
+ORDER BY LAST(objects) DESC`,
+  },
+  {
+    requires: 'GCReferenceStatistics',
+    sql: `CREATE OR REPLACE VIEW "gc-references" AS
+SELECT
+    FIRST(G.startTime) AS "Time",
+    G.gcId AS "GC ID",
+    S.count AS "Soft Ref.",
+    W.count AS "Weak Ref.",
+    P.count AS "Phantom Ref.",
+    F.count AS "Final Ref.",
+    (S.count + W.count + P.count + F.count) AS "Total Count"
+FROM GCReferenceStatistics S
+JOIN GCReferenceStatistics W ON S.gcId = W.gcId
+JOIN GCReferenceStatistics P ON S.gcId = P.gcId
+JOIN GCReferenceStatistics F ON S.gcId = F.gcId
+JOIN GCReferenceStatistics G ON S.gcId = G.gcId
+WHERE S.type = 'Soft reference'
+  AND W.type = 'Weak reference'
+  AND P.type = 'Phantom reference'
+  AND F.type = 'Final reference'
+GROUP BY G.gcId, S.count, W.count, P.count, F.count
+ORDER BY G.gcId ASC`,
+  },
+  {
+    requires: 'ObjectAllocationInNewTLAB',
+    sql: `CREATE OR REPLACE VIEW "tlab-efficiency" AS
+SELECT
+    bucket_ms(startTime, 5000) AS "Bucket (5s)",
+    SUM(allocationSize) / NULLIF(SUM(tlabSize), 0) AS "Fill Ratio",
+    COUNT(*) AS "Allocations",
+    format_memory(SUM(tlabSize)) AS "Total TLAB",
+    format_memory(SUM(allocationSize)) AS "Total Allocated"
+FROM ObjectAllocationInNewTLAB
+GROUP BY bucket_ms(startTime, 5000)
+ORDER BY 1`,
+  },
+  {
+    requires: 'ObjectAllocationInNewTLAB',
+    sql: `CREATE OR REPLACE VIEW "tlabs" AS
+SELECT * FROM (SELECT
+    COUNT(tlabSize) AS "Inside Count",
+    format_memory(MIN(tlabSize)) AS "Inside Minimum Size",
+    format_memory(AVG(tlabSize)) AS "Inside Average Size",
+    format_memory(MAX(tlabSize)) AS "Inside Maximum Size",
+    format_memory(SUM(tlabSize)) AS "Inside Total Allocation"
+FROM ObjectAllocationInNewTLAB),
+(SELECT
+    COUNT(allocationSize) AS "Outside Count",
+    format_memory(MIN(allocationSize)) AS "Outside Minimum Size",
+    format_memory(AVG(allocationSize)) AS "Outside Average Size",
+    format_memory(MAX(allocationSize)) AS "Outside Maximum Size",
+    format_memory(SUM(allocationSize)) AS "Outside Total Allocation"
+FROM ObjectAllocationOutsideTLAB)`,
+  },
+  {
+    requires: 'JavaAgent',
+    sql: `CREATE OR REPLACE VIEW "jdk-agents" AS
+SELECT
+    t AS "Time",
+    format_duration(d) AS "Initialization",
+    name AS "Name",
+    o AS "Options"
+FROM (
+    SELECT LAST(initializationTime) AS t, LAST(initializationDuration) AS d, name, LAST(options) AS o FROM JavaAgent GROUP BY name
+    UNION ALL
+    SELECT LAST(initializationTime) AS t, LAST(initializationDuration) AS d, name, LAST(options) AS o FROM NativeAgent GROUP BY name
+) agents
+ORDER BY t`,
+  },
+  {
+    requires: 'ModuleRequire',
+    sql: `CREATE OR REPLACE VIEW "modules" AS
+SELECT
+    LAST(m.name) AS "Module Name"
+FROM ModuleRequire
+JOIN Module m ON ModuleRequire.source = m._id
+GROUP BY source
+ORDER BY "Module Name" ASC`,
+  },
+  {
+    requires: 'JavaMonitorInflate',
+    sql: `CREATE OR REPLACE VIEW "monitor-inflation" AS
+SELECT
+    (c.javaName || '.' || m.name || m.descriptor) AS "Method",
+    mc.javaName AS "Monitor Class",
+    COUNT(*) AS "Count",
+    format_duration(SUM(jmi.duration)) AS "Total Duration"
+FROM JavaMonitorInflate jmi
+JOIN Method m ON jmi.stackTrace$topMethod = m._id
+JOIN Class c ON m.type = c._id
+JOIN Class mc ON jmi.monitorClass = mc._id
+GROUP BY jmi.stackTrace$topApplicationMethod, mc.javaName, c.javaName, m.name, m.descriptor
+ORDER BY SUM(jmi.duration) DESC`,
+  },
+  {
+    requires: 'NetworkUtilization',
+    sql: `CREATE OR REPLACE VIEW "network-utilization" AS
+SELECT
+    networkInterface AS "Network Interface",
+    format_memory(AVG(readRate) / 8) || '/s' AS "Avg. Read Rate",
+    format_memory(MAX(readRate) / 8) || '/s' AS "Max. Read Rate",
+    format_memory(AVG(writeRate) / 8) || '/s' AS "Avg. Write Rate",
+    format_memory(MAX(writeRate) / 8) || '/s' AS "Max. Write Rate"
+FROM NetworkUtilization
+GROUP BY networkInterface
+ORDER BY networkInterface ASC`,
+  },
+  {
+    requires: 'NativeLibraryLoad',
+    sql: `CREATE OR REPLACE VIEW "native-library-failures" AS
+SELECT
+    eventType AS "Operation",
+    name AS "Library",
+    errorMessage AS "Error Message"
+FROM (
+    SELECT 'Native Library Unload' AS eventType, name, errorMessage, success FROM NativeLibraryUnload
+    UNION ALL
+    SELECT 'Native Library Load' AS eventType, name, errorMessage, success FROM NativeLibraryLoad
+) failures
+WHERE success = FALSE
+ORDER BY eventType ASC, name ASC`,
+  },
+  {
+    requires: 'NativeMemoryUsage',
+    sql: `CREATE OR REPLACE VIEW "native-memory-committed" AS
+SELECT
+    type AS "Memory Type",
+    FIRST(committed) AS "First Observed",
+    format_memory(AVG(committed)) AS "Average",
+    LAST(committed) AS "Last Observed",
+    format_memory(MAX(committed)) AS "Maximum"
+FROM NativeMemoryUsage
+GROUP BY type
+ORDER BY MAX(committed) DESC`,
+  },
+  {
+    requires: 'NativeMemoryUsage',
+    sql: `CREATE OR REPLACE VIEW "native-memory-reserved" AS
+SELECT
+    type AS "Memory Type",
+    FIRST(reserved) AS "First Observed",
+    format_memory(AVG(reserved)) AS "Average",
+    LAST(reserved) AS "Last Observed",
+    format_memory(MAX(reserved)) AS "Maximum"
+FROM NativeMemoryUsage
+GROUP BY type
+ORDER BY MAX(reserved) DESC`,
   },
 ];
