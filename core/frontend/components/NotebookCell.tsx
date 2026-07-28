@@ -1008,14 +1008,17 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const handleApplyPlotFix = (newConfig: string, index: number) => handlePlotChange(newConfig, index);
     const handleAddVariable = () => { let newVarName = '$newVar'; const currentVars = parsed.variables || {}; let i=1; while(currentVars[newVarName]) newVarName = `$newVar${i++}`; handleCellVariableChange({ ...currentVars, [newVarName]:''}); setIsVariablesCollapsed(false); setFocusVarName(newVarName); };
 
-    const handleCommitBlockName = useCallback((type: 'sql' | 'plot', idx: number, newName: string) => {
+    const handleCommitBlockName = useCallback((type: 'sql' | 'plot', idx: number, newName: string, directSegIdx?: number) => {
         setEditingBlockName(null);
         const name = newName.trim().replace(/\n/g, ' ');
         let blockIdx = -1;
-        const newSegments = segmentsRef.current.map(seg => {
+        const newSegments = segmentsRef.current.map((seg, si) => {
             if (seg.type !== type) return seg;
             blockIdx++;
-            if (blockIdx !== idx) return seg;
+            // For plot segments, always use the direct segment index to avoid
+            // miscounting when standalone (DATASET) plots precede SQL-attached plots.
+            const matches = directSegIdx !== undefined ? si === directSegIdx : blockIdx === idx;
+            if (!matches) return seg;
             // Remove existing alias directive comment at the top (-- alias <name> or
             // legacy -- <name> where name is an identifier-like word), then prepend
             // new one. Only strips recognised alias comments, not arbitrary SQL comments
@@ -1421,8 +1424,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                         type="text"
                                         value={editingBlockName.value}
                                         onChange={e => setEditingBlockName({ type: 'plot', idx: plotUid, value: e.target.value })}
-                                        onBlur={() => handleCommitBlockName('plot', plotUid, editingBlockName.value)}
-                                        onKeyDown={e => { if (e.key === 'Enter') handleCommitBlockName('plot', plotUid, editingBlockName.value); else if (e.key === 'Escape') setEditingBlockName(null); e.stopPropagation(); }}
+                                        onBlur={() => handleCommitBlockName('plot', plotUid, editingBlockName.value, capturedSegIdx)}
+                                        onKeyDown={e => { if (e.key === 'Enter') handleCommitBlockName('plot', plotUid, editingBlockName.value, capturedSegIdx); else if (e.key === 'Escape') setEditingBlockName(null); e.stopPropagation(); }}
                                         onClick={e => e.stopPropagation()}
                                         className="bg-gray-800 border border-cyan-500 rounded px-1.5 py-0.5 text-sm font-medium text-gray-100 w-40 focus:outline-none"
                                         placeholder="Plot name…"

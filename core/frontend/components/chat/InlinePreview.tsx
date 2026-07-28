@@ -40,14 +40,15 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
 
     if (toolName === 'runQuery') {
         const sql = String(args?.sql ?? '');
-        // Tool result shape: { columns, rows } (per ChatPanel:399).
-        const rows: any[] = Array.isArray(result?.rows)
-            ? result.rows
-            : Array.isArray(result)
-            ? result
+        // Tool result shape: ToolResult wrapper { ok, data: { columns, rows } }.
+        const data = result?.data ?? result;
+        const rows: any[] = Array.isArray(data?.rows)
+            ? data.rows
+            : Array.isArray(data)
+            ? data
             : [];
-        const headers: string[] | undefined = Array.isArray(result?.columns)
-            ? result.columns.map((c: any) => c.name)
+        const headers: string[] | undefined = Array.isArray(data?.columns)
+            ? data.columns.map((c: any) => c.name)
             : undefined;
 
         // Don't show an inline preview for empty results — these are usually
@@ -79,9 +80,10 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
 
     if (toolName === 'previewPlot') {
         const sql = String(args?.sql ?? '');
-        const plotConfig = String(result?.plotConfig ?? args?.plotConfig ?? '');
-        const rows: any[] = Array.isArray(result?.rows) ? result.rows : [];
-        const previewId: string | undefined = result?.previewId;
+        const data = result?.data ?? result;
+        const plotConfig = String(data?.plotConfig ?? args?.plotConfig ?? '');
+        const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
+        const previewId: string | undefined = data?.previewId;
         const syntheticCell: NotebookCellData = {
             id: previewId ?? fallbackPreviewCellId,
             title: '',
