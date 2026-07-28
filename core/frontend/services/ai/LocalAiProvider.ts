@@ -339,9 +339,15 @@ export class LocalAiProvider implements IAiProvider {
                     }
                     if (Array.isArray(delta.tool_calls)) {
                         for (const tc of delta.tool_calls) {
+                            // If tc.index is absent, route to the current synthetic slot.
+                            // Advance syntheticIdx only when we see a new tc.id that differs
+                            // from the current slot (signals a second tool call without indices).
+                            if (typeof tc.index !== 'number' && tc.id) {
+                                const cur = toolCallBuffers.get(syntheticIdx);
+                                if (cur && cur.id && cur.id !== tc.id) syntheticIdx++;
+                            }
                             const idx: number = typeof tc.index === 'number' ? tc.index : syntheticIdx;
                             if (!toolCallBuffers.has(idx)) {
-                                syntheticIdx++;
                                 toolCallBuffers.set(idx, { id: tc.id ?? '', name: tc.function?.name ?? '', args: '' });
                             }
                             const buf = toolCallBuffers.get(idx)!;

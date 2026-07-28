@@ -257,9 +257,25 @@ export class AnthropicProvider implements IAiProvider {
                     const payload = leftover.slice(6).trim();
                     try {
                         const parsed = JSON.parse(payload);
-                        if (parsed.type === 'content_block_delta') {
-                            const d = parsed.delta;
-                            if (d?.type === 'text_delta' && d.text) yield { kind: 'text', delta: String(d.text) };
+                        switch (parsed.type) {
+                            case 'content_block_start': {
+                                const blk = parsed.content_block;
+                                if (blk?.type === 'tool_use') {
+                                    toolBlocks.set(parsed.index ?? 0, { id: blk.id ?? '', name: blk.name ?? '', args: '' });
+                                }
+                                break;
+                            }
+                            case 'content_block_delta': {
+                                const d = parsed.delta;
+                                if (d?.type === 'text_delta' && d.text) {
+                                    yield { kind: 'text', delta: String(d.text) };
+                                } else if (d?.type === 'input_json_delta' && d.partial_json) {
+                                    const buf = toolBlocks.get(parsed.index ?? 0);
+                                    if (buf) buf.args += d.partial_json;
+                                }
+                                break;
+                            }
+                            default: break;
                         }
                     } catch { /* ignore malformed final line */ }
                 }
