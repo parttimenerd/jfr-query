@@ -192,6 +192,21 @@ export function dispatchCompletion(
         };
     }
 
+    // Inside an open string literal: only the distinct-value provider is relevant.
+    // Other providers would inherit the string-start `from` offset and insert their
+    // completions inside the string, producing broken SQL.
+    if (insideOpenString) {
+        const dvMatches = distinctValueProvider.matches(cursor, ctx);
+        if (!dvMatches) return null;
+        const dvResult = distinctValueProvider.provide(cursor, ctx);
+        if (!dvResult || dvResult.items.length === 0) return null;
+        return {
+            from: dvResult.from ?? tokenFrom,
+            options: dvResult.items,
+            validFor: dvResult.validFor,
+        };
+    }
+
     // Walk providers in declared priority order; collect items.
     const merged: Completion[] = [];
     let bestFrom = tokenFrom;

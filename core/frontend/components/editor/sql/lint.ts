@@ -330,6 +330,10 @@ export function lintSql(source: string, deps: LintDeps & { root?: Node }): Diagn
                 // Cell-name part for crossCellRef has its own resolution path
                 // — only fire if truly unknown.
                 if (node.kind === 'variableRef' && deps.variables[name] !== undefined) return;
+                // doubleDollarRef ($$foo) and crossCellRef ($cell.var) are resolved by
+                // workspace/cross-cell context that lintSql doesn't receive — suppress
+                // false-positive "undefined variable" diagnostics for those kinds.
+                if (node.kind === 'doubleDollarRef' || node.kind === 'crossCellRef') return;
                 diagnostics.push({
                     from: node.from,
                     to: node.to,
