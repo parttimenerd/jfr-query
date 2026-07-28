@@ -59,13 +59,15 @@ const PlotSuggestionChip: React.FC<PlotSuggestionChipProps> = ({
         >
             <span className="text-cyan-300 font-mono truncate">{label}</span>
             {isDegraded ? (
-                <button
-                    type="button"
-                    onClick={onOpenSettings}
-                    className="px-2 py-0.5 text-cyan-300 hover:underline"
-                >
-                    Open Settings
-                </button>
+                onOpenSettings ? (
+                    <button
+                        type="button"
+                        onClick={onOpenSettings}
+                        className="px-2 py-0.5 text-cyan-300 hover:underline"
+                    >
+                        Open Settings
+                    </button>
+                ) : null
             ) : (
                 <>
                     <button
