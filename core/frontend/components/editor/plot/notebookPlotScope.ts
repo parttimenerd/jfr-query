@@ -166,7 +166,7 @@ export class NotebookPlotScope {
 // Implementation
 // ---------------------------------------------------------------------------
 
-const VIEW_ALIAS_RE = /create\s+(?:or\s+replace\s+)?(?:temp(?:ory)?\s+)?(?:materialized\s+)?view\s+(?:if\s+not\s+exists\s+)?(?:"([^"]+)"|'([^']+)'|([a-zA-Z_][\w]*))\s+as\b/i;
+const VIEW_ALIAS_RE = /create\s+(?:or\s+replace\s+)?(?:temp(?:orary)?\s+)?(?:materialized\s+)?view\s+(?:if\s+not\s+exists\s+)?(?:"([^"]+)"|'([^']+)'|([a-zA-Z_][\w]*))\s+as\b/i;
 
 function buildScopeView(args: BuildArgs): PlotScopeView {
     const namedPlots: PlotScopeView['namedPlots'][number][] = [];

@@ -472,7 +472,7 @@ async function mergeChunkTables(
           rankOrderCols.push(col);
         }
       }
-      const rankOrderBy = rankOrderCols.join(', ');
+      const rankOrderBy = rankOrderCols.length > 0 ? rankOrderCols.join(', ') : 'NULL';
 
       await conn.query(
         `CREATE TABLE "_idmap_${base}" AS

@@ -1,6 +1,6 @@
 import React, { createContext, ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import type { ColumnSchema } from '../types';
-import { DataContext } from './DuckDBContext';
+import { DataContext, DBState } from './DuckDBContext';
 import { quoteIdent, quoteLiteral, sanitizeForDuckDB } from '../utils/cellHandle';
 
 /**
@@ -159,7 +159,7 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
     }, [schema?.tables, schema?.views]);
 
     const registerAlias = useCallback(async (args: RegisterArgs): Promise<AliasInfo | null> => {
-        if (dbState !== 4 /* DBState.READY */) return null;
+        if (dbState !== DBState.READY) return null;
         const { cellId, cellHandle: rawHandle, cellIndex, sqlIndex, alias, sql, materialized } = args;
         if (!sql.trim()) return null;
 
