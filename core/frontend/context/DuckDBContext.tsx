@@ -389,7 +389,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             wasmConnRef.current = conn;
             setWasmInitializing(false);
           }).catch(() => {
-            if (!cancelled) setWasmInitializing(false);
+            if (!cancelled) { setWasmInitializing(false); wasmInitPromiseRef.current = null; }
           });
         }
       }
