@@ -673,42 +673,6 @@ SELECT
     (SELECT SUM(lostSamples) FROM CPUTimeSamplesLost) AS "Lost Samples"`,
 
 
-  `CREATE OR REPLACE VIEW "jvm-flags" AS
-SELECT
-    name AS "Name",
-    value AS "Value"
-FROM (
-    SELECT name, CAST(value AS VARCHAR) AS value FROM IntFlag
-    UNION ALL
-    SELECT name, CAST(value AS VARCHAR) AS value FROM UnsignedIntFlag
-    UNION ALL
-    SELECT name, CAST(value AS VARCHAR) AS value FROM BooleanFlag
-    UNION ALL
-    SELECT name, CAST(value AS VARCHAR) AS value FROM LongFlag
-    UNION ALL
-    SELECT name, CAST(value AS VARCHAR) AS value FROM UnsignedLongFlag
-    UNION ALL
-    SELECT name, CAST(value AS VARCHAR) AS value FROM DoubleFlag
-    UNION ALL
-    SELECT name, value FROM StringFlag
-    UNION ALL
-    SELECT name, CAST(value AS VARCHAR) AS value FROM IntFlagChanged
-    UNION ALL
-    SELECT name, CAST(value AS VARCHAR) AS value FROM UnsignedIntFlagChanged
-    UNION ALL
-    SELECT name, CAST(value AS VARCHAR) AS value FROM BooleanFlagChanged
-    UNION ALL
-    SELECT name, CAST(value AS VARCHAR) AS value FROM LongFlagChanged
-    UNION ALL
-    SELECT name, CAST(value AS VARCHAR) AS value FROM UnsignedLongFlagChanged
-    UNION ALL
-    SELECT name, CAST(value AS VARCHAR) AS value FROM DoubleFlagChanged
-    UNION ALL
-    SELECT name, value FROM StringFlagChanged
-) flags
-GROUP BY name, value
-ORDER BY name ASC`,
-
   `CREATE OR REPLACE VIEW "jvm-information" AS
 SELECT
     LAST(pid) AS "PID",
@@ -718,58 +682,6 @@ SELECT
     LAST(jvmArguments) AS "VM Arguments",
     LAST(javaArguments) AS "Program Arguments"
 FROM JVMInformation`,
-
-
-  `CREATE OR REPLACE VIEW "memory-leaks-by-class" AS
-SELECT
-    LAST(allocationTime) AS "Alloc. Time",
-    c.javaName AS "Object Class",
-    format_duration(LAST(objectAge)) AS "Object Age",
-    format_memory(LAST(lastKnownHeapUsage)) AS "Heap Usage"
-FROM OldObjectSample os
-JOIN OldObject o ON os.object = o._id
-JOIN Class c ON o.type = c._id
-GROUP BY c.javaName
-ORDER BY LAST(allocationTime) ASC`,
-
-  `CREATE OR REPLACE VIEW "memory-leaks-by-site" AS
-SELECT
-    LAST(allocationTime) AS "Alloc. Time",
-    (c.javaName || '.' || m.name || m.descriptor) AS "Application Method",
-    format_duration(LAST(objectAge)) AS "Object Age",
-    format_memory(LAST(lastKnownHeapUsage)) AS "Heap Usage"
-FROM OldObjectSample os
-JOIN Method m ON os.stackTrace$topApplicationMethod = m._id
-JOIN Class c ON m.type = c._id
-GROUP BY os.stackTrace$topApplicationMethod, c.javaName, m.name, m.descriptor
-ORDER BY LAST(allocationTime) ASC`,
-
-  `CREATE OR REPLACE VIEW "method-timing" AS
-SELECT
-    (c.javaName || '.' || m.name || m.descriptor) AS "Timed Method",
-    LAST(invocations) AS "Invocations",
-    format_duration(LAST(minimum)) AS "Minimum Time",
-    format_duration(LAST(average)) AS "Average Time",
-    format_duration(LAST(maximum)) AS "Maximum Time"
-FROM MethodTiming mt
-JOIN Method m ON mt.method = m._id
-JOIN Class c ON m.type = c._id
-GROUP BY mt.method, c.javaName, m.name, m.descriptor
-ORDER BY LAST(average) ASC`,
-
-  `CREATE OR REPLACE VIEW "method-calls" AS
-SELECT
-    (cm.javaName || '.' || m.name || m.descriptor) AS "Traced Method",
-    (cc.javaName || '.' || sm.name || sm.descriptor) AS "Caller",
-    COUNT(*) AS "Invocations"
-FROM MethodTrace mt
-JOIN Method m ON mt.method = m._id
-JOIN Class cm ON m.type = cm._id
-JOIN Method sm ON mt.stackTrace$topMethod = sm._id
-JOIN Class cc ON sm.type = cc._id
-GROUP BY mt.method, mt.stackTrace$topMethod, cm.javaName, m.name, m.descriptor, cc.javaName, sm.name, sm.descriptor
-ORDER BY COUNT(*) DESC`,
-
 
 
   `CREATE OR REPLACE VIEW "native-libraries" AS
@@ -782,47 +694,6 @@ GROUP BY name, baseAddress, topAddress
 ORDER BY name ASC`,
 
 
-
-  `CREATE OR REPLACE VIEW "native-methods" AS
-SELECT
-    (c.javaName || '.' || m.name || m.descriptor) AS "Method",
-    COUNT(*) AS "Samples",
-    format_percentage(COUNT(*) / (SELECT COUNT(*) FROM NativeMethodSample)) AS "Percent"
-FROM NativeMethodSample nms
-JOIN Method m ON nms.stackTrace$topMethod = m._id
-JOIN Class c ON m.type = c._id
-GROUP BY nms.stackTrace$topMethod, c.javaName, m.name, m.descriptor
-ORDER BY COUNT(*) DESC`,
-
-
-  `CREATE OR REPLACE VIEW "object-statistics" AS
-SELECT "Class", "Count", "Heap Space", "Increase"
-FROM
-(SELECT
-    c.javaName AS "Class",
-    LAST(count) AS "Count",
-    format_memory(LAST(totalSize)) AS "Heap Space",
-    LAST(totalSize) as h,
-    format_memory(MAX(totalSize) - MIN(totalSize)) AS "Increase"
-FROM (
-    SELECT objectClass, count, totalSize FROM ObjectCountAfterGC
-    UNION ALL
-    SELECT objectClass, count, totalSize FROM ObjectCount
-) ocg
-JOIN Class c ON ocg.objectClass = c._id
-GROUP BY c.javaName)
-ORDER BY h DESC`,
-
-  `CREATE OR REPLACE VIEW "pinned-threads" AS
-SELECT
-    (c.javaName || '.' || vtp.stackTrace$topApplicationMethod) AS "Method",
-    COUNT(*) AS "Pinned Count",
-    format_duration(MAX(vtp.duration)) AS "Longest Pinning",
-    format_duration(SUM(vtp.duration)) AS "Total Time Pinned"
-FROM VirtualThreadPinned vtp
-JOIN Class c ON vtp.stackTrace$topApplicationClass = c._id
-GROUP BY vtp.stackTrace$topApplicationMethod, vtp.stackTrace$topApplicationClass, c.javaName
-ORDER BY SUM(vtp.duration) DESC`,
 
   `CREATE OR REPLACE VIEW "thread-count" AS
 SELECT
@@ -1506,5 +1377,173 @@ SELECT
 FROM NativeMemoryUsage
 GROUP BY type
 ORDER BY MAX(reserved) DESC`,
+  },
+  {
+    requires: 'OldObjectSample',
+    sql: `CREATE OR REPLACE VIEW "memory-leaks-by-class" AS
+SELECT
+    LAST(allocationTime) AS "Alloc. Time",
+    c.javaName AS "Object Class",
+    format_duration(LAST(objectAge)) AS "Object Age",
+    format_memory(LAST(lastKnownHeapUsage)) AS "Heap Usage"
+FROM OldObjectSample os
+JOIN OldObject o ON os.object = o._id
+JOIN Class c ON o.type = c._id
+GROUP BY c.javaName
+ORDER BY LAST(allocationTime) ASC`,
+  },
+  {
+    requires: 'OldObjectSample',
+    sql: `CREATE OR REPLACE VIEW "memory-leaks-by-site" AS
+SELECT
+    LAST(allocationTime) AS "Alloc. Time",
+    (c.javaName || '.' || m.name || m.descriptor) AS "Application Method",
+    format_duration(LAST(objectAge)) AS "Object Age",
+    format_memory(LAST(lastKnownHeapUsage)) AS "Heap Usage"
+FROM OldObjectSample os
+JOIN Method m ON os.stackTrace$topApplicationMethod = m._id
+JOIN Class c ON m.type = c._id
+GROUP BY os.stackTrace$topApplicationMethod, c.javaName, m.name, m.descriptor
+ORDER BY LAST(allocationTime) ASC`,
+  },
+  {
+    requires: 'MethodTiming',
+    sql: `CREATE OR REPLACE VIEW "method-timing" AS
+SELECT
+    (c.javaName || '.' || m.name || m.descriptor) AS "Timed Method",
+    LAST(invocations) AS "Invocations",
+    format_duration(LAST(minimum)) AS "Minimum Time",
+    format_duration(LAST(average)) AS "Average Time",
+    format_duration(LAST(maximum)) AS "Maximum Time"
+FROM MethodTiming mt
+JOIN Method m ON mt.method = m._id
+JOIN Class c ON m.type = c._id
+GROUP BY mt.method, c.javaName, m.name, m.descriptor
+ORDER BY LAST(average) ASC`,
+  },
+  {
+    requires: 'MethodTrace',
+    sql: `CREATE OR REPLACE VIEW "method-calls" AS
+SELECT
+    (cm.javaName || '.' || m.name || m.descriptor) AS "Traced Method",
+    (cc.javaName || '.' || sm.name || sm.descriptor) AS "Caller",
+    COUNT(*) AS "Invocations"
+FROM MethodTrace mt
+JOIN Method m ON mt.method = m._id
+JOIN Class cm ON m.type = cm._id
+JOIN Method sm ON mt.stackTrace$topMethod = sm._id
+JOIN Class cc ON sm.type = cc._id
+GROUP BY mt.method, mt.stackTrace$topMethod, cm.javaName, m.name, m.descriptor, cc.javaName, sm.name, sm.descriptor
+ORDER BY COUNT(*) DESC`,
+  },
+  {
+    requires: 'NativeMethodSample',
+    sql: `CREATE OR REPLACE VIEW "native-methods" AS
+SELECT
+    (c.javaName || '.' || m.name || m.descriptor) AS "Method",
+    COUNT(*) AS "Samples",
+    format_percentage(COUNT(*) / (SELECT COUNT(*) FROM NativeMethodSample)) AS "Percent"
+FROM NativeMethodSample nms
+JOIN Method m ON nms.stackTrace$topMethod = m._id
+JOIN Class c ON m.type = c._id
+GROUP BY nms.stackTrace$topMethod, c.javaName, m.name, m.descriptor
+ORDER BY COUNT(*) DESC`,
+  },
+  {
+    requires: 'VirtualThreadPinned',
+    sql: `CREATE OR REPLACE VIEW "pinned-threads" AS
+SELECT
+    (c.javaName || '.' || vtp.stackTrace$topApplicationMethod) AS "Method",
+    COUNT(*) AS "Pinned Count",
+    format_duration(MAX(vtp.duration)) AS "Longest Pinning",
+    format_duration(SUM(vtp.duration)) AS "Total Time Pinned"
+FROM VirtualThreadPinned vtp
+JOIN Class c ON vtp.stackTrace$topApplicationClass = c._id
+GROUP BY vtp.stackTrace$topApplicationMethod, vtp.stackTrace$topApplicationClass, c.javaName
+ORDER BY SUM(vtp.duration) DESC`,
+  },
+  {
+    // Build jvm-flags from only the flag tables that are present in this recording
+    requires: 'IntFlag',
+    buildSql: (tables: Set<string>) => {
+      const flagTables: Array<[string, boolean]> = [
+        ['IntFlag', false], ['UnsignedIntFlag', false], ['BooleanFlag', false],
+        ['LongFlag', false], ['UnsignedLongFlag', false], ['DoubleFlag', false],
+        ['StringFlag', true],
+        ['IntFlagChanged', false], ['UnsignedIntFlagChanged', false], ['BooleanFlagChanged', false],
+        ['LongFlagChanged', false], ['UnsignedLongFlagChanged', false], ['DoubleFlagChanged', false],
+        ['StringFlagChanged', true],
+      ];
+      const branches = flagTables
+        .filter(([t]) => tables.has(t))
+        .map(([t, isStr]) => isStr
+          ? `SELECT name, value FROM ${t}`
+          : `SELECT name, CAST(value AS VARCHAR) AS value FROM ${t}`);
+      if (branches.length === 0) return null;
+      return `CREATE OR REPLACE VIEW "jvm-flags" AS
+SELECT name AS "Name", value AS "Value"
+FROM (
+    ${branches.join('\n    UNION ALL\n    ')}
+) flags
+GROUP BY name, value
+ORDER BY name ASC`;
+    },
+  },
+  {
+    // Build object-statistics from ObjectCountAfterGC and optionally ObjectCount
+    requires: 'ObjectCountAfterGC',
+    buildSql: (tables: Set<string>) => {
+      const branches = ['ObjectCountAfterGC', 'ObjectCount']
+        .filter(t => tables.has(t))
+        .map(t => `SELECT objectClass, count, totalSize FROM ${t}`);
+      return `CREATE OR REPLACE VIEW "object-statistics" AS
+SELECT "Class", "Count", "Heap Space", "Increase"
+FROM (
+  SELECT
+    c.javaName AS "Class",
+    LAST(count) AS "Count",
+    format_memory(LAST(totalSize)) AS "Heap Space",
+    LAST(totalSize) AS h,
+    format_memory(MAX(totalSize) - MIN(totalSize)) AS "Increase"
+  FROM (
+    ${branches.join('\n    UNION ALL\n    ')}
+  ) ocg
+  JOIN Class c ON ocg.objectClass = c._id
+  GROUP BY c.javaName
+) ORDER BY h DESC`;
+    },
+  },
+  {
+    // Build latencies-by-type from whichever latency-event tables are present
+    requires: 'JavaMonitorWait',
+    buildSql: (tables: Set<string>) => {
+      const latencyTables: Array<[string, string]> = [
+        ['JavaMonitorWait', 'Java Monitor Wait'],
+        ['JavaMonitorEnter', 'Java Monitor Enter'],
+        ['ThreadPark', 'Thread Park'],
+        ['ThreadSleep', 'Thread Sleep'],
+        ['SocketRead', 'Socket Read'],
+        ['SocketWrite', 'Socket Write'],
+        ['FileWrite', 'File Write'],
+        ['FileRead', 'File Read'],
+      ];
+      const branches = latencyTables
+        .filter(([t]) => tables.has(t))
+        .map(([t, label]) => `SELECT '${label}' AS eventType, duration FROM ${t}`);
+      if (branches.length === 0) return null;
+      return `CREATE OR REPLACE VIEW "latencies-by-type" AS
+SELECT
+    eventType AS "Event Type",
+    COUNT(*) AS "Count",
+    format_duration(AVG(duration)) AS "Average",
+    format_duration(P99(duration)) AS "P 99",
+    format_duration(MAX(duration)) AS "Longest",
+    format_duration(SUM(duration)) AS "Total"
+FROM (
+    ${branches.join('\n    UNION ALL\n    ')}
+) latencies
+GROUP BY eventType
+ORDER BY SUM(duration) DESC`;
+    },
   },
 ];

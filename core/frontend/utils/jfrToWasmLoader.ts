@@ -1069,6 +1069,7 @@ export async function loadJfrIntoWasm(
   const allTableNames = (await conn.query(`SELECT table_name FROM duckdb_tables()`).catch(() => ({ toArray: () => [] })))
     .toArray()
     .map((r: any) => r.table_name as string);
+  const allTableNamesSet = new Set<string>(allTableNames);
   const allViewNames = new Set<string>(
     (await conn.query(`SELECT view_name FROM duckdb_views()`).catch(() => ({ toArray: () => [] })))
       .toArray()
@@ -1076,9 +1077,10 @@ export async function loadJfrIntoWasm(
   );
   const hasSource = (name: string): boolean =>
     allViewNames.has(name) || allTableNames.some(t => t === name || t.endsWith(`_${name}`));
-  for (const { requires, sql } of CONDITIONAL_VIEWS_SQL) {
+  for (const { requires, sql, buildSql } of CONDITIONAL_VIEWS_SQL) {
     if (hasSource(requires)) {
-      await runSql(conn, sql);
+      const stmt = sql ?? buildSql?.(allTableNamesSet);
+      if (stmt) await runSql(conn, stmt);
     }
   }
   const sqlMs = performance.now() - tSqlStart;
