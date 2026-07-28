@@ -168,6 +168,7 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
             setSubValue('');
             setSubResult(null);
             setSubError(null);
+            setSubBusy(false);
             setTimeout(() => inputRef.current?.focus(), 0);
         }
         return () => {
@@ -368,6 +369,7 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
             setSubError(null);
             try {
                 await onAiAddCell(payload);
+                setSubBusy(false);
                 onClose();
             } catch (e: any) {
                 setSubError(e?.message || String(e));

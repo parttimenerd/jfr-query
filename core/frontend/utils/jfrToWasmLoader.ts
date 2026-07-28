@@ -594,9 +594,9 @@ async function mergeChunkTables(
             if (!isArray) {
               return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
             }
-            return `(SELECT list(m.new_id ORDER BY pos)
+            return `(SELECT list(coalesce(m.new_id, 0) ORDER BY pos)
                      FROM (SELECT unnest(e."${col}") AS oid, generate_subscripts(e."${col}", 1) AS pos) t
-                     JOIN "_idmap_${structTable}" m ON m._worker=${wi} AND m.old_id=t.oid
+                     LEFT JOIN "_idmap_${structTable}" m ON m._worker=${wi} AND m.old_id=t.oid
                     ) AS "${col}"`;
           });
           const scalarJoins = scalarFkCols.map(col => {

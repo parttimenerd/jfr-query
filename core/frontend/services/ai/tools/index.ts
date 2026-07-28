@@ -287,16 +287,17 @@ export function validateToolArgs(tool: Tool, args: any): string | null {
         if (!prop) continue; // allow extra unknown keys; providers sometimes echo metadata
         if (prop.type === 'string' && typeof value !== 'string') return `${key} must be a string`;
         if (prop.type === 'integer' && (!Number.isInteger(value))) return `${key} must be an integer`;
+        if (prop.type === 'number' && typeof value !== 'number') return `${key} must be a number`;
         if (prop.type === 'object' && (typeof value !== 'object' || value === null || Array.isArray(value))) {
             return `${key} must be an object`;
         }
         if (prop.enum && !prop.enum.includes(value)) {
             return `${key} must be one of ${JSON.stringify(prop.enum)}`;
         }
-        if (prop.type === 'integer' && typeof prop.maximum === 'number' && (value as number) > prop.maximum) {
+        if ((prop.type === 'integer' || prop.type === 'number') && typeof prop.maximum === 'number' && (value as number) > prop.maximum) {
             return `${key} exceeds maximum ${prop.maximum}`;
         }
-        if (prop.type === 'integer' && typeof prop.minimum === 'number' && (value as number) < prop.minimum) {
+        if ((prop.type === 'integer' || prop.type === 'number') && typeof prop.minimum === 'number' && (value as number) < prop.minimum) {
             return `${key} is below minimum ${prop.minimum}`;
         }
     }
