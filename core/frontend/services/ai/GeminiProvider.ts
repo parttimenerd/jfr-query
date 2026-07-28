@@ -77,6 +77,16 @@ export class GeminiProvider implements IAiProvider {
         };
     }
 
+    private parseJsonResponse<T>(response: GenerateContentResponse): T {
+        const text = response.text;
+        if (!text) throw new Error('Gemini returned empty response');
+        try {
+            return JSON.parse(text) as T;
+        } catch {
+            throw new Error(`AI returned malformed JSON: ${text.slice(0, 200)}`);
+        }
+    }
+
     private async handleApiCall<T>(apiCall: () => Promise<T>): Promise<T> {
         try {
             return await apiCall();
@@ -112,11 +122,7 @@ export class GeminiProvider implements IAiProvider {
                 }
             })
         );
-        try {
-            return JSON.parse(response.text);
-        } catch {
-            throw new Error(`AI returned malformed JSON: ${response.text?.slice(0, 200)}`);
-        }
+        return this.parseJsonResponse(response);
     }
 
     async getInlineSuggestion(systemInstruction: string, request: string, model: string = 'gemini-2.5-flash'): Promise<AIInlineResponse> {
@@ -138,13 +144,9 @@ export class GeminiProvider implements IAiProvider {
                 }
             })
         );
-        try {
-            return JSON.parse(response.text);
-        } catch {
-            throw new Error(`AI returned malformed JSON: ${response.text?.slice(0, 200)}`);
-        }
+        return this.parseJsonResponse(response);
     }
-    
+
     async getCodeFormat(code: string, model: string = 'gemini-2.5-flash'): Promise<string | null> {
         const systemInstruction = `You are a SQL code formatter. Your task is to format the given SQL code.
 - Use standard SQL formatting with 2-space indentation.
@@ -190,11 +192,7 @@ export class GeminiProvider implements IAiProvider {
                 }
             })
         );
-        try {
-            return JSON.parse(response.text);
-        } catch {
-            throw new Error(`AI returned malformed JSON: ${response.text?.slice(0, 200)}`);
-        }
+        return this.parseJsonResponse(response);
     }
 
     async verifyCredentials(): Promise<boolean> {
