@@ -298,7 +298,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
               return (
               <tr key={key} className="hover:bg-gray-700/50">
                 {finalHeaders.map((h,j) => (
-                  <td key={h} className={`p-2 font-mono whitespace-nowrap overflow-hidden text-ellipsis ${numericColumns.has(h)?'text-right':'text-left'}`} style={{width: widths[j]}} title={String(row[h])}>{formatCell(row[h],h)}</td>
+                  <td key={h} className={`p-2 font-mono whitespace-nowrap overflow-hidden text-ellipsis ${numericColumns.has(h)?'text-right':'text-left'}`} style={{width: widths[j]}} title={formatCell(row[h],h)}>{formatCell(row[h],h)}</td>
                 ))}
               </tr>
               );

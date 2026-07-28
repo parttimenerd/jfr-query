@@ -22,8 +22,6 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
     onCloseTab,
     onNewTab,
 }) => {
-    const activeIndex = tabs.findIndex(t => t.id === activeTabId);
-
     const handleCloseTab = useCallback((e: React.MouseEvent, tab: Tab) => {
         e.stopPropagation();
         if (tab.isDirty) {
