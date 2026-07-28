@@ -600,12 +600,12 @@ async function mergeChunkTables(
             }
             return `(SELECT list(coalesce(m.new_id, 0) ORDER BY pos)
                      FROM (SELECT unnest(e."${col}") AS oid, generate_subscripts(e."${col}", 1) AS pos) t
-                     LEFT JOIN "_idmap_${structTable}" m ON m._worker=${wi} AND m.old_id=t.oid
+                     LEFT JOIN "_idmap_${structTable}" m ON m._worker=coalesce(e._orig_worker,${wi}) AND m.old_id=t.oid
                     ) AS "${col}"`;
           });
           const scalarJoins = scalarFkCols.map(col => {
             const { structTable } = colRemap.get(col)!;
-            return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=${wi} AND idmap_${col}.old_id=e."${col}"`;
+            return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=coalesce(e._orig_worker,${wi}) AND idmap_${col}.old_id=e."${col}"`;
           }).join('\n');
           const sql = `SELECT ${selectExprs2.join(', ')} FROM "${prefix}${base}" e\n${scalarJoins}`;
           if (!created) {
@@ -624,7 +624,9 @@ async function mergeChunkTables(
         });
         const joins = scalarFkCols.map(col => {
           const { structTable } = colRemap.get(col)!;
-          return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=e._w AND idmap_${col}.old_id=e."${col}"`;
+          // Use _orig_worker when present (set by mergeEventTablesForBatch for multi-worker batches)
+          // to correctly identify the source worker for _idmap lookups.
+          return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=coalesce(e._orig_worker,e._w) AND idmap_${col}.old_id=e."${col}"`;
         }).join('\n');
 
         const unionParts = workers.map((i) =>
@@ -771,9 +773,12 @@ async function mergeEventTablesForBatch(
       if (workers.length <= 1) return; // nothing to collapse
 
       // Merge all workers' rows for this base into worker[0]'s table, then drop the rest.
+      // We must preserve the original worker index so mergeChunkTables can look up the
+      // correct _idmap entries — add an _orig_worker column if it doesn't already exist.
       const target = `"chunk${workers[0]}_${base}"`;
+      await c.query(`ALTER TABLE ${target} ADD COLUMN IF NOT EXISTS _orig_worker INTEGER DEFAULT ${workers[0]}`).catch(() => {});
       for (const wi of workers.slice(1)) {
-        await c.query(`INSERT INTO ${target} SELECT * FROM "chunk${wi}_${base}"`).catch(() => {});
+        await c.query(`INSERT INTO ${target} SELECT *, ${wi} AS _orig_worker FROM "chunk${wi}_${base}"`).catch(() => {});
         await c.query(`DROP TABLE IF EXISTS "chunk${wi}_${base}"`).catch(() => {});
       }
     }));
