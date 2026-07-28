@@ -331,8 +331,8 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
       // CTEs in this statement.
       for (const cte of sqlCtx.ctes.values()) {
         if (!cte.name.toLowerCase().startsWith(lc)) continue;
-        if (seenObjects.has(cte.name)) continue;
-        seenObjects.add(cte.name);
+        if (seenObjects.has(cte.name.toLowerCase())) continue;
+        seenObjects.add(cte.name.toLowerCase());
         options.push({
           label: cte.name,
           detail: 'CTE (this query)',

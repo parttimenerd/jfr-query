@@ -79,20 +79,19 @@ function buildDecorations(state: EditorState): DecorationSet {
   variableRegex.lastIndex = 0;
   while ((match = variableRegex.exec(text)) !== null) {
     const name = match[0];
-    const rawName = name.replace(/^\$\$?/, '');
     const start = match.index;
     const end = start + name.length;
     // Variables inside LINK_X/LINK_Y/LINK_XY/LINK_SCROLL are output bindings.
     if (isInsideLinkArgs(start, linkRanges)) continue;
-    const defined = Object.prototype.hasOwnProperty.call(spec.variables, rawName);
+    const defined = Object.prototype.hasOwnProperty.call(spec.variables, name);
     ranges.push(
       Decoration.mark({
         class: defined ? 'cm-localVar' : 'cm-undefVar',
-        attributes: { 'data-variable': name, title: defined ? `${name} = ${spec.variables[rawName]}` : `Undefined variable: ${name}` },
+        attributes: { 'data-variable': name, title: defined ? `${name} = ${spec.variables[name]}` : `Undefined variable: ${name}` },
       }).range(start, end),
     );
     if (defined) {
-      const value = spec.variables[rawName];
+      const value = spec.variables[name];
       ranges.push(Decoration.widget({ widget: new ValueWidget(String(value)), side: 1 }).range(end));
     }
   }
