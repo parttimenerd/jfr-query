@@ -22,8 +22,16 @@ templates: []
 You are a JVM exception analysis expert embedded inside a JFR notebook. The user is investigating exception frequency and patterns from a JFR recording loaded into DuckDB.
 
 Key tables for exception analysis:
-- `JavaExceptionThrow` — every exception thrown (when exception-profiling is enabled): exception (class name), message, startTime, stackTrace, thread
+- `JavaExceptionThrow` — every exception thrown (when exception-profiling is enabled): thrownClass (FK→Class._id), message, startTime, stackTrace, thread
 - `JavaErrorThrow` — java.lang.Error subclasses thrown: same schema
+
+IMPORTANT: `thrownClass` is a BIGINT foreign key to `Class._id`. Always JOIN Class to get the human-readable name:
+```sql
+JOIN Class c ON e.thrownClass = c._id
+-- then use c.javaName AS "Exception Class"
+```
+
+Session variables: use `$session_start` and `$session_end` (with underscores) for time filtering.
 
 When analysing exceptions:
 - High frequency of the same exception class is the primary signal for "exceptions as control flow" anti-pattern
@@ -31,12 +39,6 @@ When analysing exceptions:
 - Check if exception classes are custom (domain exceptions) vs. JDK exceptions
 - Exceptions are only recorded if the JFR configuration includes the `jdk.JavaExceptionThrow` event — if the table is empty, advise the user to check their JFR configuration
 - Correlate exception spikes with GC pauses (ObjectOutOfMemoryError) or thread blocks
-- Note: stack traces are stored as references, not inline strings — the raw DuckDB schema may vary
-
-When suggesting SQL:
-- Group by `exception` (the class name) and ORDER BY COUNT(*) DESC for frequency analysis
-- Time-bucket exceptions to see if they are constant-rate or burst-pattern
-- Filter by `exception LIKE '%RuntimeException%'` to focus on unchecked exceptions
 
 ## Cells
 
@@ -47,12 +49,13 @@ When suggesting SQL:
 ```sql
 -- alias exc_summary
 SELECT
-  exception                                      AS "Exception Class",
+  c.javaName                                     AS "Exception Class",
   COUNT(*)                                       AS "Thrown",
   round(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 1) AS "% of Total"
-FROM JavaExceptionThrow
-WHERE startTime BETWEEN $sessionStart AND $sessionEnd
-GROUP BY exception
+FROM JavaExceptionThrow e
+JOIN Class c ON e.thrownClass = c._id
+WHERE e.startTime BETWEEN $session_start AND $session_end
+GROUP BY c.javaName
 ORDER BY COUNT(*) DESC
 LIMIT 30
 ```
@@ -68,11 +71,12 @@ BAR_CHART(x: "Exception Class", y: ["Thrown"]) TITLE "Exception Frequency by Typ
 ```sql
 -- alias exc_rate
 SELECT
-  time_bucket(interval '1 second', startTime)  AS "Time",
-  exception                                      AS "Exception Class",
-  COUNT(*)                                       AS "Count"
-FROM JavaExceptionThrow
-WHERE startTime BETWEEN $sessionStart AND $sessionEnd
+  time_bucket(interval '1 second', e.startTime)  AS "Time",
+  c.javaName                                      AS "Exception Class",
+  COUNT(*)                                        AS "Count"
+FROM JavaExceptionThrow e
+JOIN Class c ON e.thrownClass = c._id
+WHERE e.startTime BETWEEN $session_start AND $session_end
 GROUP BY 1, 2
 ORDER BY 1, 3 DESC
 ```

@@ -37,7 +37,7 @@ When analysing GC:
 - For ZGC: pauses are < 1ms; look at concurrent phase durations instead
 - For Shenandoah: check evacuation failures via cause
 - Always suggest the user look at allocation rate if they see frequent collections
-- Recommend `$sessionStart` / `$sessionEnd` variables to scope time windows
+- Recommend `$session_start` / `$session_end` variables to scope time windows
 
 Prefer SQL that surfaces actionable insight: top pause causes, worst pauses, phase breakdown, heap reclamation efficiency. Keep queries short (< 20 lines). Use the TABLE() or BAR_CHART() plot types.
 

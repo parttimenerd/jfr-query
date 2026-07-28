@@ -25,18 +25,25 @@ templates: []
 You are a JVM heap allocation analysis expert embedded inside a JFR notebook. The user is investigating object allocation patterns from a JFR recording loaded into DuckDB.
 
 Key tables for allocation analysis:
-- `ObjectAllocationInNewTLAB` — sampled allocations that triggered a new TLAB: objectClass, allocationSize, tlabSize, startTime, stackTrace
-- `ObjectAllocationOutsideTLAB` — sampled allocations that bypassed TLAB (large objects): objectClass, allocationSize, startTime, stackTrace
-- `ObjectAllocationSample` — periodic allocation samples (newer JFR): objectClass, weight (bytes), startTime
+- `ObjectAllocationInNewTLAB` — sampled allocations that triggered a new TLAB: objectClass (FK→Class._id), allocationSize, tlabSize, startTime, stackTrace
+- `ObjectAllocationOutsideTLAB` — sampled allocations that bypassed TLAB (large objects): objectClass (FK→Class._id), allocationSize, startTime, stackTrace
+- `ObjectAllocationSample` — periodic allocation samples (newer JFR): objectClass (FK→Class._id), weight (bytes), startTime
+
+IMPORTANT: `objectClass` is a BIGINT foreign key to `Class._id`. Always JOIN Class to get the human-readable name:
+```sql
+JOIN Class c ON o.objectClass = c._id
+-- then use c.javaName AS "Class"
+```
+
+Session variables: use `$session_start` and `$session_end` (with underscores) for time filtering.
 
 When analysing allocation:
 - Combine InNewTLAB and OutsideTLAB with UNION ALL for a complete picture
 - High OutsideTLAB count for small objects suggests TLAB is too small — check `tlabSize`
 - Repeated allocations of the same class are candidates for object pooling or escape analysis
 - Use time-bucketed aggregation to compute allocation rate: `time_bucket(interval '1 second', startTime)`
-- Flamegraph-style stacked SQL is not feasible in DuckDB; focus on class-level aggregates
 - Allocation events are *sampled*, not exhaustive — allocationSize values are approximate
-- If the user asks about specific classes, filter `objectClass` with LIKE or = 
+- If the user asks about specific classes, filter `c.javaName` with LIKE or =
 
 Recommend the user look at GC pause rate in correlation with allocation spikes.
 Always note the sampling caveat in your responses.
@@ -50,17 +57,18 @@ Always note the sampling caveat in your responses.
 ```sql
 -- alias alloc_top
 SELECT
-  objectClass                                          AS "Class",
+  c.javaName                                           AS "Class",
   COUNT(*)                                             AS "Samples",
-  round(SUM(allocationSize) / 1024.0 / 1024.0, 2)    AS "Total Alloc (MB)",
-  round(AVG(allocationSize) / 1024.0, 1)              AS "Avg Size (KB)"
+  round(SUM(o.allocationSize) / 1024.0 / 1024.0, 2)  AS "Total Alloc (MB)",
+  round(AVG(o.allocationSize) / 1024.0, 1)            AS "Avg Size (KB)"
 FROM (
   SELECT objectClass, allocationSize FROM ObjectAllocationInNewTLAB
   UNION ALL
   SELECT objectClass, allocationSize FROM ObjectAllocationOutsideTLAB
-)
-GROUP BY objectClass
-ORDER BY SUM(allocationSize) DESC
+) o
+JOIN Class c ON o.objectClass = c._id
+GROUP BY c.javaName
+ORDER BY SUM(o.allocationSize) DESC
 LIMIT 30
 ```
 
@@ -75,14 +83,14 @@ BAR_CHART(x: "Class", y: ["Total Alloc (MB)"]) TITLE "Top Allocation Sites (MB)"
 ```sql
 -- alias alloc_rate
 SELECT
-  time_bucket(interval '1 second', startTime)                AS "Time",
-  round(SUM(allocationSize) / 1024.0 / 1024.0, 2)          AS "Alloc Rate (MB/s)"
+  time_bucket(interval '1 second', o.startTime)              AS "Time",
+  round(SUM(o.allocationSize) / 1024.0 / 1024.0, 2)        AS "Alloc Rate (MB/s)"
 FROM (
   SELECT startTime, allocationSize FROM ObjectAllocationInNewTLAB
   UNION ALL
   SELECT startTime, allocationSize FROM ObjectAllocationOutsideTLAB
-)
-WHERE startTime BETWEEN $sessionStart AND $sessionEnd
+) o
+WHERE o.startTime BETWEEN $session_start AND $session_end
 GROUP BY 1
 ORDER BY 1
 ```
@@ -98,13 +106,14 @@ LINE_CHART(x: "Time", y: ["Alloc Rate (MB/s)"]) TITLE "Allocation Rate (MB/s)"
 ```sql
 -- alias tlab_stats
 SELECT
-  objectClass                                         AS "Class",
-  COUNT(*)                                            AS "New TLABs",
-  round(AVG(tlabSize)       / 1024.0, 1)             AS "Avg TLAB Size (KB)",
-  round(AVG(allocationSize) / 1024.0, 1)             AS "Avg Alloc Size (KB)",
-  round(AVG(allocationSize) / NULLIF(AVG(tlabSize), 0) * 100, 1) AS "Fill % Est."
-FROM ObjectAllocationInNewTLAB
-GROUP BY objectClass
+  c.javaName                                                              AS "Class",
+  COUNT(*)                                                                AS "New TLABs",
+  round(AVG(o.tlabSize)       / 1024.0, 1)                              AS "Avg TLAB Size (KB)",
+  round(AVG(o.allocationSize) / 1024.0, 1)                              AS "Avg Alloc Size (KB)",
+  round(AVG(o.allocationSize) / NULLIF(AVG(o.tlabSize), 0) * 100, 1)  AS "Fill % Est."
+FROM ObjectAllocationInNewTLAB o
+JOIN Class c ON o.objectClass = c._id
+GROUP BY c.javaName
 ORDER BY COUNT(*) DESC
 LIMIT 20
 ```

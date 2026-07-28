@@ -25,19 +25,25 @@ templates: []
 You are a JVM threading and concurrency analysis expert embedded inside a JFR notebook. The user is investigating thread behaviour from a JFR recording loaded into DuckDB.
 
 Key tables for threading analysis:
-- `JavaMonitorEnter` — monitor (synchronized block) acquisition events: monitorClass, duration, startTime, thread
-- `JavaMonitorWait` — threads waiting on a monitor (Object.wait): monitorClass, duration, startTime, thread
-- `ThreadPark` — LockSupport.park calls (used by java.util.concurrent): parkedClass, duration, startTime, thread
-- `ThreadSleep` — Thread.sleep calls: duration, startTime, thread
-- `JavaThreadStatistics` — periodic snapshot of live/daemon/peak thread counts: activeCount, daemonCount, peakedCount
+- `JavaMonitorEnter` — monitor (synchronized block) acquisition events: monitorClass (FK→Class._id), duration, startTime, eventThread (FK→Thread._id)
+- `JavaMonitorWait` — threads waiting on a monitor (Object.wait): monitorClass (FK→Class._id), duration, startTime, eventThread (FK→Thread._id)
+- `ThreadPark` — LockSupport.park calls (used by java.util.concurrent): parkedClass (FK→Class._id), duration, startTime, eventThread (FK→Thread._id)
+- `ThreadSleep` — Thread.sleep calls: duration, startTime, eventThread (FK→Thread._id)
+- `JavaThreadStatistics` — periodic snapshot of live/daemon/peak thread counts: activeCount, daemonCount, peakCount
 - `VirtualThreadPinned` — virtual threads (Project Loom) pinned to platform threads: duration, startTime (JDK 21+)
+
+IMPORTANT: `monitorClass`, `parkedClass` are BIGINT foreign keys to `Class._id`; `eventThread` is a BIGINT FK to `Thread._id`. Always JOIN to get names:
+```sql
+JOIN Class c ON e.monitorClass = c._id   -- c.javaName = monitor class name
+JOIN Thread t ON e.eventThread = t._id   -- t.javaName = thread name
+```
+
+Session variables: use `$session_start` and `$session_end` (with underscores) for time filtering.
 
 When analysing threading:
 - High `JavaMonitorEnter` duration means lock contention — look at `monitorClass` to find the hot lock
 - `ThreadPark` with no `parkedClass` is often j.u.c. locks — check the stackTrace when available
 - Virtual thread pinning shows where Loom's scheduler is blocked — often native code or `synchronized`
-- For contention hot-spots, group by `monitorClass` and sum `duration`
-- Avoid suggesting `Thread.sleep` reduction as a fix without understanding the intent
 - `activeCount` from JavaThreadStatistics shows thread pool sizing — spikes indicate task queuing
 
 Always correlate contention windows with GC pause times to distinguish GC-induced stop-the-world from true lock contention.
@@ -51,12 +57,12 @@ Always correlate contention windows with GC pause times to distinguish GC-induce
 ```sql
 -- alias thread_stats
 SELECT
-  strftime('%H:%M:%S', startTime::TIMESTAMP)  AS "Time",
-  activeCount                       AS "Active",
-  daemonCount                       AS "Daemon",
-  peakedCount                       AS "Peak"
+  startTime                          AS "Time",
+  activeCount                        AS "Active",
+  daemonCount                        AS "Daemon",
+  peakCount                          AS "Peak"
 FROM JavaThreadStatistics
-WHERE startTime BETWEEN $sessionStart AND $sessionEnd
+WHERE startTime BETWEEN $session_start AND $session_end
 ORDER BY startTime
 ```
 
@@ -71,15 +77,16 @@ LINE_CHART(x: "Time", y: ["Active", "Daemon"]) TITLE "Thread Count Over Time"
 ```sql
 -- alias monitor_contention
 SELECT
-  monitorClass                                  AS "Monitor Class",
+  c.javaName                                    AS "Monitor Class",
   COUNT(*)                                      AS "Enter Events",
-  round(SUM(duration) * 1000, 1)               AS "Total Wait (ms)",
-  round(AVG(duration) * 1000, 2)               AS "Avg Wait (ms)",
-  round(MAX(duration) * 1000, 2)               AS "Max Wait (ms)"
-FROM JavaMonitorEnter
-WHERE startTime BETWEEN $sessionStart AND $sessionEnd
-GROUP BY monitorClass
-ORDER BY SUM(duration) DESC
+  round(SUM(e.duration) * 1000, 1)             AS "Total Wait (ms)",
+  round(AVG(e.duration) * 1000, 2)             AS "Avg Wait (ms)",
+  round(MAX(e.duration) * 1000, 2)             AS "Max Wait (ms)"
+FROM JavaMonitorEnter e
+JOIN Class c ON e.monitorClass = c._id
+WHERE e.startTime BETWEEN $session_start AND $session_end
+GROUP BY c.javaName
+ORDER BY SUM(e.duration) DESC
 LIMIT 20
 ```
 
@@ -94,18 +101,19 @@ BAR_CHART(x: "Monitor Class", y: ["Total Wait (ms)"]) TITLE "Monitor Contention 
 ```sql
 -- alias blocked_threads
 SELECT
-  thread                                         AS "Thread",
+  t.javaName                                     AS "Thread",
   COUNT(*)                                       AS "Block Events",
-  round(SUM(duration)  * 1000, 1)              AS "Total Blocked (ms)",
-  round(AVG(duration)  * 1000, 2)              AS "Avg Block (ms)"
+  round(SUM(e.duration) * 1000, 1)              AS "Total Blocked (ms)",
+  round(AVG(e.duration) * 1000, 2)              AS "Avg Block (ms)"
 FROM (
-  SELECT thread, duration FROM JavaMonitorEnter
+  SELECT eventThread, duration, startTime FROM JavaMonitorEnter
   UNION ALL
-  SELECT thread, duration FROM ThreadPark
-)
-WHERE startTime BETWEEN $sessionStart AND $sessionEnd
-GROUP BY thread
-ORDER BY SUM(duration) DESC
+  SELECT eventThread, duration, startTime FROM ThreadPark
+) e
+JOIN Thread t ON e.eventThread = t._id
+WHERE e.startTime BETWEEN $session_start AND $session_end
+GROUP BY t.javaName
+ORDER BY SUM(e.duration) DESC
 LIMIT 20
 ```
 

@@ -171,7 +171,7 @@ FROM ExecutionSample es
 JOIN Method m ON m._id = es."stackTrace$topMethod"
 JOIN Class c ON c._id = m.type
 WHERE es.state = 'STATE_RUNNABLE'
-  AND startTime BETWEEN $sessionStart AND $sessionEnd
+  AND startTime BETWEEN $session_start AND $session_end
 GROUP BY es."stackTrace$topMethod", c.javaName, m.name
 ORDER BY COUNT(*) DESC
 LIMIT 30
