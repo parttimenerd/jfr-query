@@ -26,7 +26,7 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
   const xLabelFromClause = clauses?.axisX?.label;
   const yLabelFromClause = clauses?.axisY?.label;
   const legendPos = clauses?.legend;
-  const showLegend = legendPos !== 'none' && legendPos !== undefined;
+  const showLegend = legendPos !== 'none';
 
   const { chartData, xLabels, yLabels, min, max } = useMemo(() => {
     const xLabels = [...new Set(data.map(item => item[x]))].sort();

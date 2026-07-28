@@ -75,7 +75,7 @@ export class GardenerProvider implements IAiProvider {
         }
 
         const result = await response.json();
-        const content = result.choices[0]?.message?.content;
+        const content = result.choices?.[0]?.message?.content;
         if (!content) {
             throw new Error("Received an empty response from Gardener Answering Machine.");
         }
@@ -84,7 +84,9 @@ export class GardenerProvider implements IAiProvider {
             if (parseJson) return JSON.parse(content);
             return content as unknown as T;
         } catch (e) {
-            // For requests that expect plain text
+            // JSON parse failed — re-throw so callers get a clear error instead
+            // of silently receiving a raw string typed as the expected object.
+            if (parseJson) throw new Error(`Gardener returned malformed JSON: ${String(content).slice(0, 200)}`);
             return content as unknown as T;
         }
     }

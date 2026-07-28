@@ -380,9 +380,11 @@ const App: React.FC = () => {
     useEffect(() => {
         if (urlParamsRef.current.ranAll) return;
         if (dbState !== DBState.READY) return;
+        // Mark as ran regardless of whether we actually fire, so that a later
+        // toggle of isAutoRunEnabled doesn't trigger a second run.
+        urlParamsRef.current.ranAll = true;
         const params = new URLSearchParams(window.location.search);
         if (params.get('run') !== 'true' && !isAutoRunEnabled) return;
-        urlParamsRef.current.ranAll = true;
         // Small delay so notebook/views from ?notebook= have settled.
         const t = setTimeout(() => { void handleRunAllRef.current?.(); }, 300);
         return () => clearTimeout(t);

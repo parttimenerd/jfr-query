@@ -379,7 +379,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             wasmDbRef.current = db;
             return db.connect();
           }).then(conn => {
-            if (cancelled || !conn) { conn?.close().catch(() => {}); return; }
+            if (cancelled || !conn) {
+              conn?.close().catch(() => {});
+              // If we were cancelled after wasmDbRef was already set, clear it
+              // so loadFile doesn't call resetWasmDatabase with a null connection.
+              if (cancelled) { wasmDbRef.current?.terminate().catch(() => {}); wasmDbRef.current = null; }
+              return;
+            }
             wasmConnRef.current = conn;
             setWasmInitializing(false);
           }).catch(() => {

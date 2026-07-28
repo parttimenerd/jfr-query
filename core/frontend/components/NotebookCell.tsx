@@ -983,7 +983,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         );
         handleSegmentsUpdate(newSegs);
     };
-    const handleTitleBlur = (newTitle: string) => { setIsEditingTitle(false); if (newTitle.trim() && newTitle !== title) { const introSegmentIndex = segments.findIndex(s=>s.type==='markdown'); if(introSegmentIndex!==-1){const newSegments=[...segments]; const intro=newSegments[introSegmentIndex]; if(intro.type==='if') return; const newContent=intro.content.replace(/^(?:#|##|###)\s*(.*)/,`## ${newTitle}`); newSegments[introSegmentIndex]={...intro, content:newContent}; handleSegmentsUpdate(newSegments);} }};
+    const handleTitleBlur = (newTitle: string) => { setIsEditingTitle(false); if (newTitle.trim() && newTitle !== title) { const introSegmentIndex = segments.findIndex(s=>s.type==='markdown'); if(introSegmentIndex!==-1){const newSegments=[...segments]; const intro=newSegments[introSegmentIndex]; if(intro.type==='if') return; const newContent=intro.content.replace(/^(?:#|##|###)\s*(.*)/m,`## ${newTitle}`); newSegments[introSegmentIndex]={...intro, content:newContent}; handleSegmentsUpdate(newSegments);} }};
     const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { handleTitleBlur(editingTitleValue); } else if (e.key === 'Escape') { setIsEditingTitle(false); } };
     const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', cell.id); e.dataTransfer.effectAllowed = 'move'; setIsBeingDragged(true); };
     const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); setIsDraggingOver(e.clientY < r.top+r.height/2 ? 'top':'bottom'); };
@@ -1413,13 +1413,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 const resolvedSql = parsedSqlBlocks[dataIndex] ?? parsedSqlBlocks[defaultSqlIndex] ?? '';
                                 const plotDataCols = (resolvedData && resolvedData.length > 0 && !resolvedData[0]?.error) ? Object.keys(resolvedData[0]) : [];
                                 const plotAlias = parsed.plotAliases[pi] ?? null;
-                                const isEditingPlotName = editingBlockName?.type === 'plot' && editingBlockName.idx === pi;
+                                const isEditingPlotName = editingBlockName?.type === 'plot' && editingBlockName.idx === plotUid;
                                 const plotTitleNode = isEditingPlotName ? (
                                     <input
                                         autoFocus
                                         type="text"
                                         value={editingBlockName.value}
-                                        onChange={e => setEditingBlockName({ type: 'plot', idx: pi, value: e.target.value })}
+                                        onChange={e => setEditingBlockName({ type: 'plot', idx: plotUid, value: e.target.value })}
                                         onBlur={() => handleCommitBlockName('plot', pi, editingBlockName.value)}
                                         onKeyDown={e => { if (e.key === 'Enter') handleCommitBlockName('plot', pi, editingBlockName.value); else if (e.key === 'Escape') setEditingBlockName(null); e.stopPropagation(); }}
                                         onClick={e => e.stopPropagation()}
@@ -1430,7 +1430,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                     <span
                                         className="cursor-pointer hover:text-cyan-300 transition-colors"
                                         title="Click to rename" aria-label="Click to rename"
-                                        onClick={e => { e.stopPropagation(); setEditingBlockName({ type: 'plot', idx: pi, value: plotAlias ?? '' }); }}
+                                        onClick={e => { e.stopPropagation(); setEditingBlockName({ type: 'plot', idx: plotUid, value: plotAlias ?? '' }); }}
                                     >{plotAlias ? `Plot ${pi+1} · ${plotAlias}` : `Plot ${pi+1}`}</span>
                                 );
                                 const configToRender = (config && config.trim()) ? config : 'TABLE()';

@@ -62,13 +62,17 @@ export const useHistoryState = <T,>(
         // longer than MAX_SESSION_MS, even if keystrokes are still continuous.
         const now = Date.now();
         const sessionExpired = isDebouncing.current && (now - sessionStartTime.current) >= MAX_SESSION_MS;
+        // Capture the decision before _setState so the updater sees the right value;
+        // line 98 sets isDebouncing.current = true synchronously before React runs
+        // the updater, so reading the ref inside the updater would always see true.
+        const createNewEntry = sessionExpired || !isDebouncing.current;
         if (sessionExpired) {
             isDebouncing.current = false;
         }
 
         _setState(prevState => {
             // If we're in a debouncing session, modify the last history entry.
-            if (isDebouncing.current) {
+            if (!createNewEntry) {
                 const newHistory = [...prevState.history];
                 newHistory[newHistory.length - 1] = value;
                 return { ...prevState, history: newHistory, currentIndex: newHistory.length - 1 };
