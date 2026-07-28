@@ -223,7 +223,7 @@ const FlameGraphCanvas: React.FC<{
                 : (node.value / pv) * 100;
             if (pct < minFrameWidth) return depth;
             if (node.children.length === 0) return depth + 1;
-            let d = depth;
+            let d = depth + 1;
             for (const c of node.children) { const cd = getDepth(c, node.value, depth + 1); if (cd > d) d = cd; }
             return d;
         };
@@ -527,7 +527,10 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
 
   // Choose DOM vs canvas based on visible node count.
   const visibleCount = useMemo(
-    () => countVisibleNodes(currentRoot, currentRoot.value, minFrameWidth, root.value, widthMode),
+    () => currentRoot.children.reduce(
+        (sum, child) => sum + countVisibleNodes(child, currentRoot.value, minFrameWidth, root.value, widthMode),
+        0,
+    ),
     [currentRoot, minFrameWidth, root.value, widthMode]
   );
   const useCanvas = visibleCount > CANVAS_THRESHOLD;
