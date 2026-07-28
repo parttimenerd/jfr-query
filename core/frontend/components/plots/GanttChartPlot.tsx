@@ -134,13 +134,13 @@ const GanttChartComponent: React.FC<{
   const tooltipFormatter = (_value: any, _name: string, props: any) => {
     const row = props?.payload;
     if (!row) return [_value, _name];
-    if (_name === '__offset') return null; // hide offset
+    if (_name === '__offset') return undefined; // hide offset bar from tooltip
     const startFmt = isTime ? formatTimestamp(getTimeValue(row.__startRaw), settings.timeFormat) : numberFormatter(row.__startRaw);
     const endFmt = isTime ? formatTimestamp(getTimeValue(row.__endRaw), settings.timeFormat) : numberFormatter(row.__endRaw);
     return [`${startFmt} → ${endFmt}`, 'Range'];
   };
 
-  const chartHeight = Math.max(320, new Set(chartData.map(r => r.__rowLabel ?? r.lane ?? r.row)).size * 28 + 60);
+  const chartHeight = Math.max(320, new Set(chartData.map(r => r.__rowLabel)).size * 28 + 60);
   return (
     <div style={{ width: '100%' }}>
       <ResponsiveContainer width="100%" height={chartHeight}>
