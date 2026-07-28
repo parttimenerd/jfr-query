@@ -68,8 +68,8 @@ function stripComments(s: string): string {
         if (ch === '#') {
             // skip to next newline
             while (i < s.length && s[i] !== '\n') i++;
-            // preserve the newline (loop's i++ will advance past it)
-            if (i < s.length) out += s[i];
+            // preserve the newline if present (loop's i++ will advance past it)
+            if (i < s.length && s[i] === '\n') out += '\n';
             continue;
         }
         out += ch;

@@ -131,6 +131,7 @@ export const extractReferences = (sql: string): Reference[] => {
 
     // Bare identifiers — but exclude ones that appeared on the LHS or RHS of a
     // qualified ref (already captured). Mask out the dotted forms first.
+    qualRe.lastIndex = 0;
     const masked = cleaned.replace(qualRe, '');
     const bareRe = /\b([A-Za-z_][\w]*)\b/g;
     while ((m = bareRe.exec(masked))) {

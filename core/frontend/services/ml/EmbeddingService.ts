@@ -97,7 +97,7 @@ export async function ensureLoaded(signal?: AbortSignal): Promise<void> {
 
 async function getPipeline(): Promise<any> {
     await ensureLoaded();
-    return pipelinePromise!;
+    return await pipelinePromise!;
 }
 
 // ─── Query embedding cache (tiny LRU with TTL) ───────────────────────────────

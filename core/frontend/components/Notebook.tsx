@@ -248,7 +248,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                         allCells={cells}
                         metadata={metadata}
                         results={results[cell.id] ?? emptyResults}
-                        queryTimings={queryTimings?.[cell.id] ?? emptyResults as any}
+                        queryTimings={queryTimings?.[cell.id]}
                         crossCellQueryRefs={crossCellQueryRefs}
                         isAutoRunEnabled={isAutoRunEnabled}
                         collapseTrigger={collapseTrigger}

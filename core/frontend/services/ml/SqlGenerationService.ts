@@ -66,6 +66,7 @@ export async function ensureSqlModelLoaded(
     if (loading.has(ARTIFACT_ID)) {
         await loading.get(ARTIFACT_ID)!;
         throwIfAborted(signal);
+        if (!cache.has(ARTIFACT_ID)) throw new Error('SQL model failed to load');
         return;
     }
 

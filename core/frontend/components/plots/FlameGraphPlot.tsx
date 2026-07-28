@@ -108,13 +108,14 @@ const FlameGraphNode: React.FC<{
     hasSearch: boolean;
     minFrameWidth: number;
     widthMode: 'parent' | 'total';
+    direction: 'up' | 'down';
     hoveredName: string | null;
     onZoom: (node: FlameGraphNodeData) => void;
     onHover: (name: string | null) => void;
     onContextMenu: (e: React.MouseEvent, node: FlameGraphNodeData) => void;
 }> = ({
     node, totalValue, parentValue, rootValue, searchTerm, matchRegex, hasSearch,
-    minFrameWidth, widthMode, hoveredName, onZoom, onHover, onContextMenu,
+    minFrameWidth, widthMode, direction, hoveredName, onZoom, onHover, onContextMenu,
 }) => {
     const widthPct = widthMode === 'total'
         ? (node.value / rootValue) * 100
@@ -132,6 +133,29 @@ const FlameGraphNode: React.FC<{
             className="relative flex flex-col"
             style={{ width: `${widthPct}%` }}
         >
+            {direction === 'up' && node.children.length > 0 && (
+                <div className="flex w-full">
+                    {node.children.map((child, i) => (
+                        <FlameGraphNode
+                            key={i}
+                            node={child}
+                            totalValue={totalValue}
+                            parentValue={node.value}
+                            rootValue={rootValue}
+                            searchTerm={searchTerm}
+                            matchRegex={matchRegex}
+                            hasSearch={hasSearch}
+                            minFrameWidth={minFrameWidth}
+                            widthMode={widthMode}
+                            direction={direction}
+                            hoveredName={hoveredName}
+                            onZoom={onZoom}
+                            onHover={onHover}
+                            onContextMenu={onContextMenu}
+                        />
+                    ))}
+                </div>
+            )}
             <div
                 title={`${node.name}\n${node.value} samples · ${totalValue > 0 ? ((node.value / totalValue) * 100).toFixed(1) : 0}% total · ${parentValue > 0 ? ((node.value / parentValue) * 100).toFixed(1) : 0}% parent\nClick to zoom · Right-click for menu`}
                 onClick={() => onZoom(node)}
@@ -149,7 +173,7 @@ const FlameGraphNode: React.FC<{
             >
                 {shortName(node.name, 0 /* will be trimmed by overflow-hidden */)}
             </div>
-            {node.children.length > 0 && (
+            {direction !== 'up' && node.children.length > 0 && (
                 <div className="flex w-full">
                     {node.children.map((child, i) => (
                         <FlameGraphNode
@@ -163,6 +187,7 @@ const FlameGraphNode: React.FC<{
                             hasSearch={hasSearch}
                             minFrameWidth={minFrameWidth}
                             widthMode={widthMode}
+                            direction={direction}
                             hoveredName={hoveredName}
                             onZoom={onZoom}
                             onHover={onHover}
@@ -667,6 +692,7 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
                   hasSearch={hasSearch}
                   minFrameWidth={minFrameWidth}
                   widthMode={widthMode}
+                  direction={direction}
                   hoveredName={hoveredName}
                   onZoom={handleZoom}
                   onHover={setHoveredName}
