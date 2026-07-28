@@ -432,6 +432,7 @@ const InteractivePlotWrapper: React.FC<{
                 )}
                 {isZoomed && !isLocked && (
                     <button onClick={() => {
+                        if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
                         setLocalDomain(null);
                         if (shouldPublishLinkX(linkX, linkXMaster)) {
                             linkXStore.publish(linkX, null);
