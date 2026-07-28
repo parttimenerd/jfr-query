@@ -30,10 +30,11 @@ These events require `-XX:StartFlightRecording:settings=profile` (they're off in
 ```sql
 -- alias exceptions_by_class
 SELECT
-  thrownClass AS "Class",
+  c.javaName AS "Class",
   COUNT(*) AS "Throws"
-FROM JavaExceptionThrow
-GROUP BY thrownClass
+FROM JavaExceptionThrow e
+JOIN Class c ON e.thrownClass = c._id
+GROUP BY c.javaName
 ORDER BY COUNT(*) DESC
 LIMIT $limit
 ```
@@ -51,10 +52,11 @@ BAR_CHART(x: "Class", y: ["Throws"], horizontal: true) TITLE "Top Thrown Excepti
 ```sql
 -- alias errors
 SELECT
-  thrownClass AS "Class",
+  c.javaName AS "Class",
   COUNT(*) AS "Throws"
-FROM JavaErrorThrow
-GROUP BY thrownClass
+FROM JavaErrorThrow e
+JOIN Class c ON e.thrownClass = c._id
+GROUP BY c.javaName
 ORDER BY COUNT(*) DESC
 LIMIT $limit
 ```
