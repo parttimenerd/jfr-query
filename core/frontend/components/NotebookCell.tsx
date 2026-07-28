@@ -637,7 +637,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     }, [handleSegmentsUpdate]);
 
     useEffect(() => { if (Object.keys(parsed.variables || {}).length === 0) setIsVariablesCollapsed(true); }, [parsed.variables]);
-    useEffect(() => { if (collapseTrigger > 0) { const newStates: Record<string, boolean> = {}; parsedSqlBlocks.forEach((_, i) => newStates[`sql-${i}`] = allCollapsed); parsedPlotBlocks.forEach((_, i) => newStates[`plot-${i}`] = allCollapsed); setCollapsedStates(newStates); setIsVariablesCollapsed(allCollapsed); } }, [collapseTrigger, allCollapsed, parsedSqlBlocks, parsedPlotBlocks]);
+    useEffect(() => { if (collapseTrigger > 0) { const newStates: Record<string, boolean> = {}; parsedSqlBlocks.forEach((_, i) => newStates[`sql-${i}`] = allCollapsed); parsedPlotBlocksWithSqlIndex.forEach((_, i) => newStates[`plot-${i}`] = allCollapsed); setCollapsedStates(newStates); setIsVariablesCollapsed(allCollapsed); } }, [collapseTrigger, allCollapsed, parsedSqlBlocks, parsedPlotBlocksWithSqlIndex]);
 
     const prevSqlBlocksRef = useRef<string[]>([]);
     const prevVariablesRef = useRef<Record<string, string>>({});
