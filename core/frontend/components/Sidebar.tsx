@@ -81,6 +81,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const autoSelectedRef = useRef(false);
+  useEffect(() => { autoSelectedRef.current = false; }, [schema]);
   const handleItemSelectRef = useRef<typeof handleItemSelect>(null as any);
   useEffect(() => {
     if (!autoSelectedRef.current && schema?.tables && schema.tables.length > 0 && !selectedItem) {

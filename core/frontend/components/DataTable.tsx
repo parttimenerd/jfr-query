@@ -234,8 +234,8 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
   const [displayLimit, setDisplayLimit] = useState(DISPLAY_CAP);
   const displayData = processedData.slice(0, displayLimit);
   const isCapped = displayLimit < processedData.length;
-  // Reset display limit when underlying data or filter changes.
-  useEffect(() => { setDisplayLimit(DISPLAY_CAP); }, [data, debouncedFilter]);
+  // Reset display limit when underlying data, filter, or sort changes.
+  useEffect(() => { setDisplayLimit(DISPLAY_CAP); }, [data, debouncedFilter, sortConfig]);
 
   if (!data || data.length === 0) return <div className="text-center text-gray-500 p-8">No data to display.</div>;
 
