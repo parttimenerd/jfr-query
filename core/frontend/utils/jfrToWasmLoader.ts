@@ -527,7 +527,7 @@ async function mergeChunkTables(
     });
 
     const commentMap = new Map<string, string>();
-    {
+    if (eventReprTables.length > 0) {
       const commentPattern = eventReprTables.map(({ reprTable: t }) => `table_name='${t.replace(/'/g, "''")}'`).join(' OR ');
       const commentResult = await conn.query(
         `SELECT table_name, comment FROM duckdb_tables() WHERE ${commentPattern}`
@@ -540,7 +540,7 @@ async function mergeChunkTables(
     }
 
     const colsMap = new Map<string, string[]>();
-    {
+    if (eventReprTables.length > 0) {
       const colsPattern = eventReprTables.map(({ reprTable: t }) => `table_name='${t.replace(/'/g, "''")}'`).join(' OR ');
       const colsResult = await conn.query(
         `SELECT table_name, column_name FROM information_schema.columns

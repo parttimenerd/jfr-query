@@ -138,7 +138,7 @@ export const TOOLS: Tool[] = [
             properties: {
                 cellId: { type: 'string' },
                 plotConfig: { type: 'string', description: 'A plot DSL string, e.g.: BAR_CHART(x: "objectClass", y: ["totalWeight"]) TITLE "Top Classes". Valid plot types: LINE_CHART, BAR_CHART, AREA_CHART, SCATTER_PLOT, PIE_CHART, BOX_PLOT, TABLE. Do NOT use JSON or Observable Plot syntax.' },
-                plotBlockIndex: { type: 'number', description: '0-based index of the plot block to replace within the cell. Defaults to 0 (first plot block).' },
+                plotBlockIndex: { type: 'integer', description: '0-based index of the plot block to replace within the cell. Defaults to 0 (first plot block).' },
             },
             required: ['cellId', 'plotConfig'],
         },

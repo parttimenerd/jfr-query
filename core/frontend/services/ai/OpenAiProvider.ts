@@ -96,8 +96,8 @@ export class OpenAiProvider implements IAiProvider {
         try {
             return parseJson ? JSON.parse(content) : content as unknown as T;
         } catch (e) {
-            // If it's not JSON, return it as-is for non-JSON requests
-            return content as unknown as T;
+            if (!parseJson) return content as unknown as T;
+            throw new Error(`OpenAI returned malformed JSON: ${content.slice(0, 200)}`);
         }
     }
     
@@ -150,7 +150,7 @@ export class OpenAiProvider implements IAiProvider {
             ],
             temperature: 0
         }, false);
-        return response.trim().replace(/```plot\n|```/g, '').trim();
+        return response.trim().replace(/```plot\n?|```/g, '').trim();
     }
 
     async getPlotFixSuggestion(systemInstruction: string, model: string = 'gpt-3.5-turbo'): Promise<AIPlotFixResponse> {
