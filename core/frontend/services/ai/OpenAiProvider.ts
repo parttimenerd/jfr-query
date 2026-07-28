@@ -239,7 +239,7 @@ export class OpenAiProvider implements IAiProvider {
         for (const buf of toolCallBuffers.values()) {
             if (!buf.id || !buf.name) continue;
             let args: any = {};
-            try { args = JSON.parse(buf.args); } catch { continue; }
+            try { args = JSON.parse(buf.args || '{}'); } catch { continue; }
             yield { kind: 'tool_call', id: buf.id, name: buf.name, args };
         }
     }
