@@ -916,9 +916,11 @@ class Parser {
             if (this.eatPunct('(')) {
                 if (this.eatKw('WHERE')) {
                     const filterExpr = this.parseExpression();
+                    this.eatPunct(')');
                     children.push(makeNode('filterClause', this.tokens.slice(fStart, this.pos), [filterExpr], this.source));
+                } else {
+                    this.eatPunct(')');
                 }
-                this.eatPunct(')');
             }
         }
 
