@@ -212,7 +212,7 @@ test.describe.serial('Plot: lineType dots', () => {
 
     const cellSel = '[data-cell-id="cell-3"]';
 
-    // Find the plot editor in cell-2.
+    // Find the plot editor in cell-3.
     const cell2PlotContent = page.locator(`${cellSel} .cm-content[data-language="plot"]`).first();
     const cell2PlotVisible = await cell2PlotContent.isVisible().catch(() => false);
     if (!cell2PlotVisible) { test.skip(); return; }
