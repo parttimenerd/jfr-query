@@ -867,10 +867,11 @@ class Parser {
     }
 
     private parseIdentOrCall(): Node {
+        const nameStartPos = this.pos;
         const qname = this.parseQualifiedName();
         // Function call?
         if (this.isPunctTok('(')) {
-            return this.parseFunctionCall(qname);
+            return this.parseFunctionCall(qname, nameStartPos);
         }
         // Lambda: `x -> body`
         if (this.current().kind === 'arrow') {
@@ -891,9 +892,9 @@ class Parser {
         return makeNode('qualifiedIdent', this.tokens.slice(startPos, this.pos), parts, this.source);
     }
 
-    private parseFunctionCall(name: Node): Node {
-        const startPos = this.tokens.findIndex(t => t.from === name.from);
-        const start = startPos >= 0 ? startPos : this.pos;
+    private parseFunctionCall(name: Node, nameStartPos?: number): Node {
+        const start = nameStartPos ?? this.tokens.findIndex(t => t.from === name.from);
+        const startPos = start >= 0 ? start : this.pos;
         this.advance(); // (
         const args: Node[] = [];
         if (this.eatKw('DISTINCT')) { /* note distinct in source span */ }
@@ -914,7 +915,8 @@ class Parser {
             this.advance(); // FILTER
             if (this.eatPunct('(')) {
                 if (this.eatKw('WHERE')) {
-                    children.push(makeNode('filterClause', this.tokens.slice(fStart, this.pos), [this.parseExpression()], this.source));
+                    const filterExpr = this.parseExpression();
+                    children.push(makeNode('filterClause', this.tokens.slice(fStart, this.pos), [filterExpr], this.source));
                 }
                 this.eatPunct(')');
             }

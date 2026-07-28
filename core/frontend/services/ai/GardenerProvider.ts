@@ -94,7 +94,7 @@ export class GardenerProvider implements IAiProvider {
     async getAgentResponse(conversationHistory: Array<{ role: string; parts: Array<{ text?: string }> }>, systemInstruction: string, model: string = 'gpt-50-mini'): Promise<AIResponse> {
          const messages = [
             { role: "system", content: systemInstruction },
-            ...conversationHistory.map(c => ({ role: c.role, content: c.parts.filter(p => typeof p.text === 'string').map(p => p.text).join('\n') }))
+            ...conversationHistory.map(c => ({ role: c.role === 'model' ? 'assistant' : c.role, content: c.parts.filter(p => typeof p.text === 'string').map(p => p.text).join('\n') }))
         ];
 
         // This endpoint doesn't support the response_format parameter, so we instruct it in the prompt.

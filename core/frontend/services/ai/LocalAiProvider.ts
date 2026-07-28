@@ -339,8 +339,9 @@ export class LocalAiProvider implements IAiProvider {
                     }
                     if (Array.isArray(delta.tool_calls)) {
                         for (const tc of delta.tool_calls) {
-                            const idx: number = typeof tc.index === 'number' ? tc.index : syntheticIdx++;
+                            const idx: number = typeof tc.index === 'number' ? tc.index : syntheticIdx;
                             if (!toolCallBuffers.has(idx)) {
+                                syntheticIdx++;
                                 toolCallBuffers.set(idx, { id: tc.id ?? '', name: tc.function?.name ?? '', args: '' });
                             }
                             const buf = toolCallBuffers.get(idx)!;
