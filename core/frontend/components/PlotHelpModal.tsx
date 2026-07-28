@@ -173,7 +173,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                             </li>
                             <li>
                                 <code className="bg-gray-700 p-1 rounded-md leading-relaxed inline-block">PLOT_A(...)<br/><br/>PLOT_B(...)</code>
-                                <span className="text-gray-400"> &mdash; Empty line (two newlines) starts a <strong>new row</strong> of plots.</span>
+                                <span className="text-gray-400"> &mdash; Two blank lines (three newlines) starts a <strong>new row</strong> of plots.</span>
                             </li>
                              <li>
                                 <code className="bg-gray-700 p-1 rounded-md">... ON query_ref</code>

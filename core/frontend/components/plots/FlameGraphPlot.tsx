@@ -411,7 +411,7 @@ const ContextMenu: React.FC<{
             <div className="border-t border-gray-700 my-1" />
             <Item label="Zoom to this frame" onClick={onZoom} />
             <Item label="Go up one level" onClick={onGoUp} disabled={!canGoUp} />
-            <Item label="Reset zoom &amp; search" onClick={onReset} />
+            <Item label="Reset zoom & search" onClick={onReset} />
             <div className="border-t border-gray-700 my-1" />
             <Item
                 label="Copy frame name"

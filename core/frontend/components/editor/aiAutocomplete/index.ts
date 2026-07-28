@@ -120,7 +120,7 @@ export function aiAutocompleteExtension(deps: AiAutocompleteDeps): Extension {
       // but dispatching explicitly here is cheap and makes intent clear).
       // (Skipped: docChanged already cleared the field; avoid an extra dispatch.)
 
-      const ms = u.view.state.facet ? this.computeDebounce(settings) : this.computeDebounce(settings);
+      const ms = this.computeDebounce(settings);
       this.debouncer.schedule(() => this.fire(), ms);
     }
 

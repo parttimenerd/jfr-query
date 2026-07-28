@@ -44,7 +44,7 @@ function looksLikeStackedSeries(numerics: ColumnInfo[]): boolean {
  *        cardinality ≤ 32 → BAR_CHART(x:cat, y:[numerics])
  *        cardinality > 32 → TABLE() (bar of 100+ bars is unreadable).
  *   8. Two numerics, no time/cat → SCATTER_PLOT(x:, y:).
- *   9. Single numeric, no time/cat → HISTOGRAM(value:).
+ *   9. Single numeric, no time/cat → HISTOGRAM(x:).
  *  10. Many numerics, no time/cat → HISTOGRAM of first numeric.
  *  11. Fallback → TABLE().
  */
@@ -69,8 +69,9 @@ export function heuristicPlot(
     const endCol = timeRoles.find(r => looksLikeEndName(r.name));
     if (startCol && endCol && startCol.name !== endCol.name && cats.length >= 1) {
         const lane = cats[0].name;
-        const task = (cats[1] ?? cats[0]).name;
-        return `GANTT(start: "${startCol.name}", end: "${endCol.name}", lane: "${lane}", task: "${task}")`;
+        const task = cats.length > 1 ? cats[1].name : undefined;
+        const taskPart = task ? `, task: "${task}"` : '';
+        return `GANTT(start: "${startCol.name}", end: "${endCol.name}", lane: "${lane}"${taskPart})`;
     }
 
     // RANGE — exactly 1 category + 2 numerics whose names look like min/max
@@ -102,15 +103,15 @@ export function heuristicPlot(
     // Single category + single numeric → bar or table depending on cardinality.
     if (cats.length === 1 && numerics.length === 1) {
         const card = distinctCount(sample, cats[0].name);
-        // High-cardinality bar charts are unreadable; switch to table.
-        if (card !== null && card > 32) return 'TABLE()';
+        // High-cardinality or empty-sample bar charts are unreadable; switch to table.
+        if (card === null || card > 32) return 'TABLE()';
         return `BAR_CHART(x: "${cats[0].name}", y: ["${numerics[0].name}"])`;
     }
 
     // Category + multiple numerics → grouped bar
     if (cats.length === 1 && numerics.length > 1) {
         const card = distinctCount(sample, cats[0].name);
-        if (card !== null && card > 32) return 'TABLE()';
+        if (card === null || card > 32) return 'TABLE()';
         const yCols = numerics.map(n => `"${n.name}"`).join(', ');
         return `BAR_CHART(x: "${cats[0].name}", y: [${yCols}])`;
     }
@@ -120,14 +121,14 @@ export function heuristicPlot(
         return `SCATTER_PLOT(x: "${numerics[0].name}", y: "${numerics[1].name}")`;
     }
 
-    // One numeric, no time, no category → histogram  (HISTOGRAM(value:))
+    // One numeric, no time, no category → histogram  (HISTOGRAM(x:))
     if (numerics.length === 1 && cats.length === 0 && !time) {
-        return `HISTOGRAM(value: "${numerics[0].name}")`;
+        return `HISTOGRAM(x: "${numerics[0].name}")`;
     }
 
     // Multiple numerics, no time, no category → histogram of first
     if (numerics.length > 1 && cats.length === 0 && !time) {
-        return `HISTOGRAM(value: "${numerics[0].name}")`;
+        return `HISTOGRAM(x: "${numerics[0].name}")`;
     }
 
     return 'TABLE()';

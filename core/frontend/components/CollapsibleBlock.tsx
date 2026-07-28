@@ -18,10 +18,10 @@ const CollapsibleBlock: React.FC<CollapsibleBlockProps> = ({ title, preview, isC
             <div className="px-2 py-1.5 border-b border-gray-700/60 flex items-center justify-between">
                 <div className="flex items-center gap-2 cursor-pointer w-full overflow-hidden" onClick={onToggle}>
                     {isCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" /> : <ChevronUpIcon className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />}
-                    <div className="font-medium text-sm text-gray-300 select-none flex-shrink-0" onClick={e => e.stopPropagation()}>{title}</div>
+                    <div className="font-medium text-sm text-gray-300 select-none flex-shrink-0">{title}</div>
                     <span className="text-xs text-gray-500 font-mono truncate select-none">{preview}</span>
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
                     {statusIndicator}
                     {controls}
                 </div>

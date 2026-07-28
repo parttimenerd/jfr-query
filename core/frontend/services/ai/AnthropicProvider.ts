@@ -1,4 +1,3 @@
-import { Content } from "@google/genai";
 import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata, ToolChatMessage, ToolStreamChunk, StreamChatWithToolsOpts } from './IAiProvider';
 import type { Tool } from './tools';
 import { toolsToAnthropic, parseAnthropicToolCalls, extractAnthropicText } from './tools/anthropicAdapter';
@@ -45,6 +44,7 @@ export function anthropicMessagesFromTool(messages: ToolChatMessage[]): any[] {
                 };
             });
             if (blocks.length > 0) out.push({ role: 'user', content: blocks });
+            else throw new Error('anthropicMessagesFromTool: tool message has no toolResults — Anthropic requires a tool_result for every tool_use');
             continue;
         }
         if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
@@ -153,10 +153,10 @@ export class AnthropicProvider implements IAiProvider {
         }
     }
 
-    async getAgentResponse(conversationHistory: Content[], systemInstruction: string, model: string = 'claude-sonnet-4-6'): Promise<AIResponse> {
+    async getAgentResponse(conversationHistory: Array<{ role: string; parts: Array<{ text?: string }> }>, systemInstruction: string, model: string = 'claude-sonnet-4-6'): Promise<AIResponse> {
         const messages: AnthropicMessage[] = conversationHistory.map(c => ({
             role: c.role === 'model' ? 'assistant' : 'user',
-            content: c.parts.map(p => (p as any).text ?? '').join('\n'),
+            content: c.parts.filter(p => typeof p.text === 'string').map(p => p.text!).join('\n'),
         }));
 
         return this.callApi<AIResponse>(
@@ -249,6 +249,7 @@ export class AnthropicProvider implements IAiProvider {
         const reader = response.body!.getReader();
         const decoder = new TextDecoder();
         let leftover = '';
+        try {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -278,14 +279,21 @@ export class AnthropicProvider implements IAiProvider {
                         }
                         break;
                     }
+                    case 'error':
+                        throw new Error(parsed.error?.message ?? 'Anthropic stream error');
                     default:
                         break;
                 }
             }
         }
+        } finally {
+            reader.releaseLock();
+        }
+        if (opts?.signal?.aborted) return;
         for (const buf of toolBlocks.values()) {
-            let args: any = {};
-            try { args = JSON.parse(buf.args); } catch { args = { _raw: buf.args }; }
+            if (!buf.id || !buf.name) continue;
+            let args: any;
+            try { args = JSON.parse(buf.args); } catch { continue; }
             yield { kind: 'tool_call', id: buf.id, name: buf.name, args };
         }
     }

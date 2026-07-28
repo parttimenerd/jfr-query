@@ -81,14 +81,22 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const autoSelectedRef = useRef(false);
+  const handleItemSelectRef = useRef<typeof handleItemSelect>(null as any);
   useEffect(() => {
     if (!autoSelectedRef.current && schema?.tables && schema.tables.length > 0 && !selectedItem) {
         autoSelectedRef.current = true;
-        handleItemSelect(schema.tables[0].name, 'table');
+        handleItemSelectRef.current(schema.tables[0].name, 'table');
     }
   }, [schema, selectedItem]);
 
   useEffect(() => { setTooltip(null); }, [schema]);
+
+  useEffect(() => {
+    return () => {
+      if (hideTimeout.current) clearTimeout(hideTimeout.current);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
 
   const handleShowTooltip = (e: React.MouseEvent, content: React.ReactNode) => {
     if (hideTimeout.current) clearTimeout(hideTimeout.current);
@@ -141,7 +149,9 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
     }
   }, [runDbQuery]);
   
-  const debouncedRunPreview = useCallback(debounce(runPreviewQuery, 500), [runPreviewQuery]);
+  const runPreviewQueryRef = useRef(runPreviewQuery);
+  runPreviewQueryRef.current = runPreviewQuery;
+  const debouncedRunPreview = useRef(debounce((q: string) => runPreviewQueryRef.current(q), 500)).current;
   const handlePreviewQueryChange = (newQuery: string) => {
     setPreviewQuery(newQuery);
     debouncedRunPreview(newQuery);
@@ -213,7 +223,9 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
     }
     runPreviewQuery(defaultQuery);
   };
-  
+
+  handleItemSelectRef.current = handleItemSelect;
+
   const initializeLayout = useCallback(() => {
     if (containerRef.current) {
         const numPanels = INITIAL_PANEL_PROPORTIONS.length;

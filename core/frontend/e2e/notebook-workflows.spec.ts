@@ -562,7 +562,8 @@ test.describe.serial('InlineChat: per-cell AI panel', () => {
     await page.waitForTimeout(400);
 
     // InlineChat renders a textarea / input for the user message.
-    const chatInput = page.locator('textarea[placeholder*="message"], textarea[placeholder*="ask"], textarea[placeholder*="Ask"], input[placeholder*="message"], input[placeholder*="ask"]').first();
+    // Check InlineChat input specifically (not the ChatPanel sidebar input)
+    const chatInput = page.locator('textarea[placeholder*="Ask AI"]').first();
     const inputVisible = await chatInput.waitFor({ state: 'visible', timeout: 5_000 })
       .then(() => true)
       .catch(() => false);
@@ -578,7 +579,8 @@ test.describe.serial('InlineChat: per-cell AI panel', () => {
     await aiBtn.click();
     await page.waitForTimeout(400);
 
-    const chatInput = page.locator('textarea[placeholder*="message"], textarea[placeholder*="ask"], textarea[placeholder*="Ask"], input[placeholder*="message"], input[placeholder*="ask"]').first();
+    // Use the InlineChat-specific placeholder to avoid matching ChatPanel's sidebar input
+    const chatInput = page.locator('textarea[placeholder*="Ask AI"]').first();
     const inputVisible = await chatInput.isVisible().catch(() => false);
     expect(inputVisible, 'InlineChat closed after second click').toBe(false);
   });
@@ -792,5 +794,38 @@ test.describe('Session sanity', () => {
       !e.includes('NetworkError')
     );
     expect(realErrors, `JS errors: ${realErrors.join('; ')}`).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 15: Duplicate React keys when two plots share one SQL block
+// ---------------------------------------------------------------------------
+
+test.describe('Multi-plot cell keys', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  test('T42. Comprehensive Feature Test template renders without duplicate-key errors', async ({ page }) => {
+    const keyErrors: string[] = [];
+    page.on('console', msg => {
+      if (msg.type() === 'error' && /same key/i.test(msg.text())) {
+        keyErrors.push(msg.text());
+      }
+    });
+
+    await gotoDemo(page);
+
+    // Load the "Comprehensive Feature Test" template (Replace mode) — its
+    // gc-phase-percentiles cell has one SQL block feeding both a TABLE and a
+    // BAR_CHART, which previously produced two elements keyed `plot-cell-N-0`.
+    await page.getByRole('button', { name: /New from template/i }).click();
+    await page.getByRole('button', { name: /Comprehensive Feature Test/i }).click();
+    await page.getByRole('button', { name: /^Use template$/i }).click();
+
+    // Wait for the two-plot cell to render both plot editors.
+    await page.getByRole('heading', { name: /GC Phase Percentile Table \+ Chart/i })
+      .waitFor({ state: 'visible', timeout: 30_000 });
+    await page.waitForTimeout(2000);
+
+    expect(keyErrors, `duplicate key console errors: ${keyErrors.join(' | ')}`).toHaveLength(0);
   });
 });

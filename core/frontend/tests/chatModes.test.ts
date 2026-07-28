@@ -688,7 +688,7 @@ describe('channelReducer', () => {
     it('reset returns initial state', () => {
         const s1 = channelReducer(initialChannelState, { type: 'set-mode', mode: 'plan' });
         const s2 = channelReducer(s1, { type: 'reset' });
-        expect(s2).toBe(initialChannelState);
+        expect(s2).toEqual(initialChannelState);
     });
 });
 

@@ -330,11 +330,13 @@ export function parsePlanFromText(
 // ───────────────────────── btw parser ──────────────────────────
 
 export function parseBtwHintsFromText(text: string): BtwHint[] {
-    const re = /```jfr-btw\s*\n([\s\S]*?)```/i;
-    const m = re.exec(text);
-    if (!m) return [];
+    const re = /```jfr-btw\s*\n([\s\S]*?)```/gi;
+    let match: RegExpExecArray | null;
+    let lastJson: string | null = null;
+    while ((match = re.exec(text)) !== null) lastJson = match[1];
+    if (!lastJson) return [];
     let parsed: any;
-    try { parsed = JSON.parse(m[1]); } catch { return []; }
+    try { parsed = JSON.parse(lastJson); } catch { return []; }
     if (!parsed || !Array.isArray(parsed.hints)) return [];
     const out: BtwHint[] = [];
     for (const h of parsed.hints.slice(0, 3)) {
@@ -483,13 +485,20 @@ export interface PlanDiffReport {
     stepDiffs: PlanDiffStep[];
 }
 
-function stepMatchKey(s: PlanStep): string {
-    if (s.kind === 'edit') return `edit:${s.cellId}`;
-    if (s.kind === 'applyPlot') return `applyPlot:${s.cellId}:${s.plotBlockIndex ?? 0}`;
-    // add: key by (kind, type, simple content hash)
-    let hash = 0;
-    for (let i = 0; i < s.content.length; i++) hash = (hash * 31 + s.content.charCodeAt(i)) | 0;
-    return `add:${s.type}:${hash}`;
+function stepMatchKey(s: PlanStep, seen?: Map<string, number>): string {
+    let base: string;
+    if (s.kind === 'edit') base = `edit:${s.cellId}`;
+    else if (s.kind === 'applyPlot') base = `applyPlot:${s.cellId}:${s.plotBlockIndex ?? 0}`;
+    else {
+        // add: key by (kind, type, simple content hash)
+        let hash = 0;
+        for (let i = 0; i < s.content.length; i++) hash = (hash * 31 + s.content.charCodeAt(i)) | 0;
+        base = `add:${s.type}:${hash}`;
+    }
+    if (!seen) return base;
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    return n === 1 ? base : `${base}#${n}`;
 }
 
 function changedFields(a: PlanStep, b: PlanStep): string[] {
@@ -504,14 +513,16 @@ function changedFields(a: PlanStep, b: PlanStep): string[] {
 }
 
 export function diffPlans(before: ParsedPlan, after: ParsedPlan): PlanDiffReport {
+    const beforeSeen = new Map<string, number>();
     const beforeMap = new Map<string, PlanStep>();
-    before.steps.forEach(s => beforeMap.set(stepMatchKey(s), s));
+    before.steps.forEach(s => beforeMap.set(stepMatchKey(s, beforeSeen), s));
 
+    const afterSeen = new Map<string, number>();
     const afterKeys = new Set<string>();
     const stepDiffs: PlanDiffStep[] = [];
 
     for (const a of after.steps) {
-        const key = stepMatchKey(a);
+        const key = stepMatchKey(a, afterSeen);
         afterKeys.add(key);
         const b = beforeMap.get(key);
         if (!b) {
@@ -522,8 +533,9 @@ export function diffPlans(before: ParsedPlan, after: ParsedPlan): PlanDiffReport
             else stepDiffs.push({ kind: 'modified', before: b, after: a, fields });
         }
     }
+    const beforeRemovalSeen = new Map<string, number>();
     for (const b of before.steps) {
-        if (!afterKeys.has(stepMatchKey(b))) {
+        if (!afterKeys.has(stepMatchKey(b, beforeRemovalSeen))) {
             stepDiffs.push({ kind: 'removed', step: b });
         }
     }
@@ -582,6 +594,6 @@ export function channelReducer(s: ChannelState, a: ChannelAction): ChannelState 
         case 'mark-btw-fired':
             return { ...s, lastBtwCallAt: a.at, lastBtwTier: a.tier };
         case 'reset':
-            return initialChannelState;
+            return { ...initialChannelState, btwHints: [] };
     }
 }

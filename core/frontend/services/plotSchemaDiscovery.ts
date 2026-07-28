@@ -249,16 +249,12 @@ export class PlotSchemaDiscovery {
     }
 
     private async runLimitZero(sql: string, signal: AbortSignal): Promise<ColumnSchema[]> {
-        const wrapped = `SELECT * FROM (${sql}) AS __plot_discover LIMIT 0`;
+        const wrapped = `SELECT * FROM (${sql}) AS __plot_discover LIMIT 1`;
         const rows = await this.runQuery(wrapped, signal);
-        // `runQuery` returns an array of row objects; we need column metadata.
-        // When the result is empty (LIMIT 0) we cannot infer columns from data
-        // alone, so callers that pass `runQuery` directly should ideally also
-        // pass `describeQuery`. We do a best-effort here.
         if (Array.isArray(rows) && rows.length > 0 && typeof rows[0] === 'object' && rows[0] !== null) {
             return Object.keys(rows[0] as object).map<ColumnSchema>(name => ({ name }));
         }
-        return [];
+        throw new Error('schema unavailable: query returned no rows; provide describeQuery');
     }
 
     private storeResult(key: string, result: DiscoveryResult): void {

@@ -31,6 +31,13 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
 
     useEffect(() => {
         if (!isOpen) return;
+        // Reset volatile state each time the modal opens so stale selections/errors don't persist.
+        setSelected(null);
+        setBody('');
+        setSearch('');
+        setTagFilter(null);
+        setError(null);
+        setInsertMode('replace');
         let cancelled = false;
         listTemplates({ mode })
             .then(list => { if (!cancelled) setTemplates(list); })
@@ -40,6 +47,8 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
 
     useEffect(() => {
         if (!selected) { setBody(''); return; }
+        setBody('');
+        setError(null);
         let cancelled = false;
         loadTemplate(selected.name, { mode })
             .then(b => { if (!cancelled) setBody(b); })

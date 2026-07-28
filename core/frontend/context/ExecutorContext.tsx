@@ -62,7 +62,7 @@ export const ExecutorProvider: React.FC<ProviderProps> = ({ cells, children }) =
             // B-161: collect named (non-numeric) ON-clause refs from plot blocks so
             // cross-cell alias dependencies are tracked in the execution graph.
             const plotOnRefs: string[] = [];
-            for (const plotContent of parsed.plotBlocks) {
+            for (const { config: plotContent } of parsed.plotBlocksWithSqlIndex) {
                 if (!plotContent?.trim()) continue;
                 try {
                     const call = parsePlotCall(plotContent.trim());
@@ -101,14 +101,14 @@ export const ExecutorProvider: React.FC<ProviderProps> = ({ cells, children }) =
     const awaitUpstream = useCallback(async (cellId: string) => {
         const ex = executorRef.current;
         if (!ex) return;
-        const deps = graph.deps.get(cellId);
+        const deps = ex.graph.deps.get(cellId);
         if (!deps || deps.size === 0) return;
         // Don't block forever on cycle participants.
-        if (graph.cycles.has(cellId)) return;
+        if (ex.graph.cycles.has(cellId)) return;
         for (const dep of deps) {
             try { await ex.awaitCell(dep); } catch { /* keep going */ }
         }
-    }, [graph]);
+    }, []);
 
     const scheduleRun = useCallback(async (cellId: string) => {
         const ex = executorRef.current;

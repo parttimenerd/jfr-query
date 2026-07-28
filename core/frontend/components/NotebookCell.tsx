@@ -176,6 +176,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const resultResizeRef = useRef<{ startY: number; startH: number } | null>(null);
     const resultHeightUserSet = useRef(false);
     const [copiedSql, setCopiedSql] = useState<number | null>(null);
+    const copiedSqlTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const variableInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
     const [focusVarName, setFocusVarName] = useState<string | null>(null);
     const { settings } = useContext(SettingsContext);
@@ -228,7 +229,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             setIsCellCollapsed(allCollapsed);
             onCellCollapseChange?.(cell.id, allCollapsed);
         }
-    }, [collapseTrigger]);
+    }, [collapseTrigger, allCollapsed, onCellCollapseChange, cell.id]);
 
     // Auto-size the result panel to fit small result sets (avoids excess whitespace for 1-row tables).
     // Skipped once the user has manually dragged the resize handle.
@@ -242,11 +243,12 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         setResultHeight(Math.max(120, fitted));
     }, [results]);
     
-    useEffect(() => { if (focusVarName && variableInputRefs.current[focusVarName]) { variableInputRefs.current[focusVarName]?.focus(); setFocusVarName(null); } }, [focusVarName, parsed.variables]);
+    useEffect(() => { if (focusVarName) { const input = variableInputRefs.current[focusVarName]; if (input) { input.focus(); setFocusVarName(null); } } }, [focusVarName]);
 
     const onUpdateCellRef = useRef(onUpdateCell); onUpdateCellRef.current = onUpdateCell;
+    const cellIdRef = useRef(cell.id); cellIdRef.current = cell.id;
 
-    const debouncedOnUpdate = useCallback(debounce((newSegments: CellSegment[]) => { onUpdateCellRef.current(cell.id, reconstructCellContent(newSegments)); }, 800), [cell.id]);
+    const debouncedOnUpdate = useCallback(debounce((newSegments: CellSegment[]) => { onUpdateCellRef.current(cellIdRef.current, reconstructCellContent(newSegments)); }, 800), []);
 
     const handleSegmentsUpdate = useCallback((newSegments: CellSegment[]) => { setSegments(newSegments); debouncedOnUpdate(newSegments); }, [debouncedOnUpdate]);
 
@@ -662,7 +664,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const handleCopySql = useCallback((sql: string, index: number) => {
         navigator.clipboard.writeText(sql).then(() => {
             setCopiedSql(index);
-            setTimeout(() => setCopiedSql(null), 1500);
+            if (copiedSqlTimerRef.current) clearTimeout(copiedSqlTimerRef.current);
+            copiedSqlTimerRef.current = setTimeout(() => { setCopiedSql(null); copiedSqlTimerRef.current = null; }, 1500);
         }).catch(() => {});
     }, []);
 
@@ -854,6 +857,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     }, [parsedSqlBlocks, allVariables, isAutoRunEnabled]);
 
     useEffect(() => () => { Object.values(runTimersRef.current).forEach(clearTimeout); }, []);
+    useEffect(() => () => { if (copiedSqlTimerRef.current) clearTimeout(copiedSqlTimerRef.current); }, []);
 
     // Cancel pending auto-run timers when the parent clears all results so the
     // cleared state is not immediately overwritten by a scheduled re-run.
@@ -1031,7 +1035,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             const escapedOld = o.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const leftBound = o.startsWith('$$') ? '' : '(?<!\\$)';
             const refRe = new RegExp(`${leftBound}${escapedOld}(?!\\w)`, 'g');
-            const newSegments = segments.map(seg => {
+            const newSegments = segmentsRef.current.map(seg => {
                 if (seg.type === 'sql' || seg.type === 'plot') {
                     return { ...seg, content: seg.content.replace(refRe, () => n) };
                 }
@@ -1378,6 +1382,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 const pi = plotInfo.sqlIndex;
                                 const config = plotInfo.config;
                                 const defaultSqlIndex = plotInfo.sqlIndex;
+                                // `pi` (SQL-block index) is NOT unique per plot — two plots can bind
+                                // to the same SQL block. `plotUid` is the plot's position within the
+                                // cell and is unique, so it keys React elements, collapse state, DOM
+                                // ids, and the AI chat target. `pi` stays for data binding + labels.
+                                const plotUid = sqlAttachedPlotIdx;
                                 // Capture segIdx for delete handler closure.
                                 const capturedSegIdx = segIdx;
 
@@ -1428,7 +1437,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
                                 if (!presenterMode) {
                                     items.push(
-                                        <CollapsibleBlock key={`plot-${cell.id}-${pi}`} title={plotTitleNode} preview={config.replace(/\s+/g,' ').substring(0,60)} isCollapsed={collapsedStates[`plot-${pi}`] !== undefined ? !!collapsedStates[`plot-${pi}`] : !config.trim()} onToggle={()=>toggleCollapse(`plot-${pi}`)} controls={<><button onClick={()=>handleFormat(config,'plot',defaultSqlIndex)} title="Format plot" aria-label="Format plot" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSparkle(pi, defaultSqlIndex)} disabled={sparkleLoading[pi]} title="Generate plot config with AI" aria-label="Generate plot config with AI" className="p-1.5 rounded-md disabled:opacity-50">{sparkleLoading[pi] ? <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"/> : <SparklesIcon className="w-4 h-4 text-yellow-400"/>}</button><button onClick={()=>setActiveChat(p=>p===`plot-${pi}`?null:`plot-${pi}`)} title="Refine with AI" aria-label="Refine with AI" className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>setIsPlotHelpModalOpen(true)} title="Plot syntax reference" aria-label="Plot syntax reference" className="p-1.5 rounded-md"><InformationCircleIcon className="w-4 h-4 text-gray-400"/></button><button onClick={()=>handleDeletePlot(capturedSegIdx)} title="Delete plot block" aria-label="Delete plot block" className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
+                                        <CollapsibleBlock key={`plot-${cell.id}-${plotUid}`} title={plotTitleNode} preview={config.replace(/\s+/g,' ').substring(0,60)} isCollapsed={collapsedStates[`plot-${plotUid}`] !== undefined ? !!collapsedStates[`plot-${plotUid}`] : !config.trim()} onToggle={()=>toggleCollapse(`plot-${plotUid}`)} controls={<><button onClick={()=>handleFormat(config,'plot',defaultSqlIndex)} title="Format plot" aria-label="Format plot" className="p-1.5 rounded-md"><DocumentFormattingIcon className="w-4 h-4 text-cyan-400"/></button>{isAiFeatureActive && <><button onClick={()=>handleSparkle(pi, defaultSqlIndex)} disabled={sparkleLoading[pi]} title="Generate plot config with AI" aria-label="Generate plot config with AI" className="p-1.5 rounded-md disabled:opacity-50">{sparkleLoading[pi] ? <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"/> : <SparklesIcon className="w-4 h-4 text-yellow-400"/>}</button><button onClick={()=>setActiveChat(p=>p===`plot-${plotUid}`?null:`plot-${plotUid}`)} title="Refine with AI" aria-label="Refine with AI" className="p-1.5 rounded-md"><ChatBubbleSparklesIcon className="w-4 h-4 text-purple-400"/></button></>}<button onClick={()=>setIsPlotHelpModalOpen(true)} title="Plot syntax reference" aria-label="Plot syntax reference" className="p-1.5 rounded-md"><InformationCircleIcon className="w-4 h-4 text-gray-400"/></button><button onClick={()=>handleDeletePlot(capturedSegIdx)} title="Delete plot block" aria-label="Delete plot block" className="p-1.5 rounded-md"><TrashIcon className="w-4 h-4 text-gray-400"/></button></>}>
                                             {plotDataCols.length > 0 && (
                                                 <div className="px-2 pt-1.5 pb-0.5 flex flex-wrap gap-1 items-center border-b border-gray-700/50">
                                                     <span className="text-[10px] text-gray-600 mr-0.5">columns:</span>
@@ -1440,21 +1449,21 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                 </div>
                                             )}
                                             <PlotConfigEditor value={config} onChange={handlePlotChange} index={defaultSqlIndex} data={results[defaultSqlIndex]} variables={allVariables} onVariableClick={handleVariableClick} cellSql={parsedSqlBlocks[defaultSqlIndex] ?? null} notebookPlotScope={plotScopeView} currentCellId={cell.id} sqlBlockCount={totalSqlBlockCount}/>
-                                            {isAiFeatureActive && activeChat===`plot-${pi}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="plot" targetValue={config} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} sql={parsedSqlBlocks[defaultSqlIndex]} data={results[defaultSqlIndex]} onApplyCode={c=>handleApplyCode(c,'plot',defaultSqlIndex)} onClose={()=>setActiveChat(null)} onMetadataChange={onMetadataChange} onPopToSidebar={onPopChatToSidebar} onNavigateRef={onNavigateRef}/>}
+                                            {isAiFeatureActive && activeChat===`plot-${plotUid}` && <InlineChat isAiFeatureActive={isAiFeatureActive} metadata={metadata} targetType="plot" targetValue={config} cellContext={cell} allCells={allCells} cells={allCells} onAddCell={onAddCellFromTool} onUpdateCell={onUpdateCell} sql={parsedSqlBlocks[defaultSqlIndex]} data={results[defaultSqlIndex]} onApplyCode={c=>handleApplyCode(c,'plot',defaultSqlIndex)} onClose={()=>setActiveChat(null)} onMetadataChange={onMetadataChange} onPopToSidebar={onPopChatToSidebar} onNavigateRef={onNavigateRef}/>}
                                         </CollapsibleBlock>
                                     );
                                 }
 
                                 // Inline plot result directly below its editor (or always in presenter mode).
                                 // Hide result when plot block is collapsed (unless in presenter mode where editor is hidden).
-                                const plotIsCollapsed = !presenterMode && (collapsedStates[`plot-${pi}`] !== undefined ? !!collapsedStates[`plot-${pi}`] : !config.trim());
+                                const plotIsCollapsed = !presenterMode && (collapsedStates[`plot-${plotUid}`] !== undefined ? !!collapsedStates[`plot-${plotUid}`] : !config.trim());
                                 if (resolvedData && !plotIsCollapsed) {
                                     items.push(
-                                        <div key={`result-${cell.id}-${pi}`} className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative" style={{ height: `${resultHeight}px` }}>
-                                            <button title="Download as PNG" aria-label="Download as PNG" className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-${pi}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-${pi + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
+                                        <div key={`result-${cell.id}-${plotUid}`} className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative" style={{ height: `${resultHeight}px` }}>
+                                            <button title="Download as PNG" aria-label="Download as PNG" className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-${plotUid}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-${plotUid + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                             </button>
-                                            <div id={`result-container-${cell.id}-${pi}`} className="flex-grow overflow-auto" style={{ minHeight: 200 }}>
+                                            <div id={`result-container-${cell.id}-${plotUid}`} className="flex-grow overflow-auto" style={{ minHeight: 200 }}>
                                                 <PlotRenderer config={configToRender} data={resolvedData} dataByQueryRef={dataByQueryRef} sql={resolvedSql} cellContext={cellContext} onApplyFix={c => handleApplyPlotFix(c, defaultSqlIndex)} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange} onCellVariableChange={handleCellVariableChange} allVariables={allVariables} />
                                             </div>
                                         </div>

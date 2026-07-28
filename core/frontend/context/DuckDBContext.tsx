@@ -375,11 +375,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (!wasmDbRef.current && !wasmInitPromiseRef.current) {
           setWasmInitializing(true);
           wasmInitPromiseRef.current = initDuckDBWasm().then(db => {
-            if (cancelled) return;
+            if (cancelled) { db.terminate().catch(() => {}); return; }
             wasmDbRef.current = db;
             return db.connect();
           }).then(conn => {
-            if (cancelled || !conn) return;
+            if (cancelled || !conn) { conn?.close().catch(() => {}); return; }
             wasmConnRef.current = conn;
             setWasmInitializing(false);
           }).catch(() => {
@@ -554,6 +554,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // from each triggering a full schema re-fetch + row-count queries.
   const refreshPendingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshPromiseRef = useRef<{ resolve: () => void; reject: (e: unknown) => void }[]>([]);
+  useEffect(() => () => { if (refreshPendingRef.current) clearTimeout(refreshPendingRef.current); }, []);
 
   const refreshSchema = useCallback((): Promise<void> => {
     return new Promise<void>((resolve, reject) => {

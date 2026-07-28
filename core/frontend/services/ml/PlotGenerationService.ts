@@ -140,12 +140,13 @@ export async function ensureModelLoaded(
     }
 }
 
-async function _generate(id: string, sql: string, columns: string[] | TypedColumn[], schema?: TableSchema[]): Promise<string> {
+async function _generate(id: string, sql: string, columns: string[] | TypedColumn[], schema?: TableSchema[], signal?: AbortSignal): Promise<string> {
     const entry = cache.get(id);
     if (!entry) throw new Error(`Model ${id} not loaded`);
     const { tokenizer, model, candidate } = entry;
 
     const inputText = candidate.buildInput(sql, columns, schema);
+    throwIfAborted(signal);
     const tokenized = await tokenizer(inputText, {
         return_tensors: 'pt',
         truncation: true,
@@ -186,5 +187,5 @@ export async function generate(
     throwIfAborted(signal);
     await ensureModelLoaded(id, undefined, signal);
     throwIfAborted(signal);
-    return _generate(id, sql, columns, schema);
+    return _generate(id, sql, columns, schema, signal);
 }

@@ -33,7 +33,7 @@ export interface ParsedNotebook {
 }
 
 const FRONT_MATTER_DELIMITER = '---';
-const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
+const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n([\s\S]*))?$/;
 
 const parseInlineYamlList = (raw: string): string[] | null => {
     const t = raw.trim();
@@ -43,9 +43,17 @@ const parseInlineYamlList = (raw: string): string[] | null => {
     const out: string[] = [];
     let cur = '';
     let inQ: '"' | "'" | null = null;
-    for (const ch of inner) {
+    const chars = Array.from(inner);
+    for (let i = 0; i < chars.length; i++) {
+        const ch = chars[i];
         if (inQ) {
-            if (ch === inQ) inQ = null; else cur += ch;
+            if (ch === inQ) {
+                // YAML single-quote escape: '' inside a single-quoted string = literal apostrophe
+                if (inQ === "'" && chars[i + 1] === "'") { cur += "'"; i++; }
+                else inQ = null;
+            } else {
+                cur += ch;
+            }
         } else if (ch === '"' || ch === "'") {
             inQ = ch as '"' | "'";
         } else if (ch === ',') {
@@ -56,7 +64,7 @@ const parseInlineYamlList = (raw: string): string[] | null => {
         }
     }
     if (cur.trim() !== '' || out.length > 0) out.push(cur.trim());
-    return out.map(s => s.replace(/^["'](.*)["']$/, '$1'));
+    return out.map(s => s.replace(/^(["'])(.*)\1$/, '$2'));
 };
 
 const parseFrontMatter = (fmString: string): NotebookMetadata => {
@@ -86,6 +94,18 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
         const trimmedLine = line.trim();
 
         if (indent === 0) {
+            // A blank line at indent 0 inside an active multiline block must append
+            // an empty line to the accumulator, not reset the section state.
+            if (trimmedLine === '') {
+                if (multilineKey && !currentSection) {
+                    result.customSystemPrompt += '\n';
+                } else if (cellConditionMultilineKey) {
+                    result.cellConditions![cellConditionMultilineKey] += '\n';
+                } else if (multilineKey && currentSection && currentObject) {
+                    currentObject[multilineKey] += '\n';
+                }
+                continue;
+            }
             currentSection = null;
             multilineKey = null;
             cellConditionMultilineKey = null;
@@ -132,7 +152,7 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
                 (result as any)[keyTrimmed] = value.startsWith("'") ? unquoted.replace(/''/g, "'") : unquoted;
             }
         } else if (multilineKey && !currentSection) { // Top-level multiline (customSystemPrompt)
-             result.customSystemPrompt += (result.customSystemPrompt ? '\n' : '') + line.substring(indent);
+             result.customSystemPrompt += (result.customSystemPrompt ? '\n' : '') + line.substring(2);
         } else if (currentSection === 'cellConditions') {
             // `key: <single-line SQL>` or `key: |` followed by indented lines.
             if (cellConditionMultilineKey && indent > 2) {
@@ -268,7 +288,7 @@ const stringifyFrontMatter = (metadata: NotebookMetadata): string => {
         parts.push('variables:');
         for (const [k, v] of Object.entries(metadata.variables)) {
             // Skip placeholder variables that were never named/filled in.
-            if (!k || /^newVar\d*$/.test(k) && v === '') continue;
+            if (!k || /^\$newVar\d*$/.test(k) && v === '') continue;
             parts.push(`  ${k}: '${String(v).replace(/'/g, "''")}'`);
         }
     }
@@ -288,11 +308,20 @@ const stringifyFrontMatter = (metadata: NotebookMetadata): string => {
     }
 
     // Serialize unknown string/number fields
-    const knownKeys = new Set(['customSystemPrompt', 'timeFormat', 'decimalPlaces', 'views', 'macros', 'variables', 'cellConditions']);
+    const knownKeys = new Set(['customSystemPrompt', 'timeFormat', 'decimalPlaces', 'views', 'macros', 'variables', 'cellConditions', 'tags', 'title', 'description', 'license']);
     for (const [key, val] of Object.entries(metadata)) {
         if (!knownKeys.has(key) && val !== undefined && val !== null && typeof val !== 'object') {
-            parts.push(`${key}: ${val}`);
+            const strVal = String(val);
+            parts.push(strVal.includes('\n')
+                ? `${key}: |\n${strVal.split('\n').map(line => `  ${line}`).join('\n')}`
+                : `${key}: '${strVal.replace(/'/g, "''")}'`);
         }
+    }
+
+    // tags: string[]
+    if (metadata.tags && metadata.tags.length > 0) {
+        if (parts.length > 0) parts.push('');
+        parts.push(`tags: [${metadata.tags.map(t => `'${t.replace(/'/g, "''")}'`).join(', ')}]`);
     }
 
     return parts.join('\n');
@@ -306,7 +335,7 @@ export const parseNotebook = (markdown: string): ParsedNotebook => {
     const m = markdown.match(FM_RE);
     if (!m) return defaultResult;
     const fmString = m[1];
-    const content = m[2];
+    const content = m[3] ?? '';
     const parsedFm = parseFrontMatter(fmString);
 
     return { metadata: parsedFm, content };
@@ -452,7 +481,13 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
         };
     }
 
-    const conclusionSegments = segments.slice(firstCodeBlockIndex).filter(s => s.type === 'markdown');
+    let lastCodeSegmentIndex = -1;
+    for (let i = segments.length - 1; i >= 0; i--) {
+        if (segments[i].type !== 'markdown') { lastCodeSegmentIndex = i; break; }
+    }
+    const conclusionSegments = lastCodeSegmentIndex >= 0
+        ? segments.slice(lastCodeSegmentIndex + 1).filter(s => s.type === 'markdown')
+        : [];
     const conclusionContent = conclusionSegments.map(s => s.content).join('');
 
     if (conclusionContent.trim()) {
@@ -531,7 +566,8 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
                     result.plotBlocks.push('');
                 }
                 result.plotBlocks[currentSqlIndex] = plotConfig;
-                result.plotAliases.push(plotAlias);
+                while (result.plotAliases.length <= currentSqlIndex) result.plotAliases.push(null);
+                result.plotAliases[currentSqlIndex] = plotAlias;
                 result.plotBlocksWithSqlIndex.push({ config: plotConfig, sqlIndex: currentSqlIndex });
                 result.plotIsStandalone.push(false);
             }

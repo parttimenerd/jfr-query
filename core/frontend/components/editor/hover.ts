@@ -338,7 +338,7 @@ function mountReactTooltip(content: React.ReactNode): { dom: HTMLElement; destro
   return {
     dom,
     destroy: () => {
-      Promise.resolve().then(() => root.unmount());
+      root.unmount();
     },
   };
 }

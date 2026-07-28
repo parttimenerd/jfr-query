@@ -147,13 +147,19 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
     const [subMode, setSubMode] = useState<SubMode>(null);
     const [subValue, setSubValue] = useState('');
     const [subBusy, setSubBusy] = useState(false);
+    const subBusyRef = useRef(false);
+    // Keep ref in sync so timeout callbacks can read the latest value without stale closure.
+    subBusyRef.current = subBusy;
     const [subResult, setSubResult] = useState<{ columns: string[]; rows: any[] } | null>(null);
     const [subError, setSubError] = useState<string | null>(null);
     const subTextareaRef = useRef<HTMLTextAreaElement>(null);
     const [copyFlash, setCopyFlash] = useState<string | null>(null);
+    const copyFlashTimerRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (isOpen) {
+            if (copyFlashTimerRef.current) { clearTimeout(copyFlashTimerRef.current); copyFlashTimerRef.current = null; }
+            setCopyFlash(null);
             setQuery('');
             setSelectedIdx(0);
             setMode('actions');
@@ -164,6 +170,9 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
             setSubError(null);
             setTimeout(() => inputRef.current?.focus(), 0);
         }
+        return () => {
+            if (copyFlashTimerRef.current) { clearTimeout(copyFlashTimerRef.current); copyFlashTimerRef.current = null; }
+        };
     }, [isOpen]);
 
     useEffect(() => {
@@ -311,11 +320,11 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
     useEffect(() => {
         if (prefix !== '!' || !rest || !onRunQuery || subBusy) return;
         const t = setTimeout(() => {
-            void executeSpecial('!', rest);
+            if (!subBusyRef.current) void executeSpecial('!', rest);
         }, 600);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rest, prefix]);
+    }, [rest, prefix, subBusy]);
 
     useEffect(() => {
         const el = listRef.current?.querySelector(`[data-idx="${selectedIdx}"]`) as HTMLElement | null;
@@ -347,6 +356,7 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
                     try { plotConfig = await aiService.getAiSuggestPlot(payload); } catch { /* skip plot on failure */ }
                 }
                 onAddSqlCell(payload, plotConfig);
+                setSubBusy(false);
                 onClose();
             } catch (e: any) {
                 setSubError(e?.message || String(e));
@@ -376,19 +386,21 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
             try {
                 await navigator.clipboard.writeText(item.label);
                 setCopyFlash(item.label);
-                setTimeout(() => { setCopyFlash(null); onClose(); }, 700);
+                if (copyFlashTimerRef.current) clearTimeout(copyFlashTimerRef.current);
+                copyFlashTimerRef.current = window.setTimeout(() => { setCopyFlash(null); copyFlashTimerRef.current = null; onClose(); }, 700);
             } catch { onClose(); }
         } else if (item.kind === 'column') {
             const text = item.tableName ? `${item.tableName}.${item.label}` : item.label;
             try {
                 await navigator.clipboard.writeText(text);
                 setCopyFlash(text);
-                setTimeout(() => { setCopyFlash(null); onClose(); }, 700);
+                if (copyFlashTimerRef.current) clearTimeout(copyFlashTimerRef.current);
+                copyFlashTimerRef.current = window.setTimeout(() => { setCopyFlash(null); copyFlashTimerRef.current = null; onClose(); }, 700);
             } catch { onClose(); }
         } else if (item.kind === 'cell') {
             onClose();
             setTimeout(() => {
-                const el = document.querySelector(`[data-cell-id="${item.cellId}"]`) as HTMLElement | null;
+                const el = document.querySelector(`[data-cell-id="${CSS.escape(item.cellId)}"]`) as HTMLElement | null;
                 el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 80);
         } else if (item.kind === 'special' && item.specialKind) {

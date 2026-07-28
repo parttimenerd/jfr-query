@@ -68,16 +68,18 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
             // Ensure the section is open, then focus the matching input.
             // If the variable doesn't exist yet, create it first.
             const exists = !!(metadata.variables && name in metadata.variables);
-            if (!exists) {
-                onMetadataChange({ ...metadata, variables: { ...(metadata.variables || {}), [name]: '' } });
-            }
-            setIsVariablesCollapsed(false);
             pendingFocusVar.current = name;
-            // Try immediately; the effect below will retry once the input mounts.
-            setTimeout(() => {
-                const el = variableInputRefs.current[name];
-                if (el) { el.focus(); el.select(); pendingFocusVar.current = null; }
-            }, 50);
+            setIsVariablesCollapsed(false);
+            if (!exists) {
+                // Async create — the useEffect below retries focus once metadata.variables updates.
+                onMetadataChange({ ...metadata, variables: { ...(metadata.variables || {}), [name]: '' } });
+            } else {
+                // Variable already in DOM; try immediately then let effect retry if needed.
+                setTimeout(() => {
+                    const el = variableInputRefs.current[name];
+                    if (el) { el.focus(); el.select(); pendingFocusVar.current = null; }
+                }, 50);
+            }
         }
     }), [metadata, onMetadataChange]);
 
@@ -95,6 +97,10 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
         setTooltip(null);
     }, [metadata.views, metadata.macros]);
 
+    useEffect(() => {
+        return () => { if (hideTimeout.current) clearTimeout(hideTimeout.current); };
+    }, []);
+
     const globalVars = metadata.variables || {};
     const handleAddGlobalVariable = () => {
         let name = 'newVar';
@@ -109,9 +115,16 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
         delete next[name];
         onMetadataChange({ ...metadata, variables: next });
     };
-    const handleRenameGlobalVariable = (oldName: string, newName: string) => {
-        if (!newName || oldName === newName) return;
-        if (newName in globalVars) return; // refuse to clobber
+    const handleRenameGlobalVariable = (oldName: string, newName: string, inputEl?: HTMLInputElement | null) => {
+        if (!newName || oldName === newName) {
+            if (inputEl) inputEl.value = oldName;
+            return;
+        }
+        if (newName in globalVars) {
+            // Reject: reset the input back to the committed key so it doesn't show a stale name.
+            if (inputEl) inputEl.value = oldName;
+            return;
+        }
         const next: Record<string, string> = {};
         for (const k of Object.keys(globalVars)) {
             if (k === oldName) next[newName] = globalVars[k];
@@ -155,8 +168,17 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
         setTooltip({ visible: true, content, top, left });
     };
     
-    const handleHideTooltip = () => { hideTimeout.current = window.setTimeout(() => setTooltip(null), 100); };
-    const handleSuggestPrompt = () => { const nextIndex = suggestionIndex % SURPRISE_PROMPTS.length; const newPrompt = SURPRISE_PROMPTS[nextIndex]; handleMetadataFieldChange('customSystemPrompt', newPrompt); suggestionIndexCounter = nextIndex + 1; setSuggestionIndex(nextIndex + 1); };
+    const handleHideTooltip = () => {
+        if (hideTimeout.current) clearTimeout(hideTimeout.current);
+        hideTimeout.current = window.setTimeout(() => setTooltip(null), 100);
+    };
+    const handleSuggestPrompt = () => {
+        const nextIndex = suggestionIndex % SURPRISE_PROMPTS.length;
+        handleMetadataFieldChange('customSystemPrompt', SURPRISE_PROMPTS[nextIndex]);
+        const newIndex = nextIndex + 1;
+        suggestionIndexCounter = newIndex;
+        setSuggestionIndex(newIndex);
+    };
 
     const renderEditableItem = (type: 'view' | 'macro', item: CustomView | CustomMacro) => { if (editingId === item.id) { return (<div className="p-2 bg-gray-700/50 rounded-md space-y-2"><input type="text" value={editingName} onChange={e=>setEditingName(e.target.value)} className="w-full bg-gray-800 p-1.5 text-sm"/><div className="border border-gray-600 rounded-md"><SQLEditor value={editingSql} onChange={setEditingSql} variables={metadata.variables} metadata={metadata} /></div><div className="flex justify-end gap-2"><button onClick={handleCancel} className="px-2 py-1 text-xs bg-gray-600 rounded">Cancel</button><button onClick={()=>handleSave(type)} className="px-2 py-1 text-xs bg-cyan-600 rounded">Save</button></div></div>); } return (<div className="flex justify-between items-center p-2 hover:bg-gray-700/50 rounded-md" onMouseEnter={e=>handleShowTooltip(e,<TooltipContent item={item} type={type}/>)} onMouseLeave={handleHideTooltip}><span className="font-mono text-sm">{item.name}</span><div className="flex items-center gap-2"><button onClick={()=>handleEdit(type,item)} title={`Edit ${type}`} className="p-1 text-gray-400 hover:text-cyan-400"><PencilIcon className="w-4 h-4"/></button><button onClick={()=>handleDelete(type,item.id)} title={`Delete ${type}`} className="p-1 text-gray-400 hover:text-red-400"><TrashIcon className="w-4 h-4"/></button></div></div>); };
     const hasContent = Object.keys(globalVars).length > 0 || metadata.views.length > 0 || metadata.macros.length > 0;
@@ -175,7 +197,7 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
             {isPanelCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5 text-gray-600"/> : <ChevronUpIcon className="w-3.5 h-3.5 text-gray-600"/>}
         </div>
         {!isPanelCollapsed && <div className="divide-y divide-gray-700/60 animate-fade-in-down">
-            <div><div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={()=>setIsGeneralCollapsed(!isGeneralCollapsed)}><h3 className="flex items-center gap-2 text-sm font-medium text-gray-400"><DocumentTextIcon className="w-3.5 h-3.5"/>Settings</h3>{isGeneralCollapsed?<ChevronDownIcon className="w-3.5 h-3.5 text-gray-500"/>:<ChevronUpIcon className="w-3.5 h-3.5 text-gray-500"/>}</div>{!isGeneralCollapsed && <div className="px-3 pb-3 pt-1 space-y-4 animate-fade-in-down">{isAiFeatureActive && (<div><div className="flex items-center justify-between mb-1"><label htmlFor="customSystemPrompt" className="text-sm font-medium text-gray-300 block">Custom System Prompt</label><button onClick={handleSuggestPrompt} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700/50 hover:bg-cyan-600/30 text-gray-400 rounded-md" title="Suggest a fun prompt" aria-label="Suggest a fun prompt"><WandSparklesIcon className="w-4 h-4"/>Surprise Me!</button></div><textarea id="customSystemPrompt" name="customSystemPrompt" value={metadata.customSystemPrompt || ''} onChange={e => handleMetadataFieldChange('customSystemPrompt', e.target.value)} rows={3} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" placeholder="e.g., You are a helpful Garbage Collection expert."/><p className="mt-1 text-xs text-gray-500">Adds instructions to the AI chat assistant for this notebook.</p></div>)}<div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label htmlFor="timeFormat" className="text-sm font-medium text-gray-300 block mb-1">Timestamp Format</label><input id="timeFormat" name="timeFormat" type="text" value={metadata.timeFormat || ''} placeholder={globalSettings.timeFormat} onChange={e => handleMetadataFieldChange('timeFormat', e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" /><p className="mt-1 text-xs text-gray-500">Default: YYYY, MM, DD, HH, mm, ss, SSS</p></div><div><label htmlFor="decimalPlaces" className="text-sm font-medium text-gray-300 block mb-1">Max Decimal Places</label><input id="decimalPlaces" name="decimalPlaces" type="number" min="0" max="20" value={metadata.decimalPlaces ?? ''} placeholder={String(globalSettings.decimalPlaces)} onChange={e => handleMetadataFieldChange('decimalPlaces', e.target.value === '' ? undefined : parseInt(e.target.value, 10))} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" /><p className="mt-1 text-xs text-gray-500">For numbers in tables and plots.</p></div></div></div>}</div>
+            <div><div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={()=>setIsGeneralCollapsed(!isGeneralCollapsed)}><h3 className="flex items-center gap-2 text-sm font-medium text-gray-400"><DocumentTextIcon className="w-3.5 h-3.5"/>Settings</h3>{isGeneralCollapsed?<ChevronDownIcon className="w-3.5 h-3.5 text-gray-500"/>:<ChevronUpIcon className="w-3.5 h-3.5 text-gray-500"/>}</div>{!isGeneralCollapsed && <div className="px-3 pb-3 pt-1 space-y-4 animate-fade-in-down">{isAiFeatureActive && (<div><div className="flex items-center justify-between mb-1"><label htmlFor="customSystemPrompt" className="text-sm font-medium text-gray-300 block">Custom System Prompt</label><button onClick={handleSuggestPrompt} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700/50 hover:bg-cyan-600/30 text-gray-400 rounded-md" title="Suggest a fun prompt" aria-label="Suggest a fun prompt"><WandSparklesIcon className="w-4 h-4"/>Surprise Me!</button></div><textarea id="customSystemPrompt" name="customSystemPrompt" value={metadata.customSystemPrompt || ''} onChange={e => handleMetadataFieldChange('customSystemPrompt', e.target.value)} rows={3} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" placeholder="e.g., You are a helpful Garbage Collection expert."/><p className="mt-1 text-xs text-gray-500">Adds instructions to the AI chat assistant for this notebook.</p></div>)}<div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label htmlFor="timeFormat" className="text-sm font-medium text-gray-300 block mb-1">Timestamp Format</label><input id="timeFormat" name="timeFormat" type="text" value={metadata.timeFormat || ''} placeholder={globalSettings.timeFormat} onChange={e => handleMetadataFieldChange('timeFormat', e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" /><p className="mt-1 text-xs text-gray-500">Default: YYYY, MM, DD, HH, mm, ss, SSS</p></div><div><label htmlFor="decimalPlaces" className="text-sm font-medium text-gray-300 block mb-1">Max Decimal Places</label><input id="decimalPlaces" name="decimalPlaces" type="number" min="0" max="20" value={metadata.decimalPlaces ?? ''} placeholder={String(globalSettings.decimalPlaces)} onChange={e => { const v = parseInt(e.target.value, 10); handleMetadataFieldChange('decimalPlaces', e.target.value === '' || isNaN(v) ? undefined : v); }} className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500" /><p className="mt-1 text-xs text-gray-500">For numbers in tables and plots.</p></div></div></div>}</div>
 
             <div>
                 <div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={()=>setIsVariablesCollapsed(!isVariablesCollapsed)}>
@@ -189,8 +211,8 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
                             <input
                                 type="text"
                                 defaultValue={k}
-                                onBlur={e => handleRenameGlobalVariable(k, e.target.value.trim())}
-                                ref={el => { variableInputRefs.current[k] = el; }}
+                                onBlur={e => handleRenameGlobalVariable(k, e.target.value.trim(), e.target)}
+                                ref={el => { if (el) variableInputRefs.current[k] = el; else delete variableInputRefs.current[k]; }}
                                 className="w-1/3 bg-gray-800 border border-gray-600 rounded-md p-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500"
                                 placeholder="$$name"
                             />
@@ -212,7 +234,7 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
             <div><div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={()=>setIsViewsCollapsed(!isViewsCollapsed)}><h3 className="flex items-center gap-2 text-sm font-medium text-gray-400"><ViewIcon className="w-3.5 h-3.5"/>Views ({metadata.views.length})</h3>{isViewsCollapsed?<ChevronDownIcon className="w-3.5 h-3.5 text-gray-500"/>:<ChevronUpIcon className="w-3.5 h-3.5 text-gray-500"/>}</div>{!isViewsCollapsed && <div className="animate-fade-in-down">{metadata.views.map(v=><div key={v.id}>{renderEditableItem('view',v)}</div>)}<div className="px-3 py-2"><button onClick={()=>handleAdd('view')} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700 rounded-md"><PlusIcon className="w-3 h-3"/> Add</button></div></div>}</div>
             <div><div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={()=>setIsMacrosCollapsed(!isMacrosCollapsed)}><h3 className="flex items-center gap-2 text-sm font-medium text-gray-400"><CodeBracketIcon className="w-3.5 h-3.5"/>Custom Macros ({metadata.macros.length})</h3>{isMacrosCollapsed?<ChevronDownIcon className="w-3.5 h-3.5 text-gray-500"/>:<ChevronUpIcon className="w-3.5 h-3.5 text-gray-500"/>}</div>{!isMacrosCollapsed && <div className="animate-fade-in-down">{metadata.macros.map(m=><div key={m.id}>{renderEditableItem('macro',m)}</div>)}<div className="px-3 py-2"><button onClick={()=>handleAdd('macro')} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700 rounded-md"><PlusIcon className="w-3 h-3"/> Add</button></div></div>}</div>
         </div>}
-    </div>{tooltip?.visible && ReactDOM.createPortal(<div style={{top:tooltip.top,left:tooltip.left}} className="absolute z-[100] p-2 bg-gray-700 border border-gray-600 rounded shadow-lg w-auto max-w-xs animate-fade-in" onMouseEnter={()=>{if(hideTimeout.current)clearTimeout(hideTimeout.current);}} onMouseLeave={handleHideTooltip}>{tooltip.content}</div>, document.body)}</>);
+    </div>{tooltip?.visible && ReactDOM.createPortal(<div style={{top:tooltip.top,left:tooltip.left}} className="fixed z-[100] p-2 bg-gray-700 border border-gray-600 rounded shadow-lg w-auto max-w-xs animate-fade-in" onMouseEnter={()=>{if(hideTimeout.current)clearTimeout(hideTimeout.current);}} onMouseLeave={handleHideTooltip}>{tooltip.content}</div>, document.body)}</>);
 });
 
 export default React.memo(SettingsPanel);

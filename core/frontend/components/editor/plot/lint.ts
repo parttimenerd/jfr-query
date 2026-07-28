@@ -18,13 +18,12 @@ import { parseAndAnnotate } from './index';
 import type { ShapeRegistry } from './annotators/shapeAnnotator';
 import type { ColumnSchema } from './ast';
 import { KNOWN_SHAPES, UPPERCASE_TAIL_KEYWORDS, LOWERCASE_TAIL_KEYS } from './parser';
-import type { PlotScopePlot } from './aiPlotContext';
 
 // ─── Public deps + entry ──────────────────────────────────────────────────────
 
 export interface PlotScopeView {
     /** Named plots in scope (this cell + prior cells). */
-    namedPlots: PlotScopePlot[];
+    namedPlots: Array<{ plotName: string; hasBrush?: boolean; shape?: string }>;
 }
 
 export interface PlotLintDeps {
@@ -62,12 +61,12 @@ export function lintPlot(source: string, deps: PlotLintDeps): Diagnostic[] {
     for (const s of KNOWN_SHAPES) known.add(s);
 
     const knownPlotNames = new Set(
-        (deps.notebookScope?.namedPlots ?? []).map(p => p.name.toLowerCase()),
+        (deps.notebookScope?.namedPlots ?? []).map(p => p.plotName.toLowerCase()),
     );
     const brushedPlots = new Set(
         (deps.notebookScope?.namedPlots ?? [])
             .filter(p => p.hasBrush)
-            .map(p => p.name.toLowerCase()),
+            .map(p => p.plotName.toLowerCase()),
     );
 
     walk(root, (node) => {
@@ -526,7 +525,7 @@ function lintVarRef(
             // Only fire if the plot exists at all OR notebookScope is supplied;
             // otherwise we don't know.
             const known = new Set(
-                (deps.notebookScope?.namedPlots ?? []).map(p => p.name.toLowerCase()),
+                (deps.notebookScope?.namedPlots ?? []).map(p => p.plotName.toLowerCase()),
             );
             if (known.has(plotName)) {
                 out.push({

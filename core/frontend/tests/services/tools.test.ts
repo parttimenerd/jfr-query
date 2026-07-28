@@ -94,7 +94,7 @@ describe('executeTool', () => {
             expect(res.data.columns).toEqual([{ name: 'col', type: 'INTEGER' }]);
             expect(res.data.rows).toHaveLength(2);
         }
-        expect(deps.duckdbQuery).toHaveBeenCalledWith('SELECT 1', { limit: 100 });
+        expect(deps.duckdbQuery).toHaveBeenCalledWith('SELECT 1', { limit: 101 });
     });
 
     it('runQuery rejects SQL with $ai_providers and does NOT execute', async () => {
@@ -693,7 +693,7 @@ describe('previewPlot — additional coverage', () => {
         expect(res.ok).toBe(true);
         if (!res.ok) return;
         expect(res.data.limit).toBe(50);
-        expect(duckdbQuery).toHaveBeenLastCalledWith('SELECT x FROM t', { limit: 50 });
+        expect(duckdbQuery).toHaveBeenLastCalledWith('SELECT x FROM t', { limit: 51 });
     });
 
     it('defaults the limit to 200 when not provided', async () => {
@@ -709,7 +709,7 @@ describe('previewPlot — additional coverage', () => {
         expect(res.ok).toBe(true);
         if (!res.ok) return;
         expect(res.data.limit).toBe(200);
-        expect(duckdbQuery).toHaveBeenLastCalledWith('SELECT 1', { limit: 200 });
+        expect(duckdbQuery).toHaveBeenLastCalledWith('SELECT 1', { limit: 201 });
     });
 
     it('flags truncation when the dep returns more than the requested limit', async () => {

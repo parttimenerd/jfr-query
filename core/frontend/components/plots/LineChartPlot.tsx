@@ -34,9 +34,9 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
   // AXIS-Y TYPE LOG overrides the config-level yScale param.
   const effectiveYScale = (axisYClause?.type === 'log' ? 'log' : config.yScale) as 'linear' | 'log';
 
-  const { chartData, isTime, allY, allY2, finalXCol } = useMemo<{ chartData: any[]; isTime: boolean; allY: string[]; allY2: string[]; finalXCol: string }>(() => {
+  const { chartData, isTime, allY, allY2, finalXCol, originalYCols } = useMemo<{ chartData: any[]; isTime: boolean; allY: string[]; allY2: string[]; finalXCol: string; originalYCols: string[] }>(() => {
     if (!data || !data.length || !data[0] || !config.x) {
-        return { chartData: data, isTime: false, allY: [], allY2: [], finalXCol: config.x };
+        return { chartData: data, isTime: false, allY: [], allY2: [], finalXCol: config.x, originalYCols: [] };
     }
 
     const allColumns = Object.keys(data[0]);
@@ -85,7 +85,7 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
             const av = a[xCol], bv = b[xCol];
             return av < bv ? -1 : av > bv ? 1 : 0;
         });
-        return { chartData: pivoted, isTime: isTimeAxis, allY: seriesKeys, allY2: [], finalXCol: xCol };
+        return { chartData: pivoted, isTime: isTimeAxis, allY: seriesKeys, allY2: [], finalXCol: xCol, originalYCols: yColsForColor };
     }
 
     // W13 — decimate via LTTB when over the soft cap. Picks the first y column
@@ -97,10 +97,10 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
       ? lttb(transformedData, xCol, primaryY, LINE_SOFT_CAP_PER_SERIES)
       : transformedData;
 
-    return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, allY2: allY2Cols, finalXCol: xCol };
+    return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, allY2: allY2Cols, finalXCol: xCol, originalYCols: allYCols };
   }, [data, config.x, config.y, config.y2, config.color]);
 
-  const yIsDuration = allY.length > 0 && allY.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY);
+  const yIsDuration = allY.length > 0 && originalYCols.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, originalYCols);
   const y2IsDuration = allY2.length > 0 && allY2.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY2);
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
   const y2Formatter = y2IsDuration ? formatDurationNs : numberFormatter;
@@ -115,10 +115,10 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568"/>
           <XAxis allowDataOverflow dataKey={finalXCol} type={isTime?'number':'category'} domain={xDomainFromClause || domainX || (isTime?['dataMin','dataMax']:undefined)} tickFormatter={xTickFmt} scale={mapAxisScale(axisXClause)} stroke="#9ca3af" tick={{fontSize:12}} label={xLabel?{value:xLabel,position:'insideBottom',fill:'#9ca3af',fontSize:12,offset:-5}:undefined}/>
-          <YAxis yAxisId="left" stroke="#9ca3af" tick={{fontSize:12}} tickFormatter={yTickFmt ?? yFormatter} scale={mapAxisScale(axisYClause) ?? (effectiveYScale === 'log' ? "log" : "auto")} label={(yLabelFromClause || config.yAxisLabel)?{value:yLabelFromClause || config.yAxisLabel,angle:-90,position:'insideLeft',fill:'#9ca3af',fontSize:12}:undefined} domain={effectiveYScale === 'log' ? (domainY ?? (yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : [0.1,'dataMax'])) : (domainY ?? yDomainFromClause ?? config.yDomain) as any} allowDataOverflow/>
-          {allY2.length>0 && <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" tick={{fontSize:12}} tickFormatter={y2Formatter} label={config.y2AxisLabel?{value:config.y2AxisLabel,angle:90,position:'insideRight',fill:'#82ca9d',fontSize:12}:undefined} scale={config.y2Scale === 'log' ? "log" : "auto"} domain={config.y2Scale === 'log' ? [0.1,'dataMax'] : config.y2Domain as any} allowDataOverflow/>}
+          <YAxis yAxisId="left" stroke="#9ca3af" tick={{fontSize:12}} tickFormatter={yTickFmt ?? yFormatter} scale={mapAxisScale(axisYClause) ?? (effectiveYScale === 'log' ? "log" : "auto")} label={(yLabelFromClause || config.yAxisLabel)?{value:yLabelFromClause || config.yAxisLabel,angle:-90,position:'insideLeft',fill:'#9ca3af',fontSize:12}:undefined} domain={effectiveYScale === 'log' ? (domainY ? [Math.max(0.1, domainY[0]), domainY[1]] : (yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : [Math.max(0.1, Number(config.yDomain?.[0]) || 0.1), config.yDomain?.[1] ?? 'dataMax'])) : (domainY ?? yDomainFromClause ?? config.yDomain) as any} allowDataOverflow/>
+          {allY2.length>0 && <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" tick={{fontSize:12}} tickFormatter={y2Formatter} label={config.y2AxisLabel?{value:config.y2AxisLabel,angle:90,position:'insideRight',fill:'#82ca9d',fontSize:12}:undefined} scale={config.y2Scale === 'log' ? "log" : "auto"} domain={config.y2Scale === 'log' ? [Math.max(0.1, Number(config.y2Domain?.[0]) || 0.1), config.y2Domain?.[1] ?? 'dataMax'] : config.y2Domain as any} allowDataOverflow/>}
           <Tooltip contentStyle={{backgroundColor:'#1f2937',border:'1px solid #4b5563'}} formatter={(v,n)=>[(allY2.includes(String(n)) ? y2Formatter : yFormatter)(v),String(n).replace(/_/g,' ')]} labelFormatter={isTime?(l)=>formatTimestamp(l,settings.timeFormat):undefined} content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} labelFormatter={isTime ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined} />) : undefined}/>
-          {showLegend && <Legend wrapperStyle={{fontSize:"12px"}} formatter={v=>String(v).replace(/_/g,' ')} verticalAlign={legendPos === 'top' ? 'top' : legendPos === 'bottom' ? 'bottom' : 'middle'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'}/>}
+          {showLegend && <Legend wrapperStyle={{fontSize:"12px"}} formatter={v=>String(v).replace(/_/g,' ')} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'}/>}
           {allY.map((y,i)=><Line yAxisId="left" key={y} type="monotone" dataKey={y} stroke={colors[i%colors.length]} connectNulls={config.connectNulls} strokeWidth={config.lineType === 'line' ? 1 : 0} dot={config.lineType === 'dots'} activeDot={{r: 4}} isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>)}
           {allY2.map((y,i)=><Line yAxisId="right" key={y} type="monotone" dataKey={y} stroke={colors[(allY.length+i)%colors.length]} connectNulls={config.connectNulls} strokeWidth={config.lineType === 'line' ? 1 : 0} dot={config.lineType === 'dots'} activeDot={{r: 4}} isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>)}
           {config.xRefLines?.map((l,i)=><ReferenceLine key={`x-${i}`} x={l.value} label={l.label} stroke="#facc15" strokeDasharray="3 3"/>)}

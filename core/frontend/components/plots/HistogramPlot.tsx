@@ -65,15 +65,16 @@ const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationAct
             const logMin=Math.log(min), logMax=Math.log(max);
             const size=(logMax-logMin)/binCount;
             const hist=Array(binCount).fill(0).map((_,i)=>({range:`${numberFormatter(Math.exp(logMin+i*size))}-${numberFormatter(Math.exp(logMin+(i+1)*size))}`, count:0}));
-            for(const v of posValues){ const i=Math.min(binCount-1, Math.floor((Math.log(v)-logMin)/size)); if(hist[i]) hist[i].count++;}
+            for(const v of posValues){ const i=Math.max(0, Math.min(binCount-1, Math.floor((Math.log(v)-logMin)/size))); if(hist[i]) hist[i].count++;}
             return hist;
         } else {
+            if (min === max) return [{ range: numberFormatter(min), count: values.length }];
             const size=(max-min)/binCount;
             const hist=Array(binCount).fill(0).map((_,i)=>({range:`${numberFormatter(min+i*size)}-${numberFormatter(min+(i+1)*size)}`, count:0}));
-            for(const v of values){ const i=Math.min(binCount-1, Math.floor((v-min)/size)); if(hist[i]) hist[i].count++; }
+            for(const v of values){ const i=Math.max(0, Math.min(binCount-1, Math.floor((v-min)/size))); if(hist[i]) hist[i].count++; }
             return hist;
         }
-    }, [data, config.x, config.bins, config.logBins, numberFormatter]);
+    }, [data, config.x, config.bins, config.logBins, settings.decimalPlaces]);
     
     if (chartData.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">No valid data.</div>;
 

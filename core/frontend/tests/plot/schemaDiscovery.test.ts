@@ -148,9 +148,9 @@ describe('PlotSchemaDiscovery', () => {
         expect(d.getCached('SELECT slow()')).toBeNull();
     });
 
-    it('falls back to LIMIT 0 query when describeQuery is omitted', async () => {
+    it('falls back to LIMIT 1 query when describeQuery is omitted', async () => {
         const runQuery = vi.fn(async (sql: string) => {
-            expect(sql).toMatch(/^SELECT \* FROM \(.*\) AS __plot_discover LIMIT 0$/);
+            expect(sql).toMatch(/^SELECT \* FROM \(.*\) AS __plot_discover LIMIT 1$/);
             return [{ x: 1, y: 2 }];
         });
         const d = new PlotSchemaDiscovery({ runQuery, debounceMs: 0 });

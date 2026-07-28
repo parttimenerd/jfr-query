@@ -134,7 +134,7 @@ describe('lintPlot — tail rules', () => {
         const src = 'LINE_CHART(x: ts) LINK_X($a, gc_top)';
         const diags = lintPlot(src, makeDeps({
             cellColumns: [{ name: 'ts' }],
-            notebookScope: { namedPlots: [{ name: 'gc', shape: 'line' }] },
+            notebookScope: { namedPlots: [{ plotName: 'gc', shape: 'line' }] },
         }));
         const u = diags.find(d => /Unknown plot reference 'gc_top'/.test(d.message));
         expect(u).toBeTruthy();
@@ -199,7 +199,7 @@ describe('lintPlot — brush and variables', () => {
     it('brush on a known plot without hasBrush emits info', () => {
         const src = 'LINE_CHART(x: $gc.brush)';
         const diags = lintPlot(src, makeDeps({
-            notebookScope: { namedPlots: [{ name: 'gc', hasBrush: false }] },
+            notebookScope: { namedPlots: [{ plotName: 'gc', hasBrush: false }] },
         }));
         const i = diags.find(d => /no live brush selection/i.test(d.message));
         expect(i).toBeTruthy();

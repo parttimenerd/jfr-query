@@ -50,7 +50,7 @@ async function runOneCall(
         // The orchestrator never calls these because tools is empty.
         {
             applyMutation: async () => { /* never called */ },
-            requireApproval: async () => true,
+            requireApproval: async () => {},
         } as any,
         {
             visibility: input.visibility,
@@ -58,6 +58,7 @@ async function runOneCall(
             tier,
             feature: 'chat',
             customSystemPrompt: BTW_MODE_HINT_SYSTEM,
+            replaceSystemPrompt: true,
             signal: input.signal,
         },
     );
@@ -79,7 +80,10 @@ export async function runBtwCall(input: BtwCallInput): Promise<BtwCallOutcome> {
     if (hints.length > 0 || initialTier === 'advanced') {
         return { hints, finalTier: initialTier, parseMiss: hints.length === 0 };
     }
-    // Escalate once.
+    // Escalate once — but bail if the caller already aborted.
+    if (input.signal?.aborted) {
+        return { hints: [], finalTier: initialTier, parseMiss: true };
+    }
     const second = await runOneCall(input, 'advanced');
     const escalatedHints = parseBtwHintsFromText(second.text);
     return {

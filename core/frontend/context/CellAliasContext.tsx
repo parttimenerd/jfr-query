@@ -146,6 +146,8 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
     aliasesRef.current = aliases;
     /** cellId -> set of qualified keys currently owned by that cell. */
     const cellOwnership = useRef<Record<string, Set<string>>>({});
+    /** "cellId::sqlIndex" -> { qualKey, bareKey | null } for per-slot cleanup. */
+    const slotOwnership = useRef<Record<string, { qualKey: string; bareKey: string | null }>>({});
     const versionRef = useRef(0);
 
     /** Pre-computed set of all table/view names — rebuilt only when schema changes. */
@@ -188,7 +190,7 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
             columns = cols.map((r: any) => ({ name: String(r.column_name), type: String(r.data_type) }));
         } catch {
             // Rollback: drop what we just created so the registry stays consistent.
-            const objectKind = built.statements.some(s => s.includes('TABLE')) ? 'TABLE' : 'VIEW';
+            const objectKind = materialized ? 'TABLE' : 'VIEW';
             const rollbackStatements: string[] = [
                 `DROP ${objectKind} IF EXISTS ${quoteIdent(built.sanitizedHandle)}.${quoteIdent(built.aliasOr1)}`,
             ];
@@ -215,10 +217,40 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
         };
 
         const qualKey = qualifiedKey(built.sanitizedHandle, built.aliasOr1);
+
+        // Drop any previously registered keys for this exact (cellId, sqlIndex) slot
+        // so renamed or removed aliases don't accumulate as stale entries.
+        const slotKey = `${cellId}::${sqlIndex}`;
+        const prevSlot = slotOwnership.current[slotKey];
+        if (prevSlot && prevSlot.qualKey !== qualKey) {
+            const prevObjectKind = aliasesRef.current[prevSlot.qualKey]?.materialized ? 'TABLE' : 'VIEW';
+            if (prevSlot.qualKey.includes('.')) {
+                const dotIdx = prevSlot.qualKey.indexOf('.');
+                const h = prevSlot.qualKey.slice(0, dotIdx);
+                const a = prevSlot.qualKey.slice(dotIdx + 1);
+                try { await query(`DROP ${prevObjectKind} IF EXISTS ${quoteIdent(h)}.${quoteIdent(a)}`); } catch { /* best-effort */ }
+            }
+            if (prevSlot.bareKey) {
+                try { await query(`DROP ${prevObjectKind} IF EXISTS ${quoteIdent(prevSlot.bareKey)}`); } catch { /* best-effort */ }
+            }
+            const owned = cellOwnership.current[cellId];
+            if (owned) {
+                owned.delete(prevSlot.qualKey);
+                if (prevSlot.bareKey) owned.delete(prevSlot.bareKey);
+            }
+            setAliases(prev => {
+                const next = { ...prev };
+                delete next[prevSlot.qualKey];
+                if (prevSlot.bareKey) delete next[prevSlot.bareKey];
+                return next;
+            });
+        }
+
         const owned = cellOwnership.current[cellId] ?? new Set<string>();
         owned.add(qualKey);
         if (alias && !built.bareShadowed) owned.add(alias);
         cellOwnership.current[cellId] = owned;
+        slotOwnership.current[slotKey] = { qualKey, bareKey: alias && !built.bareShadowed ? alias : null };
 
         setAliases(prev => {
             const next = { ...prev, [qualKey]: info };
@@ -248,6 +280,10 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
             } catch { /* swallow */ }
         }
         delete cellOwnership.current[cellId];
+        // Clean up per-slot tracking for all slots belonging to this cell.
+        for (const slotKey of Object.keys(slotOwnership.current)) {
+            if (slotKey.startsWith(`${cellId}::`)) delete slotOwnership.current[slotKey];
+        }
         setAliases(prev => {
             const next = { ...prev };
             for (const key of owned) delete next[key];

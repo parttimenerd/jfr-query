@@ -84,7 +84,7 @@ const exportToCsv = (headers: string[], rows: any[], filename: string) => {
     a.href = url;
     a.download = filename;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -109,6 +109,15 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
   const [widths, setWidths] = useState<(string | number | undefined)[]>([]);
   const resizingColumn = useRef<{index: number; startX: number; startWidth: number} | null>(null);
   const tableRef = useRef<HTMLTableElement>(null);
+  const globalMoveListenerRef = useRef<((e: MouseEvent) => void) | null>(null);
+  const globalUpListenerRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (globalMoveListenerRef.current) window.removeEventListener('mousemove', globalMoveListenerRef.current);
+      if (globalUpListenerRef.current) window.removeEventListener('mouseup', globalUpListenerRef.current);
+    };
+  }, []);
 
   const dataHeaders = useMemo(() => (headers || (data[0] ? Object.keys(data[0]) : [])), [data, headers]);
   const sample = data[0];
@@ -139,22 +148,36 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
 
   const handleMouseDown = useCallback((index: number, e: React.MouseEvent) => {
     e.preventDefault();
+    // Remove any stale listeners from a previous drag that ended without mouseup
+    if (globalMoveListenerRef.current) {
+      window.removeEventListener('mousemove', globalMoveListenerRef.current);
+      globalMoveListenerRef.current = null;
+    }
+    if (globalUpListenerRef.current) {
+      window.removeEventListener('mouseup', globalUpListenerRef.current);
+      globalUpListenerRef.current = null;
+    }
     const ths = tableRef.current?.querySelectorAll('thead th');
     if (!ths) return;
     const currentPixelWidths = Array.from(ths).map(th => (th as HTMLElement).offsetWidth);
     setWidths(currentPixelWidths);
+    if (index < 0 || index >= currentPixelWidths.length) return;
     resizingColumn.current = { index, startX: e.clientX, startWidth: currentPixelWidths[index] };
     const handleGlobalMouseMove = (event: MouseEvent) => handleMouseMove(event);
     const handleGlobalMouseUp = () => {
       handleMouseUp();
       window.removeEventListener('mousemove', handleGlobalMouseMove);
       window.removeEventListener('mouseup', handleGlobalMouseUp);
+      globalMoveListenerRef.current = null;
+      globalUpListenerRef.current = null;
     };
+    globalMoveListenerRef.current = handleGlobalMouseMove;
+    globalUpListenerRef.current = handleGlobalMouseUp;
     window.addEventListener('mousemove', handleGlobalMouseMove);
     window.addEventListener('mouseup', handleGlobalMouseUp);
   }, [handleMouseMove, handleMouseUp]);
 
-  const requestSort = (key: string) => setSortConfig(c => c.key===key ? (c.direction==='ascending' ? {key,direction:'descending'} : {key:null,direction:'ascending'}) : {key,direction:'ascending'});
+  const requestSort = (key: string) => setSortConfig(c => c.key === key ? { key, direction: c.direction === 'ascending' ? 'descending' : 'ascending' } : { key, direction: 'ascending' });
 
   const formatCell = useCallback((value: any, header: string): string => {
     if (value === null || value === undefined) return '';
@@ -269,13 +292,16 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700">
-            {displayData.map((row,i) => (
-              <tr key={i} className="hover:bg-gray-700/50">
+            {displayData.map((row,i) => {
+              const key = finalHeaders.length > 0 ? `${i}-${String(row[finalHeaders[0]])}` : i;
+              return (
+              <tr key={key} className="hover:bg-gray-700/50">
                 {finalHeaders.map((h,j) => (
                   <td key={h} className={`p-2 font-mono whitespace-nowrap overflow-hidden text-ellipsis ${numericColumns.has(h)?'text-right':'text-left'}`} style={{width: widths[j]}} title={String(row[h])}>{formatCell(row[h],h)}</td>
                 ))}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

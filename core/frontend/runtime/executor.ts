@@ -34,7 +34,7 @@ export interface ExecutorCallbacks {
 }
 
 export class Executor {
-    private graph: GraphResult;
+    graph: GraphResult;
     private cb: ExecutorCallbacks;
     private status = new Map<string, CellStatus>();
     /** Each cell's CURRENT run promise (resolves when that run finishes). */
@@ -51,6 +51,14 @@ export class Executor {
     /** Swap in a new graph snapshot. Existing in-flight runs continue; new
      * scheduleRun calls use the new dependency edges. */
     updateGraph(graph: GraphResult): void {
+        const newIds = new Set(graph.order);
+        for (const id of this.status.keys()) {
+            if (!newIds.has(id)) {
+                this.status.delete(id);
+                this.runPromises.delete(id);
+                this.runIds.delete(id);
+            }
+        }
         this.graph = graph;
         for (const id of graph.order) {
             if (!this.status.has(id)) this.status.set(id, 'pending');
@@ -101,7 +109,9 @@ export class Executor {
                 await this.cb.runFn(cellId);
                 if (this.runIds.get(cellId) === myRunId) this.setStatus(cellId, 'done');
             } catch (err) {
-                if (this.runIds.get(cellId) === myRunId) this.setStatus(cellId, 'failed');
+                if (this.runIds.get(cellId) === myRunId) {
+                    this.setStatus(cellId, 'failed');
+                }
                 throw err;
             }
         })();

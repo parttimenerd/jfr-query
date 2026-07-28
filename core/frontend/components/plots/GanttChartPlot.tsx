@@ -101,15 +101,20 @@ const GanttChartComponent: React.FC<{
       ? Array.from(new Set(data.map(r => String(r[colorCol] ?? ''))))
       : [];
 
+    const laneCats: string[] = Array.from(new Set(data.map(r => String(r[rCol] ?? ''))));
+
     const transformed = data.map((row, i) => {
       const startVal = toNum(row[sCol]);
       const endVal = toNum(row[eCol]);
-      const duration = isNaN(startVal) || isNaN(endVal) ? 0 : Math.max(0, endVal - startVal);
+      const rawDuration = isNaN(startVal) || isNaN(endVal) ? 0 : endVal - startVal;
+      const duration = Math.abs(rawDuration);
+      const offset = rawDuration < 0 ? endVal : startVal;
       const colorCategory = colorCol ? String(row[colorCol] ?? '') : null;
-      const colorIndex = colorCategory !== null ? colorCats.indexOf(colorCategory) : i;
+      const rawColorIndex = colorCategory !== null ? colorCats.indexOf(colorCategory) : laneCats.indexOf(String(row[rCol] ?? ''));
+      const colorIndex = rawColorIndex >= 0 ? rawColorIndex : 0;
       return {
         __rowLabel: String(row[rCol] ?? ''),
-        __offset: startVal,
+        __offset: offset,
         __duration: duration,
         __startRaw: row[sCol],
         __endRaw: row[eCol],
@@ -129,7 +134,7 @@ const GanttChartComponent: React.FC<{
   const tooltipFormatter = (_value: any, _name: string, props: any) => {
     const row = props?.payload;
     if (!row) return [_value, _name];
-    if (_name === '__offset') return [null as any, null as any]; // hide offset
+    if (_name === '__offset') return null; // hide offset
     const startFmt = isTime ? formatTimestamp(getTimeValue(row.__startRaw), settings.timeFormat) : numberFormatter(row.__startRaw);
     const endFmt = isTime ? formatTimestamp(getTimeValue(row.__endRaw), settings.timeFormat) : numberFormatter(row.__endRaw);
     return [`${startFmt} → ${endFmt}`, 'Range'];

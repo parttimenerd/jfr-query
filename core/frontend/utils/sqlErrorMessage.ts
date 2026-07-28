@@ -47,7 +47,8 @@ export function cleanDuckDBError(raw: string): string {
     // Trim trailing empty lines.
     while (kept.length > 0 && kept[kept.length - 1].trim() === '') kept.pop();
 
-    return kept.join('\n').trim();
+    const result = kept.join('\n').trim();
+    return result || raw.trim();
 }
 
 /** Heuristic tip patterns: [regex, tip text]. Matched against the cleaned message. */
@@ -144,9 +145,18 @@ const TIPS: Array<[RegExp, string]> = [
         /aggregate function with name[^.]*does not exist/i,
         'Tip: This aggregate function is not recognised. Check the name or use a supported aggregate like COUNT, SUM, AVG, MEDIAN, or QUANTILE.',
     ],
+    // ZGC-specific missing tables — checked before generic table-not-found tip
+    [
+        /table[^"]*"?(?:GCHeapSummary|ObjectAllocationSample)"?[^.]*does not exist/i,
+        'Tip: This query requires events (GCHeapSummary or ObjectAllocationSample) that ZGC does not emit. This cell is expected to return no results on ZGC recordings.',
+    ],
     [
         /table[^"]*"([^"]+)"[^.]*does not exist/i,
         'Tip: Check the table name spelling. Use the schema explorer to see available tables.',
+    ],
+    [
+        /catalog error.*(?:GCHeapSummary|ObjectAllocationSample|allocation-rate|heap-committed(?:-vs-used)?|heap-summary-over-time|allocation-by-class(?:-detail|-thread|-site)?|gc-efficiency|alloc-flamegraph)/i,
+        'Tip: This query requires GCHeapSummary or ObjectAllocationSample events, which ZGC does not emit. This cell is expected to return no results on ZGC recordings.',
     ],
     [
         /catalog error/i,
@@ -197,9 +207,17 @@ const TIPS: Array<[RegExp, string]> = [
 ];
 
 /**
- * Returns a heuristic tip for a cleaned DuckDB error message, or an empty
- * string if no known pattern matches.
+ * Returns true when the error is a known "expected missing table" condition —
+ * i.e. the query targets a table or view that simply doesn't exist in this
+ * recording type (e.g. GCHeapSummary / ObjectAllocationSample on ZGC).
+ *
+ * These errors should be displayed as soft info messages rather than red errors.
  */
+export function isExpectedMissingTable(cleanedMessage: string): boolean {
+    return /table[^"]*"?(?:GCHeapSummary|ObjectAllocationSample)"?[^.]*does not exist/i.test(cleanedMessage)
+        || /table[^"]*"?(?:heap-committed(?:-vs-used)?|allocation-rate|heap-summary-over-time|allocation-by-class(?:-detail|-thread|-site)?|gc-efficiency|alloc-flamegraph)"?[^.]*does not exist/i.test(cleanedMessage)
+        || /catalog error.*(?:GCHeapSummary|ObjectAllocationSample|allocation-rate|heap-committed(?:-vs-used)?|heap-summary-over-time|allocation-by-class(?:-detail|-thread|-site)?|gc-efficiency|alloc-flamegraph)/i.test(cleanedMessage);
+}
 export function heuristicTip(cleanedMessage: string): string {
     for (const [re, tip] of TIPS) {
         if (re.test(cleanedMessage)) return tip;

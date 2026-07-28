@@ -126,7 +126,12 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         tick: { fontSize: 12 },
         tickFormatter: makeTickFormatter(axisYClause) ?? numberFormatter,
         scale: mapAxisScale(axisYClause) ?? (effectiveLogScale ? "log" as const : "auto" as const),
-        domain: (domainY ?? (effectiveLogScale && yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : yDomainFromClause) ?? (effectiveLogScale ? [0.1, 'dataMax'] : [0, 'dataMax'])) as any,
+        domain: (
+          effectiveLogScale
+            ? [Math.max(0.1, domainY?.[0] ?? (yDomainFromClause ? Number(yDomainFromClause[0]) || 0.1 : 0.1)),
+               domainY?.[1] ?? yDomainFromClause?.[1] ?? 'dataMax']
+            : (domainY ?? yDomainFromClause ?? ['dataMin', 'dataMax'])
+        ) as any,
         allowDataOverflow: true,
     };
     
@@ -145,9 +150,19 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         }),
         React.createElement(XAxis, {
             key: 'x-axis',
+            xAxisId: 'bottom',
             ...commonValueAxisProps,
             label: (yLabelFromClause || config.yAxisLabel) ? { value: yLabelFromClause || config.yAxisLabel, angle: 0, position: 'top', fill: '#9ca3af', dy: -10 } : undefined
-        })
+        }),
+        ...(lineYCols.length > 0 ? [React.createElement(XAxis, {
+            key: 'x-axis-top',
+            xAxisId: 'top',
+            orientation: 'top' as const,
+            type: "number" as const,
+            stroke: "#9ca3af",
+            tick: { fontSize: 12 },
+            tickFormatter: numberFormatter,
+        })] : []),
     ] : [
         React.createElement(XAxis, {
             key: 'x-axis',
@@ -184,6 +199,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         key: `bar-${y}`,
         dataKey: y,
         yAxisId: config.horizontal ? undefined : 'left',
+        xAxisId: config.horizontal ? 'bottom' : undefined,
         stackId: config.layout === 'stacked' ? 'a' : undefined,
         fill: colors[i % colors.length],
         isAnimationActive,
@@ -195,6 +211,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         type: "monotone",
         dataKey: y,
         yAxisId: config.horizontal ? undefined : 'right',
+        xAxisId: config.horizontal ? 'top' : undefined,
         stroke: colors[(yCols.length + i) % colors.length],
         strokeWidth: 2,
         isAnimationActive,
@@ -204,7 +221,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
     const chartChildren = [
         React.createElement(CartesianGrid, { key: 'grid', strokeDasharray: "3 3", stroke: "#4a5568" }),
         ...axisElements,
-        React.createElement(Tooltip, { key: 'tooltip', content: (clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => React.createElement(PlotTooltip, { ...props, onHoverTooltip: clauses?.onHoverTooltip, tooltipColumns: clauses?.tooltipColumns }) : React.createElement(CustomTooltip, { formatter: numberFormatter }) }),
+        React.createElement(Tooltip, { key: 'tooltip', content: (clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => React.createElement(PlotTooltip, { ...props, onHoverTooltip: clauses?.onHoverTooltip, tooltipColumns: clauses?.tooltipColumns }) : (props: any) => React.createElement(CustomTooltip, { ...props, formatter: numberFormatter }) }),
         ...(showLegend ? [React.createElement(Legend as any, { key: 'legend', wrapperStyle: { fontSize: "12px" }, formatter: (v: string) => String(v).replace(/_/g, ' '), verticalAlign: legendPos === 'top' ? 'top' : 'bottom', align: legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center' })] : []),
         ...barElements,
         ...lineElements

@@ -61,7 +61,13 @@ export async function initDuckDBWasm(): Promise<duckdb.AsyncDuckDB> {
   const worker = new Worker(workerUrl);
   const logger = new duckdb.ConsoleLogger();
   const db = new duckdb.AsyncDuckDB(logger, worker);
-  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  try {
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  } catch (e) {
+    worker.terminate();
+    URL.revokeObjectURL(workerUrl);
+    throw e;
+  }
   URL.revokeObjectURL(workerUrl);
   return db;
 }

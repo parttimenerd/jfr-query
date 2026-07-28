@@ -55,12 +55,12 @@ export function computeSessionVariables(
     recordingStart: number | null | undefined,
     recordingEnd: number | null | undefined,
 ): Record<string, string> {
-    const needsStart = !currentVars.session_start && recordingStart != null && Number.isFinite(recordingStart);
-    const needsEnd = !currentVars.session_end && recordingEnd != null && Number.isFinite(recordingEnd);
+    const needsStart = !currentVars['$session_start'] && recordingStart != null && Number.isFinite(recordingStart);
+    const needsEnd = !currentVars['$session_end'] && recordingEnd != null && Number.isFinite(recordingEnd);
     if (!needsStart && !needsEnd) return currentVars;
     const updated = { ...currentVars };
-    if (needsStart) updated.session_start = epochMsToLocalIso(recordingStart!);
-    if (needsEnd) updated.session_end = epochMsToLocalIso(recordingEnd!);
+    if (needsStart) updated['$session_start'] = epochMsToLocalIso(recordingStart!);
+    if (needsEnd) updated['$session_end'] = epochMsToLocalIso(recordingEnd!);
     return updated;
 }
 
@@ -89,11 +89,13 @@ const SessionDateChip: React.FC<SessionDateChipProps> = ({ label, value, onChang
     }, [expanded]);
 
     const commit = useCallback(() => {
-        const clamped = clampIso(draft, min, max);
+        // If draft is empty and a defaultIfEmpty seed was provided, commit the seed value.
+        const effective = draft || (defaultIfEmpty != null ? epochMsToLocalIso(defaultIfEmpty) : '');
+        const clamped = clampIso(effective, min, max);
         if (clamped !== draft) setDraft(clamped);
         onChange(clamped);
         setExpanded(false);
-    }, [draft, onChange, min, max]);
+    }, [draft, defaultIfEmpty, onChange, min, max]);
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') commit();
@@ -104,7 +106,16 @@ const SessionDateChip: React.FC<SessionDateChipProps> = ({ label, value, onChang
     };
 
     const displayValue = value
-        ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        ? (() => {
+            // value is a datetime-local string like "2023-06-15T10:30" — no timezone.
+            // new Date("2023-06-15T10:30") is parsed as UTC by V8, so toLocaleString
+            // would shift by the local UTC offset. Append a colon-less offset to keep it local.
+            const tzOffset = new Date().getTimezoneOffset();
+            const sign = tzOffset <= 0 ? '+' : '-';
+            const abs = Math.abs(tzOffset);
+            const tzStr = `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+            return new Date(`${value}:00${tzStr}`).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        })()
         : (placeholder ?? '—');
 
     const inputValue = draft

@@ -1,4 +1,3 @@
-import { Content } from "@google/genai";
 import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata, ToolChatMessage, ToolStreamChunk, StreamChatWithToolsOpts } from './IAiProvider';
 import type { Tool } from './tools';
 import { toolsToOpenAi, parseOpenAiToolCalls } from './tools/openaiAdapter';
@@ -46,7 +45,7 @@ export class GardenerProvider implements IAiProvider {
         };
     }
 
-    private async handleApiCall<T>(body: object, timeoutMs = 30000): Promise<T> {
+    private async handleApiCall<T>(body: object, timeoutMs = 30000, parseJson = true): Promise<T> {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         let response: Response;
@@ -82,17 +81,18 @@ export class GardenerProvider implements IAiProvider {
         }
         try {
             // For requests that expect JSON
-            return JSON.parse(content);
+            if (parseJson) return JSON.parse(content);
+            return content as unknown as T;
         } catch (e) {
             // For requests that expect plain text
             return content as unknown as T;
         }
     }
     
-    async getAgentResponse(conversationHistory: Content[], systemInstruction: string, model: string = 'gpt-50-mini'): Promise<AIResponse> {
+    async getAgentResponse(conversationHistory: Array<{ role: string; parts: Array<{ text?: string }> }>, systemInstruction: string, model: string = 'gpt-50-mini'): Promise<AIResponse> {
          const messages = [
             { role: "system", content: systemInstruction },
-            ...conversationHistory.map(c => ({ role: c.role, content: c.parts.map(p => p.text).join('\n') }))
+            ...conversationHistory.map(c => ({ role: c.role, content: c.parts.filter(p => typeof p.text === 'string').map(p => p.text).join('\n') }))
         ];
 
         // This endpoint doesn't support the response_format parameter, so we instruct it in the prompt.
@@ -123,7 +123,7 @@ export class GardenerProvider implements IAiProvider {
                 { role: "user", content: code }
             ],
             temperature: 0
-        });
+        }, 30000, false);
         return response.trim().replace(/```sql\n|```/g, '').trim();
     }
     
@@ -135,7 +135,7 @@ export class GardenerProvider implements IAiProvider {
                 { role: "user", content: sql }
             ],
             temperature: 0
-        });
+        }, 30000, false);
         return response.trim().replace(/```plot\n|```/g, '').trim();
     }
 

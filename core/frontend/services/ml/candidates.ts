@@ -157,10 +157,11 @@ export function cleanPlotConfig(raw: string): string {
                 }
             }
             if (end !== -1) {
-                // Include any trailing modifiers like ` TITLE "…"` or ` LINK_X(…)` on the
-                // same line; stop at a newline.
-                const tail = s.slice(end + 1).split('\n')[0];
-                s = s.slice(0, end + 1) + tail;
+                // Only keep recognised trailing modifiers (TITLE, LINK_X, etc.);
+                // strip any trailing prose the model may have appended.
+                const remainder = s.slice(end + 1).split('\n')[0];
+                const modMatch = /^(\s+(?:TITLE|LINK_X|LINK_Y|ZOOM|BRUSH|PALETTE|WIDTH|LEGEND|AXIS_X|AXIS_Y|LET)\b.*)/i.exec(remainder);
+                s = s.slice(0, end + 1) + (modMatch ? modMatch[1] : '');
             }
         }
     }

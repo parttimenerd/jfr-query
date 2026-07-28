@@ -1,4 +1,3 @@
-import { Content } from "@google/genai";
 import { IAiProvider, AIResponse, AIInlineResponse, AIPlotFixResponse, ProviderMetadata, ToolChatMessage, ToolStreamChunk, StreamChatWithToolsOpts } from './IAiProvider';
 import type { Tool } from './tools';
 import { toolsToOpenAi, parseOpenAiToolCalls } from './tools/openaiAdapter';
@@ -14,6 +13,7 @@ function openAiMessagesFromTool(messages: ToolChatMessage[], systemInstruction?:
     const out: any[] = [];
     if (systemInstruction) out.push({ role: 'system', content: systemInstruction });
     for (const m of messages) {
+        if (m.role === 'system') continue; // already prepended above
         if (m.role === 'tool') {
             // Each tool result becomes its own role:tool message keyed by tool_call_id.
             for (const tr of m.toolResults ?? []) {
@@ -70,7 +70,7 @@ export class OpenAiProvider implements IAiProvider {
         };
     }
 
-    private async handleApiCall<T>(body: object): Promise<T> {
+    private async handleApiCall<T>(body: object, parseJson = true): Promise<T> {
         const response = await fetch(this.API_URL, {
             method: 'POST',
             headers: {
@@ -90,21 +90,21 @@ export class OpenAiProvider implements IAiProvider {
 
         const result = await response.json();
         const content = result.choices?.[0]?.message?.content;
-        if (!content) {
+        if (content === null || content === undefined) {
             throw new Error("Received an empty response from OpenAI.");
         }
         try {
-            return JSON.parse(content);
+            return parseJson ? JSON.parse(content) : content as unknown as T;
         } catch (e) {
             // If it's not JSON, return it as-is for non-JSON requests
             return content as unknown as T;
         }
     }
     
-    async getAgentResponse(conversationHistory: Content[], systemInstruction: string, model: string = 'gpt-4o'): Promise<AIResponse> {
+    async getAgentResponse(conversationHistory: Array<{ role: string; parts: Array<{ text?: string }> }>, systemInstruction: string, model: string = 'gpt-4o'): Promise<AIResponse> {
          const messages = [
             { role: "system", content: systemInstruction },
-            ...conversationHistory.map(c => ({ role: c.role, content: c.parts.map(p => p.text).join('\n') }))
+            ...conversationHistory.map(c => ({ role: c.role === 'model' ? 'assistant' : c.role, content: c.parts.filter(p => typeof p.text === 'string').map(p => p.text!).join('\n') }))
         ];
 
         return this.handleApiCall<AIResponse>({
@@ -137,7 +137,7 @@ export class OpenAiProvider implements IAiProvider {
                 { role: "user", content: code }
             ],
             temperature: 0
-        });
+        }, false);
         return response.trim().replace(/```sql\n|```/g, '').trim();
     }
     
@@ -149,7 +149,7 @@ export class OpenAiProvider implements IAiProvider {
                 { role: "user", content: sql }
             ],
             temperature: 0
-        });
+        }, false);
         return response.trim().replace(/```plot\n|```/g, '').trim();
     }
 
@@ -200,6 +200,8 @@ export class OpenAiProvider implements IAiProvider {
         const reader = response.body!.getReader();
         const decoder = new TextDecoder();
         let leftover = '';
+        let streamDone = false;
+        try {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -209,7 +211,7 @@ export class OpenAiProvider implements IAiProvider {
             for (const line of lines) {
                 if (!line.startsWith('data: ')) continue;
                 const payload = line.slice(6).trim();
-                if (payload === '[DONE]') break;
+                if (payload === '[DONE]') { streamDone = true; break; }
                 let parsed: any;
                 try { parsed = JSON.parse(payload); } catch { continue; }
                 const delta = parsed.choices?.[0]?.delta;
@@ -228,10 +230,16 @@ export class OpenAiProvider implements IAiProvider {
                     }
                 }
             }
+            if (streamDone) break;
         }
+        } finally {
+            reader.releaseLock();
+        }
+        if (opts?.signal?.aborted) return;
         for (const buf of toolCallBuffers.values()) {
+            if (!buf.id || !buf.name) continue;
             let args: any = {};
-            try { args = JSON.parse(buf.args); } catch { args = { _raw: buf.args }; }
+            try { args = JSON.parse(buf.args); } catch { continue; }
             yield { kind: 'tool_call', id: buf.id, name: buf.name, args };
         }
     }

@@ -187,7 +187,7 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
 
     const fullSql = cx.state.doc.toString();
     const upTo = fullSql.slice(0, cx.pos);
-    const sqlCtx = parseSqlContext(upTo);
+    const sqlCtx = parseSqlContext(upTo, fullSql);
 
     // --- Inside a string literal in a WHERE comparison: distinct-value completion ---
     if (sqlCtx.insideStringForColumn) {

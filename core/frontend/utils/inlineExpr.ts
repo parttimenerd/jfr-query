@@ -71,6 +71,7 @@ export const splitInlineExprs = (markdown: string): ProseSegment[] => {
     const out: ProseSegment[] = [];
     let cursor = 0;
     for (const startIdx of starts) {
+        if (startIdx < cursor) continue;
         if (startIdx > cursor) {
             out.push({ type: 'text', value: markdown.substring(cursor, startIdx) });
         }

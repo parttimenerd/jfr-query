@@ -60,7 +60,7 @@ export function substituteVariables(
         if (!changed) break;
         // Count remaining unresolved $-tokens; stop if no progress since last pass.
         const tokenCount = (out.match(/\$\$?\w+/g) ?? []).length;
-        if (tokenCount >= prevTokenCount && prevTokenCount >= 0) break;
+        if (tokenCount === prevTokenCount) break; // true cycle: count unchanged means no progress possible
         prevTokenCount = tokenCount;
     }
     return out;
@@ -82,7 +82,7 @@ const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 export function toSqlVariables(variables: Record<string, string>): Record<string, string> {
     const out: Record<string, string> = {};
     for (const [key, value] of Object.entries(variables)) {
-        if (value == null) { out[key] = ''; continue; }
+        if (value == null) { continue; }
         out[key] = ISO_DATETIME_RE.test(value) ? `'${value.replace(/'/g, "''")}'` : value;
     }
     return out;

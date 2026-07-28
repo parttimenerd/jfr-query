@@ -122,9 +122,6 @@ export const findColumns = (baseName: string, allColumns: string[]): string[] =>
     const lc = baseName.toLowerCase();
     const ciMatch = allColumns.find(c => c.toLowerCase() === lc);
     if (ciMatch) return [ciMatch];
-    if (allColumns.includes(baseName)) {
-        return [baseName];
-    }
 
     return [];
 };
@@ -150,7 +147,8 @@ export const getTimeValue = (value: any): number => {
         if (/^-?\d+$/.test(value)) {
             const asInt = Number(value);
             if (!Number.isFinite(asInt)) return NaN;
-            return normalizeEpochInteger(asInt, value.length);
+            const digitCount = value.startsWith('-') ? value.length - 1 : value.length;
+            return normalizeEpochInteger(asInt, digitCount);
         }
         const asNumber = Number(value);
         if (!isNaN(asNumber) && /^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(value)) {
@@ -273,12 +271,13 @@ export const buildSmartTemplate = (plotName: string, columns: string[], sampleRo
         case 'PIE_CHART': {
             const nameCol = categoryCols[0] ?? columns[0];
             const valCol = numericCols[0] ?? columns.find(c => c !== nameCol) ?? columns[1];
-            if (!valCol) return 'PIE_CHART(category: , value: )';
+            if (!valCol || valCol === nameCol) return 'PIE_CHART(category: , value: )';
             return `PIE_CHART(category: ${q(nameCol)}, value: ${q(valCol)})`;
         }
         case 'SCATTER_PLOT': {
             const xCol = numericCols[0] ?? columns[0];
-            const yCol = numericCols[1] ?? numericCols[0] ?? columns[1] ?? columns[0];
+            const yCol = numericCols[1] ?? columns.find(c => c !== xCol);
+            if (!yCol) return 'SCATTER_PLOT(x: , y: )';
             return `SCATTER_PLOT(x: ${q(xCol)}, y: ${q(yCol)})`;
         }
         case 'HISTOGRAM': {
@@ -288,7 +287,7 @@ export const buildSmartTemplate = (plotName: string, columns: string[], sampleRo
         case 'BOX_PLOT': {
             const catCol = categoryCols[0] ?? columns[0];
             const valCol = numericCols[0] ?? columns.find(c => c !== catCol) ?? columns[1];
-            if (!valCol) return 'BOX_PLOT(category: , value: )';
+            if (!valCol || valCol === catCol) return 'BOX_PLOT(category: , value: )';
             return `BOX_PLOT(category: ${q(catCol)}, value: ${q(valCol)})`;
         }
         case 'HEATMAP': {

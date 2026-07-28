@@ -121,6 +121,7 @@ class Parser {
             const t = this.current();
             if (depth === 0) {
                 if (t.kind === 'keyword' && syncKeywords.includes(t.value)) return;
+                if (t.kind === 'punct' && syncKeywords.includes(t.value)) return;
                 if (t.kind === 'punct' && t.value === ';') return;
             }
             if (t.kind === 'punct' && t.value === '(') depth++;

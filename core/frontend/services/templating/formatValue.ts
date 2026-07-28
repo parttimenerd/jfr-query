@@ -45,11 +45,13 @@ const formatBytes = (n: number): string => {
 
 const formatDurationMs = (ms: number): string => {
     if (!isFinite(ms)) return String(ms);
-    if (ms < 1) return `${(ms * 1000).toFixed(0)} µs`;
-    if (ms < 1000) return `${ms.toFixed(ms < 10 ? 2 : 0)} ms`;
-    if (ms < 60_000) return `${(ms / 1000).toFixed(2)} s`;
-    if (ms < 3_600_000) return `${(ms / 60_000).toFixed(2)} min`;
-    return `${(ms / 3_600_000).toFixed(2)} h`;
+    const abs = Math.abs(ms);
+    const sign = ms < 0 ? '-' : '';
+    if (abs < 1) return `${sign}${(abs * 1000).toFixed(0)} µs`;
+    if (abs < 1000) return `${sign}${abs.toFixed(abs < 10 ? 2 : 0)} ms`;
+    if (abs < 60_000) return `${sign}${(abs / 1000).toFixed(2)} s`;
+    if (abs < 3_600_000) return `${sign}${(abs / 60_000).toFixed(2)} min`;
+    return `${sign}${(abs / 3_600_000).toFixed(2)} h`;
 };
 
 const formatInt = (n: number): string => {

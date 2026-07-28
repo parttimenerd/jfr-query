@@ -241,10 +241,9 @@ const InteractivePlotWrapper: React.FC<{
 
     const commitToVariables = useCallback((domain: [number, number] | null) => {
         if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-        // Store both $var and $$var so SQL can use either:
-        //   $a  → 'quoted string' substitution (via toSqlVariables ISO wrap)
-        //   $$a → raw numeric substitution (epoch-ms float, no quoting)
-        const toDouble = (v: string) => v.startsWith('$$') ? v : `$${v}`;
+        // toDouble: always produce the $$var form from any input ($var or $$var).
+        // Ensures k0 and kk0 are always distinct keys.
+        const toDouble = (v: string) => v.startsWith('$$') ? v : `$$${v.replace(/^\$/, '')}`;
         const k0 = linkX[0], k1 = linkX[1];
         const kk0 = toDouble(k0), kk1 = toDouble(k1);
         if (domain) {
@@ -431,7 +430,7 @@ const InteractivePlotWrapper: React.FC<{
                         if (shouldPublishLinkX(linkX, linkXMaster)) {
                             linkXStore.publish(linkX, null);
                         }
-                        const toD = (v: string) => v.startsWith('$$') ? v : `$${v}`;
+                        const toD = (v: string) => v.startsWith('$$') ? v : `$$${v.replace(/^\$/, '')}`;
                         onVariableChange({ [linkX[0]]: '', [linkX[1]]: '', [toD(linkX[0])]: '', [toD(linkX[1])]: '' });
                     }}
                         className="text-[10px] px-1.5 py-0.5 bg-cyan-800/70 hover:bg-cyan-700/80 text-cyan-200 rounded transition-colors" title="Reset zoom">
@@ -467,6 +466,9 @@ const StandaloneZoomWrapper: React.FC<{
     const isSelectDragRef = useRef(false);
 
     const dataRange = useMemo(() => computeDataRange(data, xCol), [data, xCol]);
+
+    // Reset zoom when data changes (e.g. after re-running the query).
+    useEffect(() => { setLocalDomain(null); }, [data]);
 
     const localDomainRef = useRef(localDomain);
     localDomainRef.current = localDomain;
@@ -964,7 +966,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                                 />
                             );
                             let leafContent: React.ReactElement;
-                            if (leaf.linkX) {
+                            if (leaf.linkX && (leafCfg as any).x) {
                                 leafContent = (
                                     <PlotErrorBoundary>
                                         <InteractivePlotWrapper linkX={leaf.linkX} linkXClamp={!!leaf.linkXClamp} linkXMaster={leaf.linkXMaster} data={leafData} xCol={(leafCfg as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
@@ -972,7 +974,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                                         </InteractivePlotWrapper>
                                     </PlotErrorBoundary>
                                 );
-                            } else if (leafReg.supportsZoom && leafData && leafData.length > 0) {
+                            } else if (leafReg.supportsZoom && leafData && leafData.length > 0 && (leafCfg as any).x) {
                                 leafContent = (
                                     <PlotErrorBoundary>
                                         <StandaloneZoomWrapper data={leafData} xCol={(leafCfg as any).x}>
@@ -1060,7 +1062,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                             />
                         );
                         let plotContent: React.ReactElement;
-                        if (linkX) {
+                        if (linkX && (parsedConfig as any).x) {
                             plotContent = (
                                 <PlotErrorBoundary>
                                     <InteractivePlotWrapper linkX={linkX} linkXClamp={!!linkXClamp} linkXMaster={linkXMaster} data={singlePlotData} xCol={(parsedConfig as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
@@ -1068,7 +1070,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                                     </InteractivePlotWrapper>
                                 </PlotErrorBoundary>
                             );
-                        } else if (reg.supportsZoom && singlePlotData && singlePlotData.length > 0) {
+                        } else if (reg.supportsZoom && singlePlotData && singlePlotData.length > 0 && (parsedConfig as any).x) {
                             plotContent = (
                                 <PlotErrorBoundary>
                                     <StandaloneZoomWrapper data={singlePlotData} xCol={(parsedConfig as any).x}>

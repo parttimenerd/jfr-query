@@ -54,16 +54,16 @@ export function mergeTemplate(
 
     let mergedBody: string;
     if (mode === 'append') {
-        mergedBody = `${current.content.trim()}\n\n---\n\n${templateBody.trim()}\n`;
+        mergedBody = `${current.content.trimEnd()}\n\n---\n\n${templateBody.trim()}\n`;
     } else {
         const cells = current.content.split(/\n\n---\n\n/);
         const idx = clamp(insertAtIndex ?? cells.length, 0, cells.length);
-        const before = cells.slice(0, idx).join('\n\n---\n\n');
-        const after = cells.slice(idx).join('\n\n---\n\n');
+        const before = cells.slice(0, idx).map(c => c.trimEnd()).join('\n\n---\n\n').trimStart();
+        const after = cells.slice(idx).map(c => c.trimEnd()).join('\n\n---\n\n').trimStart();
         const parts: string[] = [];
-        if (before.trim()) parts.push(before.trim());
+        if (before) parts.push(before);
         parts.push(templateBody.trim());
-        if (after.trim()) parts.push(after.trim());
+        if (after) parts.push(after);
         mergedBody = parts.join('\n\n---\n\n') + '\n';
     }
 
@@ -78,16 +78,15 @@ function clamp(n: number, lo: number, hi: number): number {
 function collectCellHandles(content: string): Set<string> {
     const result = new Set<string>();
     const cells = content.split(/\n\n---\n\n/);
-    cells.forEach((cell, idx) => {
+    cells.forEach((cell) => {
         const m = cell.match(/<!--\s*@cell\s+([^>]*)-->/);
         if (m) {
             const nameMatch = m[1].match(/name=([\w-]+|"[^"]+")/);
             if (nameMatch) {
                 result.add(nameMatch[1].replace(/^"|"$/g, ''));
-                return;
             }
         }
-        result.add(`cell_${idx + 1}`);
+        // Do NOT add synthetic fallbacks — they cause false-positive collision renames.
     });
     return result;
 }
@@ -109,10 +108,12 @@ function renameCollidingCells(
             let suffix = 2;
             while (existing.has(`${raw}-${suffix}`)) suffix++;
             const newName = `${raw}-${suffix}`;
+            const wasQuoted = p2.startsWith('"');
+            const newNameAttr = wasQuoted ? `"${newName}"` : newName;
             existing.add(newName);
             renameMap.set(raw, newName);
             warnings.push(`Cell name "${raw}" already exists; renamed to "${newName}".`);
-            return `${p1}${newName}${p3}`;
+            return `${p1}${newNameAttr}${p3}`;
         });
     });
     return renamed.join('\n\n---\n\n');

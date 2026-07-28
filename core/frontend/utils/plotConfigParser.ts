@@ -50,11 +50,14 @@ function closestMatch(input: string, candidates: string[]): string | null {
 function stripComments(s: string): string {
     let out = '';
     let inStr: string | null = null;
+    let escaped = false;
     for (let i = 0; i < s.length; i++) {
         const ch = s[i];
         if (inStr) {
             out += ch;
-            if (ch === inStr && s[i - 1] !== '\\') inStr = null;
+            if (escaped) { escaped = false; continue; }
+            if (ch === '\\') { escaped = true; continue; }
+            if (ch === inStr) inStr = null;
             continue;
         }
         if (ch === '"' || ch === "'") {
@@ -91,12 +94,16 @@ const parseValue = (valueStr: string, expectedType: string, data: any[], paramNa
 
     // Column type — must exist in the dataset (if dataset is non-empty)
     if (expectedType === 'column') {
-        const colName = trimmed.replace(/^["'](.*)["']$/, '$1');
+        const colName = (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+                        (trimmed.startsWith("'") && trimmed.endsWith("'"))
+            ? trimmed.slice(1, -1)
+            : trimmed;
         if (data.length > 0 && data[0]) {
             const allColumns = Object.keys(data[0]);
-            const directMatch = allColumns.includes(colName);
+            const lc = colName.toLowerCase();
+            const directMatch = allColumns.some(c => c.toLowerCase() === lc);
             const escapedColName = colName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const prefixedMatch = allColumns.some(c => c.match(new RegExp(`^\\d+_${escapedColName}$`)));
+            const prefixedMatch = allColumns.some(c => c.match(new RegExp(`^\\d+_${escapedColName}$`, 'i')));
 
             if (!directMatch && !prefixedMatch) {
                 const suggestion = closestMatch(colName, allColumns.map(c => c.replace(/^\d+_/, '')));
@@ -124,7 +131,7 @@ const parseValue = (valueStr: string, expectedType: string, data: any[], paramNa
 
     // Number
     const num = parseFloat(trimmed);
-    if (!isNaN(num) && /^-?\d+(\.\d+)?(e\d+)?$/i.test(trimmed)) {
+    if (!isNaN(num) && /^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(trimmed)) {
         return num;
     }
 
@@ -134,13 +141,19 @@ const parseValue = (valueStr: string, expectedType: string, data: any[], paramNa
 
 function splitParams(paramsStr: string): string[] {
     const parts: string[] = [];
-    let depth = 0, inStr = false, strChar = '', curr = '';
+    let depth = 0, inStr = false, strChar = '', curr = '', escaped = false;
     for (const ch of paramsStr) {
-        if (!inStr && (ch === '"' || ch === "'")) { inStr = true; strChar = ch; }
-        else if (inStr && ch === strChar) { inStr = false; }
-        else if (!inStr && (ch === '[' || ch === '(')) depth++;
-        else if (!inStr && (ch === ']' || ch === ')')) depth--;
-        if (ch === ',' && !inStr && depth === 0) {
+        if (inStr) {
+            curr += ch;
+            if (escaped) { escaped = false; continue; }
+            if (ch === '\\') { escaped = true; continue; }
+            if (ch === strChar) inStr = false;
+            continue;
+        }
+        if (ch === '"' || ch === "'") { inStr = true; strChar = ch; curr += ch; continue; }
+        if (ch === '[' || ch === '(') depth++;
+        else if (ch === ']' || ch === ')') depth--;
+        if (ch === ',' && depth === 0) {
             const trimmed = curr.trim();
             if (trimmed) parts.push(trimmed);
             curr = '';

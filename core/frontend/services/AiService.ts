@@ -482,6 +482,10 @@ GUIDELINES:
             providerOverride?: AiProviderType;
             modelOverride?: string;
             customSystemPrompt?: string;
+            /** When true, `customSystemPrompt` REPLACES the entire built-in
+             *  notebook system prompt instead of being appended to it. Used by
+             *  the BTW caller so the model only sees the BTW context. */
+            replaceSystemPrompt?: boolean;
         },
     ): AsyncIterable<ToolStreamChunk> {
         if (!this.provider) throw new Error('AI Service not initialized — configure an API key in ⚙ Settings first.');
@@ -515,7 +519,11 @@ GUIDELINES:
             this.settings?.visibilityFullRowLimit,
         );
         const customPrompt = (opts.customSystemPrompt ?? this.settings?.customSystemPrompt ?? '').trim();
-        const systemInstruction =
+        // When replaceSystemPrompt is set the caller wants its own system
+        // prompt used verbatim — skip the full notebook preamble entirely.
+        const systemInstruction = opts.replaceSystemPrompt && customPrompt
+            ? customPrompt
+            :
             `You are an expert DuckDB and data visualization assistant for analyzing Java Flight Recorder (JFR) data inside a notebook.\n` +
             `\n` +
             `TOOLS — group by purpose, prefer the lightest tool that answers the question:\n` +
@@ -582,16 +590,22 @@ GUIDELINES:
                 signal: opts.signal,
             });
 
-            for await (const chunk of stream) {
-                if (chunk.kind === 'text') {
-                    assistantText.push(chunk.delta);
-                    yield chunk;
-                } else if (chunk.kind === 'tool_call') {
-                    pendingCalls.push({ id: chunk.id, name: chunk.name, args: chunk.args });
-                    yield chunk;
-                } else {
-                    yield chunk;
+            try {
+                for await (const chunk of stream) {
+                    if (opts.signal?.aborted) return;
+                    if (chunk.kind === 'text') {
+                        assistantText.push(chunk.delta);
+                        yield chunk;
+                    } else if (chunk.kind === 'tool_call') {
+                        pendingCalls.push({ id: chunk.id, name: chunk.name, args: chunk.args });
+                        yield chunk;
+                    } else {
+                        yield chunk;
+                    }
                 }
+            } catch (e: any) {
+                if (opts.signal?.aborted || e?.name === 'AbortError') return;
+                throw e;
             }
 
             // Append the assistant turn that produced this round's output.
@@ -626,6 +640,7 @@ GUIDELINES:
                 content: '',
                 toolResults,
             });
+            if (opts.signal?.aborted) return;
         }
     }
 }

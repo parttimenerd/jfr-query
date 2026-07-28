@@ -67,9 +67,9 @@ const AreaChartComponent: React.FC<{
   const legendPos = clauses?.legend;
   const showLegend = legendPos !== 'none';
 
-  const { chartData, isTime, allY, finalXCol } = useMemo(() => {
+  const { chartData, isTime, allY, finalXCol, originalYCols } = useMemo(() => {
     if (!data || !data.length || !data[0] || !config.x) {
-      return { chartData: data, isTime: false, allY: [], finalXCol: config.x };
+      return { chartData: data, isTime: false, allY: [], finalXCol: config.x, originalYCols: [] as string[] };
     }
 
     const allColumns = Object.keys(data[0]);
@@ -118,7 +118,7 @@ const AreaChartComponent: React.FC<{
             const av = a[xCol], bv = b[xCol];
             return av < bv ? -1 : av > bv ? 1 : 0;
         });
-        return { chartData: pivoted, isTime: isTimeAxis, allY: seriesKeys, finalXCol: xCol };
+        return { chartData: pivoted, isTime: isTimeAxis, allY: seriesKeys, finalXCol: xCol, originalYCols: yColsForColor };
     }
 
     // W13 — LTTB decimation when over the soft cap (time-axis only).
@@ -143,15 +143,19 @@ const AreaChartComponent: React.FC<{
         }
     }
 
-    return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, finalXCol: xCol };
+    return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, finalXCol: xCol, originalYCols: allYCols };
   }, [data, config.x, config.y, config.color]);
 
-  const yIsDuration = allY.length > 0 && allY.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY);
+  const yIsDuration = allY.length > 0 && originalYCols.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, originalYCols);
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
   const colors = getPaletteColors(clauses?.palette, COLORS);
 
   const xTickFmt = makeTickFormatter(clauses?.axisX) ?? (isTime ? (t: any) => formatTimestamp(t, 'HH:mm:ss.SS') : undefined);
   const yTickFmt = makeTickFormatter(clauses?.axisY);
+
+  const brushKey = chartData.length > 0
+    ? `${chartData.length}-${chartData[0][finalXCol]}-${chartData[chartData.length - 1][finalXCol]}`
+    : 'empty';
 
   return (
     <div style={{ width: '100%', minHeight: 200 }}>
@@ -185,7 +189,15 @@ const AreaChartComponent: React.FC<{
                 : undefined
             }
             scale={mapAxisScale(clauses?.axisY) ?? (effectiveYScale === 'log' ? 'log' : 'auto')}
-            domain={domainY ?? (effectiveYScale === 'log' ? (yDomainFromClause ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]] : [0.1, 'dataMax']) : yDomainFromClause)}
+            domain={
+              effectiveYScale === 'log'
+                ? (domainY
+                    ? [Math.max(0.1, domainY[0]), domainY[1]]
+                    : (yDomainFromClause
+                        ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]]
+                        : [0.1, 'dataMax']))
+                : (domainY ?? yDomainFromClause)
+            }
             allowDataOverflow
           />
           <Tooltip
@@ -213,7 +225,7 @@ const AreaChartComponent: React.FC<{
             />
             );
           })}
-          {gestureName && <Brush dataKey={finalXCol} height={20} stroke="#4b5563" fill="#1f2937" onChange={(range) => gestures.onBrushChange(range as any, chartData, finalXCol)}/>}
+          {gestureName && <Brush key={brushKey} dataKey={finalXCol} height={20} stroke="#4b5563" fill="#1f2937" onChange={(range) => gestures.onBrushChange(range as any, chartData, finalXCol)}/>}
         </AreaChart>
       </ResponsiveContainer>
     </div>

@@ -67,7 +67,7 @@ describe('LocalAiProvider — request shape', () => {
     });
 
     it('falls back to default max_tokens when 0 / negative passed', async () => {
-        const fetchMock = mockChat('{"text":"hi","code":null,"plotConfig":null}', { expectMaxTokens: 2048 });
+        const fetchMock = mockChat('{"text":"hi","code":null,"plotConfig":null}', { expectMaxTokens: 4096 });
         globalThis.fetch = fetchMock as any;
         const p = new LocalAiProvider('', 'http://localhost:8080', 0);
         await p.getAgentResponse([], 'system');

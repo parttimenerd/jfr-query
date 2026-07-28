@@ -144,7 +144,7 @@ function fromVariableNode(node: Node): SqlHoverContent | null {
     if (node.kind !== 'variableRef' && node.kind !== 'doubleDollarRef') return null;
     const raw = node.text;
     const isDouble = raw.startsWith('$$');
-    const name = isDouble ? raw : raw;
+    const name = isDouble ? raw.slice(2) : raw.slice(1);
     return {
         kind: 'variable',
         name,

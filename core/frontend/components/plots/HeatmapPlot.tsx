@@ -105,7 +105,7 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
                 ? (props: any) => <PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />
                 : undefined
             }
-            formatter={(value, name, props) => [props.payload[valueCol], valueCol]}
+            formatter={(value, name, props) => [props?.payload?.[valueCol] ?? value, valueCol]}
             labelFormatter={(label, payload) => {
                 if(payload && payload[0]?.payload) return `${x}: ${payload[0].payload[x]}, ${y}: ${payload[0].payload[y]}`;
                 return '';

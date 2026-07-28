@@ -79,18 +79,18 @@ function emit(tokens: Token[], src: string, indent: string, maxInline: number): 
         const t = sig[i];
         const prev = sig[i - 1];
         const next = sig[i + 1];
-        emitToken(s, t, prev, next, sig, i);
+        emitToken(s, t, prev, next, sig, i, src);
     }
 
     // Trim trailing whitespace per line; collapse 3+ blank lines to 2.
     return s.out.split('\n').map(l => l.replace(/[ \t]+$/, '')).join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '').replace(/\s+$/, '\n').replace(/\n$/, '');
 }
 
-function emitToken(s: EmitterState, t: Token, prev: Token | undefined, next: Token | undefined, sig: Token[], i: number): void {
+function emitToken(s: EmitterState, t: Token, prev: Token | undefined, next: Token | undefined, sig: Token[], i: number, src: string): void {
     // Comments: line comment on its own line (preceded by newline) if prev was
     // on a different source line; else trailing the prior token with two spaces.
     if (t.kind === 'comment') {
-        const startsLine = !prev || isOnNewSourceLine(prev, t);
+        const startsLine = !prev || isOnNewSourceLine(prev, t, src);
         if (startsLine) {
             ensureNewline(s);
             indentLine(s);
@@ -276,11 +276,9 @@ function emitKeyword(s: EmitterState, t: Token, prev: Token | undefined, next: T
             newline(s);
             s.indentLevel++;
             indentLine(s);
-            // Mark that we increased indent for this SELECT list — undo when
-            // we leave it (handled implicitly: clause emission resets indentLevel
-            // back to its pre-SELECT level via the break-before logic? No —
-            // we need explicit dedent on next top-level clause). Use a marker.
-            (s as EmitterState & { selectListDedent?: boolean }).selectListDedent = true;
+            // Record the parenStack depth when we set this so breakBeforeClause
+            // inside a nested subquery does NOT consume the outer SELECT's dedent.
+            (s as EmitterState & { selectListDedentAtDepth?: number }).selectListDedentAtDepth = s.parenStack.length;
         }
         return;
     }
@@ -326,8 +324,13 @@ function emitKeyword(s: EmitterState, t: Token, prev: Token | undefined, next: T
 
 function emitOp(s: EmitterState, t: Token, prev: Token | undefined): void {
     const op = t.value;
-    // Star directly after `(` or `,` is `*` (column wildcard / `count(*)`) — emit verbatim.
-    if (op === '*' && prev && prev.kind === 'punct' && (prev.value === '(' || prev.value === ',')) {
+    // Star directly after `(` or `,` is `*` (column wildcard / `count(*)`) — emit verbatim without leading space.
+    // Star after `SELECT` or `DISTINCT` is also a wildcard — add a single leading space.
+    if (op === '*' && (!prev ||
+        (prev.kind === 'punct' && (prev.value === '(' || prev.value === ',')) ||
+        (prev.kind === 'keyword' && (prev.value === 'SELECT' || prev.value === 'DISTINCT')))) {
+        const needsSpace = !!prev && prev.kind === 'keyword' && !s.out.endsWith(' ') && !s.out.endsWith('\n');
+        if (needsSpace) s.out += ' ';
         s.out += '*';
         return;
     }
@@ -389,11 +392,13 @@ function indentLine(s: EmitterState): void {
 }
 
 function breakBeforeClause(s: EmitterState): void {
-    // Undo a SELECT-list dedent if one was applied.
-    const sx = s as EmitterState & { selectListDedent?: boolean };
-    if (sx.selectListDedent) {
+    // Undo a SELECT-list dedent if one was applied at this exact paren depth.
+    // Checking depth prevents an inner subquery's breakBeforeClause from
+    // consuming the outer SELECT list's dedent marker.
+    const sx = s as EmitterState & { selectListDedentAtDepth?: number };
+    if (sx.selectListDedentAtDepth !== undefined && s.parenStack.length === sx.selectListDedentAtDepth) {
         s.indentLevel = Math.max(0, s.indentLevel - 1);
-        sx.selectListDedent = false;
+        sx.selectListDedentAtDepth = undefined;
     }
     ensureNewline(s);
     indentLine(s);
@@ -427,7 +432,7 @@ function countSelectListItems(sig: Token[], idx: number): number {
 function isContinuationOfJoinChain(s: EmitterState, prev: Token | undefined): boolean {
     if (!prev) return false;
     if (prev.kind !== 'keyword') return false;
-    return JOIN_STARTERS.has(prev.value);
+    return JOIN_STARTERS.has(prev.value.toUpperCase());
 }
 
 function isFunctionKeyword(kwValue: string): boolean {
@@ -441,8 +446,8 @@ function isFunctionKeyword(kwValue: string): boolean {
     ].includes(kwValue);
 }
 
-function isOnNewSourceLine(prev: Token, t: Token): boolean {
-    return prev.to < t.from && t.from > 0;
+function isOnNewSourceLine(prev: Token, t: Token, src: string): boolean {
+    return src.slice(prev.to, t.from).includes('\n');
 }
 
 function normalizeComment(text: string): string {

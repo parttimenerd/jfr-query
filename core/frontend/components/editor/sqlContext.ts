@@ -178,14 +178,19 @@ function detectFunctionArgs(stmt: string): { funcName: string; argIndex: number 
   return { funcName: fn[1], argIndex };
 }
 
-export function parseSqlContext(textUpToCursor: string): SqlContext {
+export function parseSqlContext(textUpToCursor: string, fullDocText?: string): SqlContext {
   const stmt = textUpToCursor.replace(/^[\s\S]*;/, '');
+  // For alias extraction, scan the full document when available so that
+  // `SELECT t.| FROM Table t` works even with the cursor before the FROM clause.
+  const fullStmt = fullDocText
+    ? fullDocText.replace(/^[\s\S]*;/, '')
+    : stmt;
   const referenced = new Set<string>();
   const aliases = new Map<string, SqlAlias>();
 
   FROM_JOIN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = FROM_JOIN_RE.exec(stmt)) !== null) {
+  while ((m = FROM_JOIN_RE.exec(fullStmt)) !== null) {
     const target = unquote(m[1]);
     referenced.add(target.toLowerCase());
     if (m[2] && !/^(WHERE|GROUP|ORDER|HAVING|JOIN|ON|USING|LIMIT|INNER|LEFT|RIGHT|FULL|CROSS)$/i.test(m[2])) {
@@ -193,7 +198,7 @@ export function parseSqlContext(textUpToCursor: string): SqlContext {
     }
   }
 
-  const ctes = parseCtes(stmt);
+  const ctes = parseCtes(fullStmt);
   // CTEs are queryable like tables.
   for (const name of ctes.keys()) referenced.add(name);
 

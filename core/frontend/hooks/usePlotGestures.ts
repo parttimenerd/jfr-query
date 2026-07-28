@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 export interface PlotGestureConfig {
   name?: string;
@@ -13,12 +13,14 @@ export interface PlotGestureHandlers {
   onClick: (point: unknown) => void;
 }
 
-function debounce<T extends (...args: any[]) => any>(fn: T, ms: number): (...args: Parameters<T>) => void {
+function debounce<T extends (...args: any[]) => any>(fn: T, ms: number): ((...args: Parameters<T>) => void) & { cancel: () => void } {
   let timer: ReturnType<typeof setTimeout>;
-  return function (this: any, ...args: Parameters<T>) {
+  function debounced(this: any, ...args: Parameters<T>) {
     clearTimeout(timer);
     timer = setTimeout(() => fn.apply(this, args), ms);
-  };
+  }
+  debounced.cancel = () => clearTimeout(timer);
+  return debounced;
 }
 
 export function usePlotGestures(config: PlotGestureConfig): PlotGestureHandlers {
@@ -32,15 +34,16 @@ export function usePlotGestures(config: PlotGestureConfig): PlotGestureHandlers 
     [name, onVariableChange]
   );
 
-  // Debounced hover writer — recreated only when `write` changes.
-  const debouncedHover = useCallback(
+  const writeRef = useRef(write);
+  writeRef.current = write;
+
+  // Stable debounced hover writer — uses writeRef so the latest `write` is always called.
+  const debouncedHover = useRef(
     debounce((point: unknown) => {
       const payload = (point as any)?.activePayload?.[0]?.payload;
-      write('hover', payload ?? undefined);
-    }, 50),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [write]
-  );
+      writeRef.current('hover', payload ?? undefined);
+    }, 50)
+  ).current;
 
   const onBrushChange = useCallback(
     (range: { startIndex?: number; endIndex?: number } | null, data: unknown[], xKey?: string) => {
@@ -72,8 +75,11 @@ export function usePlotGestures(config: PlotGestureConfig): PlotGestureHandlers 
   );
 
   const onMouseLeave = useCallback(() => {
+    debouncedHover.cancel();
     write('hover', undefined);
-  }, [write]);
+  }, [write, debouncedHover]);
+
+  useEffect(() => () => { debouncedHover.cancel(); }, [debouncedHover]);
 
   const onZoomChange = useCallback(
     (range: { lo: unknown; hi: unknown }) => {

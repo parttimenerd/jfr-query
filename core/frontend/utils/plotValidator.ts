@@ -2,6 +2,7 @@ import { plotRegistry } from '../components/plots/plotRegistry';
 import { normalizePlotName } from '../components/plots/plotNames';
 import { parsePlotCall, parseComposite } from './plotParser';
 import { expandPlotConstants } from './plotConstants';
+import type { ParsedPlotCall } from './plotParser';
 
 /**
  * Validates a plot configuration string against a given dataset.
@@ -31,23 +32,17 @@ export const validatePlotConfig = (config: string, data: any[]): string | null =
 
 function validateSingleOrComposite(configTrimmed: string, data: any[]): string | null {
     const parsed = parseComposite(configTrimmed);
+    return validateParsedNode(parsed, data);
+}
 
-    // Composite (ROW, COL, overlay +) — recurse into children.
+function validateParsedNode(parsed: ParsedPlotCall, data: any[]): string | null {
+    // Composite (ROW, COL, overlay +) — recurse into children directly on the
+    // already-parsed node to avoid losing clauses (ON, WIDTH, TITLE, etc.) that
+    // parsePlotCall strips from mainConfig into separate fields.
     if (parsed.composite) {
         for (const child of parsed.composite.children) {
-            // Each child mainConfig may itself be composite or single.
-            const childConfig = child.composite ? configTrimmed : child.mainConfig;
-            if (child.composite) {
-                // Recursively validate nested composites.
-                const err = validateSingleOrComposite(
-                    child.composite.children.map(c => c.mainConfig).join(' + '),
-                    data,
-                );
-                if (err) return err;
-            } else {
-                const err = validateLeaf(child, data);
-                if (err) return err;
-            }
+            const err = validateParsedNode(child, data);
+            if (err) return err;
         }
         return null;
     }

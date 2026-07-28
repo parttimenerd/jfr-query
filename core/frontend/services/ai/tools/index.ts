@@ -226,7 +226,7 @@ export const TOOLS: Tool[] = [
     },
     {
         name: 'rememberFact',
-        kind: 'read',
+        kind: 'mutate',
         description: 'Store a short fact about this session (max 10 facts, LRU). Use for user preferences, constraints, or findings that should persist across turns.',
         inputSchema: {
             type: 'object',
@@ -248,7 +248,7 @@ export const TOOLS: Tool[] = [
     },
     {
         name: 'updateTaskList',
-        kind: 'read',
+        kind: 'mutate',
         description: 'Set the visible task checklist shown to the user. Call at the start of multi-step work and after each step to tick off completed tasks. Pass an empty array to clear.',
         inputSchema: {
             type: 'object',
@@ -295,6 +295,9 @@ export function validateToolArgs(tool: Tool, args: any): string | null {
         }
         if (prop.type === 'integer' && typeof prop.maximum === 'number' && (value as number) > prop.maximum) {
             return `${key} exceeds maximum ${prop.maximum}`;
+        }
+        if (prop.type === 'integer' && typeof prop.minimum === 'number' && (value as number) < prop.minimum) {
+            return `${key} is below minimum ${prop.minimum}`;
         }
     }
     return null;

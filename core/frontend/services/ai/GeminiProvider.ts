@@ -15,14 +15,17 @@ function geminiContentsFromTool(messages: ToolChatMessage[]): Content[] {
     for (const m of messages) {
         if (m.role === 'system') continue; // system goes into config.systemInstruction
         if (m.role === 'tool') {
-            const parts = (m.toolResults ?? []).map(tr => ({
-                functionResponse: {
-                    name: tr.name,
-                    response: typeof tr.result === 'object' && tr.result !== null
-                        ? tr.result
-                        : { value: tr.result },
-                },
-            }));
+            const parts = (m.toolResults ?? []).map(tr => {
+                if (!tr.name) throw new Error(`geminiContentsFromTool: toolResult missing name for id ${tr.id}`);
+                return {
+                    functionResponse: {
+                        name: tr.name,
+                        response: typeof tr.result === 'object' && tr.result !== null
+                            ? tr.result
+                            : { value: tr.result },
+                    },
+                };
+            });
             if (parts.length > 0) out.push({ role: 'user', parts: parts as any });
             continue;
         }
@@ -215,6 +218,7 @@ export class GeminiProvider implements IAiProvider {
         const config: any = {};
         if (opts?.systemInstruction) config.systemInstruction = opts.systemInstruction;
         if (tools.length > 0) config.tools = [toolsToGemini(tools)];
+        if (opts?.signal) config.abortSignal = opts.signal;
 
         // B-103: use generateContentStream for real token-by-token streaming.
         // Accumulate tool-call parts across chunks, emit complete tool_calls at end.
@@ -238,6 +242,7 @@ export class GeminiProvider implements IAiProvider {
                 }
             }
         }
+        if (opts?.signal?.aborted) return;
         for (const call of toolCallAcc.values()) {
             yield { kind: 'tool_call', id: call.id, name: call.name, args: call.args };
         }

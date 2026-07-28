@@ -16,10 +16,12 @@ export const formatNumber = (value: any, decimalPlaces: number): string => {
     return String(value);
   }
 
+  // Collapse -0 to 0 to avoid displaying '-0' in tables
+  const normalized = Object.is(num, -0) ? 0 : num;
   // Use Intl.NumberFormat for robust, locale-aware formatting
   // that correctly handles maximum fraction digits without adding unnecessary zeros.
   return new Intl.NumberFormat('en-US', {
     maximumFractionDigits: decimalPlaces,
     useGrouping: false // Avoid commas in numbers for data tables
-  }).format(num);
+  }).format(normalized);
 };

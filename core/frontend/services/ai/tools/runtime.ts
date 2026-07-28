@@ -58,9 +58,7 @@ export type ToolResult =
  * tool calls.
  */
 function isForbiddenSql(sql: string): boolean {
-    // Match $ai_providers whether bare or wrapped in any of SQL's identifier
-    // quoting flavors: "x" (ANSI), [x] (T-SQL), `x` (MySQL). Case-insensitive.
-    return /[\["`']?\$ai_providers[\]"`']?/i.test(sql);
+    return /\$ai_providers\b/i.test(sql);
 }
 
 /**
@@ -82,9 +80,10 @@ function detectMultipleSqlStatements(sql: string): string | null {
         .replace(/"(?:[^"\\]|\\.)*"/g, '""');
 
     // Match bare SELECT/WITH/INSERT/UPDATE/DELETE at start-of-statement positions.
-    // "Start of statement" = beginning of string, after semicolon, or after newline
-    // following only whitespace.
-    const stmtPattern = /(?:^|;\s*|\n\s*)(SELECT|WITH|INSERT|UPDATE|DELETE)\b/gi;
+    // "Start of statement" = beginning of string or after semicolon.
+    // Bare newlines are intentionally excluded: they appear inside CTEs, subqueries,
+    // and multi-line expressions and would produce false positives for valid single statements.
+    const stmtPattern = /(?:^|;\s*)(SELECT|WITH|INSERT|UPDATE|DELETE)\b/gi;
     const matches = [...stripped.matchAll(stmtPattern)];
     if (matches.length > 1) {
         return `SQL cell content contains ${matches.length} statements. ` +
@@ -122,7 +121,7 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                 // Ask the dep for pageSize + offset rows; the dep is allowed to
                 // return one extra so we can detect truncation without an
                 // extra round-trip. See ChatPanel.duckdbQuery.
-                const result = await deps.duckdbQuery(sql, { limit: pageSize + offset });
+                const result = await deps.duckdbQuery(sql, { limit: pageSize + offset + 1 });
                 const fullPage = result.rows.slice(offset, offset + pageSize);
                 const truncated = result.rows.length > pageSize + offset;
                 return {
@@ -139,11 +138,13 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
             }
             case 'describeTable': {
                 const tname: string = args.name;
+                if (isForbiddenSql(tname)) return { ok: false, error: 'SQL references $ai_providers which contains sensitive credentials and cannot be queried.' };
                 const result = await deps.duckdbQuery(`DESCRIBE "${tname.replace(/"/g, '""')}"`);
                 return { ok: true, data: { columns: result.rows } };
             }
             case 'sampleRows': {
                 const tname: string = args.name;
+                if (isForbiddenSql(tname)) return { ok: false, error: 'SQL references $ai_providers which contains sensitive credentials and cannot be queried.' };
                 const limit = Math.min(typeof args.limit === 'number' ? Math.max(args.limit, 1) : 10, 500);
                 const result = await deps.duckdbQuery(`SELECT * FROM "${tname.replace(/"/g, '""')}" LIMIT ${limit}`);
                 return { ok: true, data: { columns: result.columns, rows: result.rows } };
@@ -171,7 +172,7 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                 const limit = typeof args.limit === 'number' ? Math.min(Math.max(args.limit, 1), 500) : 200;
                 // Ask the dep for limit+1 rows so we can detect truncation
                 // without a follow-up COUNT(*). See ChatPanel.duckdbQuery.
-                const result = await deps.duckdbQuery(sql, { limit });
+                const result = await deps.duckdbQuery(sql, { limit: limit + 1 });
                 const rows = result.rows.slice(0, limit);
                 const truncated = result.rows.length > limit;
                 const previewId = `preview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

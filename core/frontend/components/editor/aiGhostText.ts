@@ -66,9 +66,12 @@ export const ghostTextField = StateField.define<GhostTextState | null>({
   provide: f => EditorView.decorations.from(f, v => {
     if (!v || !v.text) return Decoration.none;
     // Defensive: the doc might have shrunk since the effect was dispatched.
-    return Decoration.set([
-      Decoration.widget({ widget: new GhostTextWidget(v.text), side: 1 }).range(v.from),
-    ]);
+    return (view: EditorView) => {
+      if (v.from > view.state.doc.length) return Decoration.none;
+      return Decoration.set([
+        Decoration.widget({ widget: new GhostTextWidget(v.text!), side: 1 }).range(v.from),
+      ]);
+    };
   }),
 });
 

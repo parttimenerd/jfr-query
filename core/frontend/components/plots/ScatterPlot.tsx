@@ -4,7 +4,7 @@ import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds, getPaletteColors } from '../../utils/plotUtils';
+import { buildParserSpec, findColumn, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 import { PlotTooltip } from './PlotTooltip';
@@ -57,11 +57,14 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
   
     const sizeDomain = React.useMemo(() => {
     if (!config.size || data.length === 0) return [10, 100];
-    const values = data.map(d => d[config.size]).filter(v => typeof v === 'number');
+    const allCols = Object.keys(data[0]);
+    let resolvedSizeCol: string;
+    try { resolvedSizeCol = findColumn(config.size, allCols); } catch { resolvedSizeCol = config.size; }
+    const values = data.map(d => d[resolvedSizeCol]).filter(v => typeof v === 'number');
     if(values.length === 0) return [10, 100];
     let min = values[0], max = values[0];
     for (let i = 1; i < values.length; i++) { if (values[i] < min) min = values[i]; if (values[i] > max) max = values[i]; }
-    if (min === max) return [0, max * 2 || 1];
+    if (min === max) { const half = Math.abs(min) || 1; return [min - half, max + half]; }
     return [min, max];
   }, [data, config.size]);
 
@@ -73,7 +76,7 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
           <XAxis allowDataOverflow type="number" dataKey={config.x} name={config.x} tickFormatter={makeTickFormatter(clauses?.axisX) ?? numberFormatter} scale={mapAxisScale(clauses?.axisX)} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={xDomainFromClause || domainX} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined} />
           <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={makeTickFormatter(clauses?.axisY) ?? yFormatter} scale={mapAxisScale(clauses?.axisY)} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={yDomainFromClause || domainY} allowDataOverflow label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined} />
           {config.size && <ZAxis type="number" dataKey={config.size} name={config.size} range={[10, 200]} domain={sizeDomain} />}
-          <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} formatter={yFormatter} content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />) : undefined}/>
+          <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} formatter={(value: any, name: string) => name === config.y ? [yFormatter(value), name] : [numberFormatter(value), name]} content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />) : undefined}/>
           {showLegend && <Legend wrapperStyle={{ fontSize: "12px" }} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'} />}
           {series.map((s, i) => (
             <Scatter key={s.name} name={s.name} data={s.data} fill={colors[i % colors.length]} isAnimationActive={isAnimationActive} animationDuration={animationDuration} />

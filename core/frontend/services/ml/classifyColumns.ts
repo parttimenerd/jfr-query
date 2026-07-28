@@ -11,7 +11,7 @@ export interface ColumnInfo {
 // durations, not absolute times).
 const TIME_EXACT_NAMES_RE = /^(time|start|end|when|bucket|date|ts|timestamp|tick|at|created|updated|modified|epoch)$/i;
 const TIME_PREFIX_NAMES_RE = /^(start|end|event|created|updated|modified)(Time|At|Date|Timestamp|Ts)$/i;
-const TIME_SUFFIX_NAMES_RE = /_(at|on|date|time|timestamp|ts)$/i;
+const TIME_SUFFIX_NAMES_RE = /[_.\-](at|on|date|time|timestamp|ts)$/i;
 // Names that look temporal but are actually numeric durations / scalars.
 // These take precedence over the time-name patterns above.
 const DURATION_NAMES_RE = /(duration|elapsed|latency|pause|wait|delay|interval|lag|cost|cpu|memory|count|total|sum|avg|min|max|p\d{1,2}|percentile)/i;

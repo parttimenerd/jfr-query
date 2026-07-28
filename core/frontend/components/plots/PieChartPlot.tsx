@@ -53,11 +53,12 @@ const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnima
     };
   }, [data, config.category, config.value]);
 
-  const rawChartData = data.map(row => ({ name: row[nameCol], value: parseFloat(row[valueCol]) })).filter(item => !isNaN(item.value) && item.value > 0);
-  // W13 — soft-cap slice count; fold tail into "Other".
-  const chartData = rawChartData.length > PIE_SOFT_CAP
-    ? topN(rawChartData, PIE_SOFT_CAP - 1, 'value', { labelCol: 'name', otherKey: 'Other' })
-    : rawChartData;
+  const chartData = useMemo(() => {
+    const raw = data.map(row => ({ name: row[nameCol], value: parseFloat(row[valueCol]) })).filter(item => !isNaN(item.value) && item.value > 0);
+    return raw.length > PIE_SOFT_CAP
+      ? topN(raw, PIE_SOFT_CAP - 1, 'value', { labelCol: 'name', otherKey: 'Other' })
+      : raw;
+  }, [data, nameCol, valueCol]);
 
   if (chartData.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">No valid data.</div>;
 

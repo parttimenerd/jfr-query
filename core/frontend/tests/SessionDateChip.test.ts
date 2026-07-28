@@ -87,8 +87,8 @@ describe('computeSessionVariables', () => {
 
     it('returns unchanged map (same reference) when both vars are already set', () => {
         const vars = {
-            session_start: '2024-01-01T08:00',
-            session_end:   '2024-01-01T18:00',
+            '$session_start': '2024-01-01T08:00',
+            '$session_end':   '2024-01-01T18:00',
         };
         expect(computeSessionVariables(vars, recordingStart, recordingEnd)).toBe(vars);
     });
@@ -97,16 +97,16 @@ describe('computeSessionVariables', () => {
         const vars = {};
         const result = computeSessionVariables(vars, recordingStart, recordingEnd);
         expect(result).not.toBe(vars);
-        expect(result.session_start).toBe(epochMsToLocalIso(recordingStart));
-        expect(result.session_end).toBe(epochMsToLocalIso(recordingEnd));
+        expect(result['$session_start']).toBe(epochMsToLocalIso(recordingStart));
+        expect(result['$session_end']).toBe(epochMsToLocalIso(recordingEnd));
     });
 
     it('seeds only the empty variable when one is already set', () => {
         const existingEnd = '2024-01-01T12:00';
-        const vars = { session_end: existingEnd };
+        const vars = { '$session_end': existingEnd };
         const result = computeSessionVariables(vars, recordingStart, recordingEnd);
-        expect(result.session_start).toBe(epochMsToLocalIso(recordingStart));
-        expect(result.session_end).toBe(existingEnd); // unchanged
+        expect(result['$session_start']).toBe(epochMsToLocalIso(recordingStart));
+        expect(result['$session_end']).toBe(existingEnd); // unchanged
     });
 
     it('returns unchanged map (same reference) when recording range is null (DB not loaded)', () => {

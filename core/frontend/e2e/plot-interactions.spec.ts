@@ -868,7 +868,7 @@ test.describe.serial('Plot: SCATTER_PLOT', () => {
 
     await setCmContent(page, sqlEd,
       `SELECT duration_ms AS pause_ms, CAST(ROW_NUMBER() OVER () AS DOUBLE) AS event_num, cause
-       FROM GarbageCollection ORDER BY startTime LIMIT 30`);
+       FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc ORDER BY startTime LIMIT 30`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -888,8 +888,8 @@ test.describe.serial('Plot: SCATTER_PLOT', () => {
     );
     expect(hasError).toBe(false);
 
-    // Recharts scatter renders SVG circles
-    const hasDots = await container.locator('circle').count();
+    // Recharts scatter renders SVG path elements (not circles) via Symbols component
+    const hasDots = await container.locator('.recharts-scatter-symbol, .recharts-symbols path').count();
     expect(hasDots, 'scatter dots rendered').toBeGreaterThan(0);
   });
 });
@@ -919,7 +919,7 @@ test.describe.serial('Plot: AREA_CHART', () => {
 
     await setCmContent(page, sqlEd,
       `SELECT bucket_ms(startTime, 5000) AS ts, SUM(duration_ms) AS total_pause_ms
-       FROM GarbageCollection GROUP BY ts ORDER BY ts`);
+       FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc GROUP BY ts ORDER BY ts`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -970,7 +970,7 @@ test.describe.serial('Plot: TABLE', () => {
     if (!sqlEd) { test.skip(); return; }
 
     await setCmContent(page, sqlEd,
-      `SELECT startTime, duration_ms, cause FROM GarbageCollection ORDER BY startTime LIMIT 10`);
+      `SELECT startTime, duration_ms, cause FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc ORDER BY startTime LIMIT 10`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -1027,7 +1027,7 @@ test.describe.serial('Plot: RANGE', () => {
               MIN(duration_ms) AS low,
               MAX(duration_ms) AS high,
               AVG(duration_ms) AS center
-       FROM GarbageCollection GROUP BY ts ORDER BY ts`);
+       FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc GROUP BY ts ORDER BY ts`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -1074,7 +1074,7 @@ test.describe.serial('Plot: AXIS_Y TYPE LOG', () => {
     if (!sqlEd) { test.skip(); return; }
 
     await setCmContent(page, sqlEd,
-      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 20`);
+      `SELECT startTime, duration_ms FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc ORDER BY startTime LIMIT 20`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -1267,7 +1267,7 @@ test.describe.serial('Plot: BRUSH MODE X', () => {
     if (!sqlEd) { test.skip(); return; }
 
     await setCmContent(page, sqlEd,
-      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime`);
+      `SELECT startTime, duration_ms FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc ORDER BY startTime`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -1616,7 +1616,7 @@ test.describe.serial('Plot: ZOOM clause', () => {
     const sqlEd = await getLastSqlEditor(page);
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
-      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 10`);
+      `SELECT startTime, duration_ms FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc ORDER BY startTime LIMIT 10`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -1724,7 +1724,7 @@ test.describe.serial('Plot: AXIS_Y FORMAT', () => {
     const sqlEd = await getLastSqlEditor(page);
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
-      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 15`);
+      `SELECT startTime, duration_ms FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc ORDER BY startTime LIMIT 15`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -1779,7 +1779,7 @@ test.describe.serial('Plot: BAR_CHART lineY overlay', () => {
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
       `SELECT cause, COUNT(*) AS cnt, AVG(duration_ms) AS avg_ms
-       FROM GarbageCollection GROUP BY cause ORDER BY cnt DESC LIMIT 5`);
+       FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc GROUP BY cause ORDER BY cnt DESC LIMIT 5`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -1829,7 +1829,7 @@ test.describe.serial('Plot: LET @constant', () => {
     const sqlEd = await getLastSqlEditor(page);
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
-      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 10`);
+      `SELECT startTime, duration_ms FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc ORDER BY startTime LIMIT 10`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -1982,7 +1982,7 @@ test.describe.serial('Plot: SCATTER_PLOT size (bubble)', () => {
               CAST(ROW_NUMBER() OVER () AS DOUBLE) AS ev,
               duration_ms AS sz,
               cause
-       FROM GarbageCollection ORDER BY startTime LIMIT 20`);
+       FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc ORDER BY startTime LIMIT 20`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -2001,8 +2001,8 @@ test.describe.serial('Plot: SCATTER_PLOT size (bubble)', () => {
     );
     expect(hasError).toBe(false);
 
-    // Bubble chart still renders as circles in recharts scatter
-    const circleCount = await container.locator('circle').count();
+    // Bubble/scatter renders as path elements in Recharts v3 (Symbols component)
+    const circleCount = await container.locator('.recharts-scatter-symbol, .recharts-symbols path').count();
     expect(circleCount, 'bubble circles rendered').toBeGreaterThan(0);
   });
 });
@@ -2033,7 +2033,7 @@ test.describe.serial('Plot: AREA_CHART stacked', () => {
       `SELECT bucket_ms(startTime, 10000) AS ts,
               SUM(duration_ms) AS g1_evac,
               COUNT(*) AS g1_hum
-       FROM GarbageCollection GROUP BY ts ORDER BY ts`);
+       FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc GROUP BY ts ORDER BY ts`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -2082,7 +2082,7 @@ test.describe.serial('Plot: LINE_CHART connectNulls', () => {
     const sqlEd = await getLastSqlEditor(page);
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
-      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 10`);
+      `SELECT startTime, duration_ms FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc ORDER BY startTime LIMIT 10`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -2177,7 +2177,7 @@ test.describe.serial('Plot: LINK_Y', () => {
     const sqlEd = await getLastSqlEditor(page);
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
-      `SELECT startTime, duration_ms FROM GarbageCollection ORDER BY startTime LIMIT 15`);
+      `SELECT startTime, duration_ms FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc ORDER BY startTime LIMIT 15`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 

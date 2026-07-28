@@ -14,40 +14,44 @@ type Initializer<T> = () => T;
 export const useHistoryState = <T,>(
     initialState: T | Initializer<T>,
     storageKey: string
-): [T, (value: T) => void, () => void, () => void, boolean, boolean, () => void] => {
+): [T, (value: T) => void, () => void, () => void, boolean, boolean, () => void, (value: T) => void] => {
     
     const [state, _setState] = useState(() => {
         try {
             const storedItem = localStorage.getItem(storageKey);
             if (storedItem) {
                 const parsed = JSON.parse(storedItem);
-                // Check for new format (history object)
-                if (Array.isArray(parsed.history) && typeof parsed.currentIndex === 'number') {
-                    return parsed;
+                // Saved value is the current content (string or object), wrap in history stack.
+                // Guard against accidentally loading a stale history-object format.
+                if (parsed !== null && typeof parsed === 'object' && Array.isArray(parsed.history)) {
+                    return { history: [parsed.history[parsed.currentIndex ?? 0]], currentIndex: 0 };
                 }
-                // If not, assume old format (just the content) and migrate it to prevent data loss
                 return { history: [parsed], currentIndex: 0 };
             }
         } catch (error) {
             console.warn(`Could not load history state from localStorage for key "${storageKey}"`, error);
         }
-        // Fallback for empty storage or errors
         const s = typeof initialState === 'function' ? (initialState as Function)() : initialState;
         return { history: [s], currentIndex: 0 };
     });
     
+    const debounceTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isDebouncing = useRef(false);
+    const sessionStartTime = useRef<number>(0);
+
     useEffect(() => {
         try {
-            // Save the entire history state object.
-            localStorage.setItem(storageKey, JSON.stringify(state));
+            localStorage.setItem(storageKey, JSON.stringify(state.history[state.currentIndex]));
         } catch (error) {
             console.warn(`Could not save history state to localStorage for key "${storageKey}"`, error);
         }
     }, [state, storageKey]);
 
-    const debounceTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const isDebouncing = useRef(false);
-    const sessionStartTime = useRef<number>(0);
+    useEffect(() => {
+        return () => {
+            if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
+        };
+    }, []);
 
     const setState = useCallback((value: T) => {
         if (debounceTimeout.current) {
@@ -127,9 +131,18 @@ export const useHistoryState = <T,>(
         isDebouncing.current = false;
     }, []);
 
+    const resetHistory = useCallback((value: T) => {
+        if (debounceTimeout.current) {
+            clearTimeout(debounceTimeout.current);
+            debounceTimeout.current = null;
+        }
+        isDebouncing.current = false;
+        _setState({ history: [value], currentIndex: 0 });
+    }, []);
+
     const currentState = state.history[state.currentIndex];
     const canUndo = state.currentIndex > 0;
     const canRedo = state.currentIndex < state.history.length - 1;
 
-    return [currentState, setState, undo, redo, canUndo, canRedo, flushHistory];
+    return [currentState, setState, undo, redo, canUndo, canRedo, flushHistory, resetHistory];
 };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { XMarkIcon } from './icons/XMarkIcon';
 import RangeSlider from './RangeSlider';
@@ -17,6 +17,10 @@ interface FilterModalProps {
 const FilterModal: React.FC<FilterModalProps> = ({ isOpen, onClose, onApply, recordingStart, recordingEnd, initialValue }) => {
   const [timeRange, setTimeRange] = useState(initialValue);
   const { timeFormat } = useDisplaySettings();
+
+  useEffect(() => {
+    if (isOpen) setTimeRange(initialValue);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

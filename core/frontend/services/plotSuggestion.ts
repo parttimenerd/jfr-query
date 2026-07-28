@@ -212,7 +212,7 @@ async function _route(
     }
 
     if (source === 'local-trained') {
-        const cfg = await _callLocal(deps, req.sql, localCols, req.schema);
+        const cfg = await _callLocal(deps, req.sql, localCols, req.schema, req.signal);
         if (!cfg) return null;
         return { config: cfg, source: 'local-trained' };
     }
@@ -226,7 +226,7 @@ async function _route(
     }
 
     if (active.kind === 'local-onnx') {
-        const cfg = await _callLocal(deps, req.sql, localCols, req.schema);
+        const cfg = await _callLocal(deps, req.sql, localCols, req.schema, req.signal);
         if (cfg) return { config: cfg, source: 'local-trained' };
     }
 
@@ -243,6 +243,7 @@ async function _callLocal(
     sql: string,
     columns: string[] | TypedColumn[],
     schema?: TableSchema[],
+    signal?: AbortSignal,
 ): Promise<string | null> {
     if (deps.localGenerate) {
         try {
@@ -253,7 +254,7 @@ async function _callLocal(
     }
     try {
         const mod = await import('./ml/PlotGenerationService');
-        return await mod.generate(sql, columns, undefined, undefined, schema);
+        return await mod.generate(sql, columns, undefined, signal, schema);
     } catch {
         return null;
     }

@@ -142,7 +142,7 @@ function compactHistory(history: ToolChatMessage[]): ToolChatMessage[] {
         .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${(m.content || '').slice(0, 200)}`)
         .join('\n');
     const summaryMsg: ToolChatMessage = {
-        role: 'user',
+        role: 'assistant',
         content: `[Earlier conversation summary — ${dropped.length} turns omitted]\n${summary}\n[End of summary]`,
     };
     return [summaryMsg, ...kept];
@@ -217,6 +217,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
 
     const activeChannel = channels.find(c => c.id === activeChannelId) ?? channels[0];
     const messages = activeChannel.messages;
+    const messagesRef = useRef(messages);
+    messagesRef.current = messages;
     const setMessages = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
         setChannels(prev => prev.map(c => c.id === activeChannelId ? { ...c, messages: updater(c.messages) } : c));
     }, [activeChannelId]);
@@ -229,10 +231,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     }, []);
 
     const removeChannel = useCallback((id: string) => {
-        if (channels.length <= 1) return; // keep at least one channel
-        setChannels(prev => prev.filter(c => c.id !== id));
-        setActiveChannelId(prev => prev === id ? channels.find(c => c.id !== id)?.id ?? 'main' : prev);
-    }, [channels]);
+        setChannels(prev => {
+            if (prev.length <= 1) return prev;
+            const next = prev.filter(c => c.id !== id);
+            setActiveChannelId(cur => cur === id ? (next[0]?.id ?? 'main') : cur);
+            return next;
+        });
+    }, []);
 
     // Auto-name a channel after its first user message — but only when the
     // user hasn't already renamed it (label still matches the auto-default
@@ -317,6 +322,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     const [varSuggestions, setVarSuggestions] = useState<string[]>([]);
     const [varSuggestionIdx, setVarSuggestionIdx] = useState(0);
     const notebookVariables = useMemo(() => metadata?.variables ?? {}, [metadata?.variables]);
+    const metadataRef = useRef(metadata);
+    metadataRef.current = metadata;
 
     // @-mention autocomplete (parallel to slash). `mentionRange` tracks where
     // the partial `@query` lives in the textarea so Tab/Enter can replace it.
@@ -348,6 +355,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const cancelledRef = useRef(false);
+    const abortControllerRef = useRef<AbortController | null>(null);
     // Always-fresh ref so tool closures read the latest cells without stale snapshots.
     const cellsRef = useRef(cells ?? []);
     cellsRef.current = cells ?? [];
@@ -389,6 +397,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     const handleRewindTo = useCallback((keepUpToOriginalIdx: number) => {
         if (isLoading) {
             cancelledRef.current = true;
+            abortControllerRef.current?.abort();
             approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
             approvalResolvers.current.clear();
             setIsLoading(false);
@@ -401,6 +410,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
 
     const handleCancel = () => {
         cancelledRef.current = true;
+        abortControllerRef.current?.abort();
         setIsLoading(false);
         // Reject any pending approvals so the orchestrator unwinds cleanly.
         approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
@@ -522,11 +532,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                 }
             },
             listPlotsInNotebook: () => listPlotsFromCells(getLiveCells()),
-            getVariables: () => metadata?.variables ?? {},
+            getVariables: () => metadataRef.current?.variables ?? {},
             setVariables: async (next) => {
                 if (!onMetadataChange) return { ok: false, error: 'setVariables not supported in this environment' };
                 try {
-                    await onMetadataChange({ ...metadata, variables: next });
+                    await onMetadataChange({ ...metadataRef.current, variables: next });
                     return { ok: true };
                 } catch (e: any) {
                     return { ok: false, error: e?.message || String(e) };
@@ -570,18 +580,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                 // registered the pending proposal in onToolCall before reaching
                 // executeTool; the resolver gets stored under the same call id.
                 const pending = proposalsRef.current.find(p => p.name === toolName && p.status === 'pending' && shallowEqualArgs(p.args, args));
+                const id = pending?.id ?? `proposal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                 if (!pending) {
-                    // Defensive: if we don't have a record (shouldn't happen),
-                    // synthesize one so the UI shows the prompt.
-                    const id = `proposal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                     setProposals(prev => [...prev, { id, name: toolName, args, status: 'pending' }]);
-                    approvalResolvers.current.set(id, { resolve, reject });
-                    return;
                 }
-                approvalResolvers.current.set(pending.id, { resolve, reject });
+                approvalResolvers.current.set(id, { resolve, reject });
+                if (cancelledRef.current) {
+                    approvalResolvers.current.delete(id);
+                    reject(new Error('cancelled'));
+                }
             }),
         };
-    }, [onAddCell, onUpdateCell, onDeleteCell, onMoveCell, onMetadataChange, onBeforeMutate, metadata, query, activeChannelId, channelMemory]);
+    }, [onAddCell, onUpdateCell, onDeleteCell, onMoveCell, onMetadataChange, onBeforeMutate, query, activeChannelId, channelMemory]);
 
     const handleSendLegacy = async () => {
         // Fallback path when the active provider has no tool support (browser).
@@ -629,7 +639,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
             setCmdSuggestions([]);
             if (slashCmd.kind === 'clear') {
                 handleReset();
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'compact') {
                 const summary = messages.slice(1)
@@ -641,14 +651,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     text: `**Conversation compacted.**\n\n${summary.slice(0, 800)}${summary.length > 800 ? '\n…' : ''}`,
                 };
                 setMessages(() => [initialConversation[0], summaryMsg]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'help') {
                 setMessages(prev => [...prev,
                     { id: Date.now().toString(), sender: MessageSender.User, text: '/help' },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: slashCmd.text },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'mode') {
                 chatMode.setMode(slashCmd.mode);
@@ -660,7 +670,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     { id: Date.now().toString(), sender: MessageSender.User, text: `/${slashCmd.mode}` },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: label },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'model') {
                 if (!slashCmd.query) {
@@ -687,7 +697,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         ]);
                     }
                 }
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'provider') {
                 if (!slashCmd.query) {
@@ -712,7 +722,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         ]);
                     }
                 }
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'skills-list') {
                 const skillList = availableSkills.map(s =>
@@ -722,7 +732,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     { id: Date.now().toString(), sender: MessageSender.User, text: '/skills' },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `### Available Skills\n\n${skillList}\n\nType \`/skill-name\` to activate, \`/skill-name off\` to deactivate, \`/skill-name help\` for sub-commands.` },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'skill-activate') {
                 const wasActive = isActive(slashCmd.skillName);
@@ -736,7 +746,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     { id: Date.now().toString(), sender: MessageSender.User, text: input },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: msg },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'skill-deactivate') {
                 deactivateSkill(slashCmd.skillName);
@@ -744,7 +754,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     { id: Date.now().toString(), sender: MessageSender.User, text: input },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Skill \`${slashCmd.skillName}\` deactivated.` },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'skill-sub') {
                 const skill = activeSkills.find(s => s.meta.name === slashCmd.skillName)
@@ -759,7 +769,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         { id: Date.now().toString(), sender: MessageSender.User, text: input },
                         { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Unknown sub-command \`${slashCmd.subCommand}\`. Available: ${available || 'none'}` },
                     ]);
-                    return;
+                    return { ok: true };
                 }
                 // Insert cells from this skill
                 const loadedSkill = activeSkills.find(s => s.meta.name === slashCmd.skillName)
@@ -823,19 +833,20 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     { id: Date.now().toString(), sender: MessageSender.User, text: input },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: replyText },
                 ]);
-                return;
+                return { ok: true };
             }
             if (slashCmd.kind === 'unknown') {
                 setMessages(prev => [...prev,
                     { id: Date.now().toString(), sender: MessageSender.User, text: slashCmd.input },
                     { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Unknown command \`${slashCmd.input}\`. Type \`/help\` for available commands.` },
                 ]);
-                return;
+                return { ok: true };
             }
         }
         } // end !override
 
         cancelledRef.current = false;
+        abortControllerRef.current = new AbortController();
         const userMessage: ChatMessage = {
             id: Date.now().toString(),
             sender: MessageSender.User,
@@ -862,12 +873,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         if (chatProvider === 'browser') {
             await handleSendLegacy();
             setIsLoading(false);
-            return;
+            return { ok: true };
         }
 
         // Build tool message history (text-only summaries).
         // Compact history beyond 20 messages to avoid context overflow.
-        const rawHistory = messages.slice(1).map(m => ({
+        const rawHistory = messagesRef.current.slice(1).map(m => ({
             role: m.sender === MessageSender.User ? 'user' : 'assistant',
             content: m.text + (m.code ? `\n\`\`\`sql\n${m.code}\n\`\`\`` : ''),
         })) as ToolChatMessage[];
@@ -884,16 +895,21 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                 // B-197: reject immediately if already cancelled.
                 if (cancelledRef.current) { reject(new Error('cancelled')); return; }
                 // Find the most recent pending proposal for this tool/args pair.
-                const pending = [...proposalsRef.current].reverse().find(p => p.name === toolName && p.status === 'pending');
-                if (pending) {
-                    // If already auto-approved, resolve immediately.
-                    approvalResolvers.current.set(pending.id, { resolve, reject });
-                    return;
+                const argsKey = JSON.stringify(args);
+                const pending = [...proposalsRef.current].reverse().find(p =>
+                    p.name === toolName && p.status === 'pending' && JSON.stringify(p.args) === argsKey
+                );
+                const id = pending?.id ?? `proposal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                if (!pending) {
+                    setProposals(prev => [...prev, { id, name: toolName, args, status: 'pending' }]);
                 }
-                // No record yet — should not happen in normal flow, but fall back.
-                const id = `proposal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-                setProposals(prev => [...prev, { id, name: toolName, args, status: 'pending' }]);
                 approvalResolvers.current.set(id, { resolve, reject });
+                // Guard the race: cancel could have fired between the check above and
+                // registering the resolver. Reject and clean up if so.
+                if (cancelledRef.current) {
+                    approvalResolvers.current.delete(id);
+                    reject(new Error('cancelled'));
+                }
             }),
         };
 
@@ -917,6 +933,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     providerOverride: chatProvider,
                     modelOverride: chatModel,
                     customSystemPrompt: composeSystemPromptForMode(baseSystemPrompt, activeMode),
+                    signal: abortControllerRef.current?.signal,
                 },
             );
 
@@ -950,12 +967,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                 }
             }
         } catch (e: any) {
-            errorMsg = e?.message ?? String(e);
-            setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Error: ${errorMsg}` }]);
+            if (!cancelledRef.current && e?.name !== 'AbortError') {
+                errorMsg = e?.message ?? String(e);
+                setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Error: ${errorMsg}` }]);
+            }
         } finally {
             setStreamingText(null);
             const trimmed = assistantBuf.trim();
-            if (trimmed) {
+            if (trimmed && !cancelledRef.current) {
                 // In plan mode, attempt to parse a plan from the reply and
                 // attach it as meta. The card will render alongside the prose.
                 let meta: ChatMessageMeta | undefined;

@@ -134,6 +134,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
     const containerRef = useRef<HTMLDivElement>(null);
     const [isLoading, setIsLoading] = useState(false);
     const cancelledRef = useRef(false);
+    const abortControllerRef = useRef<AbortController | null>(null);
     // Legacy toggle preserved for backwards-compat. `useFullContext=true` is
     // now interpreted as `visibility='full'`; otherwise the dropdown wins.
     const [useFullContext, setUseFullContext] = useState(false);
@@ -339,12 +340,14 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
         approvalResolvers.current.clear();
         cancelledRef.current = true;
+        abortControllerRef.current?.abort();
         setIsLoading(false);
     };
 
     // B-105: cancel in-flight AI request from inline chat.
     const handleCancel = () => {
         cancelledRef.current = true;
+        abortControllerRef.current?.abort();
         approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
         approvalResolvers.current.clear();
         setIsLoading(false);
@@ -553,6 +556,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         setIsLoading(true);
         setStreamingText(null);
         cancelledRef.current = false;
+        abortControllerRef.current = new AbortController();
         setProposals([]);
         proposalsRef.current = [];
         setApproveAllReads(false);
@@ -619,6 +623,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     providerOverride: chatProvider,
                     modelOverride: chatModel,
                     customSystemPrompt: composeSystemPromptForMode(baseSystemPrompt ?? '', activeMode) || undefined,
+                    signal: abortControllerRef.current?.signal,
                 },
             );
 
@@ -674,6 +679,9 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
             }
         } catch (error: any) {
             setStreamingText(null);
+            if (cancelledRef.current || error?.name === 'AbortError') {
+                // Clean stop — no error message.
+            } else {
             // Tool-calling path may throw if the provider doesn't support
             // tools (e.g. local server without tool support). Fall back to
             // the legacy inline suggestion which is broadly compatible.
@@ -687,6 +695,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
             } else {
                 const errorMessage: ChatMessage = { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Sorry, I encountered an error: ${msg}` };
                 setMessages(prev => [...prev, errorMessage]);
+            }
             }
         } finally {
             setIsLoading(false);

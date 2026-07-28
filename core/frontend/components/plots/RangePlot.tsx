@@ -77,10 +77,10 @@ const RangePlotComponent: React.FC<{
       if (isTimeAxis) {
         newRow[xCol] = getTimeValue(newRow[xCol]);
       }
-      const lo = Number(row[lCol]);
-      const hi = Number(row[hCol]);
+      const lo = Math.min(Number(row[lCol]), Number(row[hCol]));
+      const hi = Math.max(Number(row[lCol]), Number(row[hCol]));
       newRow.__rangeLow = lo;
-      newRow.__rangeHigh = Math.max(0, hi - lo); // band height for stacking
+      newRow.__rangeHigh = hi - lo; // band height for stacking (always ≥ 0)
       newRow.__rangeHighAbs = hi; // kept for tooltip display
       if (cCol) newRow.__center = Number(row[cCol]);
       return newRow;
@@ -129,7 +129,11 @@ const RangePlotComponent: React.FC<{
             formatter={(v: any, n: any, item: any) => {
               if (n === '__rangeLow') return [numberFormatter(v), `Low (${lowKey})`];
               // For the band height, display the absolute high value from __rangeHighAbs
-              if (n === '__rangeHigh') return [numberFormatter(item?.payload?.__rangeHighAbs ?? v + (item?.payload?.__rangeLow ?? 0)), `High (${highKey})`];
+              if (n === '__rangeHigh') {
+                const absHigh = item?.payload?.__rangeHighAbs;
+                const display = (absHigh != null && !isNaN(absHigh)) ? absHigh : v + (item?.payload?.__rangeLow ?? 0);
+                return [numberFormatter(display), `High (${highKey})`];
+              }
               if (n === '__center') return [numberFormatter(v), centerKey ? `Center (${centerKey})` : 'Center'];
               return [numberFormatter(v), String(n).replace(/_/g, ' ')];
             }}

@@ -23,11 +23,17 @@ export function extractTableRefs(sql: string): string[] {
     while ((m = ctePattern.exec(sql)) !== null) {
         cteNames.add(unquote(m[1]).toLowerCase());
     }
-    // Subsequent CTE definitions are separated by commas at the WITH level.
-    // We'll catch ", name AS (" as a follow-on CTE definition.
-    const followCte = /,\s*([\w"]+)(?:\s*\([^)]*\))?\s+AS\s*\(/gi;
-    while ((m = followCte.exec(sql)) !== null) {
-        cteNames.add(unquote(m[1]).toLowerCase());
+    // Subsequent CTE definitions are separated by commas at the WITH level (depth 0).
+    // Scan with paren depth tracking to avoid matching `, name AS (` inside subqueries.
+    {
+        let depth = 0;
+        for (let i = 0; i < sql.length; i++) {
+            if (sql[i] === '(') { depth++; continue; }
+            if (sql[i] === ')') { depth--; continue; }
+            if (depth !== 0) continue;
+            const followMatch = /^,\s*([\w"]+)(?:\s*\([^)]*\))?\s+AS\s*\(/i.exec(sql.slice(i));
+            if (followMatch) cteNames.add(unquote(followMatch[1]).toLowerCase());
+        }
     }
 
     const out = new Set<string>();

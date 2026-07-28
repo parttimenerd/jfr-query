@@ -56,8 +56,8 @@ const parseDomainPair = (raw: string): [number | string, number | string] | unde
     if (parts.length !== 2) return undefined;
     const parseOne = (p: string): number | string => {
         const t = p.trim();
-        const q = t.match(/^["'](.+)["']$/);
-        if (q) return q[1];
+        const q = t.match(/^(["'])(.+)\1$/);
+        if (q) return q[2];
         const n = Number(t);
         return isNaN(n) ? t : n;
     };
@@ -165,7 +165,7 @@ const CLAUSES: ClauseSpec[] = [
     { key: 'linkScroll', regex: /(?<!\w)LINK[_-]SCROLL\s+(?:"([^"]*)"|'([^']*)'|([A-Za-z_][\w]*))\s*$/i, processor: (m) => m[1] ?? m[2] ?? m[3] },
     { key: 'tooltipColumns', regex: /(?<!\w)TOOLTIP\s+COLUMNS\s+\[([^\]]+)\]\s*$/i, processor: (m) => m[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean) },
     { key: 'onHoverTooltip', regex: /(?<!\w)ON\s+HOVER\s+TOOLTIP\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
-    { key: 'brush', regex: /(?<!\w)BRUSH\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)')\s+MODE\s+(X|Y|XY)\s*$/i, processor: (m): BrushSpec => ({ name: m[1] ?? m[2], mode: m[3].toLowerCase() as BrushSpec['mode'] }) },
+    { key: 'brush', regex: /(?<!\w)BRUSH\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)'|(\$[A-Za-z_][\w]*))\s+MODE\s+(X|Y|XY)\s*$/i, processor: (m): BrushSpec => ({ name: m[1] ?? m[2] ?? m[3], mode: m[4].toLowerCase() as BrushSpec['mode'] }) },
     { key: 'cellName', regex: /(?<!\w)NAME\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     // DATASET <name> — references a cell alias view by name (bare or qualified).
     { key: 'dataset', regex: /(?<!\w)DATASET\s+([A-Za-z_][\w.-]*)\s*$/i, processor: (m) => m[1] },
@@ -197,16 +197,28 @@ const tryMatchClauses = (remaining: string, result: ParsedPlotCall): { remaining
     return { remaining, changed: false };
 };
 
+/** Strip a trailing `# comment` from a plot config line, ignoring `#` inside quoted strings. */
+function stripTrailingLineComment(s: string): string {
+    let inStr: string | null = null;
+    for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (inStr) { if (c === inStr) inStr = null; continue; }
+        if (c === '"' || c === "'") { inStr = c; continue; }
+        if (c === '#' && i > 0 && /\s/.test(s[i - 1]) && !/\d/.test(s[i + 1] ?? '')) {
+            return s.slice(0, i);
+        }
+    }
+    return s;
+}
+
 /**
  * Parses a single plot configuration line to separate the main function call
  * from advanced clauses. Robust to clause order.
  */
 export const parsePlotCall = (configLine: string): ParsedPlotCall => {
-    // B-157: strip trailing `# comment` from the end of the config line so that
-    // e.g. `LINE_CHART(…) LINK_X($a, $b) # interactive zoom` parses correctly.
-    // Only strips when `#` is preceded by whitespace (not `#\d+` query-index refs
-    // like those used in `ON #1`).
-    let remainingConfig = configLine.replace(/\s+#(?!\d)\S*.*$/, '').trim();
+    // B-157: strip trailing `# comment` (quote-aware) so that e.g.
+    // `LINE_CHART(…) # comment` and string values containing `#` both work.
+    let remainingConfig = stripTrailingLineComment(configLine).trim();
     const result: ParsedPlotCall = { mainConfig: '' };
 
     // Repeatedly try to match and strip clauses from the end until no more can be found.
@@ -218,7 +230,7 @@ export const parsePlotCall = (configLine: string): ParsedPlotCall => {
     }
 
     // LINK_X has a paren-arg shape, so it doesn't fit the trailing-clause loop above.
-    const linkXMatch = remainingConfig.match(/(?<!\w)LINK_X\s*\(([^)]+)\)\s*$/i);
+    const linkXMatch = remainingConfig.match(/(?<!\w)LINK[-_]X\s*\(([^)]+)\)\s*$/i);
     if (linkXMatch) {
         const linkArgs = linkXMatch[1].split(',').map(s => s.trim()).filter(Boolean);
         const variables = linkArgs.filter(arg => arg.startsWith('$'));
@@ -229,6 +241,9 @@ export const parsePlotCall = (configLine: string): ParsedPlotCall => {
             console.warn(`[plotParser] LINK_X: argument(s) "${bareVarLike.join(', ')}" look like variable names but are missing the $ prefix. Did you mean "$${bareVarLike[0]}"?`);
         }
         remainingConfig = remainingConfig.substring(0, linkXMatch.index).trim();
+        if (variables.length > 0 && variables.length < 2) {
+            console.warn(`[plotParser] LINK_X requires two $variable arguments ($min, $max). Got ${variables.length}: "${linkXMatch[1]}". LINK_X ignored.`);
+        }
         if (variables.length >= 2) {
             result.linkX = [variables[0], variables[1]];
             result.linkXMaster = options.includes('master') ? true : undefined;

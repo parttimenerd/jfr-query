@@ -29,7 +29,7 @@ import { cleanPlotConfig } from '../ml/candidates';
 const DEFAULT_BASE_URL = 'http://localhost:8080';
 const DEFAULT_BASIC_MODEL = 'qwen3:1.7b';
 const DEFAULT_GOOD_MODEL = 'qwen3:9b';
-const DEFAULT_MAX_TOKENS = 2048;
+const DEFAULT_MAX_TOKENS = 4096;
 const DEFAULT_REQUEST_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes — local CPUs are slow
 const MAX_RETRIES = 3;
 
@@ -118,19 +118,25 @@ export class LocalAiProvider implements IAiProvider {
                 }
                 // Network error — likely server is down. Don't retry; surface clearly.
                 throw new Error(`Cannot reach local AI server at ${this.baseUrl}: ${e.message ?? e}`);
-            } finally {
-                clearTimeout(timer);
-                signal?.removeEventListener('abort', onAbort);
             }
+            // Do NOT clear timer/onAbort here — keep them active through response.json() body read.
 
             if (response.ok) {
-                const result = await response.json();
-                const content = result?.choices?.[0]?.message?.content;
-                if (typeof content !== 'string' || content.length === 0) {
-                    throw new Error('Local AI server returned an empty response.');
+                try {
+                    const result = await response.json();
+                    const content = result?.choices?.[0]?.message?.content;
+                    if (typeof content !== 'string' || content.length === 0) {
+                        throw new Error('Local AI server returned an empty response.');
+                    }
+                    return content;
+                } finally {
+                    clearTimeout(timer);
+                    signal?.removeEventListener('abort', onAbort);
                 }
-                return content;
             }
+
+            clearTimeout(timer);
+            signal?.removeEventListener('abort', onAbort);
 
             // Retry only on 429 (rate limit) and 503 (service unavailable).
             if (response.status === 429 || response.status === 503) {
@@ -163,7 +169,7 @@ export class LocalAiProvider implements IAiProvider {
     async getAgentResponse(conversationHistory: Content[], systemInstruction: string, model: string = DEFAULT_GOOD_MODEL): Promise<AIResponse> {
         const messages = [
             { role: 'system', content: `${systemInstruction}\n\n${JSON_REQUIRED_INSTRUCTION}\nThe JSON object must have keys "text" (string), "code" (string or null), and "plotConfig" (string or null).` },
-            ...conversationHistory.map(c => ({ role: c.role, content: c.parts.map(p => p.text).join('\n') })),
+            ...conversationHistory.map(c => ({ role: c.role === 'model' ? 'assistant' : c.role, content: c.parts.filter(p => typeof (p as any).text === 'string').map(p => (p as any).text).join('\n') })),
         ];
         const raw = await this.sendWithRetry(this.buildBody(model, messages));
         return extractJson<AIResponse>(raw);
@@ -283,12 +289,12 @@ export class LocalAiProvider implements IAiProvider {
             opts?.signal?.removeEventListener('abort', onAbort);
             if (opts?.signal?.aborted || e.name === 'AbortError') throw new Error('Request aborted.');
             throw new Error(`Cannot reach local AI server at ${this.baseUrl}: ${e.message ?? e}`);
-        } finally {
-            clearTimeout(timer);
-            opts?.signal?.removeEventListener('abort', onAbort);
         }
+        // Do NOT clear timer/onAbort here — keep them active through body streaming.
 
         if (!response.ok) {
+            clearTimeout(timer);
+            opts?.signal?.removeEventListener('abort', onAbort);
             const errBody = await response.text().catch(() => '');
             let msg = `Local AI server error ${response.status}`;
             try {
@@ -307,6 +313,7 @@ export class LocalAiProvider implements IAiProvider {
         const reader = response.body!.getReader();
         const decoder = new TextDecoder();
         let leftover = '';
+        let streamDone = false;
         try {
             while (true) {
                 const { done, value } = await reader.read();
@@ -317,7 +324,7 @@ export class LocalAiProvider implements IAiProvider {
                 for (const line of lines) {
                     if (!line.startsWith('data: ')) continue;
                     const payload = line.slice(6).trim();
-                    if (payload === '[DONE]') break;
+                    if (payload === '[DONE]') { streamDone = true; break; }
                     let parsed: any;
                     try { parsed = JSON.parse(payload); } catch { continue; }
                     const delta = parsed.choices?.[0]?.delta;
@@ -327,8 +334,9 @@ export class LocalAiProvider implements IAiProvider {
                         yield { kind: 'text', delta: String(delta.content) };
                     }
                     if (Array.isArray(delta.tool_calls)) {
+                        let syntheticIdx = toolCallBuffers.size;
                         for (const tc of delta.tool_calls) {
-                            const idx: number = tc.index ?? 0;
+                            const idx: number = typeof tc.index === 'number' ? tc.index : syntheticIdx++;
                             if (!toolCallBuffers.has(idx)) {
                                 toolCallBuffers.set(idx, { id: tc.id ?? '', name: tc.function?.name ?? '', args: '' });
                             }
@@ -339,13 +347,17 @@ export class LocalAiProvider implements IAiProvider {
                         }
                     }
                 }
+                if (streamDone) break;
             }
         } finally {
             reader.releaseLock();
+            clearTimeout(timer);
+            opts?.signal?.removeEventListener('abort', onAbort);
         }
 
         // If the model used textual <tool>…</tool> fallback instead of structured tool_calls,
         // parse it out of the accumulated text buffer.
+        if (opts?.signal?.aborted) return;
         if (toolCallBuffers.size === 0 && tools.length > 0 && fullText) {
             const calls = parseLocalToolCalls({ content: fullText });
             for (const call of calls) {

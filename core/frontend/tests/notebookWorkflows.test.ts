@@ -720,11 +720,11 @@ describe('BUG-6: $session_start/$session_end seeding — actual behavior', () =>
         const seeded = computeSessionVariables(emptyVars, recordingStart, recordingEnd);
 
         expect(seeded).not.toBe(emptyVars);  // a new object was returned
-        expect(seeded.session_start).toBe(epochMsToLocalIso(recordingStart));
-        expect(seeded.session_end).toBe(epochMsToLocalIso(recordingEnd));
+        expect(seeded['$session_start']).toBe(epochMsToLocalIso(recordingStart));
+        expect(seeded['$session_end']).toBe(epochMsToLocalIso(recordingEnd));
         // The ISO strings are non-empty (not "—").
-        expect(seeded.session_start).not.toBe('');
-        expect(seeded.session_end).not.toBe('');
+        expect(seeded['$session_start']).not.toBe('');
+        expect(seeded['$session_end']).not.toBe('');
     });
 
     it('does NOT re-seed after template swap when bounds are already known (seeding is not idempotent on a reset map)', () => {
@@ -743,8 +743,8 @@ describe('BUG-6: $session_start/$session_end seeding — actual behavior', () =>
         const reseeded = computeSessionVariables(afterTemplateLoad, recordingStart, recordingEnd);
 
         // If the effect DID fire, re-seeding would work:
-        expect(reseeded.session_start).toBe(epochMsToLocalIso(recordingStart));
-        expect(reseeded.session_end).toBe(epochMsToLocalIso(recordingEnd));
+        expect(reseeded['$session_start']).toBe(epochMsToLocalIso(recordingStart));
+        expect(reseeded['$session_end']).toBe(epochMsToLocalIso(recordingEnd));
         // But in practice the effect does NOT fire on template swap (only on
         // recording bound changes), so the seeded values are never written back.
     });
