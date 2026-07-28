@@ -234,12 +234,8 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
         getSchema: () => schemaRef.current,
         getVariables: () => variablesRef.current,
         getQueryRunner: () => runQueryRef.current,
-        rankCandidates: rankCandidatesRef.current
-          ? (q: string, c: string[]) => rankCandidatesRef.current!(q, c)
-          : undefined,
-        isRankerReady: isRankerReadyRef.current
-          ? () => isRankerReadyRef.current!()
-          : undefined,
+        rankCandidates: (q: string, c: string[]) => rankCandidatesRef.current?.(q, c) ?? Promise.resolve([]),
+        isRankerReady: () => !!(isRankerReadyRef.current?.()),
       };
       exts.push(
         autocompletion({

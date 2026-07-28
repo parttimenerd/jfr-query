@@ -302,6 +302,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
 
     // Per-channel AI memory (key/value facts) and task checklists.
     const [channelMemory, setChannelMemory] = useState<Record<string, Record<string, string>>>({});
+    const channelMemoryRef = useRef(channelMemory);
+    channelMemoryRef.current = channelMemory;
     const [channelTasks, setChannelTasks] = useState<Record<string, TaskItem[]>>({});
     const activeMemory: Record<string, string> = channelMemory[activeChannelId] ?? {};
     const activeTasks: TaskItem[] = channelTasks[activeChannelId] ?? [];
@@ -544,7 +546,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
             },
             getVisibility: () => chatVisibilityRef.current,
             providerSupportsImages: () => providerSupportsImagesRef.current,
-            getMemory: () => channelMemory[activeChannelId] ?? {},
+            getMemory: () => channelMemoryRef.current[activeChannelId] ?? {},
             setMemory: (key, value) => setChannelMemory(prev => {
                 const cur = { ...(prev[activeChannelId] ?? {}) };
                 if (!(key in cur) && Object.keys(cur).length >= 10) {
@@ -591,7 +593,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                 }
             }),
         };
-    }, [onAddCell, onUpdateCell, onDeleteCell, onMoveCell, onMetadataChange, onBeforeMutate, query, activeChannelId, channelMemory]);
+    }, [onAddCell, onUpdateCell, onDeleteCell, onMoveCell, onMetadataChange, onBeforeMutate, query, activeChannelId]);
 
     const handleSendLegacy = async () => {
         // Fallback path when the active provider has no tool support (browser).

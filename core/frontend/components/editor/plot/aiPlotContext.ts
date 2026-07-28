@@ -202,17 +202,17 @@ export function buildPlotAiContext(input: PlotAiContextInput): BuiltContext {
             estimateTokens(`--- prior plot cell N ---\n${p}\n`)
         );
         // Keep as many recent priors as fit, starting from the newest.
-        let kept = 0;
+        // Do NOT break on a cell that doesn't fit — older cells may still fit.
+        const keptIndices: number[] = [];
         let running = baseCost;
         for (let i = perPriorCost.length - 1; i >= 0; i--) {
             if (running + perPriorCost[i] <= budget) {
                 running += perPriorCost[i];
-                kept++;
-            } else {
-                break;
+                keptIndices.push(i);
             }
         }
-        priors = kept > 0 ? priorsBackup.slice(priorsBackup.length - kept) : [];
+        keptIndices.sort((a, b) => a - b); // restore chronological order
+        priors = keptIndices.map(i => priorsBackup[i]);
         user = buildUser();
         total = estimateTokens(SYSTEM_PROMPT) + estimateTokens(user);
     }
