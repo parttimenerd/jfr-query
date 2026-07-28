@@ -96,7 +96,11 @@ const InlineProse: React.FC<InlineProseProps> = ({ text, query, variables, forma
         const exprIndices = parts
             .map((p, i) => (p.type === 'expr' ? i : -1))
             .filter(i => i >= 0);
-        if (exprIndices.length === 0) return;
+        if (exprIndices.length === 0) {
+            setResolved({});
+            return;
+        }
+        setResolved({});
         (async () => {
             const next: Record<number, string> = {};
             for (const i of exprIndices) {

@@ -136,13 +136,18 @@ interface TaskItem { id: string; text: string; done: boolean; }
 const MAX_HISTORY_TURNS = 20;
 function compactHistory(history: ToolChatMessage[]): ToolChatMessage[] {
     if (history.length <= MAX_HISTORY_TURNS) return history;
-    const dropped = history.slice(0, history.length - MAX_HISTORY_TURNS);
-    const kept = history.slice(history.length - MAX_HISTORY_TURNS);
+    let dropCount = history.length - MAX_HISTORY_TURNS;
+    // Ensure kept[0] is always a user turn so the summary (role:'user') + kept
+    // array maintains strict role alternation required by all LLM APIs.
+    while (dropCount < history.length && history[dropCount]?.role !== 'user') dropCount++;
+    if (dropCount >= history.length) return history; // nothing safe to drop
+    const dropped = history.slice(0, dropCount);
+    const kept = history.slice(dropCount);
     const summary = dropped
         .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${(m.content || '').slice(0, 200)}`)
         .join('\n');
     const summaryMsg: ToolChatMessage = {
-        role: 'assistant',
+        role: 'user',
         content: `[Earlier conversation summary — ${dropped.length} turns omitted]\n${summary}\n[End of summary]`,
     };
     return [summaryMsg, ...kept];

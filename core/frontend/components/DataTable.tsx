@@ -193,6 +193,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
             const unit = unitMatch ? unitMatch[1] : '';
             let divisor: number;
             if (unit === 'ns') divisor = 1_000_000_000;
+            else if (unit === 'µs' || unit === 'us') divisor = 1_000_000;
             else if (unit === 'ms') divisor = 1_000;
             else if (unit === 's' || unit === 'sec' || unit === 'secs' || unit === 'second' || unit === 'seconds') divisor = 1;
             else {
