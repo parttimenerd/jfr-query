@@ -282,6 +282,9 @@ const App: React.FC = () => {
                 reader.readAsText(md);
                 return;
             }
+            // Only handle data-file drops when the notebook is already loaded —
+            // JFRDropZone owns the drop target during the landing/import phase.
+            if (dbState !== DBState.READY) return;
             const dataFile = files.find(f => /\.(jfr|duckdb|db)$/i.test(f.name));
             if (dataFile) {
                 e.preventDefault();
@@ -314,7 +317,7 @@ const App: React.FC = () => {
             window.removeEventListener('drop', onDrop);
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loadNotebook, loadFile]);
+    }, [loadNotebook, loadFile, dbState]);
 
 
     //   ?notebook=<https-url>          fetch markdown notebook
@@ -373,6 +376,7 @@ const App: React.FC = () => {
     }, [mode, dbState, loadFile]);
 
     // Auto-run all queries when the DB becomes ready (if auto-run is enabled or ?run=true).
+    const handleRunAllRef = useRef<(() => Promise<void>) | undefined>(undefined);
     useEffect(() => {
         if (urlParamsRef.current.ranAll) return;
         if (dbState !== DBState.READY) return;
@@ -380,9 +384,8 @@ const App: React.FC = () => {
         if (params.get('run') !== 'true' && !isAutoRunEnabled) return;
         urlParamsRef.current.ranAll = true;
         // Small delay so notebook/views from ?notebook= have settled.
-        const t = setTimeout(() => { void handleRunAll(); }, 300);
+        const t = setTimeout(() => { void handleRunAllRef.current?.(); }, 300);
         return () => clearTimeout(t);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dbState, isAutoRunEnabled]);
 
     // Warm up the embedding ranker once the DB is ready so autocomplete
@@ -663,10 +666,12 @@ const App: React.FC = () => {
                 ).join('\n');
                 const fixedSql = await aiService.fixBrokenSql(sql, errMsg, schemaHint);
                 if (fixedSql && fixedSql !== sql) {
-                    // Patch the notebook markdown so the fix persists in the cell.
-                    const current = notebookMarkdownRef.current;
-                    const patched = current.replace(sql, fixedSql);
-                    if (patched !== current) setNotebookMarkdown(patched);
+                    // Patch only the specific cell (not raw markdown replace which
+                    // would corrupt the first occurrence if the same SQL appears elsewhere).
+                    const newCells = cellsRef.current.map(c =>
+                        c.id === cellId ? { ...c, content: c.content.replace(sql, fixedSql) } : c
+                    );
+                    updateCellsAndMarkdown(newCells);
                     try {
                         const t1 = performance.now();
                         const data = await runOnce(fixedSql);
@@ -729,10 +734,10 @@ const App: React.FC = () => {
         const fence = mut.type === 'sql' ? '```sql' : mut.type === 'plot' ? '```plot' : null;
         const body = fence ? `${fence}\n${mut.content}\n\`\`\`\n` : `${mut.content}\n`;
         const newCell: NotebookCellData = { id, title: '', content: body };
-        // Read the latest markdown via ref so rapid successive calls don't overwrite each other.
-        const latestCells = parseNotebook(notebookMarkdownRef.current).content
-            .split(/\n\n---\n\n/)
-            .map((content, index) => ({ id: `cell-${index}`, title: '', content }));
+        // Use the live cells array (has correct positional IDs) rather than
+        // re-parsing markdown (which would assign new positional IDs that don't
+        // match the afterCellId returned by a previous addCellFromTool call).
+        const latestCells = cellsRef.current;
         let inserted = false;
         const next: NotebookCellData[] = [];
         for (const c of latestCells) {
@@ -828,6 +833,11 @@ const App: React.FC = () => {
             arr.splice(index, 1);
             return { ...prev, [cellId]: arr };
         });
+        setQueryTimings(prev => {
+            const arr = [...(prev[cellId] || [])];
+            arr.splice(index, 1);
+            return { ...prev, [cellId]: arr };
+        });
     }, [updateCell]);
 
     const moveCell = useCallback((draggedId: string, targetId: string, position: 'before' | 'after') => {
@@ -894,6 +904,7 @@ const App: React.FC = () => {
             setIsRunningAll(false);
         }
     }, [runQuery]);
+    handleRunAllRef.current = handleRunAll;
 
     const handleClearResults = useCallback(() => {
         setResults({});

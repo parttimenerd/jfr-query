@@ -136,7 +136,7 @@ function parseJfrChunks(bytes: Uint8Array): Array<{ start: number; end: number }
     const lo = dv.getUint32(offset + 12, false);
     // Safe for files up to ~4GB (hi is almost always 0 in practice)
     const chunkSize = hi * 4294967296 + lo;
-    if (chunkSize <= 0 || offset + chunkSize > bytes.byteLength + 1) break;
+    if (chunkSize <= 0 || offset + chunkSize > bytes.byteLength) break;
     chunks.push({ start: offset, end: offset + chunkSize });
     offset += chunkSize;
   }
@@ -158,7 +158,7 @@ async function discoverJfrChunks(source: File): Promise<Array<{ start: number; e
     const hi = dv.getUint32(8, false);
     const lo = dv.getUint32(12, false);
     const chunkSize = hi * 4294967296 + lo;
-    if (chunkSize <= 0 || offset + chunkSize > size + 1) break;
+    if (chunkSize <= 0 || offset + chunkSize > size) break;
     chunks.push({ start: offset, end: offset + chunkSize });
     offset += chunkSize;
   }
@@ -1062,16 +1062,22 @@ export async function loadJfrIntoWasm(
       c.close().catch(() => {});
     }
   }
-  // Phase 3: conditional views — only created when their required source table exists.
-  // This ensures views like "heap-committed-vs-used" are not created on ZGC recordings
-  // (which don't emit GCHeapSummary), preventing Catalog Errors at query time.
-  const tableNames = new Set<string>(
-    (await conn.query(`SELECT table_name FROM duckdb_tables()`).catch(() => ({ toArray: () => [] })))
+  // Phase 3: conditional views — only created when their required source exists.
+  // JFR event tables are stored as chunkN_EventName tables and then unioned into
+  // a view named EventName — so we check both the view catalog and the table catalog
+  // (looking for any table whose name ends with _EventName).
+  const allTableNames = (await conn.query(`SELECT table_name FROM duckdb_tables()`).catch(() => ({ toArray: () => [] })))
+    .toArray()
+    .map((r: any) => r.table_name as string);
+  const allViewNames = new Set<string>(
+    (await conn.query(`SELECT view_name FROM duckdb_views()`).catch(() => ({ toArray: () => [] })))
       .toArray()
-      .map((r: any) => r.table_name as string),
+      .map((r: any) => r.view_name as string),
   );
+  const hasSource = (name: string): boolean =>
+    allViewNames.has(name) || allTableNames.some(t => t === name || t.endsWith(`_${name}`));
   for (const { requires, sql } of CONDITIONAL_VIEWS_SQL) {
-    if (tableNames.has(requires)) {
+    if (hasSource(requires)) {
       await runSql(conn, sql);
     }
   }
