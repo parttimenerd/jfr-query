@@ -514,6 +514,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             setAiErrorSuggestions({});
             return;
         }
+        // Clear stale suggestions from the previous run before fetching new ones.
+        setAiErrorSuggestions({});
         errSpecs.forEach((spec, i) => {
             if (!spec) {
                 setAiErrorSuggestions(prev => { if (prev[i] !== undefined) { const n = { ...prev }; delete n[i]; return n; } return prev; });
@@ -867,6 +869,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         runTimersRef.current = {};
         setPendingRunStates({});
         prevSqlBlocksRef.current = [];
+        prevVariablesRef.current = {};
     }, [clearResultsTrigger]);
 
     const toggleCollapse = (key: string) => setCollapsedStates(prev => ({ ...prev, [key]: !prev[key] }));
@@ -1431,7 +1434,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                         className="cursor-pointer hover:text-cyan-300 transition-colors"
                                         title="Click to rename" aria-label="Click to rename"
                                         onClick={e => { e.stopPropagation(); setEditingBlockName({ type: 'plot', idx: plotUid, value: plotAlias ?? '' }); }}
-                                    >{plotAlias ? `Plot ${pi+1} · ${plotAlias}` : `Plot ${pi+1}`}</span>
+                                    >{plotAlias ? `Plot ${plotUid+1} · ${plotAlias}` : `Plot ${plotUid+1}`}</span>
                                 );
                                 const configToRender = (config && config.trim()) ? config : 'TABLE()';
 

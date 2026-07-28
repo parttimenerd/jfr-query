@@ -507,6 +507,7 @@ async function mergeChunkTables(
         `CREATE TABLE "${base}" AS
          SELECT m.new_id AS _id, ${selectCols}
          FROM ${finalFrom}
+         WHERE m.new_id != 0
          GROUP BY m.new_id
          ORDER BY _id`
       ).catch((e) => console.warn(`merge create ${base} failed:`, e));

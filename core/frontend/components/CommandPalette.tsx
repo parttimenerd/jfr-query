@@ -399,10 +399,10 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
                 if (copyFlashTimerRef.current) clearTimeout(copyFlashTimerRef.current);
                 copyFlashTimerRef.current = window.setTimeout(() => { setCopyFlash(null); copyFlashTimerRef.current = null; onClose(); }, 700);
             } catch { onClose(); }
-        } else if (item.kind === 'cell') {
+        } else if (item.kind === 'cell' && item.cellId) {
             onClose();
             setTimeout(() => {
-                const el = document.querySelector(`[data-cell-id="${CSS.escape(item.cellId)}"]`) as HTMLElement | null;
+                const el = document.querySelector(`[data-cell-id="${CSS.escape(item.cellId!)}"]`) as HTMLElement | null;
                 el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 80);
         } else if (item.kind === 'special' && item.specialKind) {
