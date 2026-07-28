@@ -359,10 +359,10 @@ describe('reranker — compareRanking devtools helper', () => {
         ];
         const rows = compareRanking(items, ctx, ['duration', 'id', 'startTime'], { structuralOff: true });
         const byLabel = new Map(rows.map(r => [r.label, r]));
-        // formula: round(2 - 4 * (i / N)) with N = 3 → +2, +1, -1.
+        // formula: round(2 - 4 * (i / N)) with N = length-1 = 2 → +2, 0, -2.
         expect(byLabel.get('duration')!.delta).toBe(2);
-        expect(byLabel.get('id')!.delta).toBe(1);
-        expect(byLabel.get('startTime')!.delta).toBe(-1);
+        expect(byLabel.get('id')!.delta).toBe(0);
+        expect(byLabel.get('startTime')!.delta).toBe(-2);
         for (const r of rows) {
             expect(Number.isInteger(r.delta)).toBe(true);
             expect(r.delta).toBeGreaterThanOrEqual(-2);
