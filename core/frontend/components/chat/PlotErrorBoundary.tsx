@@ -3,14 +3,23 @@ import React from 'react';
 interface Props {
     fallback: React.ReactNode;
     children: React.ReactNode;
+    /** When this value changes the error state is cleared so the child retries. */
+    resetKey?: unknown;
 }
 
-interface State { hasError: boolean }
+interface State { hasError: boolean; resetKey?: unknown }
 
 export class PlotErrorBoundary extends React.Component<Props, State> {
-    state: State = { hasError: false };
+    state: State = { hasError: false, resetKey: undefined };
 
-    static getDerivedStateFromError(): State {
+    static getDerivedStateFromProps(props: Props, state: State): Partial<State> | null {
+        if (props.resetKey !== state.resetKey) {
+            return { hasError: false, resetKey: props.resetKey };
+        }
+        return null;
+    }
+
+    static getDerivedStateFromError(): Partial<State> {
         return { hasError: true };
     }
 

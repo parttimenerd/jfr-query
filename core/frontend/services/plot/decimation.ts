@@ -23,7 +23,10 @@
  * The X column must be numeric (timestamp ms or any numeric scale).
  */
 export function lttb<T extends Record<string, any>>(data: T[], xCol: string, yCol: string, target: number): T[] {
-    if (target >= data.length || target < 3) return data;
+    if (target >= data.length) return data;
+    if (target < 1) return [];
+    if (target === 1) return [data[0]];
+    if (target === 2) return [data[0], data[data.length - 1]];
     const n = data.length;
     const sampled: T[] = new Array(target);
     let sampledIdx = 0;

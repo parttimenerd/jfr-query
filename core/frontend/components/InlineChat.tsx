@@ -80,6 +80,31 @@ function compactInlineHistory(history: ToolChatMessage[]): ToolChatMessage[] {
     ];
 }
 
+interface CodeBlockProps {
+    code: string;
+    isActionable?: boolean;
+    targetType: 'sql' | 'plot';
+    data?: any[] | null;
+    sql?: string;
+    cellContext: NotebookCellData;
+    onApplyCode: (code: string) => void;
+    isAiFeatureActive: boolean;
+    metadata: NotebookMetadata;
+    onMetadataChange?: (m: NotebookMetadata) => void;
+}
+
+const CodeBlock: React.FC<CodeBlockProps> = ({ code, isActionable, targetType, data, sql, cellContext, onApplyCode, isAiFeatureActive, metadata, onMetadataChange }) => {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = () => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+    return (
+        <div className="my-2">
+            {targetType === 'plot' && data && (<div className="my-2 p-2 bg-gray-900/50 rounded-lg border border-gray-700 h-[250px] overflow-hidden"><h6 className="text-xs font-semibold text-gray-400 text-center mb-1">Preview</h6><PlotRenderer config={code} data={data.slice(0, 50)} sql={sql || ''} cellContext={cellContext} onApplyFix={onApplyCode} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange || (async () => {})} onCellVariableChange={() => {}} allVariables={{}} /></div>)}
+            <div className="relative bg-gray-900 rounded-md"><pre className="p-3 text-sm text-cyan-300 overflow-x-auto font-mono">{code}</pre><button onClick={handleCopy} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded-md"><ClipboardIcon className={`w-4 h-4 ${copied ? 'text-green-400' : 'text-gray-300'}`}/></button></div>
+            {isActionable && (<button onClick={() => onApplyCode(code)} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-green-600/30 hover:bg-green-600/50 text-green-300 rounded-md font-semibold"><CheckCircleIcon className="w-4 h-4"/>Apply Code</button>)}
+        </div>
+    );
+};
+
 interface InlineChatProps {
     targetType: 'sql' | 'plot';
     targetValue: string;
@@ -754,18 +779,6 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         inputRef.current?.focus();
     };
 
-    const CodeBlock: React.FC<{ code: string; isActionable?: boolean }> = ({ code, isActionable }) => {
-        const [copied, setCopied] = useState(false);
-        const handleCopy = () => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000); };
-        return (
-            <div className="my-2">
-                {targetType === 'plot' && data && (<div className="my-2 p-2 bg-gray-900/50 rounded-lg border border-gray-700 h-[250px] overflow-hidden"><h6 className="text-xs font-semibold text-gray-400 text-center mb-1">Preview</h6><PlotRenderer config={code} data={data.slice(0, 50)} sql={sql || ''} cellContext={cellContext} onApplyFix={onApplyCode} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange || (async () => {})} onCellVariableChange={() => {}} allVariables={{}} /></div>)}
-                <div className="relative bg-gray-900 rounded-md"><pre className="p-3 text-sm text-cyan-300 overflow-x-auto font-mono">{code}</pre><button onClick={handleCopy} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded-md"><ClipboardIcon className={`w-4 h-4 ${copied ? 'text-green-400' : 'text-gray-300'}`}/></button></div>
-                {isActionable && (<button onClick={() => onApplyCode(code)} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-green-600/30 hover:bg-green-600/50 text-green-300 rounded-md font-semibold"><CheckCircleIcon className="w-4 h-4"/>Apply Code</button>)}
-            </div>
-        );
-    };
-
     return (
         <div ref={containerRef} className="mt-4 border-t border-gray-700 pt-4 animate-fade-in-down flex flex-col space-y-3">
             {/* ── Header ── */}
@@ -829,7 +842,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                             {msg.meta?.plan && (
                                 <ChatPlanCard plan={msg.meta.plan} meta={msg.meta} getCellContent={getCellContent} onExecute={executePlanFor(msg.id)} onDiscard={discardPlanFor(msg.id)}/>
                             )}
-                            {msg.code && <CodeBlock code={msg.code} isActionable={msg.isActionable}/>}
+                            {msg.code && <CodeBlock code={msg.code} isActionable={msg.isActionable} targetType={targetType} data={data} sql={sql} cellContext={cellContext} onApplyCode={onApplyCode} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange}/>}
                             {msg.sender === MessageSender.AI && (
                                 <button
                                     onClick={() => navigator.clipboard.writeText(msg.code || msg.text).catch(() => {})}

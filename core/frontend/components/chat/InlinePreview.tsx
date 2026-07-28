@@ -114,6 +114,7 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
                 </details>
                 <div className="px-2 py-2 h-[250px] overflow-hidden">
                     <PlotErrorBoundary
+                        resetKey={plotConfig}
                         fallback={
                             <div className="text-xs text-red-300 p-2">
                                 Plot config could not be rendered.

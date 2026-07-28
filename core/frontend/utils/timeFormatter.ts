@@ -10,7 +10,7 @@ function normalizeEpochToMs(n: number): number {
     const d = intPart === 0 ? 1 : Math.floor(Math.log10(intPart)) + 1;
     if (d >= 18) return n / 1_000_000;
     if (d >= 15) return n / 1_000;
-    if (d === 10 && Number.isInteger(n)) return n * 1000;
+    if (d === 10) return n * 1000;
     return n;
 }
 

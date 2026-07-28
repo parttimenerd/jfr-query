@@ -44,6 +44,7 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
     const minPercent = getPercent(minValRef.current);
     const maxPercent = getPercent(maxVal);
     if (range.current) {
+      range.current.style.left = `${minPercent}%`;
       range.current.style.width = `${maxPercent - minPercent}%`;
     }
   }, [maxVal, getPercent]);
