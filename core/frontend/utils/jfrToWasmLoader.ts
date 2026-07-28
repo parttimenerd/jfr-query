@@ -586,44 +586,24 @@ async function mergeChunkTables(
         let created = false;
         for (const wi of workers) {
           const prefix = `chunk${wi}_`;
-          // For scalar FKs use JOIN, for array FKs remap inline per-row using a CTE
-          let sql: string;
-          if (arrayFkCols.length === 0) {
-            const joins = scalarFkCols.map(col => {
-              const { structTable } = colRemap.get(col)!;
-              return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=${wi} AND idmap_${col}.old_id=e."${col}"`;
-            }).join('\n');
-            const selectExprs2 = allCols.map(col => {
-              const remap = colRemap.get(col);
-              if (!remap) return `e."${col}"`;
+          // Remap each column: scalar FKs via JOIN, array FKs via unnest+re-aggregate subquery.
+          const selectExprs2 = allCols.map(col => {
+            const remap = colRemap.get(col);
+            if (!remap) return `e."${col}"`;
+            const { structTable, isArray } = remap;
+            if (!isArray) {
               return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
-            });
-            sql = `SELECT ${selectExprs2.join(', ')} FROM "${prefix}${base}" e\n${joins}`;
-          } else {
-            // Use array_transform with idmap lookup via join on unnested values
-            // Strategy: build a lookup list from idmap, then use list_transform with list indexing
-            // Simpler: remap each array column via a subquery that builds a replacement array
-            const selectExprs2 = allCols.map(col => {
-              const remap = colRemap.get(col);
-              if (!remap) return `e."${col}"`;
-              const { structTable, isArray } = remap;
-              if (!isArray) {
-                return `coalesce(idmap_${col}.new_id, 0) AS "${col}"`;
-              }
-              // Array FK: use list_transform with a precomputed map
-              // DuckDB supports list_transform with a non-correlated lambda
-              // Build map as: map(old_ids, new_ids) from idmap filtered to this worker
-              return `(SELECT list(m.new_id ORDER BY pos)
-                       FROM (SELECT unnest(e."${col}") AS oid, generate_subscripts(e."${col}", 1) AS pos) t
-                       JOIN "_idmap_${structTable}" m ON m._worker=${wi} AND m.old_id=t.oid
-                      ) AS "${col}"`;
-            });
-            const scalarJoins = scalarFkCols.map(col => {
-              const { structTable } = colRemap.get(col)!;
-              return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=${wi} AND idmap_${col}.old_id=e."${col}"`;
-            }).join('\n');
-            sql = `SELECT ${selectExprs2.join(', ')} FROM "${prefix}${base}" e\n${scalarJoins}`;
-          }
+            }
+            return `(SELECT list(m.new_id ORDER BY pos)
+                     FROM (SELECT unnest(e."${col}") AS oid, generate_subscripts(e."${col}", 1) AS pos) t
+                     JOIN "_idmap_${structTable}" m ON m._worker=${wi} AND m.old_id=t.oid
+                    ) AS "${col}"`;
+          });
+          const scalarJoins = scalarFkCols.map(col => {
+            const { structTable } = colRemap.get(col)!;
+            return `LEFT JOIN "_idmap_${structTable}" AS idmap_${col} ON idmap_${col}._worker=${wi} AND idmap_${col}.old_id=e."${col}"`;
+          }).join('\n');
+          const sql = `SELECT ${selectExprs2.join(', ')} FROM "${prefix}${base}" e\n${scalarJoins}`;
           if (!created) {
             await c.query(`CREATE TABLE "${base}" AS ${sql}`).catch((e) => console.warn(`merge event ${base} (w${wi}) create failed:`, e));
             created = true;
