@@ -1369,13 +1369,14 @@ ORDER BY 1`,
     requires: 'ObjectAllocationSample',
     sql: `CREATE OR REPLACE VIEW "allocation-by-class-detail" AS
 SELECT
-    objectClass AS "Class",
+    c.javaName AS "Class",
     COUNT(*) AS "Sample Events",
-    format_memory(SUM(weight)) AS "Sampled Bytes",
-    format_memory(AVG(weight)) AS "Avg Sample Weight"
-FROM ObjectAllocationSample
-GROUP BY objectClass
-ORDER BY SUM(weight) DESC
+    format_memory(SUM(o.weight)) AS "Sampled Bytes",
+    format_memory(AVG(o.weight)) AS "Avg Sample Weight"
+FROM ObjectAllocationSample o
+JOIN Class c ON o.objectClass = c._id
+GROUP BY c.javaName
+ORDER BY SUM(o.weight) DESC
 LIMIT 30`,
   },
   {

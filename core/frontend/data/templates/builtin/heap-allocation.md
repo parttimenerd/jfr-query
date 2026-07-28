@@ -30,13 +30,14 @@ Counts are **sampled approximations**, not exact totals. The `$limit` variable c
 ```sql
 -- alias top_alloc_classes
 SELECT
-  objectClass AS "Class",
+  c.javaName AS "Class",
   COUNT(*) AS "Samples",
-  round(SUM(weight) / (1024.0 * 1024.0), 1) AS "Sampled MB",
-  round(AVG(weight) / 1024.0, 1) AS "Avg KB/sample"
-FROM ObjectAllocationSample
-GROUP BY objectClass
-ORDER BY SUM(weight) DESC
+  round(SUM(o.weight) / (1024.0 * 1024.0), 1) AS "Sampled MB",
+  round(AVG(o.weight) / 1024.0, 1) AS "Avg KB/sample"
+FROM ObjectAllocationSample o
+JOIN Class c ON o.objectClass = c._id
+GROUP BY c.javaName
+ORDER BY SUM(o.weight) DESC
 LIMIT $limit
 ```
 

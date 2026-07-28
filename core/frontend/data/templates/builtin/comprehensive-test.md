@@ -173,12 +173,13 @@ $limit = 15
 
 ```sql
 SELECT
-  objectClass AS "Class",
+  c.javaName AS "Class",
   count(*)    AS "Samples",
-  round(sum(weight) / (1024.0 * 1024.0), 2) AS "Sampled MB"
-FROM ObjectAllocationSample
-GROUP BY objectClass
-ORDER BY sum(weight) DESC
+  round(sum(o.weight) / (1024.0 * 1024.0), 2) AS "Sampled MB"
+FROM ObjectAllocationSample o
+JOIN Class c ON o.objectClass = c._id
+GROUP BY c.javaName
+ORDER BY sum(o.weight) DESC
 LIMIT $limit
 ```
 
