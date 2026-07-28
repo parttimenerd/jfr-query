@@ -100,7 +100,7 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
     return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, allY2: allY2Cols, finalXCol: xCol, originalYCols: allYCols };
   }, [data, config.x, config.y, config.y2, config.color]);
 
-  const yIsDuration = allY.length > 0 && originalYCols.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, originalYCols);
+  const yIsDuration = allY.length > 0 && originalYCols.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY);
   const y2IsDuration = allY2.length > 0 && allY2.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY2);
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
   const y2Formatter = y2IsDuration ? formatDurationNs : numberFormatter;

@@ -377,7 +377,7 @@ export function extractPlotMetadata(plotSrc: string): PlotMetadata {
                 }
             };
             collectLeaves(composite);
-            if (!meta.linkedYVars) {
+            if (!meta.linkedYVars || meta.linkedYVars.length === 0) {
                 for (const p of leaves) {
                     if (p.linkY) { meta.linkedYVars = [p.linkY.replace(/^\$/, '')]; break; }
                     if (p.linkXY) { meta.linkedYVars = [p.linkXY.replace(/^\$/, '')]; break; }

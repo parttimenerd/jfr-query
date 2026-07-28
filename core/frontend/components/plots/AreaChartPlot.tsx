@@ -146,7 +146,7 @@ const AreaChartComponent: React.FC<{
     return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, finalXCol: xCol, originalYCols: allYCols };
   }, [data, config.x, config.y, config.color]);
 
-  const yIsDuration = allY.length > 0 && originalYCols.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, originalYCols);
+  const yIsDuration = allY.length > 0 && originalYCols.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY);
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
   const colors = getPaletteColors(clauses?.palette, COLORS);
 

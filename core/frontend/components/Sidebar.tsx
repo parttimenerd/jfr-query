@@ -124,6 +124,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
   };
 
   const handleHideTooltip = () => {
+    if (hideTimeout.current) clearTimeout(hideTimeout.current);
     hideTimeout.current = window.setTimeout(() => setTooltip(null), 100);
   };
   
