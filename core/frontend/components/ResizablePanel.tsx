@@ -83,8 +83,8 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
           className="h-full border-gray-700" 
           style={{
             width: width, // Always use the state `width`, not `w-full`
-            borderRight: side === 'left' && !isCollapsed ? '1px' : '0', 
-            borderLeft: side === 'right' && !isCollapsed ? '1px' : '0',
+            borderRight: side === 'left' && !isCollapsed ? '1px solid' : '0',
+            borderLeft: side === 'right' && !isCollapsed ? '1px solid' : '0',
             opacity: isCollapsed ? 0 : 1,
             transition: 'opacity 0.1s linear',
             pointerEvents: isCollapsed ? 'none' : 'auto', // Prevent interaction when hidden

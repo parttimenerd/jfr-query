@@ -74,8 +74,8 @@ const VarPillPopover: React.FC<{
 
     useEffect(() => {
         const rect = anchorEl.getBoundingClientRect();
-        const top = rect.bottom + window.scrollY + 4;
-        const left = Math.min(rect.left + window.scrollX, window.innerWidth - 260);
+        const top = rect.bottom + 4;
+        const left = Math.min(rect.left, window.innerWidth - 260);
         setPos({ top, left });
     }, [anchorEl]);
 
