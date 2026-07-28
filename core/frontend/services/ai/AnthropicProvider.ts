@@ -252,7 +252,19 @@ export class AnthropicProvider implements IAiProvider {
         try {
         while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) {
+                if (leftover.startsWith('data: ')) {
+                    const payload = leftover.slice(6).trim();
+                    try {
+                        const parsed = JSON.parse(payload);
+                        if (parsed.type === 'content_block_delta') {
+                            const d = parsed.delta;
+                            if (d?.type === 'text_delta' && d.text) yield { kind: 'text', delta: String(d.text) };
+                        }
+                    } catch { /* ignore malformed final line */ }
+                }
+                break;
+            }
             const chunk = leftover + decoder.decode(value, { stream: true });
             const lines = chunk.split('\n');
             leftover = lines.pop() ?? '';

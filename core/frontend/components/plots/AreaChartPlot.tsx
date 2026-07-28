@@ -207,9 +207,9 @@ const AreaChartComponent: React.FC<{
             content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} labelFormatter={isTime ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined} />) : undefined}
           />
           {showLegend && <Legend wrapperStyle={{ fontSize: '12px' }} formatter={v => String(v).replace(/_/g, ' ')} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'} />}
+          {config.stack !== undefined && warnDeprecated('AREA_CHART', 'stack', 'layout') as never}
           {allY.map((y, i) => {
             const isStacked = config.layout === 'stacked' || config.stack === true;
-            if (config.stack !== undefined) warnDeprecated('AREA_CHART', 'stack', 'layout');
             return (
             <Area
               key={y}

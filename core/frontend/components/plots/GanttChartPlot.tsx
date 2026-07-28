@@ -134,7 +134,6 @@ const GanttChartComponent: React.FC<{
   const tooltipFormatter = (_value: any, _name: string, props: any) => {
     const row = props?.payload;
     if (!row) return [_value, _name];
-    if (_name === '__offset') return undefined; // hide offset bar from tooltip
     const startFmt = isTime ? formatTimestamp(getTimeValue(row.__startRaw), settings.timeFormat) : numberFormatter(row.__startRaw);
     const endFmt = isTime ? formatTimestamp(getTimeValue(row.__endRaw), settings.timeFormat) : numberFormatter(row.__endRaw);
     return [`${startFmt} → ${endFmt}`, 'Range'];
@@ -183,6 +182,7 @@ const GanttChartComponent: React.FC<{
             isAnimationActive={isAnimationActive}
             animationDuration={animationDuration}
             legendType="none"
+            tooltipType="none"
           />
           {/* Visible duration bar */}
           <Bar
