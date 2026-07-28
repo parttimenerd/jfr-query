@@ -175,7 +175,7 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
     const handleSuggestPrompt = () => {
         const nextIndex = suggestionIndex % SURPRISE_PROMPTS.length;
         handleMetadataFieldChange('customSystemPrompt', SURPRISE_PROMPTS[nextIndex]);
-        const newIndex = nextIndex + 1;
+        const newIndex = (nextIndex + 1) % SURPRISE_PROMPTS.length;
         suggestionIndexCounter = newIndex;
         setSuggestionIndex(newIndex);
     };

@@ -128,7 +128,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         scale: mapAxisScale(axisYClause) ?? (effectiveLogScale ? "log" as const : "auto" as const),
         domain: (
           effectiveLogScale
-            ? [Math.max(0.1, (config.horizontal ? domainX?.[0] : domainY?.[0]) ?? (yDomainFromClause ? Number(yDomainFromClause[0]) || 0.1 : 0.1)),
+            ? [Math.max(0.1, (config.horizontal ? domainX?.[0] : domainY?.[0]) ?? (yDomainFromClause ? (Number(yDomainFromClause[0]) > 0 ? Number(yDomainFromClause[0]) : 0.1) : 0.1)),
                (config.horizontal ? domainX?.[1] : domainY?.[1]) ?? yDomainFromClause?.[1] ?? 'dataMax']
             : ((config.horizontal ? domainX : domainY) ?? yDomainFromClause ?? ['dataMin', 'dataMax'])
         ) as any,

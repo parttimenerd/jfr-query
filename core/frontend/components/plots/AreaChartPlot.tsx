@@ -194,7 +194,7 @@ const AreaChartComponent: React.FC<{
                 ? (domainY
                     ? [Math.max(0.1, domainY[0]), domainY[1]]
                     : (yDomainFromClause
-                        ? [Math.max(0.1, Number(yDomainFromClause[0]) || 0.1), yDomainFromClause[1]]
+                        ? [Math.max(0.1, Number(yDomainFromClause[0]) > 0 ? Number(yDomainFromClause[0]) : 0.1), yDomainFromClause[1]]
                         : [0.1, 'dataMax']))
                 : (domainY ?? yDomainFromClause)
             }

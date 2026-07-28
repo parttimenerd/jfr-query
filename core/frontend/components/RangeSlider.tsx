@@ -148,7 +148,7 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
         value={minVal}
         onChange={handleMinChange}
         className="thumb thumb--left"
-        style={{ zIndex: minVal > max - 100 ? 5 : undefined }}
+        style={{ zIndex: minPercent > 90 ? 5 : undefined }}
       />
       <input
         type="range"
