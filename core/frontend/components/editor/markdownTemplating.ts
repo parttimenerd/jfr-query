@@ -214,7 +214,7 @@ const completionSource = (deps: MarkdownTemplatingDeps) => (cx: CompletionContex
         return {
             from: tokenStart,
             options: keys.map(k => ({
-                label: `$${k}`,
+                label: k.startsWith('$') ? k : `$${k}`,
                 detail: vars[k],
                 type: 'variable',
             })),
