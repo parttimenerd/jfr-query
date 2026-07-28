@@ -8,8 +8,11 @@ commands:
     description: "Exception type frequency summary"
     cells: [exc-summary]
   - name: hotspot
-    description: "Hot exception throw sites by type"
+    description: "Top exception throw sites by class with stack trace context"
     cells: [exc-hotspot]
+  - name: rate
+    description: "Exception rate over time (exceptions per second)"
+    cells: [exc-rate]
   - name: help
     description: "Show available exception analysis commands"
     cells: []
@@ -65,6 +68,31 @@ BAR_CHART(x: "Exception Class", y: ["Thrown"]) TITLE "Exception Frequency by Typ
 ```
 
 <!-- @skill-cell name=exc-hotspot -->
+
+## Top Exception Throw Sites
+
+```sql
+-- alias exc_hotspot
+SELECT
+  c.javaName                                             AS "Exception Class",
+  m.javaName || '.' || meth.name                        AS "Top Throw Site",
+  COUNT(*)                                              AS "Thrown",
+  round(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 1)   AS "% Total"
+FROM JavaExceptionThrow e
+JOIN Class c    ON e.thrownClass = c._id
+JOIN Method meth ON meth._id = e."stackTrace$topMethod"
+JOIN Class m    ON m._id = meth.type
+WHERE e.startTime BETWEEN $session_start AND $session_end
+GROUP BY c.javaName, m.javaName, meth.name
+ORDER BY COUNT(*) DESC
+LIMIT 30
+```
+
+```plot
+TABLE()
+```
+
+<!-- @skill-cell name=exc-rate -->
 
 ## Exception Rate Over Time
 
