@@ -83,7 +83,7 @@ function detectMultipleSqlStatements(sql: string): string | null {
     // "Start of statement" = beginning of string or after semicolon.
     // Bare newlines are intentionally excluded: they appear inside CTEs, subqueries,
     // and multi-line expressions and would produce false positives for valid single statements.
-    const stmtPattern = /(?:^|;\s*)(SELECT|WITH|INSERT|UPDATE|DELETE)\b/gi;
+    const stmtPattern = /(?:^\s*|;\s*)(SELECT|WITH|INSERT|UPDATE|DELETE)\b/gi;
     const matches = [...stripped.matchAll(stmtPattern)];
     if (matches.length > 1) {
         return `SQL cell content contains ${matches.length} statements. ` +
