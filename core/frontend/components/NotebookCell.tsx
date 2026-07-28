@@ -503,7 +503,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 .catch(() => setPlotSuggestions(prev => ({ ...prev, [i]: null })));
         });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [autoPlotSuggestionEnabled, parsedSqlBlocks.length, parsedPlotBlocks.join(' '), results]);
+    }, [autoPlotSuggestionEnabled, parsedSqlBlocks.length, parsedPlotBlocks.join('|'), results]);
 
     useEffect(() => () => cancelSuggestPlot(), []);
 
