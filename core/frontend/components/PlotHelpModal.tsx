@@ -165,8 +165,11 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                         <h3 className="font-semibold text-lg text-gray-200">Plot Syntax Quick Reference</h3>
                         <p className="mt-2 text-sm text-gray-400">
                             Each plot block uses a function-call syntax. Column names available in your query results are shown as chips above the editor — click one to copy it into your plot config.
+                            Outer clauses are appended after the function call, separated by spaces.
                         </p>
-                        <ul className="mt-4 text-sm space-y-4 list-disc list-inside text-gray-300">
+
+                        <h4 className="font-semibold text-gray-200 mt-5">Layout</h4>
+                        <ul className="mt-2 text-sm space-y-3 list-disc list-inside text-gray-300">
                             <li>
                                 <code className="bg-gray-700 p-1 rounded-md">PLOT_A(...); PLOT_B(...)</code>
                                 <span className="text-gray-400"> &mdash; Semicolon or single newline places plots <strong>side-by-side</strong> in the same row.</span>
@@ -175,19 +178,108 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                 <code className="bg-gray-700 p-1 rounded-md leading-relaxed inline-block">PLOT_A(...)<br/><br/>PLOT_B(...)</code>
                                 <span className="text-gray-400"> &mdash; Two blank lines (three newlines) starts a <strong>new row</strong> of plots.</span>
                             </li>
-                             <li>
-                                <code className="bg-gray-700 p-1 rounded-md">... ON query_ref</code>
-                                <span className="text-gray-400"> &mdash; Pick which query feeds this plot. <code className="bg-gray-700 p-1 rounded-md">ON 2</code> uses the second SQL block; <code className="bg-gray-700 p-1 rounded-md">ON 1, 2</code> merges both.</span>
-                            </li>
-                            <li>
-                                <code className="bg-gray-700 p-1 rounded-md">... TITLE "My Chart"</code>
-                                <span className="text-gray-400"> &mdash; Add a title that will be displayed above the plot.</span>
-                            </li>
-                            <li>
-                                <code className="bg-gray-700 p-1 rounded-md">... LINK_X($start, $end)</code>
-                                <span className="text-gray-400"> &mdash; Link a plot's X-axis to local variables for interactive panning and zooming.</span>
-                            </li>
                         </ul>
+
+                        <h4 className="font-semibold text-gray-200 mt-5">Data &amp; Display Clauses</h4>
+                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">ON query_ref</code>
+                                <p className="text-gray-400 mt-1">Pick which SQL query feeds this plot. <code className="bg-gray-600 px-1 rounded">ON 2</code> uses the second block; <code className="bg-gray-600 px-1 rounded">ON 1, 2</code> merges both.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">TITLE "My Chart"</code>
+                                <p className="text-gray-400 mt-1">Display a title above the plot.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">ZOOM 0.6</code>
+                                <p className="text-gray-400 mt-1">Scale the plot height (0.0–1.0+). Default is 1.0.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">WIDTH 600px</code>
+                                <p className="text-gray-400 mt-1">Set a fixed width. Accepts <code className="bg-gray-600 px-1 rounded">px</code> or <code className="bg-gray-600 px-1 rounded">%</code> values.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">PALETTE "sap_horizon"</code>
+                                <p className="text-gray-400 mt-1">Override the color palette. Choices: <code className="bg-gray-600 px-1 rounded">default</code>, <code className="bg-gray-600 px-1 rounded">sap_horizon</code>, <code className="bg-gray-600 px-1 rounded">pastel</code>, <code className="bg-gray-600 px-1 rounded">earth</code>, <code className="bg-gray-600 px-1 rounded">neon</code>, <code className="bg-gray-600 px-1 rounded">monochrome</code>.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">NAME "plotname"</code>
+                                <p className="text-gray-400 mt-1">Give this plot a name so other plots can reference it via <code className="bg-gray-600 px-1 rounded">LINK_SCROLL</code>.</p>
+                            </div>
+                        </div>
+
+                        <h4 className="font-semibold text-gray-200 mt-5">Legend</h4>
+                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LEGEND AT RIGHT</code>
+                                <p className="text-gray-400 mt-1">Position the legend. Options: <code className="bg-gray-600 px-1 rounded">RIGHT</code>, <code className="bg-gray-600 px-1 rounded">LEFT</code>, <code className="bg-gray-600 px-1 rounded">TOP</code>, <code className="bg-gray-600 px-1 rounded">BOTTOM</code>, <code className="bg-gray-600 px-1 rounded">NONE</code>.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LEGEND HIDDEN</code>
+                                <p className="text-gray-400 mt-1">Hide the legend entirely.</p>
+                            </div>
+                        </div>
+
+                        <h4 className="font-semibold text-gray-200 mt-5">Axis Customisation</h4>
+                        <p className="text-xs text-gray-400 mt-1">Apply one or more sub-clauses after <code className="bg-gray-600 px-1 rounded">AXIS_X</code> or <code className="bg-gray-600 px-1 rounded">AXIS_Y</code> in any order.</p>
+                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">AXIS_X TYPE time</code>
+                                <p className="text-gray-400 mt-1">Force axis scale type. Options: <code className="bg-gray-600 px-1 rounded">time</code>, <code className="bg-gray-600 px-1 rounded">band</code>, <code className="bg-gray-600 px-1 rounded">log</code>, <code className="bg-gray-600 px-1 rounded">linear</code>.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">AXIS_Y TYPE log</code>
+                                <p className="text-gray-400 mt-1">Use a logarithmic Y axis.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">AXIS_X FORMAT "HH:mm"</code>
+                                <p className="text-gray-400 mt-1">Format string for axis tick labels (date-fns format for time axes).</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">AXIS_Y LABEL "MB/s"</code>
+                                <p className="text-gray-400 mt-1">Add a text label to the axis.</p>
+                            </div>
+                            <div className="md:col-span-2">
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">AXIS_X TYPE time FORMAT "HH:mm" LABEL "Time"</code>
+                                <p className="text-gray-400 mt-1">Combine multiple sub-clauses in a single <code className="bg-gray-600 px-1 rounded">AXIS_X</code>.</p>
+                            </div>
+                        </div>
+
+                        <h4 className="font-semibold text-gray-200 mt-5">Interactive Linking &amp; Brushing</h4>
+                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINK_X($start, $end)</code>
+                                <p className="text-gray-400 mt-1">Bind the X viewport to two cell variables. Drag to pan, Shift+scroll to zoom. Add <code className="bg-gray-600 px-1 rounded">master</code> to make this plot the controller.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINK_Y($var)</code>
+                                <p className="text-gray-400 mt-1">Bind the Y viewport to a cell variable. Plots sharing the same variable share a Y axis range.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINK_XY($var)</code>
+                                <p className="text-gray-400 mt-1">Bind both X and Y axes to a single variable (2D pan/zoom).</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">BRUSH $var MODE X</code>
+                                <p className="text-gray-400 mt-1">Add a brush overlay that writes the selected range into <code className="bg-gray-600 px-1 rounded">$var</code>. Modes: <code className="bg-gray-600 px-1 rounded">X</code>, <code className="bg-gray-600 px-1 rounded">Y</code>, <code className="bg-gray-600 px-1 rounded">XY</code>.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINK_SCROLL plotname</code>
+                                <p className="text-gray-400 mt-1">Synchronise scroll/zoom with a named plot (set with <code className="bg-gray-600 px-1 rounded">NAME</code>).</p>
+                            </div>
+                        </div>
+
+                        <h4 className="font-semibold text-gray-200 mt-5">Tooltip Clauses</h4>
+                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">TOOLTIP COLUMNS ["col1","col2"]</code>
+                                <p className="text-gray-400 mt-1">Show specific columns in the hover tooltip.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">ON HOVER TOOLTIP "label"</code>
+                                <p className="text-gray-400 mt-1">Display a static label when hovering over the plot.</p>
+                            </div>
+                        </div>
                          <div className="mt-6">
                             <h4 className="font-semibold text-gray-200">Live Example (Multi-Query)</h4>
                              <div className="mt-2 p-4 bg-gray-900/40 rounded-lg border border-gray-700/50">

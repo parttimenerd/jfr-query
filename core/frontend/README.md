@@ -25,6 +25,7 @@ An interactive notebook for analyzing Java Flight Recorder (JFR) files using Duc
    |---|---|---|
    | `GEMINI_API_KEY` | Google Gemini | https://aistudio.google.com/apikey |
    | `OPENAI_API_KEY` | OpenAI GPT | https://platform.openai.com/api-keys |
+   | `ANTHROPIC_API_KEY` | Anthropic Claude | https://console.anthropic.com/settings/keys |
    | `GARDENER_API_KEY` | Gardener Answering Machine | SAP internal — requires VPN |
 
    You can also enter API keys manually via the **Settings** (⚙) button in the app at any time.
@@ -47,8 +48,9 @@ An interactive notebook for analyzing Java Flight Recorder (JFR) files using Duc
 
 ## AI Providers
 
-The app supports three AI backends. Select your provider and configure the API key in **Settings**:
+The app supports four AI backends. Select your provider and configure the API key in **Settings**:
 
 - **Google Gemini** — Uses `gemini-2.5-flash` by default
 - **OpenAI GPT** — Uses `gpt-4o` (advanced) and `gpt-3.5-turbo` (basic) by default
+- **Anthropic Claude** — Uses `claude-sonnet-4-6` by default
 - **Gardener Answering Machine** — SAP-internal multi-provider gateway (requires VPN); supports Claude, Gemini, and GPT models
