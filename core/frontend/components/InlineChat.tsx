@@ -135,6 +135,9 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
     const [isLoading, setIsLoading] = useState(false);
     const cancelledRef = useRef(false);
     const abortControllerRef = useRef<AbortController | null>(null);
+    // Always-fresh ref so tool closures read the live cell list within a turn.
+    const cellsLiveRef = useRef(cells ?? allCells);
+    cellsLiveRef.current = cells ?? allCells;
     // Legacy toggle preserved for backwards-compat. `useFullContext=true` is
     // now interpreted as `visibility='full'`; otherwise the dropdown wins.
     const [useFullContext, setUseFullContext] = useState(false);
@@ -241,8 +244,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
      * which we already have for legacy notebook-context flow.
      */
     const buildToolDeps = useCallback((): ToolDeps => {
-        const cellSnapshot = cells ?? allCells;
-        const snapshotForRuntime = cellSnapshot.map(c => ({ id: c.id, type: cellPrimaryType(c.content), content: c.content }));
+        const getLiveCells = () => cellsLiveRef.current;
         return {
             duckdbQuery: async (sqlText: string) => {
                 const rows = await query(sqlText);
@@ -251,9 +253,10 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     : [];
                 return { columns, rows };
             },
-            listCells: () => snapshotForRuntime,
+            listCells: () => getLiveCells().map(c => ({ id: c.id, type: cellPrimaryType(c.content), content: c.content })),
             mutateCells: async (op: NotebookMutation) => {
                 try {
+                    const liveCells = getLiveCells();
                     if (op.kind === 'add') {
                         if (!onAddCell) return { ok: false, error: 'addCell not supported in this environment' };
                         const id = onAddCell({ type: op.type, content: op.content, afterCellId: op.afterCellId });
@@ -268,7 +271,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                         if (!onUpdateCell) return { ok: false, error: 'applyPlot not supported in this environment' };
                         // Replace the Nth plot block (op.plotBlockIndex, 0-based) within the cell,
                         // or append a new plot block if none exist.
-                        const cell = cellSnapshot.find(c => c.id === op.cellId);
+                        const cell = liveCells.find(c => c.id === op.cellId);
                         if (!cell) return { ok: false, error: `cell not found: ${op.cellId}` };
                         const segs = tokenizeCellContent(cell.content);
                         const targetIdx = op.plotBlockIndex ?? 0;
@@ -288,7 +291,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     }
                     if (op.kind === 'delete') {
                         if (!onDeleteCell) return { ok: false, error: 'deleteCell not supported in this environment' };
-                        const cell = cellSnapshot.find(c => c.id === op.cellId);
+                        const cell = liveCells.find(c => c.id === op.cellId);
                         if (!cell) return { ok: false, error: `cell not found: ${op.cellId}` };
                         onDeleteCell(op.cellId);
                         return { ok: true, cellId: op.cellId };
@@ -296,8 +299,8 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     if (op.kind === 'move') {
                         if (!onMoveCell) return { ok: false, error: 'moveCell not supported in this environment' };
                         if (op.cellId === op.targetCellId) return { ok: false, error: 'cannot move a cell relative to itself' };
-                        const src = cellSnapshot.find(c => c.id === op.cellId);
-                        const tgt = cellSnapshot.find(c => c.id === op.targetCellId);
+                        const src = liveCells.find(c => c.id === op.cellId);
+                        const tgt = liveCells.find(c => c.id === op.targetCellId);
                         if (!src) return { ok: false, error: `cell not found: ${op.cellId}` };
                         if (!tgt) return { ok: false, error: `target cell not found: ${op.targetCellId}` };
                         onMoveCell(op.cellId, op.targetCellId, op.position);
@@ -308,7 +311,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     return { ok: false, error: e?.message || String(e) };
                 }
             },
-            listPlotsInNotebook: () => listPlotsFromCells(cellSnapshot),
+            listPlotsInNotebook: () => listPlotsFromCells(getLiveCells()),
             getVariables: () => metadata.variables ?? {},
             setVariables: async (next) => {
                 if (!onMetadataChange) return { ok: false, error: 'setVariables not supported in this environment' };
@@ -330,7 +333,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                 approvalResolvers.current.set(pending.id, { resolve, reject });
             }),
         };
-    }, [cells, allCells, onAddCell, onUpdateCell, onDeleteCell, onMoveCell, onMetadataChange, metadata, query]);
+    }, [onAddCell, onUpdateCell, onDeleteCell, onMoveCell, onMetadataChange, metadata, query]);
 
     const handleReset = () => {
         setMessages([]);
