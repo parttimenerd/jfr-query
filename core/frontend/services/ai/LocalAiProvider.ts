@@ -310,6 +310,10 @@ export class LocalAiProvider implements IAiProvider {
         // Accumulate partial tool-call argument chunks per index, emit at stream end.
         const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
         let fullText = '';
+        // Must be declared outside the SSE-chunk loop: local servers that omit tc.index
+        // stream a single tool call's arguments across many events; re-initializing to
+        // toolCallBuffers.size on each event would create spurious duplicate buffer entries.
+        let syntheticIdx = 0;
         const reader = response.body!.getReader();
         const decoder = new TextDecoder();
         let leftover = '';
@@ -334,7 +338,6 @@ export class LocalAiProvider implements IAiProvider {
                         yield { kind: 'text', delta: String(delta.content) };
                     }
                     if (Array.isArray(delta.tool_calls)) {
-                        let syntheticIdx = toolCallBuffers.size;
                         for (const tc of delta.tool_calls) {
                             const idx: number = typeof tc.index === 'number' ? tc.index : syntheticIdx++;
                             if (!toolCallBuffers.has(idx)) {

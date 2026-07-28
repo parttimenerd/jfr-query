@@ -253,8 +253,10 @@ const previewMarkdownComponents: any = {
         const langMatch = /language-(\S+)/.exec(className || '');
         const lang = langMatch?.[1];
         const code = String(children ?? '').replace(/\n$/, '');
-        // react-markdown v10 removed the `inline` prop; use node type instead.
-        const isInline = node?.type === 'inlineCode' || !className;
+        // react-markdown v10 uses hast nodes (type: 'element') for all code blocks;
+        // 'inlineCode' is an mdast type that never appears here. Distinguish inline
+        // vs block by the presence of a language className (block fences have one).
+        const isInline = !className;
         if (isInline) {
             return <code className="bg-gray-700 text-cyan-300 px-1 rounded" {...props}>{children}</code>;
         }
