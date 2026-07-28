@@ -75,7 +75,7 @@ function validateLeaf(leaf: ReturnType<typeof parsePlotCall>, data: any[]): stri
         plotRegistration.parseConfig(mainConfig, data);
 
     } catch (e: any) {
-         return e.message;
+        return e instanceof Error ? e.message : String(e);
     }
     return null;
 }
