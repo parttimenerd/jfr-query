@@ -64,7 +64,7 @@ const isTimestampLike = (key: string, sample: any): boolean => {
 };
 
 const isNumericLike = (key: string, sample: any, isTimestamp: boolean): boolean => {
-    if (isTimestamp) return true;
+    if (isTimestamp) return false;
     if (!sample || typeof sample[key] === 'undefined') return false;
     const value = sample[key];
     return typeof value === 'number' || typeof value === 'bigint';

@@ -337,7 +337,7 @@ const App: React.FC = () => {
             urlParamsRef.current.notebookLoaded = true;
             try {
                 if (nb.startsWith('base64,')) {
-                    const decoded = decodeURIComponent(escape(atob(nb.slice('base64,'.length))));
+                    const decoded = new TextDecoder().decode(Uint8Array.from(atob(nb.slice('base64,'.length)), c => c.charCodeAt(0)));
                     setNotebookMarkdown(decoded);
                 } else {
                     fetch(nb).then(r => {

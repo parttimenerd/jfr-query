@@ -1005,7 +1005,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     };
     const handleApplyCode = (newCode: string, type: 'sql' | 'plot', index: number) => { if(type==='sql') handleSqlChange(newCode, index); else handlePlotChange(newCode, index); setActiveChat(null); };
     const handleApplyPlotFix = (newConfig: string, index: number) => handlePlotChange(newConfig, index);
-    const handleAddVariable = () => { let newVarName = '$newVar'; const currentVars = parsed.variables || {}; let i=1; while(currentVars[newVarName]) newVarName = `$newVar${i++}`; handleCellVariableChange({ ...currentVars, [newVarName]:''}); setFocusVarName(newVarName); };
+    const handleAddVariable = () => { let newVarName = '$newVar'; const currentVars = parsed.variables || {}; let i=1; while(currentVars[newVarName]) newVarName = `$newVar${i++}`; handleCellVariableChange({ ...currentVars, [newVarName]:''}); setIsVariablesCollapsed(false); setFocusVarName(newVarName); };
 
     const handleCommitBlockName = useCallback((type: 'sql' | 'plot', idx: number, newName: string) => {
         setEditingBlockName(null);
@@ -1420,8 +1420,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                         type="text"
                                         value={editingBlockName.value}
                                         onChange={e => setEditingBlockName({ type: 'plot', idx: plotUid, value: e.target.value })}
-                                        onBlur={() => handleCommitBlockName('plot', pi, editingBlockName.value)}
-                                        onKeyDown={e => { if (e.key === 'Enter') handleCommitBlockName('plot', pi, editingBlockName.value); else if (e.key === 'Escape') setEditingBlockName(null); e.stopPropagation(); }}
+                                        onBlur={() => handleCommitBlockName('plot', plotUid, editingBlockName.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') handleCommitBlockName('plot', plotUid, editingBlockName.value); else if (e.key === 'Escape') setEditingBlockName(null); e.stopPropagation(); }}
                                         onClick={e => e.stopPropagation()}
                                         className="bg-gray-800 border border-cyan-500 rounded px-1.5 py-0.5 text-sm font-medium text-gray-100 w-40 focus:outline-none"
                                         placeholder="Plot name…"
