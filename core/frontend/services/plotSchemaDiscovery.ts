@@ -254,7 +254,9 @@ export class PlotSchemaDiscovery {
         if (Array.isArray(rows) && rows.length > 0 && typeof rows[0] === 'object' && rows[0] !== null) {
             return Object.keys(rows[0] as object).map<ColumnSchema>(name => ({ name }));
         }
-        throw new Error('schema unavailable: query returned no rows; provide describeQuery');
+        // Empty result (table has zero rows) — schema is unavailable from data.
+        // Return an empty schema rather than throwing; caller can fall back to describeQuery.
+        return [];
     }
 
     private storeResult(key: string, result: DiscoveryResult): void {
