@@ -83,6 +83,9 @@ export function annotateCrossPlot(root: PlotNode, ctx?: NotebookPlotContext): vo
             // when no brush match took over.
             const resolved = n.annotations.resolves;
             if (!resolved || resolved.kind !== 'variable' || resolved.source) return;
+            // crossCellRef uses n.dollar.name as the *cell name*, not a variable name;
+            // the scope variables map is keyed by bare variable names, so skip it.
+            if (n.dollar.kind === 'crossCellRef') return;
             const v = ctx.scope.variables.get(n.dollar.name);
             if (v) {
                 n.annotations.resolves = {
