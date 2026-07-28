@@ -14,6 +14,10 @@ const TimeInput: React.FC<TimeInputProps> = ({ value, recordingStart, onChange }
   const [inputValue, setInputValue] = useState('');
   const [isValid, setIsValid] = useState(true);
   const escapingRef = useRef(false);
+  const valueRef = useRef(value);
+  const timeFormatRef = useRef(timeFormat);
+  valueRef.current = value;
+  timeFormatRef.current = timeFormat;
 
   useEffect(() => {
     setInputValue(formatTimestamp(value, timeFormat));
@@ -35,7 +39,7 @@ const TimeInput: React.FC<TimeInputProps> = ({ value, recordingStart, onChange }
     }
     setIsValid(false);
     setTimeout(() => {
-      setInputValue(formatTimestamp(value, timeFormat));
+      setInputValue(formatTimestamp(valueRef.current, timeFormatRef.current));
       setIsValid(true);
     }, 1500);
   };
