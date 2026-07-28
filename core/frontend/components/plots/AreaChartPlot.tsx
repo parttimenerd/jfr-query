@@ -150,7 +150,7 @@ const AreaChartComponent: React.FC<{
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
   const colors = getPaletteColors(clauses?.palette, COLORS);
 
-  const xTickFmt = makeTickFormatter(clauses?.axisX) ?? (isTime ? (t: any) => formatTimestamp(t, 'HH:mm:ss.SS') : undefined);
+  const xTickFmt = makeTickFormatter(clauses?.axisX) ?? (isTime ? (t: any) => formatTimestamp(t, settings.timeFormat) : undefined);
   const yTickFmt = makeTickFormatter(clauses?.axisY);
 
   const brushKey = chartData.length > 0
