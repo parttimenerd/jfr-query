@@ -102,7 +102,7 @@ function splitTopLevel(s: string, sep: string): string[] {
         }
         cur += c;
     }
-    if (cur.length > 0 || out.length > 0) out.push(cur);
+    if (cur.length > 0) out.push(cur);
     return out;
 }
 
@@ -317,7 +317,7 @@ function splitTopLevelOp(s: string, op: string): string[] {
         }
         cur += c;
     }
-    if (cur.length > 0 || out.length > 0) out.push(cur);
+    if (cur.length > 0) out.push(cur);
     return out;
 }
 
