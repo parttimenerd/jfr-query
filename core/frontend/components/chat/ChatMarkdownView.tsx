@@ -75,9 +75,11 @@ export function renderMarkdown(text: string, onRef?: (ref: string) => void): Rea
                 li: ({ children }) => <li className="text-gray-200">{withRefs(children, onRef)}</li>,
                 strong: ({ children }) => <strong className="font-semibold text-white">{withRefs(children, onRef)}</strong>,
                 em: ({ children }) => <em className="italic">{withRefs(children, onRef)}</em>,
-                code: ({ className, children, ...props }: any) => {
-                    const inline = !className;
-                    if (inline) {
+                code: ({ className, children, node, ...props }: any) => {
+                    // react-markdown v10 drops the inline prop; use node.position to detect
+                    // true inline code (single line) vs a language-less fenced block.
+                    const isSingleLine = node?.position?.start?.line === node?.position?.end?.line;
+                    if (!className && isSingleLine) {
                         return <code className="px-1 py-0.5 bg-gray-800 rounded text-xs font-mono text-cyan-300">{children}</code>;
                     }
                     return <code className={className} {...props}>{children}</code>;
