@@ -55,7 +55,7 @@ describe('buildWaterfallBars', () => {
 
     it('handles total bar correctly', () => {
         const result = buildWaterfallBars(
-            [{ phase: 'Total', delta: 15, isTotal: 1 }],
+            [{ phase: 'Total', delta: 15, isTotal: true }],
             { category: 'phase', value: 'delta', total: 'isTotal' }
         );
         expect(result).toMatchObject([
@@ -81,7 +81,7 @@ describe('buildWaterfallBars', () => {
             { category: 'phase', value: 'delta' }
         );
         expect(result[0]).toMatchObject({ name: 'A', base: 0, delta: 10 });
-        expect(result[1]).toMatchObject({ name: 'B', base: 7, delta: 3 }); // base = 10 + (-3) = 7
+        expect(result[1]).toMatchObject({ name: 'B', base: 7, delta: 3 }); // negative delta: base = running + rawDelta = 10 + (-3) = 7 (bottom edge of bar)
         expect(result[2]).toMatchObject({ name: 'C', base: 7, delta: 5 }); // base = running = 7
     });
 

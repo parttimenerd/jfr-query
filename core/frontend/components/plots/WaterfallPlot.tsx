@@ -5,6 +5,7 @@ import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { SettingsContext } from '../../context/SettingsContext';
+import { formatNumber } from '../../utils/numberFormatter';
 
 interface WaterfallConfig {
     category: string;
@@ -101,9 +102,7 @@ const WaterfallComponent: React.FC<{
     animationDuration?: number;
     clauses?: ParsedPlotCall;
 }> = ({ config, data, isAnimationActive, animationDuration }) => {
-    // SettingsContext is consumed to stay consistent with other plot components
-    // even though we don't use specific settings here currently.
-    useContext(SettingsContext);
+    const { settings } = useContext(SettingsContext);
 
     const showValues = config.showValues ?? true;
 
@@ -138,7 +137,11 @@ const WaterfallComponent: React.FC<{
                             <LabelList
                                 dataKey="rawDelta"
                                 position="top"
-                                formatter={(v: number) => v > 0 ? `+${v}` : String(v)}
+                                formatter={(v: number) => {
+                                    const dp = settings?.decimalPlaces ?? 2;
+                                    const rounded = typeof v === 'number' ? parseFloat(v.toFixed(dp)) : v;
+                                    return Number(rounded) > 0 ? `+${rounded}` : String(rounded);
+                                }}
                                 style={{ fontSize: 11 }}
                             />
                         )}
