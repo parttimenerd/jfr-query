@@ -5,7 +5,6 @@ import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { SettingsContext } from '../../context/SettingsContext';
-import { formatNumber } from '../../utils/numberFormatter';
 
 interface WaterfallConfig {
     category: string;

@@ -1,28 +1,31 @@
-// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { treemapPlot } from '../../components/plots/TreemapPlot';
+import { plotRegistry } from '../../components/plots/plotRegistry';
 
-describe('treemapPlot registration', () => {
-    it('has the correct name', () => {
+const treemapPlot = plotRegistry['TREEMAP'];
+
+describe('TreemapPlot registration', () => {
+    it('has name TREEMAP', () => {
         expect(treemapPlot.name).toBe('TREEMAP');
     });
 
-    it('parseConfig parses required params', () => {
+    it('parseConfig extracts label and value params', () => {
         const cfg = treemapPlot.parseConfig('TREEMAP(label: "objectClass", value: "weight")', []);
-        expect(cfg).toMatchObject({ label: 'objectClass', value: 'weight' });
+        expect(cfg.label).toBe('objectClass');
+        expect(cfg.value).toBe('weight');
     });
 
-    it('parseConfig parses optional colorBy param', () => {
+    it('parseConfig accepts optional colorBy param', () => {
         const cfg = treemapPlot.parseConfig('TREEMAP(label: "objectClass", value: "weight", colorBy: "thread")', []);
         expect(cfg.colorBy).toBe('thread');
     });
 
-    it('parseConfig applies showLabels default of true', () => {
+    it('parseConfig uses defaults for missing optional params', () => {
         const cfg = treemapPlot.parseConfig('TREEMAP(label: "name", value: "size")', []);
         expect(cfg.showLabels).toBe(true);
+        expect(cfg.colorBy).toBeUndefined();
     });
 
-    it('template contains label and value placeholders', () => {
+    it('template contains required params', () => {
         expect(treemapPlot.template).toContain('label');
         expect(treemapPlot.template).toContain('value');
     });
