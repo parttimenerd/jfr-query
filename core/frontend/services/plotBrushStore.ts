@@ -77,6 +77,18 @@ class BrushStore {
         const existing = this.state.get(name);
         const payload: BrushPayload = { name, domain: null, mode: existing?.mode ?? 'x', cellName };
         this.state.set(name, payload);
+        // Remove from publisher indices so stale entries don't cause false cycle detection.
+        const publisherCell = cellName ?? existing?.cellName;
+        if (publisherCell) {
+            const pubs = this.publisherToNames.get(publisherCell);
+            if (pubs) {
+                pubs.delete(name);
+                if (pubs.size === 0) this.publisherToNames.delete(publisherCell);
+            }
+        }
+        if (this.nameToPublisher.get(name) === publisherCell) {
+            this.nameToPublisher.delete(name);
+        }
         const subs = this.listeners.get(name);
         if (subs) subs.forEach(entry => entry.fn(payload));
     }
@@ -210,18 +222,20 @@ class BrushStore {
             // Update state now, notify later.
             const cleared: BrushPayload = { name, domain: null, mode: current.mode, cellName: current.cellName };
             this.state.set(name, cleared);
+            // Capture the subscriber set now so subscribers who join between now
+            // and the microtask fire don't receive a double notification.
+            const subsAtScheduleTime = this.listeners.get(name) ? new Set(this.listeners.get(name)!) : null;
             queueMicrotask(() => {
-                const subs = this.listeners.get(name);
-                if (subs) subs.forEach(entry => entry.fn(cleared));
+                if (subsAtScheduleTime) subsAtScheduleTime.forEach(entry => entry.fn(cleared));
             });
             return 'cleared';
         }
         const newDomain: [number, number] = [Math.max(bMin, rMin), Math.min(bMax, rMax)];
         const clamped: BrushPayload = { ...current, domain: newDomain };
         this.state.set(name, clamped);
+        const subsAtScheduleTime2 = this.listeners.get(name) ? new Set(this.listeners.get(name)!) : null;
         queueMicrotask(() => {
-            const subs = this.listeners.get(name);
-            if (subs) subs.forEach(entry => entry.fn(clamped));
+            if (subsAtScheduleTime2) subsAtScheduleTime2.forEach(entry => entry.fn(clamped));
         });
         return 'clamped';
     }

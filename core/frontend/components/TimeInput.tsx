@@ -24,6 +24,8 @@ const TimeInput: React.FC<TimeInputProps> = ({ value, recordingStart, onChange }
     setIsValid(true);
   }, [value, timeFormat]);
 
+  const invalidResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleBlur = () => {
     if (escapingRef.current) { escapingRef.current = false; return; }
     const trimmedValue = inputValue.trim();
@@ -38,7 +40,9 @@ const TimeInput: React.FC<TimeInputProps> = ({ value, recordingStart, onChange }
       return;
     }
     setIsValid(false);
-    setTimeout(() => {
+    if (invalidResetTimerRef.current) clearTimeout(invalidResetTimerRef.current);
+    invalidResetTimerRef.current = setTimeout(() => {
+      invalidResetTimerRef.current = null;
       setInputValue(formatTimestamp(valueRef.current, timeFormatRef.current));
       setIsValid(true);
     }, 1500);

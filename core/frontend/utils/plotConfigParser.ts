@@ -129,9 +129,9 @@ const parseValue = (valueStr: string, expectedType: string, data: any[], paramNa
     if (trimmed.toLowerCase() === 'true') return true;
     if (trimmed.toLowerCase() === 'false') return false;
 
-    // Number
+    // Number — allow leading-dot decimals like .5 as well as the standard form
     const num = parseFloat(trimmed);
-    if (!isNaN(num) && /^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(trimmed)) {
+    if (!isNaN(num) && /^-?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(trimmed)) {
         return num;
     }
 

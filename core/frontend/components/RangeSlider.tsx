@@ -55,14 +55,14 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
     const newValue = rangeSpan === 0 ? min : Math.min(Number(event.target.value), maxVal - step);
     setMinVal(newValue);
     minValRef.current = newValue;
-    onChange({ min: newValue, max: maxVal });
+    onChange({ min: newValue, max: maxValRef.current });
   };
 
   const handleMaxChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = rangeSpan === 0 ? max : Math.max(Number(event.target.value), minVal + step);
     setMaxVal(newValue);
     maxValRef.current = newValue;
-    onChange({ min: minVal, max: newValue });
+    onChange({ min: minValRef.current, max: newValue });
   };
 
   // B-093: keyboard text inputs for precise value entry

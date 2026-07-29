@@ -193,6 +193,11 @@ export class GardenerProvider implements IAiProvider {
         const body: any = { model, messages: wireMessages };
         if (tools.length > 0) body.tools = toolsToOpenAi(tools);
 
+        const timeoutController = new AbortController();
+        const timeoutTimer = setTimeout(() => timeoutController.abort(), 30000);
+        const signal = opts?.signal
+            ? AbortSignal.any([opts.signal, timeoutController.signal])
+            : timeoutController.signal;
         const response = await fetch(this.API_URL, {
             method: 'POST',
             headers: {
@@ -200,8 +205,8 @@ export class GardenerProvider implements IAiProvider {
                 'Authorization': `Bearer ${this.apiKey}`,
             },
             body: JSON.stringify(body),
-            signal: opts?.signal,
-        });
+            signal,
+        }).finally(() => clearTimeout(timeoutTimer));
         if (!response.ok) {
             if (response.status === 401) throw new Error('Invalid API Key');
             if (response.status === 429) throw new Error('Quota Exceeded');

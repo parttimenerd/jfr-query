@@ -229,6 +229,7 @@ export class GeminiProvider implements IAiProvider {
             })
         );
         for await (const chunk of stream) {
+            if (opts?.signal?.aborted) return;
             const parts: any[] = (chunk as any)?.candidates?.[0]?.content?.parts ?? [];
             for (const p of parts) {
                 if (typeof p?.text === 'string' && p.text) {
