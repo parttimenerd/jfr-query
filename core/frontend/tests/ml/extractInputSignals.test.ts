@@ -101,6 +101,26 @@ describe('extractInputSignals', () => {
             const s = extractInputSignals('SELECT a, b FROM t', ['a', 'b']);
             expect(s).not.toContain('wide');
         });
+
+        it('emits "solo" for exactly 1 column (HISTOGRAM discriminator)', () => {
+            const s = extractInputSignals('SELECT pauseMs FROM GarbageCollections', ['pauseMs']);
+            expect(s).toContain('solo');
+            expect(s).not.toContain('duo');
+            expect(s).not.toContain('wide');
+        });
+
+        it('emits "duo" for exactly 2 columns (PIE/FLAMEGRAPH/TREEMAP/WATERFALL discriminator)', () => {
+            const s = extractInputSignals('SELECT cause, COUNT(*) FROM t GROUP BY cause', ['cause', 'count']);
+            expect(s).toContain('duo');
+            expect(s).not.toContain('solo');
+            expect(s).not.toContain('wide');
+        });
+
+        it('does NOT emit "solo" or "duo" for 3+ columns', () => {
+            const s = extractInputSignals('SELECT a, b, c FROM t', ['a', 'b', 'c']);
+            expect(s).not.toContain('solo');
+            expect(s).not.toContain('duo');
+        });
     });
 
     describe('time signal', () => {

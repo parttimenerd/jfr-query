@@ -43,6 +43,8 @@ def extract_input_signals_v4(sql: str, columns: list) -> str:
 
     if re.search(r'\bHAVING\b', sql_up): tags.append('having')
 
+    if len(columns) == 1: tags.append('solo')
+    if len(columns) == 2: tags.append('duo')
     if len(columns) >= 3: tags.append('wide')
 
     has_time = any(re.search(r'time|timestamp|bucket|date|_at$|_ts$|_dt$|^ts$|^dt$|^when$', n)

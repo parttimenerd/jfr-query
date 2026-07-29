@@ -76,6 +76,8 @@ const SEQ2SEQ_INPUT_V2 = (sql: string, columns: string[] | TypedColumn[], schema
  *   having   — has HAVING clause
  *   time     — timestamp/time-named column (→ LINE_CHART/AREA_CHART likely)
  *   wide     — 3+ result columns
+ *   solo     — exactly 1 result column (→ HISTOGRAM: 98% coverage, 0% BAR/PIE/LINE)
+ *   duo      — exactly 2 result columns (→ PIE/TREEMAP/WATERFALL/FLAMEGRAPH: 98-100%)
  *   stack    — stack-trace column (→ FLAMEGRAPH likely)
  *   gc       — JFR GC domain (pause, heap, GC*)
  *   alloc    — JFR allocation domain (alloc*, tlab, retained)
@@ -122,7 +124,11 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
 
     if (/\bHAVING\b/.test(sqlUp)) tags.push('having');
 
-    // Column count
+    // Column count — exact-count signals complement the wide (3+) tag.
+    // solo: exactly 1 col fires 98% HISTOGRAM, 0% BAR/PIE/LINE/HEATMAP.
+    // duo:  exactly 2 cols fires 100% PIE/TREEMAP/WATERFALL, 98% FLAMEGRAPH.
+    if (typed.length === 1) tags.push('solo');
+    if (typed.length === 2) tags.push('duo');
     if (typed.length >= 3) tags.push('wide');
 
     // Time signal — column names containing time/timestamp/bucket or typed as TIMESTAMP.

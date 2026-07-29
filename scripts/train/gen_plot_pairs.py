@@ -376,6 +376,8 @@ def extract_input_signals(sql: str, columns: list) -> str:
 
     if re.search(r'\bHAVING\b', sql_up): tags.append('having')
 
+    if len(columns) == 1: tags.append('solo')
+    if len(columns) == 2: tags.append('duo')
     if len(columns) >= 3: tags.append('wide')
 
     TIME_TYPES = {'TIMESTAMP', 'DATE', 'TIMESTAMP_NS', 'TIMESTAMP_MS'}
