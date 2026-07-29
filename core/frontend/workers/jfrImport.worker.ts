@@ -44,6 +44,11 @@ const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unk
 // Initialization state — only load WASM once per worker lifetime
 let wasmInitPromise: Promise<void> | null = null;
 
+// Serialize concurrent 'import' messages — the import process uses shared
+// module-level state (__jfrPendingValue counter, Object.defineProperty on
+// _jfrCsvPending) that is not safe for concurrent calls.
+let importQueue: Promise<void> = Promise.resolve();
+
 self.addEventListener('message', (e: MessageEvent) => {
   const msg = e.data;
 
@@ -65,7 +70,9 @@ self.addEventListener('message', (e: MessageEvent) => {
   }
 
   if (msg.type === 'import') {
-    handleImport(msg.bytes as Uint8Array, msg.stacktraceDepth as number, (msg.tablePrefix as string) ?? '');
+    importQueue = importQueue.then(() =>
+      handleImport(msg.bytes as Uint8Array, msg.stacktraceDepth as number, (msg.tablePrefix as string) ?? '')
+    ).catch(() => {});
   }
 });
 

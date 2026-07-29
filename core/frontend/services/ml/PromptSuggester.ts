@@ -40,6 +40,7 @@ async function tryLoadArtifacts(): Promise<void> {
         // Vite emits ?url for arbitrary assets.
         const binUrl = (await import('./promptSuggestions.bin?url')).default as string;
         const resp = await fetch(binUrl);
+        if (!resp.ok) throw new Error(`Failed to fetch promptSuggestions.bin: ${resp.status}`);
         const buf = await resp.arrayBuffer();
         _matrix = new Float32Array(buf);
         _prompts = meta.prompts;
