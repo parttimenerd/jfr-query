@@ -253,9 +253,10 @@ function emitLParen(s: EState, t: PlotToken, prev: PlotToken | undefined, tokens
 
 function emitRParen(s: EState, t: PlotToken): void {
     const ctx = s.parenStack.pop();
-    if (ctx === 'call' && s.buf.includes('\n') && lastLineHasOnlyIndent(s)) {
+    if (ctx === 'call' && s.buf.includes('\n')) {
         // Multi-line call — close on its own line at outer indent.
-        // (The opening level was preserved; we just dedent here.)
+        newline(s);
+        indentHere(s);
     }
     if (s.buf.endsWith(' ')) s.buf = s.buf.slice(0, -1);
     s.buf += ')';

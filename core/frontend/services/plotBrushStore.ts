@@ -74,7 +74,8 @@ class BrushStore {
 
     /** Clear the brush for a name. Notifies subscribers with `domain: null`. */
     clear(name: string, cellName?: string): void {
-        const payload: BrushPayload = { name, domain: null, mode: 'x', cellName };
+        const existing = this.state.get(name);
+        const payload: BrushPayload = { name, domain: null, mode: existing?.mode ?? 'x', cellName };
         this.state.set(name, payload);
         const subs = this.listeners.get(name);
         if (subs) subs.forEach(entry => entry.fn(payload));
@@ -122,7 +123,9 @@ class BrushStore {
                         this.cycleWarned.add(pairKey);
                         console.warn(`[plotBrushStore] cycle detected between cells "${subscriberCell}" and "${publisherCell}"; second subscriber will see initial value only.`);
                     }
-                    // Skip live notifications for the second subscriber.
+                    // Skip live notifications for the second subscriber — send initial value only.
+                    const current = this.state.get(name);
+                    if (current) fn(current);
                     return () => {
                         const ns = this.subscriberToNames.get(subscriberCell);
                         if (ns) { ns.delete(name); if (ns.size === 0) this.subscriberToNames.delete(subscriberCell); }

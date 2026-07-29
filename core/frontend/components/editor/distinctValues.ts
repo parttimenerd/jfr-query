@@ -46,18 +46,18 @@ function findColumn(
   schema: SchemaForCompletion,
   table: string,
   column: string,
-): { type: string; tableName: string } | null {
+): { type: string; tableName: string; columnName: string } | null {
   const tlc = table.toLowerCase();
   const clc = column.toLowerCase();
   const tbl = schema.tableMap.get(tlc);
   if (tbl) {
     const col = tbl.columns.find(c => c.name.toLowerCase() === clc);
-    if (col) return { type: col.type, tableName: tbl.name };
+    if (col) return { type: col.type, tableName: tbl.name, columnName: col.name };
   }
   const vw = schema.viewMap.get(tlc);
   if (vw) {
     const col = vw.columns.find(c => c.name.toLowerCase() === clc);
-    if (col) return { type: col.type, tableName: vw.name };
+    if (col) return { type: col.type, tableName: vw.name, columnName: col.name };
   }
   return null;
 }
@@ -116,7 +116,7 @@ export function requestDistinctValues(
   let resolved: { tableName: string; columnName: string; type: string } | null = null;
   if (table) {
     const r = findColumn(schema, table, column);
-    if (r) resolved = { tableName: r.tableName, columnName: column, type: r.type };
+    if (r) resolved = { tableName: r.tableName, columnName: r.columnName, type: r.type };
   } else {
     resolved = resolveColumn(schema, column, referenced);
   }

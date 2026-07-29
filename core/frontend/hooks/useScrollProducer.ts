@@ -25,7 +25,8 @@ export function useScrollProducer(group: string | null | undefined): React.RefOb
         isSyncing.current = true;
         el.scrollTop = pos.top;
         el.scrollLeft = pos.left;
-        isSyncing.current = false;
+        // Reset after the scroll event has had a chance to fire (it is async).
+        Promise.resolve().then(() => { isSyncing.current = false; });
     }, []);
 
     useEffect(() => {
