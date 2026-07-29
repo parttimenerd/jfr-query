@@ -256,6 +256,10 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">AXIS_X TYPE time FORMAT "HH:mm" LABEL "Time"</code>
                                 <p className="text-gray-400 mt-1">Combine multiple sub-clauses in a single <code className="bg-gray-600 px-1 rounded">AXIS_X</code>.</p>
                             </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">AXIS_Y DOMAIN [0, 100]</code>
+                                <p className="text-gray-400 mt-1">Fix the axis extent. Use <code className="bg-gray-600 px-1 rounded">auto</code> for either bound to keep it dynamic, e.g. <code className="bg-gray-600 px-1 rounded">DOMAIN [0, auto]</code>.</p>
+                            </div>
                         </div>
 
                         <h4 className="font-semibold text-gray-200 mt-5">Interactive Linking &amp; Brushing</h4>
@@ -290,7 +294,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">ON HOVER TOOLTIP "label"</code>
-                                <p className="text-gray-400 mt-1">Display a static label when hovering over the plot.</p>
+                                <p className="text-gray-400 mt-1">Custom tooltip template. Use <code className="bg-gray-600 px-1 rounded">{'{column}'}</code> placeholders for column values, e.g. <code className="bg-gray-600 px-1 rounded">"{'<{cause}: {duration}>'}"</code>.</p>
                             </div>
                         </div>
 
