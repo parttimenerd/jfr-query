@@ -14,6 +14,36 @@ import * as PlotGenerationService from '../services/ml/PlotGenerationService';
 import * as SqlGenerationService from '../services/ml/SqlGenerationService';
 import { DataContext, DBState } from '../context/DuckDBContext';
 
+export const AiModeCards: React.FC<{ isAiActive: boolean }> = ({ isAiActive }) => (
+    <div className={`grid grid-cols-1 sm:grid-cols-3 gap-2 ${isAiActive ? '' : 'opacity-50'}`}>
+        {[
+            {
+                label: 'Ghost-text',
+                shortcut: 'Tab to accept',
+                desc: 'Inline completion appears as you type in SQL and Plot cells.',
+            },
+            {
+                label: 'Inline chat',
+                shortcut: '⌘K / Ctrl+K',
+                desc: 'Context-aware chat attached to any cell. Understands your data schema.',
+            },
+            {
+                label: 'Command palette',
+                shortcut: '⌘⇧P → >',
+                desc: 'Type > in the command palette for freeform AI actions across the notebook.',
+            },
+        ].map(({ label, shortcut, desc }) => (
+            <div key={label} className="rounded-md border border-gray-700 bg-gray-800/50 p-3 space-y-1">
+                <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-200">{label}</span>
+                    <kbd className="text-[10px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded font-mono">{shortcut}</kbd>
+                </div>
+                <p className="text-xs text-gray-400">{desc}</p>
+            </div>
+        ))}
+    </div>
+);
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -470,6 +500,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
                         />
                     </div>
+                </div>
+            </section>
+
+            {/* AI entry-point mode cards */}
+            <section>
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">AI Entry Points</h3>
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">AI Entry Points</label>
+                    <AiModeCards isAiActive={
+                        localSettings.aiProvider === 'browser' ||
+                        !!(localSettings as any)[`${localSettings.aiProvider}ApiKey`]
+                    } />
                 </div>
             </section>
 
