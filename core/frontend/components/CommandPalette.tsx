@@ -481,7 +481,7 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
 
     return (
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/40" onClick={onClose}>
-            <div className="w-full max-w-xl bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div role="dialog" aria-modal="true" aria-label="Command palette" className="w-full max-w-xl bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800">
                     {showSubMode ? (

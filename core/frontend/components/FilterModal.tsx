@@ -43,6 +43,7 @@ const FilterModal: React.FC<FilterModalProps> = ({ isOpen, onClose, onApply, rec
       onClick={handleBackdropClick}
     >
       <div
+        role="dialog" aria-modal="true" aria-label="Filters"
         className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-lg flex flex-col animate-fade-in"
       >
         <header className="flex-shrink-0 p-4 border-b border-gray-700 flex justify-between items-center">

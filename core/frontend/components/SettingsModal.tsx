@@ -165,10 +165,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={handleBackdropClick}>
-      <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-4xl flex flex-col animate-fade-in max-h-[90vh]">
+      <div role="dialog" aria-modal="true" aria-label="Settings" className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-4xl flex flex-col animate-fade-in max-h-[90vh]">
         <header className="flex-shrink-0 p-4 border-b border-gray-700 flex justify-between items-center">
           <h2 className="text-xl font-semibold text-gray-200">Settings</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-700 rounded-full">
+          <button onClick={onClose} className="p-2 hover:bg-gray-700 rounded-full" aria-label="Close">
             <XMarkIcon className="w-6 h-6" />
           </button>
         </header>

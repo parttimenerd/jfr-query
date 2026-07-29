@@ -78,6 +78,7 @@ const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({ isOpen,
         >
             <div
                 className="relative bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
+                role="dialog" aria-modal="true" aria-label="Keyboard shortcuts and tips"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
