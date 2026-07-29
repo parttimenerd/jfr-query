@@ -1194,6 +1194,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                             value={chatMode.state.mode}
                             onChange={e => chatMode.setMode(e.target.value as ChatMode)}
                             title={buildModeTooltip(chatMode.state.mode)}
+                            aria-label="Chat mode"
                             className={`bg-transparent border-none p-0 pr-3 text-[10px] focus:outline-none cursor-pointer appearance-none ${chatMode.state.mode === 'plan' ? 'text-amber-400' : chatMode.state.mode === 'btw' ? 'text-cyan-300' : 'text-gray-400'}`}
                         >
                             <option value="normal" className="bg-gray-800 text-gray-200">/normal</option>
@@ -1206,6 +1207,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                 value={chatModel}
                                 onChange={e => setChatModel(e.target.value)}
                                 title={buildModelTooltip(chatModel, chatProvider)}
+                                aria-label="AI model"
                                 className="bg-transparent border-none p-0 pr-3 text-[10px] font-mono text-gray-400 focus:outline-none cursor-pointer appearance-none"
                             >
                                 {!providerMeta.models.some(m => m.id === chatModel) && (
@@ -1229,6 +1231,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                 key={skill.meta.name}
                                 onClick={() => deactivateSkill(skill.meta.name)}
                                 title={`${skill.meta.title} — click to deactivate`}
+                                aria-label={`Deactivate skill: ${skill.meta.title}`}
                                 className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full bg-purple-700/40 text-purple-200 border border-purple-600/50 hover:bg-purple-700/70 hover:text-white transition-colors"
                             >
                                 {skill.meta.icon && <span>{skill.meta.icon}</span>}
@@ -1318,6 +1321,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                                 <div className="absolute inset-x-4 h-px bg-transparent group-hover/rewind:bg-gray-700/60 transition-colors"/>
                                                 <button
                                                     onClick={() => handleRewindTo(originalIdx)}
+                                                    aria-label="Rewind conversation to here"
                                                     className="absolute left-1/2 -translate-x-1/2 opacity-0 group-hover/rewind:opacity-100 text-[10px] text-gray-500 hover:text-amber-300 bg-gray-900 px-2 py-0.5 rounded border border-gray-700/60 hover:border-amber-600/40 whitespace-nowrap transition-all"
                                                 >
                                                     ↩ rewind to here
@@ -1574,6 +1578,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         }}
                         onKeyDown={handleKeyDown}
                         placeholder={`Ask for a query… or type / for commands, @ to mention a cell`}
+                        aria-label="Chat message"
                         className="w-full bg-gray-800 border border-gray-600 rounded-lg py-2 pl-4 pr-20 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200 resize-none overflow-hidden"
                         style={{ minHeight: '38px' }}
                         disabled={isLoading || !schema}

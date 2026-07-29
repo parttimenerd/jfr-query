@@ -125,12 +125,14 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
                                 <div className="flex flex-wrap gap-1">
                                     <button
                                         onClick={() => setTagFilter(null)}
+                                        aria-pressed={tagFilter === null}
                                         className={`text-xs px-2 py-0.5 rounded ${tagFilter === null ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-300'}`}>
                                         all
                                     </button>
                                     {allTags.map(t => (
                                         <button key={t}
                                             onClick={() => setTagFilter(t)}
+                                            aria-pressed={tagFilter === t}
                                             className={`text-xs px-2 py-0.5 rounded ${tagFilter === t ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-300'}`}>
                                             {t}
                                         </button>
@@ -194,6 +196,7 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
 
                 <footer className="flex-shrink-0 p-4 border-t border-gray-700 flex items-center justify-between gap-4">
                     <fieldset className="flex items-center gap-3 text-sm text-gray-300">
+                        <legend className="sr-only">Insert mode</legend>
                         <label className="flex items-center gap-1.5">
                             <input type="radio" name="insertMode" checked={insertMode === 'replace'} onChange={() => setInsertMode('replace')} />
                             Replace
@@ -223,6 +226,8 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
 
 const TemplateRow: React.FC<{ template: TemplateMeta; selected: boolean; onClick: () => void }> = ({ template, selected, onClick }) => (
     <button onClick={onClick}
+        aria-selected={selected}
+        aria-label={`Select template: ${template.title}`}
         className={`w-full text-left px-3 py-2 hover:bg-gray-700/60 border-l-2 ${selected ? 'bg-gray-700/60 border-cyan-500' : 'border-transparent'}`}>
         <div className="text-sm font-medium text-gray-200">{template.title}</div>
         {template.description && <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">{template.description}</div>}

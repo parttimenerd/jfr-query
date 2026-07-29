@@ -177,10 +177,14 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
           />
         ) : (
           <div
+            role="button"
+            tabIndex={0}
             className="absolute text-xs text-gray-400 cursor-text hover:text-cyan-400 select-none"
             style={labelStyle(true)}
             onClick={() => { setMinText(String(minVal)); setEditingMin(true); }}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setMinText(String(minVal)); setEditingMin(true); } }}
             title="Click to type a value"
+            aria-label={`Minimum value: ${displayMin}. Press Enter to edit.`}
           >
             {displayMin}
           </div>
@@ -199,10 +203,14 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ min, max, value, onChange, st
           />
         ) : (
           <div
+            role="button"
+            tabIndex={0}
             className="absolute text-xs text-gray-400 cursor-text hover:text-cyan-400 select-none"
             style={labelStyle(false)}
             onClick={() => { setMaxText(String(maxVal)); setEditingMax(true); }}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setMaxText(String(maxVal)); setEditingMax(true); } }}
             title="Click to type a value"
+            aria-label={`Maximum value: ${displayMax}. Press Enter to edit.`}
           >
             {displayMax}
           </div>

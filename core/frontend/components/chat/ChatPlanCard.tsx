@@ -67,6 +67,8 @@ export const ChatPlanCard: React.FC<ChatPlanCardProps> = ({
                             <div className="flex-1 min-w-0">
                                 <button
                                     onClick={() => toggle(i)}
+                                    aria-expanded={expanded.has(i)}
+                                    aria-label={`${expanded.has(i) ? 'Collapse' : 'Expand'} plan step ${i + 1}: ${describePlanStep(step)}`}
                                     className="text-left w-full hover:text-cyan-200 transition-colors flex items-center gap-1"
                                 >
                                     <span className={`inline-block w-2 transition-transform ${expanded.has(i) ? 'rotate-90' : ''}`} aria-hidden>›</span>
