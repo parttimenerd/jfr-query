@@ -903,7 +903,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
             }
         } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [data, config]);
+    }, [data, config, dataByQueryRef]);
     let mainContent: React.ReactNode = null;
     let inlineError: React.ReactNode = null;
 

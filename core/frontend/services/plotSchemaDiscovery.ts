@@ -31,7 +31,7 @@ export interface PlotSchemaDiscoveryOptions {
     /**
      * Preferred path: wrap the user's SQL in `DESCRIBE (...)` and return the
      * column list without materialising rows. If omitted, every discovery
-     * falls back to `SELECT * FROM (<sql>) LIMIT 0` via `runQuery`.
+     * falls back to `SELECT * FROM (<sql>) LIMIT 1` via `runQuery`.
      */
     describeQuery?: (sql: string, signal: AbortSignal) => Promise<ColumnSchema[]>;
     /** LRU cap. Default 50. */
@@ -242,7 +242,7 @@ export class PlotSchemaDiscovery {
                 // caller caches the parse-error result.
                 const message = err?.message ? String(err.message) : '';
                 if (looksLikeParseError(message)) throw err;
-                // Else fall through to the LIMIT 0 path.
+                // Else fall through to the LIMIT 1 path.
             }
         }
         return this.runLimitZero(sql, signal);
