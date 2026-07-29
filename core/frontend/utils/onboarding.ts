@@ -4,5 +4,10 @@
  * - the user has not previously dismissed the banner
  */
 export function shouldShowOnboarding(cellCount: number): boolean {
-    return cellCount === 0 && !localStorage.getItem('jfrq:onboarding-dismissed');
+    if (cellCount !== 0) return false;
+    try {
+        return !localStorage.getItem('jfrq:onboarding-dismissed');
+    } catch {
+        return false;
+    }
 }

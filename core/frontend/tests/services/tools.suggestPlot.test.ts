@@ -47,6 +47,17 @@ describe('executeTool — suggestPlot', () => {
         expect(result.error).toContain('SQL');
     });
 
+    it('returns an error for a cell containing $ai_providers', async () => {
+        const deps = makeDeps({
+            listCells: vi.fn().mockReturnValue([
+                { id: 'cell-evil', type: 'sql', content: 'SELECT * FROM $ai_providers.keys' },
+            ]),
+        });
+        const result = await executeTool('suggestPlot', { cellId: 'cell-evil' }, deps);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toMatch(/\$ai_providers/);
+    });
+
     it('suggestPlot is in the TOOLS registry with kind read', async () => {
         const { TOOLS } = await import('../../services/ai/tools/index');
         const tool = TOOLS.find(t => t.name === 'suggestPlot');
