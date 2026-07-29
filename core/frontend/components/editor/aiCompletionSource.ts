@@ -41,35 +41,38 @@ export interface AiCompletionDeps {
   mode: 'sql' | 'plot';
 }
 
-// LRU-style cache: key = left context (first 300 chars), value = AI suggestion
-const aiCache = new Map<string, string | null>();
-const AI_CACHE_MAX = 50;
-
-// In-flight set (prevents duplicate requests for the same context)
-const inflight = new Set<string>();
+// LRU-style cache and in-flight set are created per aiCompletionSource instance
+// so multiple editor instances (notebook cells) don't share state and can't
+// suppress each other's inference requests with the same context suffix.
 
 function cacheKey(context: string): string {
   return context.slice(-300);
 }
 
-function kickInference(deps: AiCompletionDeps, key: string, fullContext: string, prefix: string): void {
-  if (inflight.has(key) || aiCache.has(key)) return;
-  if (!deps.isReady()) return;
-  inflight.add(key);
-  deps.infer(fullContext, prefix)
-    .then(result => {
-      aiCache.set(key, result);
-      while (aiCache.size > AI_CACHE_MAX) {
-        const first = aiCache.keys().next().value!;
-        aiCache.delete(first);
-      }
-    })
-    .catch(() => {
-      aiCache.set(key, null);
-    })
-    .finally(() => {
-      inflight.delete(key);
-    });
+function makeKickInference(
+  aiCache: Map<string, string | null>,
+  inflight: Set<string>,
+) {
+  return function kickInference(deps: AiCompletionDeps, key: string, fullContext: string, prefix: string): void {
+    if (inflight.has(key) || aiCache.has(key)) return;
+    if (!deps.isReady()) return;
+    inflight.add(key);
+    const AI_CACHE_MAX = 50;
+    deps.infer(fullContext, prefix)
+      .then(result => {
+        aiCache.set(key, result);
+        while (aiCache.size > AI_CACHE_MAX) {
+          const first = aiCache.keys().next().value!;
+          aiCache.delete(first);
+        }
+      })
+      .catch(() => {
+        aiCache.set(key, null);
+      })
+      .finally(() => {
+        inflight.delete(key);
+      });
+  };
 }
 
 /**
@@ -81,6 +84,11 @@ function kickInference(deps: AiCompletionDeps, key: string, fullContext: string,
  * of the suggestion.
  */
 export function aiCompletionSource(deps: AiCompletionDeps) {
+  // Per-instance state — each editor cell gets its own cache and in-flight set.
+  const aiCache = new Map<string, string | null>();
+  const inflight = new Set<string>();
+  const kickInference = makeKickInference(aiCache, inflight);
+
   return (cx: CompletionContext): CompletionResult | null => {
     // Only fire on explicit Ctrl+Space or when the user has typed something
     const tokenMatch = cx.matchBefore(/[\w"$@#][^\n]*$/);
