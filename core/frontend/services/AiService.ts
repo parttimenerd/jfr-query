@@ -187,7 +187,8 @@ class AiService {
         doc += '- `... LINK_SCROLL "group"`: Synchronise scroll position with other plots in the same named group.\n';
         doc += '- `... TOOLTIP COLUMNS [col1, col2]`: Limit hover tooltip to specific columns.\n';
         doc += '- `... ON HOVER TOOLTIP "{col1}: {col2}"`: Custom tooltip template with {column} placeholders.\n';
-        doc += '- `... DATASET table_name`: Use a DuckDB table/view as data source instead of query result.\n\n';
+        doc += '- `... DATASET table_name`: Use a DuckDB table/view as data source instead of query result.\n';
+        doc += '- `... DISABLED`: Suppress rendering of this plot — shows a placeholder. Use to temporarily hide without deleting config.\n\n';
         doc += 'AVAILABLE PLOT FUNCTIONS:\n---\n';
         for (const plot of Object.values(plotRegistry) as PlotRegistration[]) {
             doc += `FUNCTION: ${plot.name}${generateSignature(plot.params)}\nDESCRIPTION: ${plot.description}\n`;

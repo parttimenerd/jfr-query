@@ -64,8 +64,9 @@ export const ToolCallLine: React.FC<ToolCallLineProps> = ({
                     type="button"
                     onClick={() => setExpanded(v => !v)}
                     title={expanded ? 'Hide details' : 'Show details'}
+                    aria-expanded={expanded}
+                    aria-label={expanded ? 'Hide tool call details' : 'Show tool call details'}
                     className="text-gray-500 hover:text-gray-300 px-1"
-                    aria-label="Toggle details"
                 >
                     {expanded ? '▴' : '▾'}
                 </button>

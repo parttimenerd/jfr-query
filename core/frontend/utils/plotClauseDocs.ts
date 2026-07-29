@@ -186,5 +186,11 @@ export const plotClauseDocs: Record<string, ClauseDoc> = {
             { name: '@alias', type: 'identifier', required: true, description: 'A name starting with @ that you can use in the config body, e.g. `@col`.' },
             { name: 'value', type: 'string | number', required: true, description: 'A quoted string or number, e.g. `"cpu_usage"` or `100`.' }
         ]
+    },
+    DISABLED: {
+        name: 'DISABLED',
+        signature: 'DISABLED',
+        description: 'Suppresses rendering of this plot — shows a placeholder instead. Useful for temporarily hiding a chart without deleting its config.',
+        params: []
     }
 };

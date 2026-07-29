@@ -219,6 +219,10 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">DATASET my_table</code>
                                 <p className="text-gray-400 mt-1">Use a named DuckDB table or view as the data source instead of a query result. Useful for very large static datasets loaded via <code className="bg-gray-600 px-1 rounded">CREATE VIEW</code>.</p>
                             </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">DISABLED</code>
+                                <p className="text-gray-400 mt-1">Suppresses rendering of this plot — shows a placeholder instead. Useful for temporarily hiding a chart without deleting its config.</p>
+                            </div>
                         </div>
 
                         <h4 className="font-semibold text-gray-200 mt-5">Legend</h4>
