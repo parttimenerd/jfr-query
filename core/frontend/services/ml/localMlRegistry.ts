@@ -1,26 +1,31 @@
 // Service registry for locally-trained ML artifacts. Exposes both models
-// behind a single import surface and a shared feature-flag check so call
-// sites don't need to know about VITE_USE_LOCAL_ML directly.
+// behind a single import surface.
 //
-// Both members degrade gracefully when artifacts are absent (the loaders
-// return identity / empty results), so importing this file is always safe.
+// AutocompleteRanker: always active — weights are committed in-tree (JSON,
+// zero cost to load). No env flag needed.
+//
+// PromptSuggester: gated behind VITE_USE_LOCAL_ML=true because it fetches a
+// 1.8MB binary + downloads MiniLM from HuggingFace on first use.
+//
+// Both members degrade gracefully when artifacts are absent.
 
 import { AutocompleteRanker } from './AutocompleteRanker';
 import { PromptSuggester } from './PromptSuggester';
 
-export const localMlEnabled: boolean =
+export const promptSuggesterEnabled: boolean =
     (import.meta as any).env?.VITE_USE_LOCAL_ML === 'true';
 
 export const localMl = {
     autocomplete: AutocompleteRanker,
     prompts: PromptSuggester,
-    enabled: localMlEnabled,
+    /** True only when PromptSuggester is also enabled (opt-in). */
+    enabled: promptSuggesterEnabled,
     async ensureLoaded(): Promise<void> {
-        if (!localMlEnabled) return;
-        await Promise.all([
-            AutocompleteRanker.ensureLoaded(),
-            PromptSuggester.ensureLoaded(),
-        ]);
+        // AutocompleteRanker loads unconditionally (tiny committed JSON).
+        await AutocompleteRanker.ensureLoaded();
+        if (promptSuggesterEnabled) {
+            await PromptSuggester.ensureLoaded();
+        }
     },
 } as const;
 

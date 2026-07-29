@@ -32,6 +32,7 @@ import {
 import { keywordProvider, overKeywordProvider } from './providers/keywords';
 import { distinctValueProvider } from './providers/distinctValue';
 import { applyRerankBoosts, compareRanking } from './reranker';
+import { AutocompleteRanker } from '../../../../services/ml/AutocompleteRanker';
 
 const PROVIDERS: CompletionProvider[] = [
     variableProvider,
@@ -255,6 +256,12 @@ export function dispatchCompletion(
     kickRank(deps, contextKey, merged);
     const ordered = rerank(merged, contextKey, ctx);
 
+    // Apply the trained linear ranker (AutocompleteRanker) as an additional
+    // boost layer. It's sync once loaded (committed JSON weights), so no
+    // latency added. The ranker scores are mapped to a [-2, +2] nudge added
+    // on top of the structural+embedding boost already in `ordered`.
+    const rankerOrdered = applyAutocompleteRankerBoosts(ordered, upTo, cx.pos, ctx.enclosingClause ?? '');
+
     // Dev-only: stash last invocation for `window.__sqlCompletionDebug`.
     if (import.meta.env?.DEV && typeof window !== 'undefined') {
         const cached = rankCache.get(contextKey) ?? null;
@@ -278,7 +285,7 @@ export function dispatchCompletion(
 
     return {
         from: bestFrom,
-        options: ordered,
+        options: rankerOrdered,
         validFor: bestValidFor ?? /^"?\w*$/,
     };
 }
@@ -286,6 +293,34 @@ export function dispatchCompletion(
 // Exposed for tests so they can flush rerank state between cases.
 export function _clearRankCacheForTests(): void {
     rankCache.clear();
+}
+
+/**
+ * Apply AutocompleteRanker scores as a small boost nudge on top of existing
+ * boosts. The ranker is a trained linear model (MRR 0.95) that uses prefix
+ * match, scenario, column/keyword/function type signals. Scores are normalized
+ * to a [-2, +2] delta so they don't override the structural/embedding signal
+ * but still break ties correctly.
+ */
+function applyAutocompleteRankerBoosts(
+    items: Completion[],
+    context: string,
+    cursorPos: number,
+    scenario: string,
+): Completion[] {
+    if (!AutocompleteRanker.isAvailable() || items.length <= 1) return items;
+    const scores = items.map(item =>
+        AutocompleteRanker.score(context, cursorPos, item.label, scenario),
+    );
+    const min = Math.min(...scores);
+    const max = Math.max(...scores);
+    const range = max - min;
+    if (range === 0) return items;
+    return items.map((item, i) => {
+        const normalized = (scores[i]! - min) / range;
+        const delta = Math.round(-2 + 4 * normalized);
+        return { ...item, boost: (item.boost ?? 0) + delta };
+    });
 }
 
 function countUnescapedQuotes(s: string): number {

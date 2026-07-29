@@ -52,6 +52,7 @@ import { BookOpenIcon } from './components/icons/BookOpenIcon';
 import { QuestionMarkCircleIcon } from './components/icons/QuestionMarkCircleIcon';
 import * as EmbeddingService from './services/ml/EmbeddingService';
 import { initPlotModel } from './services/ml/PlotGenerationService';
+import { AutocompleteRanker } from './services/ml/AutocompleteRanker';
 
 export { shouldShowOnboarding } from './utils/onboarding';
 
@@ -423,6 +424,9 @@ const App: React.FC = () => {
         if (dbState !== DBState.READY) return;
         EmbeddingService.ensureLoaded().catch(() => {
             // Silently ignore — ranker is optional, prefix-match still works.
+        });
+        AutocompleteRanker.ensureLoaded().catch(() => {
+            // Silently ignore — linear ranker is optional, falls back to boost-only ordering.
         });
         initPlotModel().catch(() => {
             // Optional — heuristic + cloud paths remain available.

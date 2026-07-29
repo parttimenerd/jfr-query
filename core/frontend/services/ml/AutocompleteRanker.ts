@@ -1,7 +1,8 @@
 // Runtime loader for the linear autocomplete ranker. Loads weights from
-// autocompleteRanker.json on demand. When the artifact is missing or the
-// VITE_USE_LOCAL_ML flag is off, score() falls back to a no-op (returns 0)
-// so callers can blend it in safely.
+// autocompleteRanker.json on demand. When the artifact is missing, score()
+// falls back to a no-op (returns 0) so callers can blend it in safely.
+// No env flag needed: the JSON artifact is committed in-tree and loading it
+// is free (no network, no large binary).
 
 import { featurize, score as scoreFeatures } from '../../scripts/training/trainAutocompleteRanker';
 import type { RankerFeatures, Weights } from '../../scripts/training/trainAutocompleteRanker';
@@ -15,15 +16,12 @@ interface RankerArtifact {
     trainedAt?: string;
 }
 
-const enabled = (import.meta as any).env?.VITE_USE_LOCAL_ML === 'true';
-
 let _weights: Weights | null = null;
 let _loadAttempted = false;
 
 async function tryLoad(): Promise<void> {
     if (_loadAttempted) return;
     _loadAttempted = true;
-    if (!enabled) return;
     try {
         const mod = await import('./autocompleteRanker.json');
         const data = (mod.default ?? mod) as RankerArtifact;
