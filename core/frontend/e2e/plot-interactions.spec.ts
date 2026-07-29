@@ -2201,3 +2201,58 @@ test.describe.serial('Plot: LINK_Y', () => {
     expect(hasError).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 41: ZOOM_X clause
+// ---------------------------------------------------------------------------
+
+test.describe.serial('Plot: ZOOM_X clause', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('ZX1. ZOOM_X 1.5 applies scaleX transform without changing height', async () => {
+    await page.getByRole('button', { name: /Add Cell/i }).last().click();
+    await page.waitForTimeout(500);
+
+    const sqlEd = await getLastSqlEditor(page);
+    if (!sqlEd) { test.skip(); return; }
+    await setCmContent(page, sqlEd,
+      `SELECT startTime, duration_ms FROM (SELECT *, duration * 1000 AS duration_ms FROM GarbageCollection) gc ORDER BY startTime LIMIT 10`);
+    await pressRun(page);
+    await page.waitForTimeout(1500);
+
+    const plotEd = await getLastPlotEditor(page);
+    if (!plotEd) { test.skip(); return; }
+    await setCmContent(page, plotEd,
+      'LINE_CHART(x:"startTime", y:["duration_ms"])\n  TITLE "ZOOM_X Test"\n  ZOOM_X 1.5');
+    await pressRun(page);
+    await page.waitForTimeout(2000);
+
+    const container = page.locator('div[id^="result-container-"]').last();
+    await expect(container).toBeVisible({ timeout: 10_000 });
+
+    const hasError = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
+    );
+    expect(hasError).toBe(false);
+
+    // PlotRenderer wraps content in: <div style="width:66.67%;...transform:scaleX(1.5);...">
+    const hasScaleX = await page.evaluate(() => {
+      const cs = [...document.querySelectorAll('div[id^="result-container-"]')];
+      const c = cs[cs.length - 1];
+      if (!c) return false;
+      return [...c.querySelectorAll('div[style]')].some(d =>
+        (d.getAttribute('style') || '').includes('scaleX(1.5)')
+      );
+    });
+    expect(hasScaleX, 'scaleX(1.5) transform applied').toBe(true);
+  });
+});
