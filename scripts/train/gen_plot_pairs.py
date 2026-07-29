@@ -129,10 +129,21 @@ def make_line_inputs():
     time = random.choice(JFR_TIME_COLS + GENERIC_TIME)
     nums = random.sample(JFR_NUMERIC_COLS + GENERIC_NUMERIC, random.randint(1, 3))
     view = random.choice(JFR_VIEWS)
-    if random.random() < 0.4:
+    style = random.random()
+    if style < 0.35:
+        # GROUP BY bucket (canonical JFR time-series pattern) → agg+sorted
+        agg = random.choice(["avg", "sum", "max", "min"])
+        interval = random.choice([500, 1000, 5000, 10000])
+        agg_cols = [f'{agg}("{n}") AS "{n}"' for n in nums]
+        sql = (f'SELECT time_bucket("{time}", {interval}) AS "Time", {", ".join(agg_cols)} '
+               f'FROM {view} GROUP BY "Time" ORDER BY "Time"')
+        cols = ["Time"] + nums
+    elif style < 0.7:
+        # time_bucket without explicit GROUP BY (also common)
         sql = f'SELECT time_bucket("{time}", {random.choice([500,1000,5000])}) AS "Time", {", ".join(chr(34)+c+chr(34) for c in nums)} FROM {view} ORDER BY "Time"'
         cols = ["Time"] + nums
     else:
+        # Raw time column
         sql = f'SELECT "{time}", {", ".join(chr(34)+c+chr(34) for c in nums)} FROM {view} ORDER BY "{time}"'
         cols = [time] + nums
     return sql, cols
@@ -166,10 +177,23 @@ def make_scatter_inputs():
 
 def make_pie_inputs():
     cat = random.choice(JFR_CAT_COLS + GENERIC_CAT)
-    val = random.choice(JFR_NUMERIC_COLS + GENERIC_NUMERIC)
     view = random.choice(JFR_VIEWS)
-    sql = f'SELECT "{cat}", "{val}" FROM {view} GROUP BY "{cat}" ORDER BY "{val}" DESC LIMIT 8'
-    return sql, [cat, val]
+    style = random.random()
+    if style < 0.5:
+        # COUNT(*) with GROUP BY — canonical PIE (cnt_agg signal) — no ORDER BY
+        col_name = random.choice(["count", "Count", "n", "num", "events", "cnt"])
+        sql = f'SELECT "{cat}", COUNT(*) AS "{col_name}" FROM {view} GROUP BY "{cat}"'
+        return sql, [cat, col_name]
+    elif style < 0.75:
+        # SUM agg without ORDER BY
+        val = random.choice(JFR_NUMERIC_COLS + GENERIC_NUMERIC)
+        sql = f'SELECT "{cat}", SUM("{val}") AS "{val}" FROM {view} GROUP BY "{cat}"'
+        return sql, [cat, val]
+    else:
+        # With ORDER BY (also valid for PIE)
+        val = random.choice(JFR_NUMERIC_COLS + GENERIC_NUMERIC)
+        sql = f'SELECT "{cat}", "{val}" FROM {view} GROUP BY "{cat}" ORDER BY "{val}" DESC LIMIT 8'
+        return sql, [cat, val]
 
 def make_heatmap_inputs():
     x = random.choice(JFR_CAT_COLS + GENERIC_CAT)
