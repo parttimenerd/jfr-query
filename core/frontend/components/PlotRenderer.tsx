@@ -1020,6 +1020,22 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                                     </div>
                                 );
                             }
+                            // Apply ZOOM / ZOOM_X to individual leaf plots inside composites.
+                            if (leaf.zoom || leaf.zoomX) {
+                                const z = leaf.zoom, zx = leaf.zoomX;
+                                return (
+                                    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+                                        <div style={{
+                                            width: z ? `${100/z}%` : zx ? `${100/zx}%` : '100%',
+                                            height: z ? `${100/z}%` : '100%',
+                                            transform: z ? `scale(${z})` : `scaleX(${zx})`,
+                                            transformOrigin: 'top left',
+                                        }}>
+                                            {leafContent}
+                                        </div>
+                                    </div>
+                                );
+                            }
                             return leafContent;
                         };
 
