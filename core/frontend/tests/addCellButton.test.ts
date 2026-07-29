@@ -35,9 +35,9 @@ describe('shouldShowAddButton', () => {
         expect(shouldShowAddButton(makeMsg({ code: '' }))).toBe(false);
     });
 
-    it('returns false when plotConfig is missing', () => {
-        expect(shouldShowAddButton(makeMsg({ plotConfig: undefined }))).toBe(false);
-        expect(shouldShowAddButton(makeMsg({ plotConfig: '' }))).toBe(false);
+    it('returns true when plotConfig is missing (defaults to TABLE())', () => {
+        expect(shouldShowAddButton(makeMsg({ plotConfig: undefined }))).toBe(true);
+        expect(shouldShowAddButton(makeMsg({ plotConfig: '' }))).toBe(true);
     });
 });
 
@@ -54,7 +54,12 @@ describe('buildAddCellArgs', () => {
 
     it('returns null when the message is not eligible', () => {
         expect(buildAddCellArgs(makeMsg({ isActionable: false }))).toBeNull();
-        expect(buildAddCellArgs(makeMsg({ plotConfig: undefined }))).toBeNull();
+        expect(buildAddCellArgs(makeMsg({ code: undefined }))).toBeNull();
+    });
+
+    it('defaults plotConfig to TABLE() when missing or empty', () => {
+        expect(buildAddCellArgs(makeMsg({ plotConfig: undefined }))?.plotConfig).toBe('TABLE()');
+        expect(buildAddCellArgs(makeMsg({ plotConfig: '' }))?.plotConfig).toBe('TABLE()');
     });
 
     it('uses the FULL message text as markdownText (not a truncated version)', () => {

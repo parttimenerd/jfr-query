@@ -123,9 +123,7 @@ class BrushStore {
                         this.cycleWarned.add(pairKey);
                         console.warn(`[plotBrushStore] cycle detected between cells "${subscriberCell}" and "${publisherCell}"; second subscriber will see initial value only.`);
                     }
-                    // Skip live notifications for the second subscriber — send initial value only.
-                    const current = this.state.get(name);
-                    if (current) fn(current);
+                    // Skip live notifications for the second subscriber.
                     return () => {
                         const ns = this.subscriberToNames.get(subscriberCell);
                         if (ns) { ns.delete(name); if (ns.size === 0) this.subscriberToNames.delete(subscriberCell); }
