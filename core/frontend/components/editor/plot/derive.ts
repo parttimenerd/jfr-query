@@ -33,13 +33,13 @@ const LOWERCASE_TO_UC: Record<string, string> = {
     scatter: 'SCATTER_PLOT',
     heatmap: 'HEATMAP',
     histogram: 'HISTOGRAM',
-    boxplot: 'BOXPLOT',
+    boxplot: 'BOX_PLOT',
     pie: 'PIE_CHART',
     flamegraph: 'FLAMEGRAPH',
     table: 'TABLE',
     area: 'AREA_CHART',
     gantt: 'GANTT',
-    range: 'RANGE_CHART',
+    range: 'RANGE',
 };
 
 /**
