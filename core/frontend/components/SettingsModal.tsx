@@ -187,6 +187,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             <button
                                 key={key}
                                 onClick={() => handleProviderSelect(key)}
+                                aria-pressed={isSelected}
+                                aria-label={`${meta.name}: ${meta.description}`}
                                 className={`flex flex-col items-center p-4 rounded-lg border transition-all ${isSelected ? 'bg-cyan-900/20 border-cyan-500 ring-1 ring-cyan-500' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}
                             >
                                 <Icon className={`w-8 h-8 mb-2 ${isSelected ? 'text-cyan-400' : 'text-gray-400'}`} />
@@ -476,11 +478,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Model Configuration</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">Basic Model</label>
+                        <label htmlFor="basic-model-select" className="block text-sm font-medium text-gray-300 mb-1">Basic Model</label>
                         <p className="text-xs text-gray-500 mb-2">Used for formatting, simple suggestions, and fast tasks.</p>
                         {localSettings.aiProvider === 'local' ? (
                             <>
                                 <input
+                                    id="basic-model-select"
                                     list="local-model-options"
                                     name="localBasicModel"
                                     value={localSettings.localBasicModel}
@@ -491,6 +494,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             </>
                         ) : (
                             <select
+                                id="basic-model-select"
                                 name={`${localSettings.aiProvider}BasicModel`}
                                 value={(localSettings as any)[`${localSettings.aiProvider}BasicModel`]}
                                 onChange={handleInputChange}
@@ -503,10 +507,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         )}
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">Advanced Model</label>
+                        <label htmlFor="advanced-model-select" className="block text-sm font-medium text-gray-300 mb-1">Advanced Model</label>
                         <p className="text-xs text-gray-500 mb-2">Used for complex reasoning, SQL generation, and plot suggestions.</p>
                         {localSettings.aiProvider === 'local' ? (
                             <input
+                                id="advanced-model-select"
                                 list="local-model-options"
                                 name="localGoodModel"
                                 value={localSettings.localGoodModel}
@@ -516,6 +521,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             />
                         ) : (
                             <select
+                                id="advanced-model-select"
                                 name={`${localSettings.aiProvider}GoodModel`}
                                 value={(localSettings as any)[`${localSettings.aiProvider}GoodModel`]}
                                 onChange={handleInputChange}

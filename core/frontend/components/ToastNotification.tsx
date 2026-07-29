@@ -32,7 +32,7 @@ const ToastNotification: React.FC<ToastNotificationProps> = ({ message, onClose,
 
   return ReactDOM.createPortal(
     <div className="fixed top-5 right-5 z-[200] w-full max-w-sm animate-fade-in-down">
-      <div className="bg-yellow-600/90 backdrop-blur-sm border border-yellow-400 text-white p-4 rounded-lg shadow-2xl flex items-start gap-3">
+      <div role="alert" aria-live="assertive" className="bg-yellow-600/90 backdrop-blur-sm border border-yellow-400 text-white p-4 rounded-lg shadow-2xl flex items-start gap-3">
         <div className="flex-shrink-0">
           <ExclamationTriangleIcon className="w-6 h-6 text-yellow-200" />
         </div>
