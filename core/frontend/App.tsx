@@ -53,6 +53,8 @@ import { QuestionMarkCircleIcon } from './components/icons/QuestionMarkCircleIco
 import * as EmbeddingService from './services/ml/EmbeddingService';
 import { initPlotModel } from './services/ml/PlotGenerationService';
 
+export { shouldShowOnboarding } from './utils/onboarding';
+
 function topoSort<T extends { name: string; includes?: string[] }>(items: T[], _label: string): T[] {
     const nameSet = new Set(items.map(i => i.name));
     const visited = new Set<string>();
@@ -196,6 +198,15 @@ const App: React.FC = () => {
         dismissWelcomeBanner();
         setIsTourOpen(true);
     }, [dismissWelcomeBanner]);
+
+    const dismissOnboarding = useCallback(() => {
+        localStorage.setItem('jfrq:onboarding-dismissed', '1');
+        setOnboardingDismissed(true);
+    }, []);
+
+    const [onboardingDismissed, setOnboardingDismissed] = useState(
+        () => !!localStorage.getItem('jfrq:onboarding-dismissed')
+    );
 
     const notebookFileInputRef = useRef<HTMLInputElement>(null);
     // Always-fresh ref so addCellFromTool reads current markdown without stale closures.
@@ -1371,6 +1382,26 @@ const App: React.FC = () => {
                 
                 <main className={`flex-1 bg-gray-800 ${isMarkdownMode ? 'overflow-hidden flex flex-col' : 'overflow-auto'}`}>
                     <div className={isMarkdownMode ? 'flex-1 flex flex-col min-h-0' : undefined}>
+                    {!onboardingDismissed && cells.length === 0 && (
+                        <div className="mx-4 mt-4 mb-2 rounded-lg border border-cyan-700/50 bg-cyan-900/10 p-4 text-sm text-gray-300 relative">
+                            <button
+                                onClick={dismissOnboarding}
+                                aria-label="Dismiss getting started guide"
+                                className="absolute top-2 right-2 p-1 rounded hover:bg-gray-700 text-gray-500 hover:text-gray-300"
+                            >
+                                ✕
+                            </button>
+                            <h3 className="font-semibold text-cyan-300 mb-2">Getting started</h3>
+                            <ol className="space-y-1 list-decimal list-inside text-gray-400">
+                                <li>Load a JFR file — drag &amp; drop onto the page or use <kbd className="text-xs bg-gray-700 px-1 rounded">File → Open</kbd></li>
+                                <li>Write a SQL query in a cell — e.g. <code className="text-xs bg-gray-800 px-1 rounded font-mono">SELECT * FROM jfr LIMIT 100</code></li>
+                                <li>Add a Plot cell below the query to visualise the results</li>
+                            </ol>
+                            <p className="mt-2 text-xs text-gray-500">
+                                Press <kbd className="bg-gray-700 px-1 rounded">Ctrl+Shift+P</kbd> (or <kbd className="bg-gray-700 px-1 rounded">Cmd+Shift+P</kbd>) to open the command palette. Type <kbd className="bg-gray-700 px-1 rounded">?</kbd> for help.
+                            </p>
+                        </div>
+                    )}
                     <Notebook
                         notebookMarkdown={notebookMarkdown}
                         setNotebookMarkdown={setNotebookMarkdown}
