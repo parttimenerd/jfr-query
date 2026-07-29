@@ -146,6 +146,22 @@ export const plotClauseDocs: Record<string, ClauseDoc> = {
             { name: 'columns', type: 'array', required: true, description: 'Comma-separated list of column names to show in the tooltip.' }
         ]
     },
+    'TOOLTIP COLUMNS': {
+        name: 'TOOLTIP COLUMNS',
+        signature: 'TOOLTIP COLUMNS [col1, col2, ...]',
+        description: 'Limits the columns shown in the hover tooltip to a specific subset. By default all columns are shown.',
+        params: [
+            { name: 'columns', type: 'array', required: true, description: 'Comma-separated list of column names to show in the tooltip.' }
+        ]
+    },
+    'ON HOVER TOOLTIP': {
+        name: 'ON HOVER TOOLTIP',
+        signature: 'ON HOVER TOOLTIP "template"',
+        description: 'Custom tooltip template rendered on hover. Use {columnName} placeholders — e.g. ON HOVER TOOLTIP "{cause}: {duration}ms".',
+        params: [
+            { name: 'template', type: 'string', required: true, description: 'Template string with {column} placeholders for each data column.' }
+        ]
+    },
     NAME: {
         name: 'NAME',
         signature: 'NAME "cell_name"',
