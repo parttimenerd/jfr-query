@@ -244,11 +244,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     }, []);
 
     const removeChannel = useCallback((id: string) => {
-        if (channels.length <= 1) return;
-        const next = channels.filter(c => c.id !== id);
-        setChannels(next);
-        setActiveChannelId(cur => cur === id ? (next[0]?.id ?? 'main') : cur);
-    }, [channels]);
+        setChannels(prev => {
+            if (prev.length <= 1) return prev;
+            return prev.filter(c => c.id !== id);
+        });
+        setActiveChannelId(cur => cur === id ? 'main' : cur);
+    }, []);
 
     // Auto-name a channel after its first user message — but only when the
     // user hasn't already renamed it (label still matches the auto-default

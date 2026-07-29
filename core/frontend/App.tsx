@@ -810,13 +810,14 @@ const App: React.FC = () => {
         const newCells = oldCells.filter(cell => cell.id !== cellId);
         updateCellsAndMarkdown(newCells);
         // Remap results and timings: after deletion, cells at positions > deletedIndex
-        // shift down by one (cell-N becomes cell-(N-1)), so their result entries must
-        // be moved to the new keys to avoid showing the wrong cell's data.
+        // shift down by one. Cell IDs are reassigned positionally on the next render
+        // (cell-0, cell-1, ...) so we must write to `cell-${i}`, not to the old ID
+        // still on the filtered cell objects.
         setResults(prev => {
             const next: typeof prev = {};
             for (let i = 0; i < newCells.length; i++) {
                 const oldId = oldCells[i >= deletedIndex ? i + 1 : i].id;
-                if (prev[oldId] !== undefined) next[newCells[i].id] = prev[oldId];
+                if (prev[oldId] !== undefined) next[`cell-${i}`] = prev[oldId];
             }
             return next;
         });
@@ -824,7 +825,7 @@ const App: React.FC = () => {
             const next: typeof prev = {};
             for (let i = 0; i < newCells.length; i++) {
                 const oldId = oldCells[i >= deletedIndex ? i + 1 : i].id;
-                if (prev[oldId] !== undefined) next[newCells[i].id] = prev[oldId];
+                if (prev[oldId] !== undefined) next[`cell-${i}`] = prev[oldId];
             }
             return next;
         });
@@ -898,6 +899,25 @@ const App: React.FC = () => {
 
         newCells.splice(insertionIndex, 0, draggedItem);
         updateCellsAndMarkdown(newCells);
+        // Remap results and timings to new positional IDs.
+        // newCells[i] still carries the pre-move cell object with its old ID;
+        // after re-render, position i gets `cell-${i}`, so we write to that key.
+        setResults(prev => {
+            const next: typeof prev = {};
+            for (let i = 0; i < newCells.length; i++) {
+                const oldId = newCells[i].id;
+                if (prev[oldId] !== undefined) next[`cell-${i}`] = prev[oldId];
+            }
+            return next;
+        });
+        setQueryTimings(prev => {
+            const next: typeof prev = {};
+            for (let i = 0; i < newCells.length; i++) {
+                const oldId = newCells[i].id;
+                if (prev[oldId] !== undefined) next[`cell-${i}`] = prev[oldId];
+            }
+            return next;
+        });
     }, [updateCellsAndMarkdown]);
 
     const suggestPlot = useCallback(async (sql: string, customPromptOverride?: string): Promise<string | null> => {
