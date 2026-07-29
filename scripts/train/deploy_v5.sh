@@ -17,7 +17,7 @@ cd "${REPO_ROOT}"
 
 CHECKPOINT="${1:-checkpoints/t5-small-latest}"
 ONNX_OUT="onnx/t5-small-q8-arm"
-EVAL_DATA="data/plot_eval_v25.jsonl"
+EVAL_DATA="${EVAL_DATA:-data/plot_eval_v26.jsonl}"
 IN_TREE_DIR="core/frontend/services/ml/models/plot-suggester-v2"
 
 PLOT_SHAPE_THRESHOLD=0.75
@@ -100,8 +100,8 @@ existing = json.loads(p.read_text()) if p.exists() else {}
 existing.update({
     "plotShapeAccuracy": float("${PLOT_SHAPE}"),
     "columnMatchAccuracy": float("${COL_MATCH}"),
-    "trainedOn": "plot_pairs_v25.jsonl",
-    "evalOn": "plot_eval_v25.jsonl",
+    "trainedOn": "${EVAL_DATA/eval/pairs}",
+    "evalOn": "${EVAL_DATA}",
     "checkpoint": "${CHECKPOINT}",
 })
 p.write_text(json.dumps(existing, indent=2) + "\n")
