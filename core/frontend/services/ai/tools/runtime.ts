@@ -315,6 +315,27 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                 deps.setTaskList(tasks);
                 return { ok: true, data: { updated: tasks.length } };
             }
+            case 'explainCell': {
+                const cell = deps.listCells().find(c => c.id === args.cellId);
+                if (!cell) {
+                    return { ok: false, error: `Cell "${args.cellId}" not found. Call listCells() to see available cell IDs.` };
+                }
+                const typeLabel = cell.type === 'sql' ? 'SQL query' : cell.type === 'plot' ? 'Plot config' : 'Markdown';
+                return {
+                    ok: true,
+                    data: {
+                        cellId: cell.id,
+                        cellType: cell.type,
+                        content: cell.content,
+                        instruction: `Explain this ${typeLabel} in plain language. ` +
+                            (cell.type === 'sql'
+                                ? 'Describe what data it retrieves, what patterns it might reveal, and — if it looks like JFR data — call out GC pause patterns (e.g. long STW pauses), flamegraph hotspot signatures, or thread contention indicators.'
+                                : cell.type === 'plot'
+                                ? 'Describe what the chart will show visually, which axes represent what, and what the user should look for.'
+                                : 'Summarise the content.'),
+                    },
+                };
+            }
             default:
                 return { ok: false, error: `Tool "${name}" is recognized but not yet implemented in this version.` };
         }

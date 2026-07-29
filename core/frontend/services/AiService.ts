@@ -549,6 +549,7 @@ GUIDELINES:
             `  Inspect the notebook (read-only):\n` +
             `    • listCells() — id, type, content preview for every cell.\n` +
             `    • readCell(cellId) — full content of one cell.\n` +
+            `    • explainCell(cellId) — returns cell content with an instruction to explain it in plain language. Useful for helping users understand what a cell does or what its data means.\n` +
             `    • listPlots() — id + config of every plot cell.\n` +
             `    • listVariables() — current notebook variables (name → string).\n` +
             `  Modify the notebook (require user approval per call):\n` +

@@ -157,6 +157,7 @@ describe('TOOLS metadata sanity (consumed by ChatPanel)', () => {
             'deleteVariable',
             'describeTable',
             'editCell',
+            'explainCell',
             'listCells',
             'listPlots',
             'listVariables',

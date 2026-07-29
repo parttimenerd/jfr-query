@@ -262,6 +262,20 @@ export const TOOLS: Tool[] = [
             required: ['tasks'],
         },
     },
+    {
+        name: 'explainCell',
+        kind: 'read',
+        description: 'Explain what a notebook cell does and what its results mean. ' +
+            'Pass the cellId from listCells(). The tool returns the cell content so you can provide an explanation. ' +
+            'Useful for JFR analysis: the tool hints about GC pause patterns, flamegraph hotspots, and thread contention.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                cellId: { type: 'string', description: 'ID of the cell to explain (from listCells).' },
+            },
+            required: ['cellId'],
+        },
+    },
 ];
 
 export function getTool(name: string): Tool | undefined {
