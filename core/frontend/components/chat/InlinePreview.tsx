@@ -77,6 +77,7 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
                             onClick={() => onAddToNotebook('sql', sql)}
                             className="px-2 py-0.5 text-[10px] bg-cyan-700/40 hover:bg-cyan-700/70 text-cyan-200 rounded"
                             title="Add this SQL as a new notebook cell"
+                            aria-label="Add this SQL as a new notebook cell"
                         >
                             Add to Notebook
                         </button>
@@ -109,6 +110,7 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
                             onClick={() => onAddToNotebook('combined', combinedContent, plotConfig)}
                             className="px-2 py-0.5 text-[10px] bg-cyan-700/40 hover:bg-cyan-700/70 text-cyan-200 rounded"
                             title="Add this SQL + plot as a new notebook cell"
+                            aria-label="Add this SQL and plot as a new notebook cell"
                         >
                             Add to Notebook
                         </button>

@@ -146,7 +146,7 @@ const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: stri
                 <input ref={keyInputRef} type="text" value={key} onChange={e=>{setKey(e.target.value);}} onBlur={handleKeyBlur} onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();handleKeyBlur();valueInputRef.current?.focus();} if(e.key==='Escape'){e.preventDefault();setKey(varKey);} }} className={`w-1/3 bg-gray-800 border ${key.match(/^\$(?!\$)\w+/)?'border-gray-600':'border-red-500'} rounded-md p-1.5 text-sm font-mono text-cyan-300`} title="Cell-local variable: must start with $ (use $$ prefix in Notebook Settings for global scope)" aria-label="Cell-local variable: must start with $ (use $$ prefix in Notebook Settings for global scope)"/>
                 <span className="text-gray-500">=</span>
                 <input ref={el=>{ valueInputRef.current=el; if(typeof inputRef==='function') inputRef(el); }} type="text" value={value} onChange={e=>{setValue(e.target.value);}} onBlur={handleValueBlur} onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();handleValueBlur();} if(e.key==='Escape'){e.preventDefault();setValue(varValue);} }} aria-label={`Value for ${varKey}`} className="flex-grow bg-gray-800 border border-gray-600 rounded-md p-1.5 text-sm font-mono"/>
-                <button onClick={()=>onDelete(varKey)} className="p-1.5 text-gray-400 hover:text-red-400" title="Delete variable" aria-label="Delete variable"><TrashIcon className="w-4 h-4"/></button>
+                <button onClick={()=>onDelete(varKey)} className="p-1.5 text-gray-400 hover:text-red-400" title={`Delete variable ${varKey}`} aria-label={`Delete variable ${varKey}`}><TrashIcon className="w-4 h-4"/></button>
             </div>
             {usedIn && usedIn.length > 0 && (
                 <div className="pl-1 flex items-center gap-1 flex-wrap">
@@ -1185,9 +1185,9 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                     <div key={`ins-${segIdx}`} className="group/insert relative h-2 flex items-center">
                                         <div className="absolute inset-x-0 h-px bg-gray-700/40 group-hover/insert:bg-cyan-600/40 transition-colors" />
                                         <div className="absolute left-1/2 -translate-x-1/2 opacity-0 group-hover/insert:opacity-100 transition-opacity flex gap-1 bg-gray-900 px-1 py-0.5 rounded border border-gray-700/60 z-10">
-                                            <button onClick={() => handleInsertAt(insertIdx, 'sql')} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/80 hover:bg-cyan-800/60 text-gray-400 hover:text-cyan-300 transition-colors">+ SQL</button>
-                                            <button onClick={() => handleInsertAt(insertIdx, 'plot')} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/80 hover:bg-purple-800/60 text-gray-400 hover:text-purple-300 transition-colors">+ Plot</button>
-                                            <button onClick={() => handleInsertAt(insertIdx, 'markdown')} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/80 hover:bg-gray-600/60 text-gray-400 hover:text-gray-200 transition-colors">+ Prose</button>
+                                            <button onClick={() => handleInsertAt(insertIdx, 'sql')} aria-label="Insert SQL block" className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/80 hover:bg-cyan-800/60 text-gray-400 hover:text-cyan-300 transition-colors">+ SQL</button>
+                                            <button onClick={() => handleInsertAt(insertIdx, 'plot')} aria-label="Insert Plot block" className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/80 hover:bg-purple-800/60 text-gray-400 hover:text-purple-300 transition-colors">+ Plot</button>
+                                            <button onClick={() => handleInsertAt(insertIdx, 'markdown')} aria-label="Insert Prose block" className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/80 hover:bg-gray-600/60 text-gray-400 hover:text-gray-200 transition-colors">+ Prose</button>
                                         </div>
                                     </div>
                                 );
@@ -1255,7 +1255,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                                     <div className="flex flex-wrap items-center gap-1">
                                                                         <span className="text-gray-500">Did you mean:</span>
                                                                         {candidates.map(col => (
-                                                                            <button key={col} onClick={() => { if (badToken) { const escaped = badToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); const fixed = sql.replace(new RegExp(`(?<![\\w"])${escaped}(?![\\w"])`, 'g'), `"${col}"`); handleSqlChange(fixed, i); } else { navigator.clipboard.writeText(`"${col}"`).catch(() => {}); } }} className="px-1.5 py-0.5 text-[10px] bg-gray-700/80 hover:bg-cyan-800/60 text-cyan-300 rounded border border-gray-600/60 hover:border-cyan-600/50 font-mono transition-colors" title={badToken ? `Replace "${badToken}" with "${col}"` : `Copy "${col}" to clipboard`}>{col}</button>
+                                                                            <button key={col} onClick={() => { if (badToken) { const escaped = badToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); const fixed = sql.replace(new RegExp(`(?<![\\w"])${escaped}(?![\\w"])`, 'g'), `"${col}"`); handleSqlChange(fixed, i); } else { navigator.clipboard.writeText(`"${col}"`).catch(() => {}); } }} className="px-1.5 py-0.5 text-[10px] bg-gray-700/80 hover:bg-cyan-800/60 text-cyan-300 rounded border border-gray-600/60 hover:border-cyan-600/50 font-mono transition-colors" title={badToken ? `Replace "${badToken}" with "${col}"` : `Copy "${col}" to clipboard`} aria-label={badToken ? `Replace "${badToken}" with column "${col}"` : `Copy column "${col}" to clipboard`}>{col}</button>
                                                                         ))}
                                                                     </div>
                                                                 )}
@@ -1462,7 +1462,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                 <div className="px-2 pt-1.5 pb-0.5 flex flex-wrap gap-1 items-center border-b border-gray-700/50">
                                                     <span className="text-[10px] text-gray-600 mr-0.5">columns:</span>
                                                     {plotDataCols.slice(0, 12).map(col => (
-                                                        <button key={col} onClick={() => navigator.clipboard.writeText(`"${col}"`).catch(() => {})} title={`Copy "${col}" to clipboard`} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/60 hover:bg-cyan-800/50 text-gray-400 hover:text-cyan-300 font-mono transition-colors">{col}</button>
+                                                        <button key={col} onClick={() => navigator.clipboard.writeText(`"${col}"`).catch(() => {})} title={`Copy "${col}" to clipboard`} aria-label={`Copy column "${col}" to clipboard`} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/60 hover:bg-cyan-800/50 text-gray-400 hover:text-cyan-300 font-mono transition-colors">{col}</button>
                                                     ))}
                                                     {plotDataCols.length > 12 && <span className="text-[10px] text-gray-600">+{plotDataCols.length - 12} more</span>}
                                                     <span className="text-[10px] text-gray-600 ml-1">— click to copy</span>

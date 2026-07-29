@@ -518,6 +518,7 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
                             if (e.key === 'Enter') { e.preventDefault(); void handleSelect(selectedIdx); return; }
                         }}
                         placeholder={placeholder}
+                        aria-label="Command palette search"
                         className="w-full bg-transparent text-gray-100 px-4 py-3 outline-none border-b border-gray-800"
                     />
                 )}
@@ -539,6 +540,7 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
                                     if ((subMode?.kind === '+' || subMode?.kind === '!!') && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSubConfirm(); return; }
                                 }}
                                 placeholder={subMode?.kind === '!' || subMode?.kind === '!!' ? 'SELECT ...' : 'e.g. CPU usage vs GC pause time'}
+                                aria-label={subMode?.kind === '!' ? 'SQL query to preview' : subMode?.kind === '!!' ? 'SQL query for new cell' : 'Describe the cell to generate with AI'}
                                 rows={subMode?.kind === '!' || subMode?.kind === '!!' ? 4 : 2}
                                 className="w-full bg-gray-950 border border-gray-700 rounded text-sm text-gray-100 font-mono px-3 py-2 outline-none focus:border-cyan-600 resize-none"
                                 disabled={subBusy}

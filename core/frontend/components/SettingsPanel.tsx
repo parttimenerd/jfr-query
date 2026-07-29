@@ -180,7 +180,7 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
         setSuggestionIndex(newIndex);
     };
 
-    const renderEditableItem = (type: 'view' | 'macro', item: CustomView | CustomMacro) => { if (editingId === item.id) { return (<div className="p-2 bg-gray-700/50 rounded-md space-y-2"><input type="text" value={editingName} onChange={e=>setEditingName(e.target.value)} className="w-full bg-gray-800 p-1.5 text-sm"/><div className="border border-gray-600 rounded-md"><SQLEditor value={editingSql} onChange={setEditingSql} variables={metadata.variables} metadata={metadata} /></div><div className="flex justify-end gap-2"><button onClick={handleCancel} className="px-2 py-1 text-xs bg-gray-600 rounded">Cancel</button><button onClick={()=>handleSave(type)} className="px-2 py-1 text-xs bg-cyan-600 rounded">Save</button></div></div>); } return (<div className="flex justify-between items-center p-2 hover:bg-gray-700/50 rounded-md" onMouseEnter={e=>handleShowTooltip(e,<TooltipContent item={item} type={type}/>)} onMouseLeave={handleHideTooltip}><span className="font-mono text-sm">{item.name}</span><div className="flex items-center gap-2"><button onClick={()=>handleEdit(type,item)} title={`Edit ${type}`} aria-label={`Edit ${type} ${item.name}`} className="p-1 text-gray-400 hover:text-cyan-400"><PencilIcon className="w-4 h-4"/></button><button onClick={()=>handleDelete(type,item.id)} title={`Delete ${type}`} aria-label={`Delete ${type} ${item.name}`} className="p-1 text-gray-400 hover:text-red-400"><TrashIcon className="w-4 h-4"/></button></div></div>); };
+    const renderEditableItem = (type: 'view' | 'macro', item: CustomView | CustomMacro) => { if (editingId === item.id) { return (<div className="p-2 bg-gray-700/50 rounded-md space-y-2"><input type="text" value={editingName} onChange={e=>setEditingName(e.target.value)} aria-label={`${type === 'view' ? 'View' : 'Macro'} name`} className="w-full bg-gray-800 p-1.5 text-sm"/><div className="border border-gray-600 rounded-md"><SQLEditor value={editingSql} onChange={setEditingSql} variables={metadata.variables} metadata={metadata} /></div><div className="flex justify-end gap-2"><button onClick={handleCancel} className="px-2 py-1 text-xs bg-gray-600 rounded">Cancel</button><button onClick={()=>handleSave(type)} className="px-2 py-1 text-xs bg-cyan-600 rounded">Save</button></div></div>); } return (<div className="flex justify-between items-center p-2 hover:bg-gray-700/50 rounded-md" onMouseEnter={e=>handleShowTooltip(e,<TooltipContent item={item} type={type}/>)} onMouseLeave={handleHideTooltip}><span className="font-mono text-sm">{item.name}</span><div className="flex items-center gap-2"><button onClick={()=>handleEdit(type,item)} title={`Edit ${type}`} aria-label={`Edit ${type} ${item.name}`} className="p-1 text-gray-400 hover:text-cyan-400"><PencilIcon className="w-4 h-4"/></button><button onClick={()=>handleDelete(type,item.id)} title={`Delete ${type}`} aria-label={`Delete ${type} ${item.name}`} className="p-1 text-gray-400 hover:text-red-400"><TrashIcon className="w-4 h-4"/></button></div></div>); };
     const hasContent = Object.keys(globalVars).length > 0 || metadata.views.length > 0 || metadata.macros.length > 0;
 
     return (<><div className="border border-gray-700/60 rounded-lg overflow-hidden">
@@ -215,6 +215,7 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
                                 ref={el => { if (el) variableInputRefs.current[k] = el; else delete variableInputRefs.current[k]; }}
                                 className="w-1/3 bg-gray-800 border border-gray-600 rounded-md p-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500"
                                 placeholder="$$name"
+                                aria-label={`Variable name: ${k}`}
                             />
                             <input
                                 type="text"
@@ -222,8 +223,9 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
                                 onChange={e => handleChangeGlobalVariableValue(k, e.target.value)}
                                 className="flex-grow bg-gray-800 border border-gray-600 rounded-md p-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500"
                                 placeholder="value"
+                                aria-label={`Value for ${k}`}
                             />
-                            <button onClick={() => handleDeleteGlobalVariable(k)} className="p-1 text-gray-400 hover:text-red-400" title="Delete variable" aria-label="Delete variable"><TrashIcon className="w-4 h-4"/></button>
+                            <button onClick={() => handleDeleteGlobalVariable(k)} className="p-1 text-gray-400 hover:text-red-400" title={`Delete variable ${k}`} aria-label={`Delete variable ${k}`}><TrashIcon className="w-4 h-4"/></button>
                         </div>
                     ))}
                     {Object.keys(globalVars).length === 0 && <p className="text-sm text-gray-500 text-center py-2">No notebook variables.</p>}
