@@ -791,7 +791,7 @@ const App: React.FC = () => {
             const next: typeof prev = {};
             for (let i = 0; i < newCells.length; i++) {
                 const oldId = oldCells[i >= deletedIndex ? i + 1 : i].id;
-                if (prev[oldId] !== undefined) next[`cell-${i}`] = prev[oldId];
+                if (prev[oldId] !== undefined) next[newCells[i].id] = prev[oldId];
             }
             return next;
         });
@@ -799,7 +799,7 @@ const App: React.FC = () => {
             const next: typeof prev = {};
             for (let i = 0; i < newCells.length; i++) {
                 const oldId = oldCells[i >= deletedIndex ? i + 1 : i].id;
-                if (prev[oldId] !== undefined) next[`cell-${i}`] = prev[oldId];
+                if (prev[oldId] !== undefined) next[newCells[i].id] = prev[oldId];
             }
             return next;
         });
