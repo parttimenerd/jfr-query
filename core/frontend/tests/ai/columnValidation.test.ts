@@ -44,7 +44,7 @@ describe('filterSuggestionBySchema', () => {
     });
 
     it('does not reject color names used as parameter values', () => {
-        const s = `LINE_CHART(x: "ts", y: "duration") COLOR "red"`;
+        const s = `LINE_CHART(x: "ts", y: "duration", fill: "red")`;
         expect(filterSuggestionBySchema(s, schema)).toBe(s);
     });
 
