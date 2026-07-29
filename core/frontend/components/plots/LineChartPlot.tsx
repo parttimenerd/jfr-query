@@ -106,6 +106,10 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
   const y2Formatter = y2IsDuration ? formatDurationNs : numberFormatter;
   const colors = getPaletteColors(clauses?.palette, COLORS);
 
+  if (!chartData || chartData.length === 0 || allY.length === 0) {
+    return <div className="p-4 text-center text-gray-500 text-sm">No valid data.</div>;
+  }
+
   const xTickFmt = makeTickFormatter(axisXClause) ?? (isTime ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined);
   const yTickFmt = makeTickFormatter(axisYClause);
 

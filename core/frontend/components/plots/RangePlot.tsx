@@ -91,6 +91,10 @@ const RangePlotComponent: React.FC<{
     return { chartData: transformedData, isTime: isTimeAxis, finalXCol: xCol, lowKey: lCol, highKey: hCol, centerKey: cCol };
   }, [data, config]);
 
+  if (chartData.length === 0) {
+    return <div className="p-4 text-center text-gray-500 text-sm">No data.</div>;
+  }
+
   const color = config.color || '#8884d8';
 
   return (
