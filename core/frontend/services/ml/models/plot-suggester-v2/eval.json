@@ -1,11 +1,11 @@
 {
-  "accuracy": 0.781,
-  "plotShapeAccuracy": 0.7806,
-  "columnMatchAccuracy": 0.9815,
+  "accuracy": 0.8515,
+  "plotShapeAccuracy": 0.8515,
+  "columnMatchAccuracy": 0.9899,
   "sampledAt": "2026-07-29T00:00:00.000Z",
-  "sampleSize": 506,
-  "modelVersion": "t5-small-jfr-v4",
-  "trainingData": "plot_pairs_v14.jsonl",
-  "evalData": "plot_eval_v16.jsonl",
-  "notes": "Trained on v14 data with v3 input format (hints: tag). Eval run against v16 signals (sorted tag added). Best checkpoint epoch 13/15, eval_loss=0.3178. Next: retrain on v16 data for improved BAR/HEATMAP disambiguation."
+  "sampleSize": 761,
+  "modelVersion": "t5-small-jfr-v5",
+  "trainingData": "plot_pairs_v24.jsonl",
+  "evalData": "plot_eval_v24.jsonl",
+  "notes": "v5: trained on v24 data (12,404 examples, 22 signals, 13 plot types). Best checkpoint epoch 15/15, eval_loss=0.2188 (vs v4 0.3178). New: RANGE 100%, WATERFALL 100%, GANTT 100%, PIE 100%, TREEMAP 100%. Gaps: LINE_CHART/AREA_CHART/FLAMEGRAPH/BOX_PLOT still weak due to training data gaps. Fix: retrain on v25 (14,154 examples, adds AREA_CHART + agg+sorted+time LINE_CHART pattern)."
 }
