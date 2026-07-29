@@ -726,6 +726,10 @@ const App: React.FC = () => {
     schemaRef.current = schema;
     const metadataRef = useRef(metadata);
     metadataRef.current = metadata;
+    const cellsContentRef = useRef(cellsContent);
+    cellsContentRef.current = cellsContent;
+    const refreshSchemaRef = useRef(refreshSchema);
+    refreshSchemaRef.current = refreshSchema;
 
     const updateCellsAndMarkdown = useCallback((newCells: NotebookCellData[]) => {
         const newCellsContent = newCells.map(cell => cell.content).join('\n\n---\n\n');
@@ -1098,16 +1102,17 @@ const App: React.FC = () => {
     const sessionEndMissing   = !metadata.variables?.['$session_end'];
     useEffect(() => {
         if (recordingStart == null && recordingEnd == null) return;
-        const current = metadata.variables ?? {};
+        // Use refs so this effect always reads the current metadata/cells even though
+        // it only re-fires on recording bound / missing-variable changes.
+        const current = metadataRef.current.variables ?? {};
         const seeded = computeSessionVariables(current, recordingStart, recordingEnd);
         if (seeded === current) return; // no-op — already set or no bounds
         const newNotebookMarkdown = reconstructNotebook({
-            metadata: { ...metadata, variables: seeded },
-            content: cellsContent,
+            metadata: { ...metadataRef.current, variables: seeded },
+            content: cellsContentRef.current,
         });
         setNotebookMarkdown(newNotebookMarkdown);
-        void refreshSchema();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        void refreshSchemaRef.current();
     }, [recordingStart, recordingEnd, sessionStartMissing, sessionEndMissing]);
 
     if (dbState !== DBState.READY) {

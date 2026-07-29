@@ -624,6 +624,12 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                         setProposals(prev => [...prev, { id, name: toolName, args, status: 'pending' }]);
                     }
                     approvalResolvers.current.set(id, { resolve, reject });
+                    // B-197: re-check after registering — user may have cancelled
+                    // between the entry guard and the set() call above.
+                    if (cancelledRef.current) {
+                        approvalResolvers.current.delete(id);
+                        reject(new Error('cancelled'));
+                    }
                 }),
             };
 
@@ -679,8 +685,6 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                         });
                         if (proposal.kind === 'auto-read') {
                             setProposals(prev => applyApprovalAction(prev, { type: 'approve', id: chunk.id }));
-                            approvalResolvers.current.get(chunk.id)?.resolve();
-                            approvalResolvers.current.delete(chunk.id);
                         }
                     }
                 } else if (chunk.kind === 'tool_result') {
@@ -716,7 +720,8 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
             setStreamingText(null);
             if (cancelledRef.current || error?.name === 'AbortError') {
                 // Clean stop — no error message.
-            } else {
+                return { ok: true };
+            }
             // Tool-calling path may throw if the provider doesn't support
             // tools (e.g. local server without tool support). Fall back to
             // the legacy inline suggestion which is broadly compatible.
@@ -727,14 +732,16 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                 } catch (e2: any) {
                     setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Error: ${e2?.message || e2}` }]);
                 }
+                return { ok: false, error: msg };
             } else {
                 const errorMessage: ChatMessage = { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Sorry, I encountered an error: ${msg}` };
                 setMessages(prev => [...prev, errorMessage]);
-            }
+                return { ok: false, error: msg };
             }
         } finally {
             setIsLoading(false);
         }
+        return { ok: true };
     };
 
     const cellById = useMemo(() => {
