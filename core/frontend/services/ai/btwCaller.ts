@@ -49,9 +49,12 @@ async function runOneCall(
         // We pass a "no-op" deps object so the runtime never has anything to dispatch.
         // The orchestrator never calls these because tools is empty.
         {
-            applyMutation: async () => { /* never called */ },
+            duckdbQuery: async () => { throw new Error('tools disabled in btw mode'); },
+            listCells: () => [],
+            mutateCells: async () => { throw new Error('tools disabled in btw mode'); },
+            listPlotsInNotebook: () => [],
             requireApproval: async () => {},
-        } as any,
+        },
         {
             visibility: input.visibility,
             recentResult: input.recentResult ?? null,

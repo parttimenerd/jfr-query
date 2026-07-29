@@ -521,8 +521,8 @@ GUIDELINES:
         const customPrompt = (opts.customSystemPrompt ?? this.settings?.customSystemPrompt ?? '').trim();
         // When replaceSystemPrompt is set the caller wants its own system
         // prompt used verbatim — skip the full notebook preamble entirely.
-        const systemInstruction = opts.replaceSystemPrompt && customPrompt
-            ? customPrompt
+        const systemInstruction = opts.replaceSystemPrompt
+            ? (customPrompt || '')
             :
             `You are an expert DuckDB and data visualization assistant for analyzing Java Flight Recorder (JFR) data inside a notebook.\n` +
             `\n` +

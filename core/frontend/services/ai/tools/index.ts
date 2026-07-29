@@ -287,7 +287,7 @@ export function validateToolArgs(tool: Tool, args: any): string | null {
         if (!prop) continue; // allow extra unknown keys; providers sometimes echo metadata
         if (prop.type === 'string' && typeof value !== 'string') return `${key} must be a string`;
         if (prop.type === 'integer' && (!Number.isInteger(value))) return `${key} must be an integer`;
-        if (prop.type === 'number' && typeof value !== 'number') return `${key} must be a number`;
+        if (prop.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) return `${key} must be a finite number`;
         if (prop.type === 'object' && (typeof value !== 'object' || value === null || Array.isArray(value))) {
             return `${key} must be an object`;
         }
