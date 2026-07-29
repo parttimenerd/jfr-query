@@ -179,7 +179,7 @@ class AiService {
         doc += '- `... PALETTE "palette_name"`: Set color palette. Named: category10, tableau10, pastel1, dark2, set2. Or hex list: `"#e41a1c,#377eb8"`.\n';
         doc += '- `... AXIS_X TYPE time FORMAT "HH:mm" LABEL "label" DOMAIN [min,max]`: Configure X axis. TYPE: linear|log|time|band.\n';
         doc += '- `... AXIS_Y TYPE log DOMAIN [0, 100]`: Configure Y axis. Same sub-clauses as AXIS_X.\n';
-        doc += '- `... BRUSH $var MODE X|Y|XY`: Add a brush overlay; writes selection to `$var.lo`/`$var.hi`.\n';
+        doc += '- `... BRUSH $var MODE X|Y|XY`: Add a brush overlay; for X/Y mode writes `$var.brush.lo`/`$var.brush.hi`; for XY mode writes `$var.brush.x_lo`, `$var.brush.x_hi`, `$var.brush.y_lo`, `$var.brush.y_hi`. Use in SQL like `WHERE col BETWEEN $$var.brush.lo AND $$var.brush.hi`.\n';
         doc += '- `... LINK_X($start, $end, [master], [clamp])`: Links a plot\'s X-axis to local variables for interactive zooming and panning. All plots linked to the same variables are synchronized.\n';
         doc += '  - `master`: This plot will set the initial values of the variables to its full data range.\n';
         doc += '  - `clamp`: Prevents zooming or panning beyond this plot\'s own data range.\n';

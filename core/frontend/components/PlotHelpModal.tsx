@@ -282,7 +282,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">BRUSH $var MODE X</code>
-                                <p className="text-gray-400 mt-1">Add a brush overlay that writes the selected range into <code className="bg-gray-600 px-1 rounded">$var</code>. Modes: <code className="bg-gray-600 px-1 rounded">X</code>, <code className="bg-gray-600 px-1 rounded">Y</code>, <code className="bg-gray-600 px-1 rounded">XY</code>.</p>
+                                <p className="text-gray-400 mt-1">Add a brush overlay. For X/Y mode: writes <code className="bg-gray-600 px-1 rounded">$var.brush.lo</code> and <code className="bg-gray-600 px-1 rounded">$var.brush.hi</code>. For XY mode: writes <code className="bg-gray-600 px-1 rounded">$var.brush.x_lo</code>, <code className="bg-gray-600 px-1 rounded">$var.brush.x_hi</code>, <code className="bg-gray-600 px-1 rounded">$var.brush.y_lo</code>, <code className="bg-gray-600 px-1 rounded">$var.brush.y_hi</code>. Modes: <code className="bg-gray-600 px-1 rounded">X</code>, <code className="bg-gray-600 px-1 rounded">Y</code>, <code className="bg-gray-600 px-1 rounded">XY</code>.</p>
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINK_SCROLL plotname</code>

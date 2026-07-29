@@ -75,9 +75,9 @@ export const plotClauseDocs: Record<string, ClauseDoc> = {
     BRUSH: {
         name: 'BRUSH',
         signature: 'BRUSH $var_name MODE X|Y|XY',
-        description: 'Adds an interactive brush overlay to the chart. Dragging the brush stores the selection as `$var_name.lo` and `$var_name.hi` in cell variables. Other queries in the cell can filter using `IN $var_name`.',
+        description: 'Adds an interactive brush overlay to the chart. Dragging the brush stores the selection in cell variables: `$var.brush.lo` and `$var.brush.hi` for X/Y mode, or `$var.brush.x_lo`, `$var.brush.x_hi`, `$var.brush.y_lo`, `$var.brush.y_hi` for XY mode. Reference these in SQL using `WHERE col BETWEEN $$var.brush.lo AND $$var.brush.hi`.',
         params: [
-            { name: '$var_name', type: 'variable', required: true, description: 'The cell variable prefix to store the selection (e.g. `$sel` creates `$sel.lo` and `$sel.hi`).' },
+            { name: '$var_name', type: 'variable', required: true, description: 'The cell variable prefix for the selection (e.g. `$sel` → `$sel.brush.lo` / `$sel.brush.hi` for X mode).' },
             { name: 'MODE', type: 'string', required: true, description: '`X` for horizontal selection, `Y` for vertical, `XY` for rectangular.' }
         ]
     },
