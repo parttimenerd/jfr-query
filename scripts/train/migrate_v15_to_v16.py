@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-Migrate plot_pairs_v14.jsonl → plot_pairs_v15.jsonl by re-extracting signals
-with the improved v4 signal logic:
-  - Time: also catches _at, _ts, _dt suffixes, bare ts/dt/when
-  - Cat count: excludes _at/_ts/_dt columns from categorical count
-
-This produces better-calibrated hints: tags, especially for LINE_CHART cases
-where time columns had generic names like created_at, log_ts, event_ts.
+Migrate plot_pairs_v15.jsonl → plot_pairs_v16.jsonl by re-extracting signals
+with the v5 signal logic:
+  - New: `sorted` tag for ORDER BY without LIMIT (disambiguates BAR from HEATMAP)
+    - Before: ORDER BY without LIMIT got no signal, now gets `sorted`
+    - Before: ORDER BY + LIMIT got `ordered`, unchanged
+  - Impact: ~1770 BAR_CHART examples gain `sorted` tag, 0% HEATMAP gain it
 
 Run:
-    python3 scripts/train/migrate_v14_to_v15.py
+    python3 scripts/train/migrate_v15_to_v16.py
 """
 
 import json
@@ -20,7 +19,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def extract_input_signals_v4(sql: str, columns: list) -> str:
+def extract_input_signals_v5(sql: str, columns: list) -> str:
     sql_up = sql.upper()
     names = [c.lower() for c in columns]
     all_names = ' '.join(names)
@@ -67,7 +66,7 @@ def extract_input_signals_v4(sql: str, columns: list) -> str:
 
 
 def remigrate_input(old_input: str) -> str:
-    """Re-extract signals using v4 logic, replacing existing hints: line."""
+    """Re-extract signals using v5 logic, replacing existing hints: line."""
     lines = old_input.split('\n')
     sql = ''
     cols_raw = ''
@@ -78,10 +77,9 @@ def remigrate_input(old_input: str) -> str:
             cols_raw = line[9:]
 
     columns = [c.strip() for c in cols_raw.split(',') if c.strip()]
-    signals = extract_input_signals_v4(sql, columns)
+    signals = extract_input_signals_v5(sql, columns)
     new_hints = f"hints: {signals}"
 
-    # Replace existing hints: line if present, else prepend
     if lines[0].startswith('hints: '):
         lines[0] = new_hints
         return '\n'.join(lines)
@@ -109,15 +107,17 @@ def migrate_file(src: Path, dst: Path) -> None:
 def main():
     data_dir = REPO_ROOT / 'data'
     pairs = [
-        (data_dir / 'plot_pairs_v14.jsonl', data_dir / 'plot_pairs_v15.jsonl'),
-        (data_dir / 'plot_eval_v14.jsonl',  data_dir / 'plot_eval_v15.jsonl'),
+        (data_dir / 'plot_pairs_v15.jsonl', data_dir / 'plot_pairs_v16.jsonl'),
+        (data_dir / 'plot_eval_v15.jsonl',  data_dir / 'plot_eval_v16.jsonl'),
     ]
-    print("Migrating v14→v15 (improved time/cat signal extraction)...")
+    print("Migrating v15→v16 (adding `sorted` signal for ORDER BY without LIMIT)...")
     for src, dst in pairs:
         migrate_file(src, dst)
-    print("\nDone. To retrain on v15 data:")
+    print("\nDone. Expected impact: ~1770 BAR_CHART examples gain `sorted` tag.")
+    print("This disambiguates BAR_CHART (sorted) from HEATMAP (neither ordered nor sorted).")
+    print("\nTo retrain on v16 data:")
+    print("  Update run_training.sh DATA/EVAL to v16, then:")
     print("  ./scripts/train/run_training.sh --skip-data")
-    print("  (update DATA/EVAL variables in run_training.sh to v15 first)")
 
 
 if __name__ == '__main__':

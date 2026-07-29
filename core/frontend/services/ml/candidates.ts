@@ -69,6 +69,7 @@ const SEQ2SEQ_INPUT_V2 = (sql: string, columns: string[] | TypedColumn[], schema
  *
  *   agg      — has GROUP BY (→ BAR/PIE/HEATMAP/TREEMAP likely)
  *   ordered  — has ORDER BY + LIMIT (ranked list → BAR_CHART likely)
+ *   sorted   — has ORDER BY without LIMIT (BAR_CHART with explicit sort)
  *   having   — has HAVING clause
  *   time     — timestamp/time-named column (→ LINE_CHART/AREA_CHART likely)
  *   wide     — 3+ result columns
@@ -96,7 +97,10 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
 
     // SQL structural flags
     if (/\bGROUP\s+BY\b/.test(sqlUp)) tags.push('agg');
-    if (/\bORDER\s+BY\b/.test(sqlUp) && /\bLIMIT\b/.test(sqlUp)) tags.push('ordered');
+    const hasOrderBy = /\bORDER\s+BY\b/.test(sqlUp);
+    const hasLimit = /\bLIMIT\b/.test(sqlUp);
+    if (hasOrderBy && hasLimit) tags.push('ordered');
+    else if (hasOrderBy) tags.push('sorted');
     if (/\bHAVING\b/.test(sqlUp)) tags.push('having');
 
     // Column count

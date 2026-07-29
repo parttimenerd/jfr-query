@@ -53,8 +53,8 @@ for arg in "$@"; do
   esac
 done
 
-DATA="data/plot_pairs_v15.jsonl"
-EVAL="data/plot_eval_v15.jsonl"
+DATA="data/plot_pairs_v16.jsonl"
+EVAL="data/plot_eval_v16.jsonl"
 CHECKPOINT_DIR="checkpoints/t5-small-latest"
 ONNX_OUT="onnx/t5-small-q8-arm"
 
@@ -68,13 +68,15 @@ if $DO_DATA; then
       --output data/plot_pairs_new.jsonl \
       --eval   data/plot_eval_new.jsonl
     echo "New data written to data/plot_pairs_new.jsonl (v3 input format with hints: tag)"
-    echo "To use it: copy over v15 files and re-run with --skip-data"
-    echo "  cp data/plot_pairs_new.jsonl data/plot_pairs_v15.jsonl"
-    echo "  cp data/plot_eval_new.jsonl data/plot_eval_v15.jsonl"
+    echo "To use it: migrate to v16 and re-run with --skip-data"
+    echo "  python3 scripts/train/migrate_v15_to_v16.py  # (if starting from v15)"
+    echo "  cp data/plot_pairs_new.jsonl data/plot_pairs_v16.jsonl"
+    echo "  cp data/plot_eval_new.jsonl data/plot_eval_v16.jsonl"
   else
     echo "ANTHROPIC_API_KEY not set — skipping Haiku data generation."
-    echo "Using existing training data: $DATA (v3 format with hints: tag line)"
-    echo "To upgrade from v14: python3 scripts/train/migrate_v14_to_v15.py"
+    echo "Using existing training data: $DATA (v3 format with sorted/ordered/hints: tags)"
+    echo "To upgrade from v15: python3 scripts/train/migrate_v15_to_v16.py"
+    echo "To upgrade from v14: python3 scripts/train/migrate_v14_to_v15.py && python3 scripts/train/migrate_v15_to_v16.py"
   fi
 
   N_TRAIN=$(wc -l < "$DATA")

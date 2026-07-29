@@ -27,7 +27,10 @@ def extract_input_signals(sql: str, columns: list) -> str:
     tags = []
 
     if re.search(r'\bGROUP\s+BY\b', sql_up): tags.append('agg')
-    if re.search(r'\bORDER\s+BY\b', sql_up) and re.search(r'\bLIMIT\b', sql_up): tags.append('ordered')
+    has_order_by = bool(re.search(r'\bORDER\s+BY\b', sql_up))
+    has_limit = bool(re.search(r'\bLIMIT\b', sql_up))
+    if has_order_by and has_limit: tags.append('ordered')
+    elif has_order_by: tags.append('sorted')
     if re.search(r'\bHAVING\b', sql_up): tags.append('having')
 
     if len(columns) >= 3: tags.append('wide')

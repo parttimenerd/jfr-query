@@ -1,9 +1,11 @@
 {
-  "accuracy": 0.3775,
-  "plotShapeAccuracy": 0.7826,
-  "columnMatchAccuracy": 0.8656,
+  "accuracy": 0.781,
+  "plotShapeAccuracy": 0.7806,
+  "columnMatchAccuracy": 0.9815,
   "sampledAt": "2026-07-29T00:00:00.000Z",
   "sampleSize": 506,
-  "modelVersion": "t5-small-jfr-v3",
-  "trainingData": "plot_pairs_v13.jsonl"
+  "modelVersion": "t5-small-jfr-v4",
+  "trainingData": "plot_pairs_v14.jsonl",
+  "evalData": "plot_eval_v16.jsonl",
+  "notes": "Trained on v14 data with v3 input format (hints: tag). Eval run against v16 signals (sorted tag added). Best checkpoint epoch 13/15, eval_loss=0.3178. Next: retrain on v16 data for improved BAR/HEATMAP disambiguation."
 }

@@ -18,6 +18,23 @@ describe('extractInputSignals', () => {
             expect(s).not.toContain('ordered');
         });
 
+        it('emits "sorted" for ORDER BY without LIMIT (BAR_CHART discriminator)', () => {
+            const s = extractInputSignals('SELECT name, pauseDuration FROM t GROUP BY name ORDER BY pauseDuration DESC', ['name', 'pauseDuration']);
+            expect(s).toContain('sorted');
+            expect(s).not.toContain('ordered');
+        });
+
+        it('does NOT emit "sorted" for ORDER BY with LIMIT (that is "ordered")', () => {
+            const s = extractInputSignals('SELECT cause, cnt FROM t ORDER BY cnt DESC LIMIT 10', ['cause', 'cnt']);
+            expect(s).not.toContain('sorted');
+            expect(s).toContain('ordered');
+        });
+
+        it('does NOT emit "sorted" when no ORDER BY present', () => {
+            const s = extractInputSignals('SELECT x, y, z FROM t GROUP BY x, y', ['x', 'y', 'z']);
+            expect(s).not.toContain('sorted');
+        });
+
         it('emits "having" for HAVING queries', () => {
             const s = extractInputSignals('SELECT x, COUNT(*) FROM t GROUP BY x HAVING COUNT(*) > 5', ['x', 'count']);
             expect(s).toContain('having');

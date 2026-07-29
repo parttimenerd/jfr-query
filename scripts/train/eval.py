@@ -4,10 +4,10 @@ Evaluate a fine-tuned checkpoint or ONNX model against the held-out eval set.
 
 Usage:
     # Checkpoint (LoRA or merged):
-    python scripts/train/eval.py --checkpoint checkpoints/t5-small-v4 --eval data/plot_eval_v14.jsonl
+    python scripts/train/eval.py --checkpoint checkpoints/t5-small-v4 --eval data/plot_eval_v16.jsonl
 
     # ONNX model:
-    python scripts/train/eval.py --onnx onnx/t5-small-v4-q8-arm --eval data/plot_eval_v14.jsonl
+    python scripts/train/eval.py --onnx onnx/t5-small-v4-q8-arm --eval data/plot_eval_v16.jsonl
 
     # Causal-LM ONNX:
     python scripts/train/eval.py --onnx onnx/qwen-coder-q8 --eval data/plot_eval.jsonl --kind causal-lm
@@ -28,7 +28,7 @@ KNOWN_PLOT_TYPES = {
     "GANTT", "RANGE", "AREA_CHART",
 }
 
-SIGNAL_TAGS = ["agg", "ordered", "having", "wide", "time", "stack", "gc", "alloc", "cpu", "delta", "range"]
+SIGNAL_TAGS = ["agg", "ordered", "sorted", "having", "wide", "time", "stack", "gc", "alloc", "cpu", "delta", "range"]
 
 
 def load_eval(path: str) -> list[dict]:
@@ -120,6 +120,8 @@ def evaluate(model, tokenizer, rows: list[dict], kind: str, label: str) -> None:
     n = len(rows)
     parseable_count = 0
     type_correct_count = 0
+    col_match_num = 0      # numerator: cols referenced in correct-type predictions
+    col_match_den = 0      # denominator: all columns across correct-type predictions
     latencies: list[float] = []
     failures: list[dict] = []
 
@@ -135,6 +137,13 @@ def evaluate(model, tokenizer, rows: list[dict], kind: str, label: str) -> None:
         expected_type = row.get("plot_type", extract_plot_type(row.get("output", "")))
         signals = extract_signals_from_input(row["input"])
 
+        # Extract column names from input for column match scoring.
+        col_names: list[str] = []
+        for line in row["input"].split("\n"):
+            if line.startswith("columns: "):
+                col_names = [c.strip().strip('"') for c in line[9:].split(",") if c.strip()]
+                break
+
         generated, elapsed_ms = run_inference(model, tokenizer, row, kind)
 
         parse_ok = is_parseable(generated)
@@ -145,6 +154,11 @@ def evaluate(model, tokenizer, rows: list[dict], kind: str, label: str) -> None:
             parseable_count += 1
         if type_ok:
             type_correct_count += 1
+            # Count how many input columns appear in the predicted config.
+            for col in col_names:
+                col_match_den += 1
+                if col in generated:
+                    col_match_num += 1
         latencies.append(elapsed_ms)
 
         # Per-type tracking
@@ -180,15 +194,22 @@ def evaluate(model, tokenizer, rows: list[dict], kind: str, label: str) -> None:
 
     print()
 
+    col_match_acc = col_match_num / col_match_den if col_match_den > 0 else 0.0
+
     # ── Summary ──────────────────────────────────────────────────────────────
     print(f"\n{'='*60}")
     print(f"=== Results: {label} ===")
     print(f"{'='*60}")
-    print(f"  Parseable:       {parseable_count}/{n} = {100*parseable_count/n:.1f}%")
-    print(f"  Plot-type top-1: {type_correct_count}/{n} = {100*type_correct_count/n:.1f}%")
-    print(f"  Latency p50:     {percentile(latencies, 50):.0f}ms")
-    print(f"  Latency p95:     {percentile(latencies, 95):.0f}ms")
-    print(f"  Latency max:     {max(latencies):.0f}ms")
+    print(f"  Parseable:          {parseable_count}/{n} = {100*parseable_count/n:.1f}%")
+    print(f"  Plot-type top-1:    {type_correct_count}/{n} = {100*type_correct_count/n:.1f}%")
+    print(f"  Column match (top1): {col_match_num}/{col_match_den} = {100*col_match_acc:.1f}%")
+    print(f"  Latency p50:        {percentile(latencies, 50):.0f}ms")
+    print(f"  Latency p95:        {percentile(latencies, 95):.0f}ms")
+    print(f"  Latency max:        {max(latencies):.0f}ms")
+    print()
+    print(f"  eval.json values:")
+    print(f"    plotShapeAccuracy:   {type_correct_count/n:.4f}")
+    print(f"    columnMatchAccuracy: {col_match_acc:.4f}")
 
     # ── Per-plot-type breakdown ───────────────────────────────────────────────
     type_rows = []
