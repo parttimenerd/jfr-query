@@ -7,6 +7,13 @@ import PlotConfigEditor from './PlotConfigEditor';
 import { generateSignature } from '../utils/plotUtils';
 import type { PlotRegistration } from './plots/plotTypes';
 import type { NotebookMetadata } from '../types';
+import { plotClauseDocs } from '../utils/plotClauseDocs';
+
+export function matchesFilter(name: string, description: string, term: string): boolean {
+    if (!term) return true;
+    const t = term.toLowerCase();
+    return name.toLowerCase().includes(t) || description.toLowerCase().includes(t);
+}
 
 const preferredOrder = ['LINE_CHART', 'BAR_CHART', 'TABLE', 'PIE_CHART'];
 const plotDocs = Array.from(
@@ -60,10 +67,13 @@ LINE_CHART(x: "timestamp", y: ["value"]) LINK_X($start, $end) TITLE "Value"
 interface PlotHelpModalProps {
     isOpen: boolean;
     onClose: () => void;
+    onInsertExample?: (code: string) => void;
 }
 
-const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
+const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose, onInsertExample }) => {
     const [editableExamples, setEditableExamples] = useState<Record<string, string[]>>({});
+    const [filterTerm, setFilterTerm] = useState('');
+    const [activeTab, setActiveTab] = useState<'all' | 'cheatsheet'>('all');
     const [generalExample, setGeneralExample] = useState(initialGeneralExample);
     const [interactiveExampleConfig, setInteractiveExampleConfig] = useState(initialInteractiveExample);
     const [interactiveExampleVariables, setInteractiveExampleVariables] = useState<Record<string, string>>({
@@ -162,7 +172,60 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                     </button>
                 </header>
                 <main ref={mainContentRef} className="flex-grow overflow-y-auto p-6 space-y-8">
-                    <div className="p-4 bg-gray-900/50 rounded-lg mb-8 border border-gray-700">
+                    <div className="flex flex-col gap-3">
+                        <input
+                            type="search"
+                            placeholder="Search shapes and clauses…"
+                            aria-label="Search plot help"
+                            value={filterTerm}
+                            onChange={e => setFilterTerm(e.target.value)}
+                            className="w-full bg-gray-900/50 border border-gray-700 rounded-md py-1.5 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        />
+                        <div className="flex gap-2">
+                            {(['all', 'cheatsheet'] as const).map(tab => (
+                                <button
+                                    key={tab}
+                                    onClick={() => setActiveTab(tab)}
+                                    className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${
+                                        activeTab === tab
+                                            ? 'bg-cyan-700 text-white'
+                                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    }`}
+                                >
+                                    {tab === 'all' ? 'Shapes & Clauses' : 'Cheat Sheet'}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {activeTab === 'cheatsheet' && (
+                        <div className="px-4 py-3 overflow-auto">
+                            <table className="w-full text-sm">
+                                <thead className="sticky top-0 bg-gray-800">
+                                    <tr>
+                                        <th className="text-left py-1 pr-4 font-medium text-gray-400 w-48">Clause</th>
+                                        <th className="text-left py-1 pr-4 font-medium text-gray-400 w-64">Signature</th>
+                                        <th className="text-left py-1 font-medium text-gray-400">Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-700/50">
+                                    {Object.values(plotClauseDocs)
+                                        .filter((c, i, arr) => arr.findIndex(x => x.name === c.name) === i)
+                                        .filter(c => matchesFilter(c.name, c.description, filterTerm))
+                                        .map(c => (
+                                            <tr key={c.name} className="hover:bg-gray-700/20">
+                                                <td className="py-1.5 pr-4 font-mono text-xs text-cyan-300 align-top">{c.name}</td>
+                                                <td className="py-1.5 pr-4 font-mono text-xs text-yellow-300 align-top whitespace-nowrap">{c.signature}</td>
+                                                <td className="py-1.5 text-xs text-gray-400 align-top">{c.description}</td>
+                                            </tr>
+                                        ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {activeTab === 'all' && <>
+                        <div className="p-4 bg-gray-900/50 rounded-lg mb-8 border border-gray-700">
                         <h3 className="font-semibold text-lg text-gray-200">Plot Syntax Quick Reference</h3>
                         <p className="mt-2 text-sm text-gray-400">
                             Each plot block uses a function-call syntax. Column names available in your query results are shown as chips above the editor — click one to copy it into your plot config.
@@ -400,9 +463,11 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                     </div>
 
 
-                    {plotDocs.map(doc => {
+                    {plotDocs
+                        .filter(doc => matchesFilter(doc.name, doc.description, filterTerm))
+                        .map(doc => {
                         const signature = `${doc.name}${generateSignature(doc.params)}`;
-                        
+
                         return (
                             <div key={doc.name} className="border-b border-gray-700 pb-8 last:border-b-0 last:pb-0">
                                 <h3 className="text-2xl font-bold text-cyan-400 font-mono">{signature}</h3>
@@ -410,7 +475,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                     <p className="mt-2 text-gray-300">{doc.description}</p>
                                     {doc.supportsMultiQuery && <span className="mt-2 text-xs font-semibold text-purple-300 bg-purple-600/20 px-2 py-0.5 rounded-full">Supports Multiple Queries</span>}
                                 </div>
-                                
+
                                 <div className="mt-4">
                                     {doc.params.length > 0 && (
                                         <>
@@ -427,7 +492,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                         </>
                                     )}
                                 </div>
-                                
+
                                 {doc.examples.map((example, index) => {
                                     const sampleData = example.sampleData || genericSampleData;
                                     const currentConfig = editableExamples[doc.name]?.[index] || '';
@@ -437,16 +502,32 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                             <p className="text-sm text-gray-400 mb-2">{example.description}</p>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <div>
-                                                    <h5 className="text-xs font-semibold text-gray-400 mb-1">Editable Config</h5>
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <h5 className="text-xs font-semibold text-gray-400">Editable Config</h5>
+                                                        <button
+                                                            onClick={() => {
+                                                                if (onInsertExample) {
+                                                                    onInsertExample(example.code);
+                                                                } else {
+                                                                    navigator.clipboard.writeText(example.code);
+                                                                }
+                                                            }}
+                                                            title={onInsertExample ? 'Insert into editor' : 'Copy to clipboard'}
+                                                            aria-label={onInsertExample ? 'Insert example into editor' : 'Copy example to clipboard'}
+                                                            className="px-2 py-0.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+                                                        >
+                                                            {onInsertExample ? 'Insert' : 'Copy'}
+                                                        </button>
+                                                    </div>
                                                     <div className="border border-gray-700 rounded-md overflow-hidden">
-                                                        <PlotConfigEditor 
-                                                            value={currentConfig} 
+                                                        <PlotConfigEditor
+                                                            value={currentConfig}
                                                             onChange={(newCode) => setEditableExamples(prev => {
                                                                 const newExamplesForDoc = [...(prev[doc.name] || [])];
                                                                 newExamplesForDoc[index] = newCode;
                                                                 return {...prev, [doc.name]: newExamplesForDoc};
-                                                            })} 
-                                                            data={sampleData} 
+                                                            })}
+                                                            data={sampleData}
                                                             variables={{}}
                                                         />
                                                     </div>
@@ -454,11 +535,11 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                                 <div>
                                                     <h5 className="text-xs font-semibold text-gray-400 mb-1">Preview</h5>
                                                     <div className="bg-gray-900/50 rounded-lg border border-gray-700 h-[250px] overflow-hidden">
-                                                        <PlotRenderer 
-                                                            config={currentConfig} 
+                                                        <PlotRenderer
+                                                            config={currentConfig}
                                                             data={sampleData}
                                                             sql=""
-                                                            cellContext={{id: `ex-${doc.name}-${index}`, title: 'Example', content:''}} 
+                                                            cellContext={{id: `ex-${doc.name}-${index}`, title: 'Example', content:''}}
                                                             onApplyFix={(newCode) => setEditableExamples(prev => {
                                                                 const newExamplesForDoc = [...(prev[doc.name] || [])];
                                                                 newExamplesForDoc[index] = newCode;
@@ -478,6 +559,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                             </div>
                         );
                     })}
+                    </>}
                 </main>
             </div>
         </div>,
