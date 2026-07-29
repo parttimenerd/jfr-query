@@ -102,6 +102,7 @@ type PlotFamily =
     | 'LINE_CHART' | 'BAR_CHART' | 'PIE_CHART' | 'SCATTER_PLOT'
     | 'AREA_CHART' | 'HISTOGRAM' | 'BOX_PLOT' | 'HEATMAP'
     | 'FLAMEGRAPH' | 'GANTT' | 'RANGE' | 'TABLE'
+    | 'TREEMAP' | 'WATERFALL'
     | 'COMPOSITION' | 'SPARKLINE' | 'ERGONOMIC';
 
 interface SqlExample {
@@ -342,6 +343,52 @@ const SQL_POOL: SqlExample[] = [
         sample: [{ region: 'us-east', minLat: 3.0, maxLat: 18.0 }],
         plotFamilyHint: 'RANGE',
     },
+    // ── TREEMAP (part-of-whole hierarchy) ────────────────────────────────────
+    {
+        sql: 'SELECT objectClass, SUM(weight) AS totalWeight FROM ObjectAllocationSample GROUP BY objectClass ORDER BY totalWeight DESC',
+        columns: [{ name: 'objectClass', type: 'VARCHAR' }, { name: 'totalWeight', type: 'BIGINT' }],
+        schema: pickSchemas('ObjectAllocationSample'),
+        sample: [{ objectClass: 'byte[]', totalWeight: 5242880 }, { objectClass: 'char[]', totalWeight: 2097152 }],
+        plotFamilyHint: 'TREEMAP',
+    },
+    {
+        sql: 'SELECT thread, objectClass, SUM(weight) AS w FROM ObjectAllocationSample GROUP BY thread, objectClass',
+        columns: [{ name: 'thread', type: 'VARCHAR' }, { name: 'objectClass', type: 'VARCHAR' }, { name: 'w', type: 'BIGINT' }],
+        schema: pickSchemas('ObjectAllocationSample'),
+        sample: [{ thread: 'main', objectClass: 'byte[]', w: 1048576 }],
+        plotFamilyHint: 'TREEMAP',
+        biasHint: 'Use colorBy param to color treemap nodes by thread.',
+    },
+    {
+        sql: 'SELECT name AS gcType, COUNT(*) AS cnt FROM GarbageCollection GROUP BY name',
+        columns: [{ name: 'gcType', type: 'VARCHAR' }, { name: 'cnt', type: 'BIGINT' }],
+        schema: pickSchemas('GarbageCollection'),
+        sample: [{ gcType: 'G1 Young Generation', cnt: 42 }, { gcType: 'G1 Old Generation', cnt: 3 }],
+        plotFamilyHint: 'TREEMAP',
+    },
+    // ── WATERFALL (cumulative deltas) ─────────────────────────────────────────
+    {
+        sql: "SELECT phase, SUM(duration) AS totalMs FROM GarbageCollection GROUP BY phase ORDER BY MIN(startTime)",
+        columns: [{ name: 'phase', type: 'VARCHAR' }, { name: 'totalMs', type: 'DOUBLE' }],
+        schema: pickSchemas('GarbageCollection'),
+        sample: [{ phase: 'Mark', totalMs: 12.5 }, { phase: 'Remark', totalMs: 4.2 }, { phase: 'Cleanup', totalMs: -3.1 }],
+        plotFamilyHint: 'WATERFALL',
+    },
+    {
+        sql: "SELECT gcId, heapBeforeGC - heapAfterGC AS freed FROM GarbageCollection ORDER BY gcId",
+        columns: [{ name: 'gcId', type: 'BIGINT' }, { name: 'freed', type: 'DOUBLE' }],
+        schema: pickSchemas('GarbageCollection'),
+        sample: [{ gcId: 1, freed: 256000 }, { gcId: 2, freed: -4096 }],
+        plotFamilyHint: 'WATERFALL',
+        biasHint: 'Column "freed" is a heap delta; use WATERFALL with category="gcId", value="freed".',
+    },
+    {
+        sql: "SELECT cause AS step, longestPause AS pauseMs FROM GarbageCollection ORDER BY startTime",
+        columns: [{ name: 'step', type: 'VARCHAR' }, { name: 'pauseMs', type: 'DOUBLE' }],
+        schema: pickSchemas('GarbageCollection'),
+        sample: [{ step: 'G1 Evacuation Pause', pauseMs: 8.3 }, { step: 'GCLocker Initiated GC', pauseMs: 2.1 }],
+        plotFamilyHint: 'WATERFALL',
+    },
     // ── TABLE ─────────────────────────────────────────────────────────────────
     {
         sql: 'SELECT gcId, name, duration, longestPause, cause FROM GarbageCollection ORDER BY duration DESC LIMIT 50',
@@ -396,6 +443,8 @@ const FAMILY_TARGETS: Record<PlotFamily, number> = {
     HEATMAP: 300,
     TABLE: 250,
     FLAMEGRAPH: 150,
+    TREEMAP: 300,
+    WATERFALL: 300,
     COMPOSITION: 500,
     SPARKLINE: 100,
     ERGONOMIC: 100,
@@ -413,10 +462,12 @@ The DSL is: NAME(param: value, ...) optionally followed by SQL-style suffix clau
 
 PLOT TYPES (canonical):
   TABLE, BAR_CHART, PIE_CHART, LINE_CHART, SCATTER_PLOT, HEATMAP,
-  FLAMEGRAPH, HISTOGRAM, BOX_PLOT, AREA_CHART, GANTT, RANGE
+  FLAMEGRAPH, HISTOGRAM, BOX_PLOT, AREA_CHART, GANTT, RANGE,
+  TREEMAP, WATERFALL
 
 SHORT ALIASES (case-insensitive, all acceptable):
-  table, bar, pie, line, scatter, heatmap, flame, hist, box, area, gantt, range
+  table, bar, pie, line, scatter, heatmap, flame, hist, box, area, gantt, range,
+  treemap, waterfall
 
 PARAMS (canonical names — use these, NOT legacy aliases):
   LINE_CHART:    x, y (single or array), y2, color, xDomain, yScale, yDomain, lineY, lineType, connectNulls
@@ -431,6 +482,8 @@ PARAMS (canonical names — use these, NOT legacy aliases):
   GANTT:         start, end, lane, task
   RANGE:         x, low, high, color
   TABLE:         columns (typed) OR headers (legacy)
+  TREEMAP:       category, value, colorBy
+  WATERFALL:     category, value
 
 SUFFIX CLAUSES (uppercase canonical, lowercase also accepted):
   TITLE "..."                          plot title
@@ -468,7 +521,7 @@ ERGONOMIC FORMS (all valid):
 
 RULES:
 - Use the EXACT column names from the columns list.
-- Match the SQL shape: TIMESTAMP + numeric → LINE_CHART or AREA_CHART; category + numeric → BAR_CHART; two numerics → SCATTER_PLOT; start*+end*+category → GANTT; category + low/high pair → RANGE; single numeric → HISTOGRAM.
+- Match the SQL shape: TIMESTAMP + numeric → LINE_CHART or AREA_CHART; category + numeric → BAR_CHART; two numerics → SCATTER_PLOT; start*+end*+category → GANTT; category + low/high pair → RANGE; single numeric → HISTOGRAM; category + value (part-of-whole, no time axis) → TREEMAP or PIE_CHART; category + signed delta/cumulative value → WATERFALL.
 - Quote column names that contain spaces or special chars; unquote simple identifiers.
 - Prefer single-y over array form: y: "col" rather than y: ["col"].
 - Suffix clauses ONLY appear AFTER the closing paren of the body.
