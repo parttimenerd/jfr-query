@@ -19,4 +19,9 @@ describe('PlotHelpModal — matchesFilter', () => {
     it('returns false when no match', () => {
         expect(matchesFilter('BAR_CHART', 'Show values by category.', 'zzz')).toBe(false);
     });
+
+    it('handles special characters and whitespace in filter term', () => {
+        expect(matchesFilter('LINE_CHART', 'A line chart.', '  line  ')).toBe(false);
+        expect(matchesFilter('LINE_CHART', 'Has (parens) in description.', '(parens)')).toBe(true);
+    });
 });

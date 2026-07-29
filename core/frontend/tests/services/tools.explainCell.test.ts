@@ -25,6 +25,14 @@ describe('executeTool — explainCell', () => {
         expect(result.data.content).toContain('SELECT');
     });
 
+    it('returns chart-focused instruction for a plot cell', async () => {
+        const result = await executeTool('explainCell', { cellId: 'cell-2' }, makeDeps());
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.data.cellType).toBe('plot');
+        expect(result.data.instruction).toContain('visually');
+    });
+
     it('returns an error for an unknown cell id', async () => {
         const result = await executeTool('explainCell', { cellId: 'not-found' }, makeDeps());
         expect(result.ok).toBe(false);
