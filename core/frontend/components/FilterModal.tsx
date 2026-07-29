@@ -47,7 +47,7 @@ const FilterModal: React.FC<FilterModalProps> = ({ isOpen, onClose, onApply, rec
       >
         <header className="flex-shrink-0 p-4 border-b border-gray-700 flex justify-between items-center">
           <h2 className="text-xl font-semibold">Filters</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-700 rounded-full">
+          <button onClick={onClose} className="p-2 hover:bg-gray-700 rounded-full" aria-label="Close filters">
             <XMarkIcon className="w-6 h-6" />
           </button>
         </header>

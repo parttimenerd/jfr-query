@@ -48,7 +48,7 @@ const ToastNotification: React.FC<ToastNotificationProps> = ({ message, onClose,
             </button>
           )}
         </div>
-        <button onClick={() => onCloseRef.current()} className="p-1 -mt-1 -mr-1 text-yellow-200 hover:text-white rounded-full">
+        <button onClick={() => onCloseRef.current()} className="p-1 -mt-1 -mr-1 text-yellow-200 hover:text-white rounded-full" aria-label="Dismiss">
           <XMarkIcon className="w-5 h-5" />
         </button>
       </div>

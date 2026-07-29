@@ -211,7 +211,7 @@ export function listPlotsFromCells(cells: ReadonlyArray<{ id: string; content: s
 const ChatPanelCodeBlock: React.FC<{ code: string }> = ({ code }) => {
     const [copied, setCopied] = useState(false);
     const handleCopy = () => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000); };
-    return (<div className="relative bg-gray-900 rounded-md my-2"><pre className="p-3 text-sm text-cyan-300 overflow-x-auto font-mono">{code}</pre><button onClick={handleCopy} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded-md"><ClipboardIcon className={`w-4 h-4 ${copied ? 'text-green-400' : 'text-gray-300'}`}/></button></div>);
+    return (<div className="relative bg-gray-900 rounded-md my-2"><pre className="p-3 text-sm text-cyan-300 overflow-x-auto font-mono">{code}</pre><button onClick={handleCopy} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded-md" aria-label="Copy code"><ClipboardIcon className={`w-4 h-4 ${copied ? 'text-green-400' : 'text-gray-300'}`}/></button></div>);
 };
 
 const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells, onAddCell, onAddCellsBatch, onUpdateCell, onDeleteCell, onMoveCell, onMetadataChange, onNavigateRef, onUndoLastAction, onBeforeMutate, incomingChannel, onIncomingChannelConsumed }) => {
