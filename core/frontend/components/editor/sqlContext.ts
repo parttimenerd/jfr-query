@@ -126,7 +126,11 @@ function detectStringValueColumn(stmt: string): { column: string; table: string 
   const before = stmt.slice(0, lastQuote);
   let inside = 0;
   for (let i = 0; i < before.length; i++) {
-    if (before[i] === "'" && before[i - 1] !== '\\') inside++;
+    if (before[i] === "'") {
+      // SQL uses '' to escape a literal single quote; skip the pair.
+      if (before[i + 1] === "'") { i++; continue; }
+      inside++;
+    }
   }
   if (inside % 2 !== 0) return null;
   // Walk back from the opening quote to find an operator and column reference.

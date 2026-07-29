@@ -65,13 +65,11 @@ export const ghostTextField = StateField.define<GhostTextState | null>({
   },
   provide: f => EditorView.decorations.from(f, v => {
     if (!v || !v.text) return Decoration.none;
-    // Defensive: the doc might have shrunk since the effect was dispatched.
-    return (view: EditorView) => {
-      if (v.from > view.state.doc.length) return Decoration.none;
-      return Decoration.set([
-        Decoration.widget({ widget: new GhostTextWidget(v.text!), side: 1 }).range(v.from),
-      ]);
-    };
+    // The field is cleared on every docChanged (above), so `v.from` is always
+    // a valid offset within the current doc — no out-of-bounds guard needed.
+    return Decoration.set([
+      Decoration.widget({ widget: new GhostTextWidget(v.text!), side: 1 }).range(v.from),
+    ]);
   }),
 });
 

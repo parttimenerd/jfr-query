@@ -129,10 +129,14 @@ function collectColumnsForQualifier(
   const alias = ctx.aliases.get(qualifier);
   const targetName = alias ? alias.target.toLowerCase() : qualifier;
   const out: Array<{ name: string; type: string; sourceName: string }> = [];
+  const seen = new Set<string>();
+  const push = (c: { name: string; type: string; sourceName: string }) => {
+    if (!seen.has(c.name.toLowerCase())) { seen.add(c.name.toLowerCase()); out.push(c); }
+  };
   const tbl = schema.tableMap.get(targetName);
-  if (tbl) tbl.columns.forEach(c => out.push({ name: c.name, type: c.type, sourceName: tbl.name }));
+  if (tbl) tbl.columns.forEach(c => push({ name: c.name, type: c.type, sourceName: tbl.name }));
   const vw = schema.viewMap.get(targetName);
-  if (vw) vw.columns.forEach(c => out.push({ name: c.name, type: c.type, sourceName: vw.name }));
+  if (vw) vw.columns.forEach(c => push({ name: c.name, type: c.type, sourceName: vw.name }));
   return out;
 }
 
