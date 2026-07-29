@@ -590,6 +590,8 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         setCmdSuggestions([]);
         setIsLoading(true);
         setStreamingText(null);
+        // Abort any previous in-flight request before starting the new one.
+        if (abortControllerRef.current) abortControllerRef.current.abort();
         cancelledRef.current = false;
         abortControllerRef.current = new AbortController();
         setProposals([]);
