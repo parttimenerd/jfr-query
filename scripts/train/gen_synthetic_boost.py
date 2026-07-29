@@ -63,7 +63,7 @@ BOOST_GENERATORS = [
     ('WATERFALL',    g.make_waterfall_inputs,  build_waterfall_output, 500),
     ('GANTT',        g.make_gantt_inputs,      build_gantt_output,     400),
     ('RANGE',        g.make_range_inputs,      build_range_output,     400),
-    ('HISTOGRAM',    g.make_histogram_inputs,  build_histogram_output, 250),
+    ('HISTOGRAM',    g.make_histogram_inputs,  build_histogram_output, 500),  # boosted from 250 to reduce BOX_PLOT confusion
     ('SCATTER_PLOT', g.make_scatter_inputs,    build_scatter_output,   250),
 ]
 
