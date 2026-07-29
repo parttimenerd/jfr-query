@@ -189,7 +189,7 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     for (let i = 0; i < typed.length; i++) {
         const t = types[i] ?? '';
         const n = names[i] ?? '';
-        if (NUM_TYPES.has(t) || (t === '' && /(?:count|size|ms|mb|kb|rate|pct|load|pause|duration|alloc|heap|cpu|ticks|samples|total|avg|max|p\d+)/i.test(n))) {
+        if (NUM_TYPES.has(t) || (t === '' && /(?:count|size|ms|mb|kb|rate|pct|load|pause|duration|alloc|heap|cpu|ticks|samples|total|avg|max|overhead|throughput|latency|weight|score|p\d+|%$)/i.test(n))) {
             numCount++;
         } else if (t === 'VARCHAR' || t === 'TEXT' || t === 'STRING' || (t === '' && !/time|stamp|date|bucket|_at$|_ts$|_dt$/.test(n))) {
             catCount++;

@@ -425,7 +425,7 @@ def extract_input_signals(sql: str, columns: list) -> str:
     num_count = 0
     cat_count = 0
     for n, t in zip(names, types):
-        if t in NUM_TYPES or (not t and re.search(r'(?:count|size|ms|mb|kb|rate|pct|load|pause|duration|alloc|heap|cpu|ticks|samples|total|avg|max|p\d+)', n, re.I)):
+        if t in NUM_TYPES or (not t and re.search(r'(?:count|size|ms|mb|kb|rate|pct|load|pause|duration|alloc|heap|cpu|ticks|samples|total|avg|max|overhead|throughput|latency|weight|score|p\d+|%$)', n, re.I)):
             num_count += 1
         elif t in ('VARCHAR', 'TEXT', 'STRING') or (not t and not re.search(r'time|stamp|date|bucket|_at$|_ts$|_dt$', n)):
             cat_count += 1
