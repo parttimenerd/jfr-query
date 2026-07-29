@@ -160,7 +160,7 @@ export function cleanPlotConfig(raw: string): string {
                 // Only keep recognised trailing modifiers (TITLE, LINK_X, etc.);
                 // strip any trailing prose the model may have appended.
                 const remainder = s.slice(end + 1).split('\n')[0];
-                const modMatch = /^(\s+(?:TITLE|LINK_X|LINK_Y|ZOOM|BRUSH|PALETTE|WIDTH|LEGEND|AXIS_X|AXIS_Y|LET)\b.*)/i.exec(remainder);
+                const modMatch = /^(\s+(?:TITLE|LINK_X|LINK_Y|LINK_XY|LINK_SCROLL|ZOOM|ZOOM_X|BRUSH|PALETTE|WIDTH|HEIGHT|LEGEND|AXIS_X|AXIS_Y|LET|DATASET|TOOLTIP|ON\s+HOVER|DISABLED|NAME)\b.*)/i.exec(remainder);
                 s = s.slice(0, end + 1) + (modMatch ? modMatch[1] : '');
             }
         }
