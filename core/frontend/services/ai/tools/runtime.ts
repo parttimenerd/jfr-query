@@ -344,6 +344,7 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                 if (cell.type !== 'sql') {
                     return { ok: false, error: `Cell "${args.cellId}" is a ${cell.type} cell, not a SQL cell. suggestPlot requires a SQL cell to read its result schema.` };
                 }
+                if (isForbiddenSql(cell.content)) return { ok: false, error: 'SQL references $ai_providers which contains sensitive credentials and cannot be queried.' };
                 let columns: string[] = [];
                 try {
                     const result = await deps.duckdbQuery(cell.content, { limit: 0 });
