@@ -361,8 +361,9 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                 const firstCatCol = schemaColumns.find(c => c.type === 'VARCHAR' || c.type === 'TEXT');
                 if (firstCatCol) {
                     try {
+                        const safeContent = cell.content.trimEnd().replace(/;$/, '');
                         const cardResult = await deps.duckdbQuery(
-                            `SELECT COUNT(DISTINCT "${firstCatCol.name}") AS cnt FROM (${cell.content}) _q LIMIT 1`,
+                            `SELECT COUNT(DISTINCT "${firstCatCol.name.replace(/"/g, '""')}") AS cnt FROM (${safeContent}) _q LIMIT 1`,
                             {},
                         );
                         const cnt = Number(cardResult.rows?.[0]?.cnt ?? cardResult.rows?.[0]?.[0] ?? 0);
@@ -378,7 +379,7 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                 const hasTimestamp = colTypes.some(t => t.includes('TIMESTAMP') || t.includes('DATE'));
                 const hasVarchar = colTypes.some(t => t === 'VARCHAR' || t === 'TEXT');
                 const numericCols = schemaColumns.filter(c => /INT|FLOAT|DOUBLE|NUMERIC|DECIMAL|BIGINT|HUGEINT|REAL/.test(c.type.toUpperCase()));
-                const hasDeltaColumn = colNames.some(n => /delta|change|diff|increment|decrement/.test(n));
+                const hasDeltaColumn = colNames.some(n => /(?:^|_)(?:delta|diff|increment|decrement)(?:_|$)/.test(n) || n === 'change' || n.endsWith('_change') || n.startsWith('change_'));
                 const hasEndTime = colNames.some(n => n.includes('end') || n.includes('endtime') || n.includes('stop'));
 
                 let hint: string;
@@ -387,14 +388,14 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                 } else if (hasVarchar && numericCols.length === 1 && !hasTimestamp) {
                     hint = 'One category + one numeric column → consider BAR_CHART or TREEMAP (if many categories); ' +
                         'TREEMAP works best with > 20 distinct values for the label column' + cardinalityHint + '.';
+                } else if (hasTimestamp && hasEndTime) {
+                    hint = 'Start/end time columns → GANTT or RANGE.';
                 } else if (hasTimestamp && numericCols.length >= 1) {
                     hint = `Timestamp + numeric → LINE_CHART${numericCols.length > 1 ? ' with multiple y columns' : ''}.`;
                 } else if (!hasTimestamp && numericCols.length >= 2 && !hasVarchar) {
                     hint = 'Two+ numerics, no timestamps → SCATTER_PLOT or HEATMAP.';
                 } else if (numericCols.length === 1 && !hasTimestamp && !hasVarchar) {
                     hint = 'Single numeric distribution → HISTOGRAM.';
-                } else if (hasEndTime && hasTimestamp) {
-                    hint = 'Start/end time columns → GANTT or RANGE.';
                 } else if (colNames.some(n => n === 'stackframes' || n === 'stack' || n.includes('frame'))) {
                     hint = 'Stack frame column → FLAMEGRAPH.';
                 } else {
