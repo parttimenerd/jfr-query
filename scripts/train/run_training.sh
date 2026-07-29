@@ -53,8 +53,8 @@ for arg in "$@"; do
   esac
 done
 
-DATA="data/plot_pairs_v19.jsonl"
-EVAL="data/plot_eval_v19.jsonl"
+DATA="data/plot_pairs_v20.jsonl"
+EVAL="data/plot_eval_v20.jsonl"
 CHECKPOINT_DIR="checkpoints/t5-small-latest"
 ONNX_OUT="onnx/t5-small-q8-arm"
 
@@ -75,12 +75,10 @@ if $DO_DATA; then
     echo "  cp data/plot_eval_new.jsonl data/plot_eval_v17.jsonl"
   else
     echo "ANTHROPIC_API_KEY not set — skipping Haiku data generation."
-    echo "Using existing training data: $DATA (v3 format with sorted/ordered/cross/raw/scalar/solo/duo/hints: tags)"
-    echo "To upgrade from v18: python3 scripts/train/migrate_v18_to_v19.py"
-    echo "To upgrade from v17: python3 scripts/train/migrate_v17_to_v18.py && python3 scripts/train/migrate_v18_to_v19.py"
-    echo "To upgrade from v16: python3 scripts/train/migrate_v16_to_v17.py && python3 scripts/train/migrate_v17_to_v18.py && python3 scripts/train/migrate_v18_to_v19.py"
-    echo "To upgrade from v15: python3 scripts/train/migrate_v15_to_v16.py && python3 scripts/train/migrate_v16_to_v17.py && python3 scripts/train/migrate_v17_to_v18.py && python3 scripts/train/migrate_v18_to_v19.py"
-    echo "To upgrade from v14: python3 scripts/train/migrate_v14_to_v15.py && python3 scripts/train/migrate_v15_to_v16.py && python3 scripts/train/migrate_v16_to_v17.py && python3 scripts/train/migrate_v17_to_v18.py && python3 scripts/train/migrate_v18_to_v19.py"
+    echo "Using existing training data: $DATA (v3 format; solo/duo/cross/raw/scalar; GANTT/RANGE/TREEMAP/WATERFALL boosted)"
+    echo "To generate fresh v20: python3 scripts/train/gen_synthetic_boost.py"
+    echo "To rebuild from v19:   python3 scripts/train/gen_synthetic_boost.py (rewrites v20)"
+    echo "To upgrade signals:    python3 scripts/train/migrate_v19_to_vX.py (when new signals are added)"
   fi
 
   N_TRAIN=$(wc -l < "$DATA")
