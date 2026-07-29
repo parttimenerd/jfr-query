@@ -43,8 +43,7 @@ describe('executeTool — suggestPlot', () => {
     it('returns an error for a non-SQL cell', async () => {
         const result = await executeTool('suggestPlot', { cellId: 'cell-2' }, makeDeps());
         expect(result.ok).toBe(false);
-        if (result.ok) return;
-        expect(result.error).toContain('SQL');
+        expect((result as { ok: false; error: string }).error).toContain('SQL');
     });
 
     it('returns an error for a cell containing $ai_providers', async () => {
@@ -55,7 +54,7 @@ describe('executeTool — suggestPlot', () => {
         });
         const result = await executeTool('suggestPlot', { cellId: 'cell-evil' }, deps);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toMatch(/\$ai_providers/);
+        expect((result as { ok: false; error: string }).error).toMatch(/\$ai_providers/);
     });
 
     it('suggestPlot is in the TOOLS registry with kind read', async () => {
