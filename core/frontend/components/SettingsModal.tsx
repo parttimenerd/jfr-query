@@ -509,6 +509,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 <div>
                     <AiModeCards isAiActive={
                         localSettings.aiProvider === 'browser' ||
+                        (localSettings.aiProvider === 'local' && !!(localSettings as any).localBaseUrl) ||
                         !!(localSettings as any)[`${localSettings.aiProvider}ApiKey`]
                     } />
                 </div>
