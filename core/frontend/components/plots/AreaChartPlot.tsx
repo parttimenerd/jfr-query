@@ -150,6 +150,10 @@ const AreaChartComponent: React.FC<{
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
   const colors = getPaletteColors(clauses?.palette, COLORS);
 
+  if (!chartData || chartData.length === 0 || allY.length === 0) {
+    return <div className="p-4 text-center text-gray-500 text-sm">No valid data.</div>;
+  }
+
   const xTickFmt = makeTickFormatter(clauses?.axisX) ?? (isTime ? (t: any) => formatTimestamp(t, settings.timeFormat) : undefined);
   const yTickFmt = makeTickFormatter(clauses?.axisY);
 

@@ -68,6 +68,8 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
     return [min, max];
   }, [data, config.size]);
 
+  if (!data || data.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">No data.</div>;
+
   return (
     <div style={{ width: '100%', minHeight: 200 }}>
       <ResponsiveContainer width="100%" minHeight={200}>

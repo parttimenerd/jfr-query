@@ -136,13 +136,17 @@ const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: stri
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
     useEffect(() => { setKey(varKey); setValue(varValue); }, [varKey, varValue]);
+    const keyInputRef = useRef<HTMLInputElement>(null);
+    const valueInputRef = useRef<HTMLInputElement>(null);
+    const handleKeyBlur = () => { const valid=key.match(/^\$(?!\$)\w+/); if(!valid){setKey(varKey);}else if(key!==varKey){onChangeRef.current(varKey,key,value);} };
+    const handleValueBlur = () => { if(value!==varValue) onChangeRef.current(varKey,key,value); };
     return (
         <div className="space-y-0.5">
             <div className="flex items-center gap-2">
-                <input type="text" value={key} onChange={e=>{setKey(e.target.value);}} onBlur={()=>{const valid=key.match(/^\$(?!\$)\w+/);if(!valid){setKey(varKey);}else if(key!==varKey){onChangeRef.current(varKey,key,value);}}} className={`w-1/3 bg-gray-800 border ${key.match(/^\$(?!\$)\w+/)?'border-gray-600':'border-red-500'} rounded-md p-1.5 text-sm font-mono text-cyan-300`} title="Cell-local variable: must start with $ (use $$ prefix in Notebook Settings for global scope)" aria-label="Cell-local variable: must start with $ (use $$ prefix in Notebook Settings for global scope)"/>
+                <input ref={keyInputRef} type="text" value={key} onChange={e=>{setKey(e.target.value);}} onBlur={handleKeyBlur} onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();handleKeyBlur();valueInputRef.current?.focus();} if(e.key==='Escape'){e.preventDefault();setKey(varKey);} }} className={`w-1/3 bg-gray-800 border ${key.match(/^\$(?!\$)\w+/)?'border-gray-600':'border-red-500'} rounded-md p-1.5 text-sm font-mono text-cyan-300`} title="Cell-local variable: must start with $ (use $$ prefix in Notebook Settings for global scope)" aria-label="Cell-local variable: must start with $ (use $$ prefix in Notebook Settings for global scope)"/>
                 <span className="text-gray-500">=</span>
-                <input type="text" value={value} onChange={e=>{setValue(e.target.value);}} onBlur={()=>{if(value!==varValue)onChangeRef.current(varKey,key,value);}} className="flex-grow bg-gray-800 border border-gray-600 rounded-md p-1.5 text-sm font-mono" ref={inputRef}/>
-                <button onClick={()=>onDelete(varKey)} className="p-1.5 text-gray-400 hover:text-red-400"><TrashIcon className="w-4 h-4"/></button>
+                <input ref={el=>{ valueInputRef.current=el; if(typeof inputRef==='function') inputRef(el); }} type="text" value={value} onChange={e=>{setValue(e.target.value);}} onBlur={handleValueBlur} onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();handleValueBlur();} if(e.key==='Escape'){e.preventDefault();setValue(varValue);} }} className="flex-grow bg-gray-800 border border-gray-600 rounded-md p-1.5 text-sm font-mono"/>
+                <button onClick={()=>onDelete(varKey)} className="p-1.5 text-gray-400 hover:text-red-400" title="Delete variable" aria-label="Delete variable"><TrashIcon className="w-4 h-4"/></button>
             </div>
             {usedIn && usedIn.length > 0 && (
                 <div className="pl-1 flex items-center gap-1 flex-wrap">
