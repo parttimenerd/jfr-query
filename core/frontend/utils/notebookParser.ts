@@ -100,7 +100,8 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
                 if (multilineKey && !currentSection) {
                     result.customSystemPrompt += '\n';
                 } else if (cellConditionMultilineKey) {
-                    result.cellConditions![cellConditionMultilineKey] += '\n';
+                    // Blank line ends the block-scalar value; don't extend further.
+                    cellConditionMultilineKey = null;
                 } else if (multilineKey && currentSection && currentObject) {
                     currentObject[multilineKey] += '\n';
                 }
@@ -250,6 +251,15 @@ const stringifyFrontMatter = (metadata: NotebookMetadata): string => {
     }
     if (metadata.decimalPlaces !== undefined && metadata.decimalPlaces !== null) {
         parts.push(`decimalPlaces: ${metadata.decimalPlaces}`);
+    }
+    if ((metadata as any).title) {
+        parts.push(`title: '${String((metadata as any).title).replace(/'/g, "''")}'`);
+    }
+    if ((metadata as any).description) {
+        parts.push(`description: '${String((metadata as any).description).replace(/'/g, "''")}'`);
+    }
+    if ((metadata as any).license) {
+        parts.push(`license: '${String((metadata as any).license).replace(/'/g, "''")}'`);
     }
 
     if (metadata.views && metadata.views.length > 0) {
