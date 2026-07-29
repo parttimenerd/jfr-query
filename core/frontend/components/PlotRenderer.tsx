@@ -279,7 +279,7 @@ const InteractivePlotWrapper: React.FC<{
             if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
             commitTimerRef.current = setTimeout(() => commitToVariables(clamped), 400);
         }
-    }, [linkX, commitToVariables]);
+    }, [linkX, linkXMaster, commitToVariables]);
 
     // Cancel any pending scroll-idle commit timer on unmount to avoid calling
     // onVariableChange after the wrapper is gone.
@@ -671,6 +671,8 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
     const stableOnApplyFix = useCallback((newConfig: string) => onApplyFixRef.current(newConfig), []);
     const sqlRef = useRef(sql);
     sqlRef.current = sql;
+    const metadataRef = useRef(metadata);
+    metadataRef.current = metadata;
 
     // Extract ALL distinct LINK-Y / LINK-XY variable names from the config so we
     // can subscribe once per unique name and pass per-leaf domains to composites.
@@ -768,13 +770,13 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
     const cellNameRef = useRef<string>(cellContext.id);
     cellNameRef.current = cellContext.id;
 
-    const handleVariableChange = (vars: Record<string, string>) => {
-        // LINK_X variable changes always route to notebook-global metadata.variables
-        // so sibling cells sharing the same variable names pick them up automatically.
-        // Both $var and $$var names are stored as-is; allVariables in every cell merges
-        // metadata.variables first, so any cell that references the same name will see it.
-        onMetadataChange({ ...metadata, variables: { ...metadata.variables, ...vars } });
-    };
+    const handleVariableChange = useCallback((vars: Record<string, string>) => {
+        // Use metadataRef so we always spread the latest metadata even when
+        // PlotRenderer is memoized and hasn't re-rendered since the last
+        // metadata change (e.g. views/macros added while a LINK_X chart is active).
+        const current = metadataRef.current;
+        onMetadataChange({ ...current, variables: { ...current.variables, ...vars } });
+    }, [onMetadataChange]);
 
     /**
      * Build a brush-variable change handler for a leaf with a BRUSH clause.
@@ -1178,8 +1180,7 @@ function arePlotRendererPropsEqual(prev: PlotRendererProps, next: PlotRendererPr
         // so that the inline arrow function `c => handleApplyPlotFix(c, i)` created
         // per render does not invalidate the memo on every keystroke.
         prev.isAiFeatureActive === next.isAiFeatureActive &&
-        prev.metadata?.customSystemPrompt === next.metadata?.customSystemPrompt &&
-        prev.metadata?.variables === next.metadata?.variables &&
+        prev.metadata === next.metadata &&
         prev.onMetadataChange === next.onMetadataChange &&
         prev.onCellVariableChange === next.onCellVariableChange &&
         prev.allVariables === next.allVariables

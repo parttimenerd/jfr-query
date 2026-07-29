@@ -293,13 +293,14 @@ function applyLink(result: ParsedPlotCall, tail: PlotNode, key: 'linkX' | 'linkY
             else opts.push(it);
         }
     }
-    if (vars.length >= 2) {
-        (result as any)[key] = [vars[0], vars[1]];
-        if (key === 'linkX') {
-            result.linkXMaster = opts.includes('master') ? true : undefined;
-            result.linkXClamp = opts.includes('clamp');
-        }
-    } else if (vars.length === 1 && (key === 'linkY' || key === 'linkXY')) {
+    if (vars.length >= 2 && key === 'linkX') {
+        result.linkX = [vars[0], vars[1]];
+        result.linkXMaster = opts.includes('master') ? true : undefined;
+        result.linkXClamp = opts.includes('clamp');
+    } else if (vars.length >= 1 && (key === 'linkY' || key === 'linkXY')) {
         (result as any)[key] = vars[0];
+    } else if (vars.length >= 2) {
+        // linkX handled above; other multi-var cases not currently used
+        (result as any)[key] = [vars[0], vars[1]];
     }
 }

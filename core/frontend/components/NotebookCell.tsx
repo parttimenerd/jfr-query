@@ -260,10 +260,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         const newIntroSegments: CellSegment[] = (fullContent.trim() === '') ? [] : [{ type: 'markdown', content: fullContent }];
 
         const segs = segmentsRef.current;
-        let firstNonMarkdownIdx = segs.findIndex(s => s.type !== 'markdown');
-        if (firstNonMarkdownIdx === -1) firstNonMarkdownIdx = segs.length;
+        // Find where the intro section ends — skip only the first leading markdown
+        // segment (the intro). Keep ALL segments from the second one onward so that
+        // a variables block or additional markdown spacers after the intro are not
+        // silently dropped.
+        const introEnd = segs.length > 0 && segs[0].type === 'markdown' ? 1 : 0;
 
-        const otherSegments = segs.slice(firstNonMarkdownIdx);
+        const otherSegments = segs.slice(introEnd);
 
         if (newIntroSegments.length === 0 && otherSegments.length === 0) {
             handleSegmentsUpdate([{ type: 'markdown', content: '' }]);
