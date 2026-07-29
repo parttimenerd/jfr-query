@@ -204,6 +204,20 @@ export function getPlotHoverContent(
     }
   }
 
+  // 2b. letStatement → show LET clause documentation
+  if (node.kind === 'letStatement') {
+    const doc = plotClauseDocs['LET'];
+    if (doc) {
+      return {
+        kind: 'tail',
+        keyword: 'LET',
+        description: doc.description,
+        from: node.from,
+        to: node.from + 3, // span the LET keyword only
+      };
+    }
+  }
+
   // 3. ident → column (resolved by columnAnnotator) or cross-plot reference
   if (node.kind === 'ident') {
     const r = node.annotations.resolves;

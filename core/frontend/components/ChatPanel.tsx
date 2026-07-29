@@ -1173,6 +1173,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                             onDoubleClick={() => { setRenamingChannelId(ch.id); setRenameDraft(ch.label); }}
                                             className="max-w-[80px] truncate"
                                             title={`${ch.label} (double-click to rename)`}
+                                            aria-label={`Switch to channel ${ch.label}`}
                                         >{ch.label}</button>
                                     )}
                                     {channels.length > 1 && !isRenaming && <button onClick={() => removeChannel(ch.id)} className="opacity-0 group-hover:opacity-100 ml-0.5 text-gray-400 hover:text-red-400" title="Close channel" aria-label="Close channel"><XMarkIcon className="w-3 h-3"/></button>}

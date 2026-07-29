@@ -75,9 +75,9 @@ Supported tail clauses (all uppercase, after the closing paren):
   DISABLED             — render placeholder instead of chart
   ON #N | viewName     — use result of query #N or a named view
   LINK_X($s, $e)       — link x-axis domain to variables $s and $e (supports optional third "master" arg)
-  LINK_Y($v)           — link y-axis to variable $v
-  LINK_XY($v)          — link both axes to variable $v
-  LINK_SCROLL("grp")   — synchronise scroll position within a named group
+  LINK_Y $v            — link y-axis to variable $v
+  LINK_XY $v           — link both axes to variable $v
+  LINK_SCROLL "grp"    — synchronise scroll position within a named group
   LET @name=val        — define a local constant; reference as @name inside params
 
 Composites: ROW(a,b) / COL(a,b) / a+b (overlay).

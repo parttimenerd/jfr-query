@@ -443,13 +443,14 @@ const InteractivePlotWrapper: React.FC<{
                         const toD = (v: string) => v.startsWith('$$') ? v : `$$${v.replace(/^\$/, '')}`;
                         onVariableChange({ [linkX[0]]: '', [linkX[1]]: '', [toD(linkX[0])]: '', [toD(linkX[1])]: '' });
                     }}
-                        className="text-[10px] px-1.5 py-0.5 bg-cyan-800/70 hover:bg-cyan-700/80 text-cyan-200 rounded transition-colors" title="Reset zoom">
+                        className="text-[10px] px-1.5 py-0.5 bg-cyan-800/70 hover:bg-cyan-700/80 text-cyan-200 rounded transition-colors" title="Reset zoom" aria-label="Reset zoom">
                         reset
                     </button>
                 )}
                 <button onClick={() => setIsLocked(!isLocked)}
                     className="p-1 bg-gray-700/50 rounded-full text-gray-300 hover:text-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                    title={isLocked ? 'Unlock Plot' : 'Lock Plot'}>
+                    title={isLocked ? 'Unlock Plot' : 'Lock Plot'}
+                    aria-label={isLocked ? 'Unlock Plot' : 'Lock Plot'}>
                     {isLocked ? <LockClosedIcon className="w-4 h-4 text-yellow-400"/> : <LockOpenIcon className="w-4 h-4"/>}
                 </button>
             </div>
@@ -604,7 +605,8 @@ const StandaloneZoomWrapper: React.FC<{
                 {isZoomed && (
                     <button onClick={() => setLocalDomain(null)}
                         className="text-[10px] px-1.5 py-0.5 bg-cyan-800/70 hover:bg-cyan-700/80 text-cyan-200 rounded transition-colors"
-                        title="Reset zoom">
+                        title="Reset zoom"
+                        aria-label="Reset zoom">
                         reset
                     </button>
                 )}

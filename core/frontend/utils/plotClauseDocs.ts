@@ -177,5 +177,14 @@ export const plotClauseDocs: Record<string, ClauseDoc> = {
         params: [
             { name: 'table_or_view', type: 'string', required: true, description: 'Name of a DuckDB table or view to use as the data source.' }
         ]
+    },
+    LET: {
+        name: 'LET',
+        signature: 'LET @alias = "value"',
+        description: 'Defines a reusable constant within the plot config block. Reference it as @alias anywhere in the same block. Useful to avoid repeating column names or string values across multiple parameters.',
+        params: [
+            { name: '@alias', type: 'identifier', required: true, description: 'A name starting with @ that you can use in the config body, e.g. `@col`.' },
+            { name: 'value', type: 'string | number', required: true, description: 'A quoted string or number, e.g. `"cpu_usage"` or `100`.' }
+        ]
     }
 };

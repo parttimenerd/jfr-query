@@ -213,7 +213,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">NAME "plotname"</code>
-                                <p className="text-gray-400 mt-1">Give this plot a name so other plots can reference it via <code className="bg-gray-600 px-1 rounded">LINK_SCROLL</code>.</p>
+                                <p className="text-gray-400 mt-1">Assigns a name to this plot. The name appears in the sidebar and can be used in <code className="bg-gray-600 px-1 rounded">LINK_SCROLL</code> and <code className="bg-gray-600 px-1 rounded">ON "name"</code> clauses in other cells.</p>
                             </div>
                             <div className="md:col-span-2">
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">DATASET my_table</code>
@@ -265,11 +265,11 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                 <p className="text-gray-400 mt-1">Bind the X viewport to two cell variables. Drag to pan, Shift+scroll to zoom. Add <code className="bg-gray-600 px-1 rounded">master</code> to make this plot the controller.</p>
                             </div>
                             <div>
-                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINK_Y($var)</code>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINK_Y $var</code>
                                 <p className="text-gray-400 mt-1">Bind the Y viewport to a cell variable. Plots sharing the same variable share a Y axis range.</p>
                             </div>
                             <div>
-                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINK_XY($var)</code>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINK_XY $var</code>
                                 <p className="text-gray-400 mt-1">Bind both X and Y axes to a single variable (2D pan/zoom).</p>
                             </div>
                             <div>
@@ -278,7 +278,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINK_SCROLL plotname</code>
-                                <p className="text-gray-400 mt-1">Synchronise scroll/zoom with a named plot (set with <code className="bg-gray-600 px-1 rounded">NAME</code>).</p>
+                                <p className="text-gray-400 mt-1">Synchronise scroll position with all other plots in the same named group. Each plot must use the same group name.</p>
                             </div>
                         </div>
 

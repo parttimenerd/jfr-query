@@ -1026,7 +1026,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     />
                     {isLoading
                         ? <button onClick={handleCancel} className="absolute top-1/2 right-2 -translate-y-1/2 p-1.5 bg-red-700 hover:bg-red-600 rounded-md" title="Cancel request" aria-label="Cancel request"><XMarkIcon className="w-4 h-4 text-white"/></button>
-                        : <button onClick={() => handleSend()} className="absolute top-1/2 right-2 -translate-y-1/2 p-1.5 bg-cyan-600 hover:bg-cyan-700 rounded-md disabled:bg-gray-600" disabled={isLoading||input.trim()===''}><SendIcon className="w-4 h-4 text-white"/></button>
+                        : <button onClick={() => handleSend()} className="absolute top-1/2 right-2 -translate-y-1/2 p-1.5 bg-cyan-600 hover:bg-cyan-700 rounded-md disabled:bg-gray-600" disabled={isLoading||input.trim()===''} aria-label="Send message"><SendIcon className="w-4 h-4 text-white"/></button>
                     }
                 </div>
             </div>
