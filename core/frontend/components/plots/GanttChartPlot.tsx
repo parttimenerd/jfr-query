@@ -9,6 +9,7 @@ import { buildParserSpec, findColumn, getTimeValue, getPaletteColors } from '../
 import { usePlotGestures } from '../../hooks/usePlotGestures';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
+import { PlotTooltip } from './PlotTooltip';
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
@@ -177,6 +178,7 @@ const GanttChartComponent: React.FC<{
             contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
             formatter={tooltipFormatter}
             labelFormatter={(l) => String(l)}
+            content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />) : undefined}
           />
           {/* Transparent offset bar — pushes the duration bar to the correct start position */}
           <Bar
