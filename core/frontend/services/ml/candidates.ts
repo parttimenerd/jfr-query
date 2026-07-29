@@ -67,6 +67,7 @@ const SEQ2SEQ_INPUT_V2 = (sql: string, columns: string[] | TypedColumn[], schema
 const PLOT_NAMES = [
     'LINE_CHART', 'BAR_CHART', 'AREA_CHART', 'SCATTER_PLOT', 'PIE_CHART',
     'HISTOGRAM', 'HEATMAP', 'BOX_PLOT', 'TABLE', 'FLAMEGRAPH', 'GANTT', 'RANGE',
+    'TREEMAP', 'WATERFALL',
     // Composition primitives.
     'ROW', 'COL',
     // Legacy names still emitted by older artifacts — keep parseable.
@@ -77,7 +78,7 @@ const PLOT_NAMES = [
 // (W12). Case-insensitive at parse time, so we match case-insensitively here too.
 const PLOT_SHORT_ALIASES = [
     'line', 'bar', 'area', 'scatter', 'pie', 'box', 'hist',
-    'heatmap', 'flame', 'gantt', 'range', 'table',
+    'heatmap', 'flame', 'gantt', 'range', 'table', 'tree', 'fall',
 ];
 
 // Regex that finds the FIRST occurrence of any plot name (canonical or short

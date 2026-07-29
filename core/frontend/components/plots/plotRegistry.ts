@@ -11,6 +11,8 @@ import { barChartPlot } from './BarChartPlot';
 import { areaChartPlot } from './AreaChartPlot';
 import { ganttChartPlot } from './GanttChartPlot';
 import { rangePlot } from './RangePlot';
+import { treemapPlot } from './TreemapPlot';
+import { waterfallPlot } from './WaterfallPlot';
 
 export const plotRegistry: Record<string, PlotRegistration<any>> = {
   [tablePlot.name]: tablePlot,
@@ -27,4 +29,6 @@ export const plotRegistry: Record<string, PlotRegistration<any>> = {
   [areaChartPlot.name]: areaChartPlot,
   [ganttChartPlot.name]: ganttChartPlot,
   [rangePlot.name]: rangePlot,
+  [treemapPlot.name]: treemapPlot,
+  [waterfallPlot.name]: waterfallPlot,
 };

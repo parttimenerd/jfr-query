@@ -11,6 +11,8 @@ const SHORT_ALIASES: Record<string, string> = {
     HIST: 'HISTOGRAM',
     HEAT: 'HEATMAP',
     FLAME: 'FLAMEGRAPH',
+    TREE: 'TREEMAP',
+    FALL: 'WATERFALL',
     // GANTT, RANGE, TABLE, HEATMAP, HISTOGRAM, FLAMEGRAPH already canonical short
 };
 
