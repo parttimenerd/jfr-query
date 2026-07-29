@@ -32,4 +32,24 @@ describe('filterSuggestionBySchema', () => {
         const s = `LINE_CHART(x: "ts", y: "something")`;
         expect(filterSuggestionBySchema(s, [])).toBe(s);
     });
+
+    it('matches column names case-insensitively', () => {
+        const s = `LINE_CHART(x: "TS", y: "DURATION")`;
+        const mixedSchema = [{ name: 'ts', type: 'TIMESTAMP' }, { name: 'duration', type: 'BIGINT' }];
+        expect(filterSuggestionBySchema(s, mixedSchema)).toBe(s);
+    });
+
+    it('returns empty string for an empty suggestion', () => {
+        expect(filterSuggestionBySchema('', schema)).toBe('');
+    });
+
+    it('does not reject color names used as parameter values', () => {
+        const s = `LINE_CHART(x: "ts", y: "duration") COLOR "red"`;
+        expect(filterSuggestionBySchema(s, schema)).toBe(s);
+    });
+
+    it('rejects suggestion when a param value is an unknown column name', () => {
+        const s = `LINE_CHART(x: "ts", y: "bogus_col")`;
+        expect(filterSuggestionBySchema(s, schema)).toBe('');
+    });
 });

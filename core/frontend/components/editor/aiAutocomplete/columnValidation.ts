@@ -14,6 +14,10 @@ const DSL_KEYWORDS = new Set([
     'stack', 'group', 'bin', 'bins', 'row', 'col',
     'master', 'clamp', 'percent', 'horizontal', 'vertical',
     'true', 'false', 'null',
+    // Common CSS color names used as parameter values (e.g. `color: "red"`)
+    'red', 'blue', 'green', 'white', 'black', 'yellow', 'orange', 'purple',
+    'gray', 'grey', 'pink', 'brown', 'cyan', 'magenta', 'lime', 'teal',
+    'navy', 'silver', 'transparent', 'none', 'auto',
 ]);
 
 /**

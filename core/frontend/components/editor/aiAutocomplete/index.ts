@@ -255,7 +255,13 @@ export function aiAutocompleteExtension(deps: AiAutocompleteDeps): Extension {
         const result = await inflight.start(cacheKey, () => streamPromise);
         const schema = deps.getCellResultSchema?.() ?? null;
         const filteredResult = filterSuggestionBySchema(result, schema);
-        if (filteredResult) recent = { upTo, suggestion: filteredResult };
+        if (filteredResult) {
+          recent = { upTo, suggestion: filteredResult };
+        } else if (result !== '' && this.stillAtHead(head)) {
+          // AI returned something but it was rejected by schema validation —
+          // clear any streaming ghost text that was already dispatched.
+          view.dispatch({ effects: clearGhostText.of() });
+        }
       } catch { /* swallow */ }
       return;
     }
