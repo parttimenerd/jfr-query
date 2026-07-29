@@ -199,14 +199,14 @@ const App: React.FC = () => {
         setIsTourOpen(true);
     }, [dismissWelcomeBanner]);
 
+    const [onboardingDismissed, setOnboardingDismissed] = useState(
+        () => { try { return !!localStorage.getItem('jfrq:onboarding-dismissed'); } catch { return false; } }
+    );
+
     const dismissOnboarding = useCallback(() => {
-        localStorage.setItem('jfrq:onboarding-dismissed', '1');
+        try { localStorage.setItem('jfrq:onboarding-dismissed', '1'); } catch { /* private browsing */ }
         setOnboardingDismissed(true);
     }, []);
-
-    const [onboardingDismissed, setOnboardingDismissed] = useState(
-        () => !!localStorage.getItem('jfrq:onboarding-dismissed')
-    );
 
     const notebookFileInputRef = useRef<HTMLInputElement>(null);
     // Always-fresh ref so addCellFromTool reads current markdown without stale closures.
