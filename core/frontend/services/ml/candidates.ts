@@ -84,6 +84,7 @@ const SEQ2SEQ_INPUT_V2 = (sql: string, columns: string[] | TypedColumn[], schema
  *   cpu      — JFR CPU/thread domain (cpu*, thread*, method*)
  *   delta    — delta/change/diff column (→ WATERFALL likely)
  *   range    — start+end or low+high column pair (→ RANGE/GANTT likely)
+ *   num_range — time col + numeric band cols (minX/maxX/pN percentile) → RANGE (88% cov, 0% GANTT)
  *   num:N    — number of numeric columns (0–4, capped)
  *   cat:N    — number of categorical columns (0–4, capped)
  *
@@ -167,6 +168,13 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
         /^max/.test(n) ||
         /^p([5-9]\d|100)$/.test(n) || n === 'p95' || n === 'p99');  // p50..p100 = upper bound
     if (hasRangeStart && hasRangeEnd) tags.push('range');
+
+    // Numeric-range signal: time column + numeric band columns (min*/max*/p\d+).
+    // Fires in 88% of RANGE training examples and 0% of GANTT examples.
+    // This splits the RANGE/GANTT confusion in the shared `sorted+wide+time+range`
+    // fingerprint: RANGE gets 100% with num_range, GANTT gets 85% without it.
+    const hasNumericBand = names.some(n => /^(min|max)/.test(n) || /^p\d+/.test(n));
+    if (hasTimestamp && hasNumericBand) tags.push('num_range');
 
     // Count numeric vs categorical columns using type info when available.
     let numCount = 0;

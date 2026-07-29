@@ -411,6 +411,11 @@ def extract_input_signals(sql: str, columns: list) -> str:
         for n in names)
     if has_range_start and has_range_end: tags.append('range')
 
+    # Numeric-range signal: time col + numeric band cols (minX/maxX/pN).
+    # 88% RANGE coverage, 0% GANTT coverage.
+    has_numeric_band = any(re.match(r'^(min|max)', n) or re.match(r'^p\d+$', n) for n in names)
+    if has_time and has_numeric_band: tags.append('num_range')
+
     NUM_TYPES = {'INTEGER', 'BIGINT', 'DOUBLE', 'FLOAT', 'DECIMAL', 'NUMERIC',
                  'SMALLINT', 'TINYINT', 'REAL', 'HUGEINT', 'INT4', 'INT8', 'FLOAT4', 'FLOAT8'}
     num_count = 0

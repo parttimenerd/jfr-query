@@ -236,6 +236,26 @@ describe('extractInputSignals', () => {
             const s = extractInputSignals('SELECT startTime, duration FROM gc', ['startTime', 'duration']);
             expect(s).not.toContain('range');
         });
+
+        it('emits "num_range" for time column + min*/max* numeric band (RANGE indicator)', () => {
+            const s = extractInputSignals('SELECT startTime, minPause, maxPause FROM gc ORDER BY startTime', ['startTime', 'minPause', 'maxPause']);
+            expect(s).toContain('num_range');
+        });
+
+        it('emits "num_range" for time column + percentile band columns', () => {
+            const s = extractInputSignals('SELECT bucket, p5, p50, p95 FROM latency ORDER BY bucket', ['bucket', 'p5', 'p50', 'p95']);
+            expect(s).toContain('num_range');
+        });
+
+        it('does NOT emit "num_range" for GANTT-style time+category interval (no numeric bands)', () => {
+            const s = extractInputSignals('SELECT startTime, endTime, phase FROM gc_phases ORDER BY startTime', ['startTime', 'endTime', 'phase']);
+            expect(s).not.toContain('num_range');
+        });
+
+        it('does NOT emit "num_range" without a time column', () => {
+            const s = extractInputSignals('SELECT cause, minAlloc, maxAlloc FROM t', ['cause', 'minAlloc', 'maxAlloc']);
+            expect(s).not.toContain('num_range');
+        });
     });
 
     describe('num/cat counts', () => {
