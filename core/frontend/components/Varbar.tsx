@@ -122,10 +122,12 @@ const VarPillPopover: React.FC<{
                         value={editVal}
                         onChange={e => setEditVal(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') handleEditSubmit(); if (e.key === 'Escape') onClose(); }}
+                        aria-label={`Value for $${name}`}
                         className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-200 outline-none focus:border-cyan-500"
                     />
                     <button
                         onClick={handleEditSubmit}
+                        aria-label={`Set value for $${name}`}
                         className="px-2 py-1 bg-cyan-700/50 hover:bg-cyan-700 text-cyan-200 rounded"
                     >Set</button>
                 </div>
@@ -185,6 +187,10 @@ const Varbar: React.FC<VarbarProps> = ({ variables, onVariableChange, paused, on
                 <span
                     key={name}
                     onClick={e => handlePillClick(e, name)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (activePopover?.name === name) { setActivePopover(null); } else { setActivePopover({ name, anchor: e.currentTarget as HTMLElement }); } } }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Variable $${name} = ${formatValue(variables[name])}. Press Enter to edit.`}
                     className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gray-700/70 border border-gray-600/60 text-[11px] font-mono text-cyan-300 whitespace-nowrap flex-shrink-0 cursor-pointer hover:border-cyan-600/60"
                 >
                     <span className="text-gray-400">$</span>
@@ -194,6 +200,7 @@ const Varbar: React.FC<VarbarProps> = ({ variables, onVariableChange, paused, on
                     <button
                         onClick={e => { e.stopPropagation(); handleClear(name); }}
                         title={`Clear ${name}`}
+                        aria-label={`Clear variable $${name}`}
                         className="ml-0.5 text-gray-500 hover:text-red-400 leading-none"
                     >
                         ×
@@ -216,6 +223,8 @@ const Varbar: React.FC<VarbarProps> = ({ variables, onVariableChange, paused, on
             <button
                 onClick={onTogglePause}
                 title={paused ? 'Resume variable updates' : 'Pause variable updates'}
+                aria-label={paused ? 'Resume variable updates' : 'Pause variable updates'}
+                aria-pressed={paused}
                 className={`flex-shrink-0 flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border transition-colors ${
                     paused
                         ? 'border-yellow-600/60 text-yellow-400 bg-yellow-900/20 hover:bg-yellow-800/30'

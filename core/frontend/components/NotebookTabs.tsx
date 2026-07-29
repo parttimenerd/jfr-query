@@ -135,6 +135,7 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
             <button
                 onClick={onNewTab}
                 title="New tab (Ctrl+T)"
+                aria-label="New tab"
                 className="flex-shrink-0 px-2 h-[34px] text-gray-500 hover:text-gray-200 hover:bg-gray-700/40 transition-colors"
             >
                 <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">

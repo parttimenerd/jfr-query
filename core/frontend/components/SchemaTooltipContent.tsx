@@ -83,6 +83,7 @@ export const SchemaTooltipContent: React.FC<{ item: TableSchema | ViewSchema | M
                             onClick={(e) => handleCopy(e, definition)}
                             className="absolute top-1 right-1 p-1.5 bg-gray-800 hover:bg-gray-600 rounded-md"
                             title="Copy definition"
+                            aria-label="Copy definition"
                         >
                             <ClipboardIcon className={`w-4 h-4 transition-colors ${copied ? 'text-green-400' : 'text-gray-300'}`} />
                         </button>
