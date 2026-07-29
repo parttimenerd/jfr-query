@@ -192,11 +192,19 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">ZOOM 0.6</code>
-                                <p className="text-gray-400 mt-1">Scale the plot height (0.0–1.0+). Default is 1.0.</p>
+                                <p className="text-gray-400 mt-1">Scale the plot height (0.0–1.0+). Default is 1.0. Useful when fitting many charts in a row.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">ZOOM_X 1.5</code>
+                                <p className="text-gray-400 mt-1">Scale only the horizontal axis — useful for wide time-series that need more horizontal space without growing taller.</p>
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">WIDTH 600px</code>
                                 <p className="text-gray-400 mt-1">Set a fixed width. Accepts <code className="bg-gray-600 px-1 rounded">px</code> or <code className="bg-gray-600 px-1 rounded">%</code> values.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">HEIGHT 400px</code>
+                                <p className="text-gray-400 mt-1">Set a fixed height for the plot container. Accepts <code className="bg-gray-600 px-1 rounded">px</code> values.</p>
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">PALETTE "sap_horizon"</code>
@@ -205,6 +213,10 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">NAME "plotname"</code>
                                 <p className="text-gray-400 mt-1">Give this plot a name so other plots can reference it via <code className="bg-gray-600 px-1 rounded">LINK_SCROLL</code>.</p>
+                            </div>
+                            <div className="md:col-span-2">
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">DATASET my_table</code>
+                                <p className="text-gray-400 mt-1">Use a named DuckDB table or view as the data source instead of a query result. Useful for very large static datasets loaded via <code className="bg-gray-600 px-1 rounded">CREATE VIEW</code>.</p>
                             </div>
                         </div>
 
@@ -278,6 +290,27 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">ON HOVER TOOLTIP "label"</code>
                                 <p className="text-gray-400 mt-1">Display a static label when hovering over the plot.</p>
+                            </div>
+                        </div>
+
+                        <h4 className="font-semibold text-gray-200 mt-5">Variables &amp; LET</h4>
+                        <p className="text-xs text-gray-400 mt-1">Use cell-level variables to parameterise queries and link plots together. Variables are defined in a <code className="bg-gray-600 px-1 rounded">variables</code> block and referenced with <code className="bg-gray-600 px-1 rounded">$name</code> syntax in both SQL and plot configs.</p>
+                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono whitespace-pre">{"$threshold = 500"}</code>
+                                <p className="text-gray-400 mt-1">Define a variable in the cell's <code className="bg-gray-600 px-1 rounded">variables</code> block. Use it in SQL as <code className="bg-gray-600 px-1 rounded">WHERE duration &gt; $threshold</code>.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LET $name = expr</code>
+                                <p className="text-gray-400 mt-1">Compute a variable from a SQL expression at plot-render time. The result is stored in <code className="bg-gray-600 px-1 rounded">$name</code> and can drive other plots or queries in the same cell.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINE_CHART(...) LINK_X($s, $e)</code>
+                                <p className="text-gray-400 mt-1">Variables written by <code className="bg-gray-600 px-1 rounded">LINK_X</code>, <code className="bg-gray-600 px-1 rounded">BRUSH</code>, or <code className="bg-gray-600 px-1 rounded">LET</code> are automatically passed to the SQL re-run on the next render cycle.</p>
+                            </div>
+                            <div>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">WHERE ts BETWEEN $start AND $end</code>
+                                <p className="text-gray-400 mt-1">Variables defined by <code className="bg-gray-600 px-1 rounded">LINK_X($start, $end)</code> pan/zoom are substituted directly into SQL, so the database only returns the visible window.</p>
                             </div>
                         </div>
                          <div className="mt-6">

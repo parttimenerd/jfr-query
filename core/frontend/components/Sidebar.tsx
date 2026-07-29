@@ -390,7 +390,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
   
   return (
     <div className="w-full h-full flex flex-col bg-gray-900">
-      <div className="flex-shrink-0 px-4 py-2 border-b border-gray-700 space-y-2">
+      <div className="flex-shrink-0 px-4 py-2 border-b border-gray-700 space-y-2" data-tour="schema-explorer">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
                 <DatabaseIcon className="w-5 h-5" />

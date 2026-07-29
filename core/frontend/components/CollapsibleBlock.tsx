@@ -10,11 +10,12 @@ interface CollapsibleBlockProps {
     children: React.ReactNode;
     controls: React.ReactNode;
     statusIndicator?: React.ReactNode;
+    tourAnchor?: string;
 }
 
-const CollapsibleBlock: React.FC<CollapsibleBlockProps> = ({ title, preview, isCollapsed, onToggle, children, controls, statusIndicator }) => {
+const CollapsibleBlock: React.FC<CollapsibleBlockProps> = ({ title, preview, isCollapsed, onToggle, children, controls, statusIndicator, tourAnchor }) => {
     return (
-        <div className="bg-gray-900/40 rounded-md border border-gray-700/60">
+        <div className="bg-gray-900/40 rounded-md border border-gray-700/60" data-tour={tourAnchor}>
             <div className="px-2 py-1.5 border-b border-gray-700/60 flex items-center justify-between">
                 <div className="flex items-center gap-2 cursor-pointer w-full overflow-hidden" onClick={onToggle}>
                     {isCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" /> : <ChevronUpIcon className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />}

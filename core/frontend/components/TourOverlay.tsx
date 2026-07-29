@@ -12,31 +12,43 @@ const TOUR_STEPS: TourStep[] = [
     {
         targetSelector: '[data-tour="schema-explorer"]',
         title: 'Schema Explorer',
-        body: 'Browse JFR events as tables. Click to expand, double-click to copy the name into your query.',
+        body: 'Browse JFR events as tables. Click a table to expand its columns. Double-click a name to copy it into your clipboard — then paste straight into a query.',
         placement: 'right',
     },
     {
         targetSelector: '[data-tour="run-query"]',
         title: 'Run Your Query',
-        body: 'Write SQL and press ▶ or ⌘+Enter to run. Results appear below the editor.',
+        body: 'Write SQL and press ▶ or ⌘+Enter to run. Results appear below. Separate multiple queries with a blank line — each one gets its own result set and can drive its own plot.',
         placement: 'bottom',
     },
     {
         targetSelector: '[data-tour="plot-block"]',
         title: 'Plot Block',
-        body: 'Visualize your query with TABLE(), BAR_CHART(), LINE_CHART(), and more. Hit the ✦ sparkle button to generate a plot config with AI.',
+        body: 'Visualise your query with TABLE(), BAR_CHART(), LINE_CHART(), and more. Click the ✦ sparkle button to generate a plot config with AI. Hit the ? button in the plot toolbar to open the full Plot Guide.',
         placement: 'top',
     },
     {
         targetSelector: '[data-tour="cmd-palette"]',
         title: 'Command Palette',
-        body: 'Press ⇧⇧ or ⌘K to open the command palette — run queries, jump to cells, create AI cells, and more.',
+        body: 'Press ⇧⇧ or ⌘K to open the command palette. Type ! to preview SQL, !! to add it as a cell, + to let AI create a cell from a description, or :N to jump to cell N.',
+        placement: 'bottom',
+    },
+    {
+        targetSelector: '[data-tour="ai-chat"]',
+        title: 'AI Chat Panel',
+        body: 'Open the AI panel from the sidebar to ask questions in plain English. The AI can write SQL, create plot configs, and edit existing cells. Use the SEE dropdown to control which data the AI can see.',
+        placement: 'left',
+    },
+    {
+        targetSelector: '[data-tour="template-gallery"]',
+        title: 'Template Gallery',
+        body: 'Not sure where to start? Open the template gallery to load a pre-built notebook for common JFR analysis patterns — GC pauses, CPU profiling, thread contention, and more.',
         placement: 'bottom',
     },
     {
         targetSelector: '[data-tour="shortcuts-btn"]',
         title: 'Keyboard Shortcuts & Tips',
-        body: 'Hit ? any time to see keyboard shortcuts and hidden features you might have missed.',
+        body: 'Hit ? or click this button any time to see all keyboard shortcuts and hidden features — including how to zoom charts, rename cells, and use the $variable system.',
         placement: 'bottom',
     },
 ];

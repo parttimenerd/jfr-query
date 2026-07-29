@@ -9,6 +9,7 @@ interface ResizablePanelProps {
   minWidth: number;
   isCollapsed: boolean;
   onCollapseToggle: () => void;
+  tourAnchor?: string;
 }
 
 const ResizablePanel: React.FC<ResizablePanelProps> = ({
@@ -17,7 +18,8 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
   initialWidth,
   minWidth,
   isCollapsed,
-  onCollapseToggle
+  onCollapseToggle,
+  tourAnchor,
 }) => {
   const [width, setWidth] = useState(initialWidth);
   const isResizing = useRef(false);
@@ -71,7 +73,8 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
   return (
     <div
       className="relative flex-shrink-0 h-full"
-      style={{ 
+      data-tour={tourAnchor}
+      style={{
         width: isCollapsed ? 0 : width, 
         transition: 'width 0.2s ease-in-out',
         overflow: 'hidden' // This is key: it clips the oversized child during animation.

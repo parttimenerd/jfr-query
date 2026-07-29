@@ -9,6 +9,8 @@ import SettingsModal from './components/SettingsModal';
 import TemplateGalleryModal from './components/TemplateGalleryModal';
 import CommandPalette, { type CommandAction, type CellEntry } from './components/CommandPalette';
 import ToastNotification from './components/ToastNotification';
+import KeyboardShortcutsModal from './components/KeyboardShortcutsModal';
+import TourOverlay from './components/TourOverlay';
 import { DataContext, DBState } from './context/DuckDBContext';
 import type { SourceType } from './context/DuckDBContext';
 import { SettingsContext } from './context/SettingsContext';
@@ -47,6 +49,7 @@ import { BeakerIcon } from './components/icons/BeakerIcon';
 import { DocumentTextIcon } from './components/icons/DocumentTextIcon';
 import { EyeIcon } from './components/icons/EyeIcon';
 import { BookOpenIcon } from './components/icons/BookOpenIcon';
+import { QuestionMarkCircleIcon } from './components/icons/QuestionMarkCircleIcon';
 import * as EmbeddingService from './services/ml/EmbeddingService';
 import { initPlotModel } from './services/ml/PlotGenerationService';
 
@@ -180,6 +183,8 @@ const App: React.FC = () => {
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [isCmdPaletteOpen, setIsCmdPaletteOpen] = useState(false);
     const [isTemplateGalleryOpen, setIsTemplateGalleryOpen] = useState(false);
+    const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
+    const [isTourOpen, setIsTourOpen] = useState(false);
 
     const notebookFileInputRef = useRef<HTMLInputElement>(null);
     // Always-fresh ref so addCellFromTool reads current markdown without stale closures.
@@ -467,6 +472,22 @@ const App: React.FC = () => {
                 }
             } else if (e.key !== 'Shift') {
                 lastShiftAt = 0;
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, []);
+
+    // '?' opens keyboard shortcuts modal when not inside an editor.
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== '?' || e.metaKey || e.ctrlKey || e.altKey) return;
+            const tag = (document.activeElement?.tagName ?? '').toLowerCase();
+            const editable = tag === 'input' || tag === 'textarea' || (document.activeElement as HTMLElement)?.isContentEditable;
+            const inEditor = document.activeElement && (document.activeElement.closest?.('.cm-editor') || document.activeElement.closest?.('.CodeMirror'));
+            if (!editable && !inEditor) {
+                e.preventDefault();
+                setIsShortcutsModalOpen(true);
             }
         };
         window.addEventListener('keydown', onKeyDown);
@@ -1153,6 +1174,8 @@ const App: React.FC = () => {
                 </div>
             )}
             <SettingsModal isOpen={isSettingsModalOpen} onClose={handleCloseSettingsModal} />
+            <KeyboardShortcutsModal isOpen={isShortcutsModalOpen} onClose={() => setIsShortcutsModalOpen(false)} onStartTour={() => setIsTourOpen(true)} />
+            <TourOverlay isOpen={isTourOpen} onClose={() => setIsTourOpen(false)} />
             <TemplateGalleryModal
                 isOpen={isTemplateGalleryOpen}
                 onClose={handleCloseTemplateGallery}
@@ -1228,6 +1251,15 @@ const App: React.FC = () => {
                             {isRunningAll ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"/> : <PlayIcon className="w-4 h-4"/>}
                         </button>
                     </div>
+                    <button
+                        onClick={() => setIsCmdPaletteOpen(true)}
+                        data-tour="cmd-palette"
+                        className="p-1.5 rounded-md text-gray-400 hover:text-gray-200"
+                        title="Command Palette (⇧⇧ or ⌘K)"
+                        aria-label="Command Palette"
+                    >
+                        <span className="font-mono text-[11px] leading-none font-semibold tracking-tight">⇧⇧</span>
+                    </button>
                 </div>
                 <div className="flex items-center gap-1">
                     <button onClick={() => { setCollapseTrigger(Date.now()); setAllCollapsed(true); }} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Collapse All" aria-label="Collapse All"><ChevronDoubleUpIcon className="w-4 h-4"/></button>
@@ -1236,7 +1268,7 @@ const App: React.FC = () => {
                     <div className="w-px h-5 bg-gray-700 mx-1" />
                     <input ref={notebookFileInputRef} type="file" accept=".md,.markdown" className="hidden" onChange={handleLoadNotebook} />
                     <button onClick={() => notebookFileInputRef.current?.click()} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Load Notebook" aria-label="Load Notebook"><ArrowUpTrayIcon className="w-4 h-4"/></button>
-                    <button onClick={() => setIsTemplateGalleryOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-cyan-300" title="New from template" aria-label="New from template"><DocumentTextIcon className="w-4 h-4"/></button>
+                    <button onClick={() => setIsTemplateGalleryOpen(true)} data-tour="template-gallery" className="p-1.5 rounded-md text-gray-400 hover:text-cyan-300" title="New from template" aria-label="New from template"><DocumentTextIcon className="w-4 h-4"/></button>
                     <button onClick={() => loadNotebook(gcAnalysisNotebook)} className="p-1.5 rounded-md text-gray-400 hover:text-emerald-400" title="New GC Analysis Notebook" aria-label="New GC Analysis Notebook"><BeakerIcon className="w-4 h-4"/></button>
                     <button onClick={handleSaveNotebook} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Save Notebook (⌘S)" aria-label="Save Notebook"><ArrowDownTrayIcon className="w-4 h-4"/></button>
                     <button onClick={() => setIsMarkdownMode(!isMarkdownMode)} className={`p-1.5 rounded-md ${isMarkdownMode ? 'text-cyan-300' : 'text-gray-400'} hover:text-cyan-300`} title={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown (split preview)"} aria-label={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown"}><CodeBracketIcon className="w-4 h-4"/></button>
@@ -1251,6 +1283,7 @@ const App: React.FC = () => {
                     </button>
                     <div className="w-px h-5 bg-gray-700 mx-1" />
                     <a href="https://parttimenerd.github.io/jfr-query/docs/" target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Documentation" aria-label="Documentation"><BookOpenIcon className="w-4 h-4"/></a>
+                    <button onClick={() => setIsShortcutsModalOpen(true)} data-tour="shortcuts-btn" className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Keyboard Shortcuts & Tips (?)" aria-label="Keyboard Shortcuts"><QuestionMarkCircleIcon className="w-4 h-4"/></button>
                     <button onClick={() => setIsSettingsModalOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Settings" aria-label="Settings"><CogIcon className="w-4 h-4"/></button>
                 </div>
             </header>
@@ -1315,6 +1348,7 @@ const App: React.FC = () => {
                         minWidth={300}
                         isCollapsed={isChatPanelCollapsed}
                         onCollapseToggle={handleToggleChatPanel}
+                        tourAnchor="ai-chat"
                     >
                         <ChatPanel
                             metadata={metadata}
