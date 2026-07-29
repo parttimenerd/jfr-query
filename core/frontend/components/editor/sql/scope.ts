@@ -147,11 +147,16 @@ export class Scope {
 
     // Look up `qualifier.name` — typically `alias.column` or `table.column`.
     // The qualifier matches against the alias OR the target name.
+    // Walk all matching bindings before giving up, so that a correlated
+    // subquery with the same alias in an ancestor scope is still checked when
+    // the innermost match doesn't have the requested column.
     resolveQualified(qualifier: string, name: string): ResolvedColumn | undefined {
         const qkey = qualifier.toLowerCase();
         const ckey = name.toLowerCase();
+        let qualifierMatched = false;
         for (const t of this.listTables()) {
             if (t.alias.toLowerCase() === qkey || t.target.toLowerCase() === qkey) {
+                qualifierMatched = true;
                 for (const c of t.columns) {
                     if (c.name.toLowerCase() === ckey) {
                         return {
@@ -162,11 +167,15 @@ export class Scope {
                         };
                     }
                 }
-                // The qualifier matched but the column did not — return
-                // undefined so callers can emit a helpful diagnostic.
-                return undefined;
+                // Qualifier matched but column not found in this binding —
+                // continue to check further bindings with the same qualifier
+                // (covers correlated subqueries where the outer scope has a
+                // table with the same alias).
             }
         }
+        // If the qualifier was recognized but no binding had the column, return
+        // undefined so callers can emit a "column not found on table" diagnostic.
+        if (qualifierMatched) return undefined;
         return undefined;
     }
 
