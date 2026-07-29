@@ -125,12 +125,19 @@ const QuickQueryResult: React.FC<{ columns: string[]; rows: any[]; error?: strin
 };
 
 const HELP_CONTENT = [
-    { prefix: '>', desc: 'commands only' },
-    { prefix: ':N', desc: 'jump to cell N  (e.g. :3)' },
-    { prefix: '!', desc: 'run SQL — preview result in palette' },
-    { prefix: '!!', desc: 'run SQL — add as cell (+ AI plot if configured)' },
-    { prefix: '+', desc: 'AI: add a cell from description' },
+    { prefix: '>', desc: 'commands only (format, collapse, clear…)' },
+    { prefix: ':N', desc: 'jump to cell N  (e.g. :3 jumps to cell 3)' },
+    { prefix: '!', desc: 'run SQL — preview result inline in palette' },
+    { prefix: '!!', desc: 'run SQL — add as new cell (+ AI plot if configured)' },
+    { prefix: '+', desc: 'AI: describe a cell and let AI write it' },
     { prefix: '?', desc: 'show this help' },
+];
+
+const HELP_EXAMPLES = [
+    { example: '! SELECT count(*) FROM jdk.GarbageCollection', note: 'quick count without adding a cell' },
+    { example: '!! SELECT startTime, duration FROM jdk.GarbageCollection ORDER BY duration DESC LIMIT 50', note: 'add a cell with auto-generated plot' },
+    { example: '+ CPU flamegraph by thread grouped by top method', note: 'AI writes the SQL + plot config' },
+    { example: ':2', note: 'jump straight to cell 2' },
 ];
 
 const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRunQuery, onAiAddCell, onAddSqlCell, isAiAvailable }) => {
@@ -554,14 +561,32 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
 
                     {/* Help block */}
                     {!showSubMode && showHelp && (
-                        <div className="px-4 py-4 space-y-2">
-                            <div className="text-[10px] uppercase tracking-wider text-gray-600 mb-2">Prefix modes</div>
-                            {HELP_CONTENT.map(h => (
-                                <div key={h.prefix} className="flex gap-3 text-sm">
-                                    <span className="font-mono text-cyan-400 w-8 flex-shrink-0">{h.prefix}</span>
-                                    <span className="text-gray-400">{h.desc}</span>
+                        <div className="px-4 py-4 space-y-4">
+                            <div>
+                                <div className="text-[10px] uppercase tracking-wider text-gray-600 mb-2">Prefix modes</div>
+                                <div className="space-y-2">
+                                    {HELP_CONTENT.map(h => (
+                                        <div key={h.prefix} className="flex gap-3 text-sm">
+                                            <span className="font-mono text-cyan-400 w-8 flex-shrink-0">{h.prefix}</span>
+                                            <span className="text-gray-400">{h.desc}</span>
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
+                            </div>
+                            <div>
+                                <div className="text-[10px] uppercase tracking-wider text-gray-600 mb-2">Examples</div>
+                                <div className="space-y-2.5">
+                                    {HELP_EXAMPLES.map((ex, i) => (
+                                        <div key={i} className="space-y-0.5">
+                                            <div className="font-mono text-xs text-yellow-300/80 leading-snug break-all">{ex.example}</div>
+                                            <div className="text-xs text-gray-500 pl-1">{ex.note}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="text-xs text-gray-600 border-t border-gray-800 pt-2">
+                                Tip: press <span className="font-mono text-cyan-700">⇧⇧</span> or <span className="font-mono text-cyan-700">⌘K</span> to open this palette. Press <span className="font-mono text-cyan-700">?</span> anywhere outside an editor to open keyboard shortcuts.
+                            </div>
                         </div>
                     )}
 

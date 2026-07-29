@@ -185,6 +185,17 @@ const App: React.FC = () => {
     const [isTemplateGalleryOpen, setIsTemplateGalleryOpen] = useState(false);
     const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
     const [isTourOpen, setIsTourOpen] = useState(false);
+    const [showWelcomeBanner, setShowWelcomeBanner] = useState(() => {
+        try { return !localStorage.getItem('jfr-tour-seen'); } catch { return false; }
+    });
+    const dismissWelcomeBanner = useCallback(() => {
+        try { localStorage.setItem('jfr-tour-seen', '1'); } catch {}
+        setShowWelcomeBanner(false);
+    }, []);
+    const startTourFromBanner = useCallback(() => {
+        dismissWelcomeBanner();
+        setIsTourOpen(true);
+    }, [dismissWelcomeBanner]);
 
     const notebookFileInputRef = useRef<HTMLInputElement>(null);
     // Always-fresh ref so addCellFromTool reads current markdown without stale closures.
@@ -1199,8 +1210,8 @@ const App: React.FC = () => {
                 </div>
             )}
             <SettingsModal isOpen={isSettingsModalOpen} onClose={handleCloseSettingsModal} />
-            <KeyboardShortcutsModal isOpen={isShortcutsModalOpen} onClose={() => setIsShortcutsModalOpen(false)} onStartTour={() => setIsTourOpen(true)} />
-            <TourOverlay isOpen={isTourOpen} onClose={() => setIsTourOpen(false)} />
+            <KeyboardShortcutsModal isOpen={isShortcutsModalOpen} onClose={() => setIsShortcutsModalOpen(false)} onStartTour={() => { dismissWelcomeBanner(); setIsTourOpen(true); }} />
+            <TourOverlay isOpen={isTourOpen} onClose={() => { setIsTourOpen(false); dismissWelcomeBanner(); }} />
             <TemplateGalleryModal
                 isOpen={isTemplateGalleryOpen}
                 onClose={handleCloseTemplateGallery}
@@ -1312,6 +1323,30 @@ const App: React.FC = () => {
                     <button onClick={() => setIsSettingsModalOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Settings" aria-label="Settings"><CogIcon className="w-4 h-4"/></button>
                 </div>
             </header>
+
+            {showWelcomeBanner && (
+                <div className="flex-shrink-0 flex items-center justify-between gap-3 px-4 py-2 bg-cyan-950/60 border-b border-cyan-800/40 text-sm">
+                    <span className="text-cyan-300/90">
+                        <span className="font-semibold">New here?</span>
+                        {' '}Drop a <code className="text-cyan-200 font-mono text-xs bg-cyan-900/40 px-1 rounded">.jfr</code> file to get started, then take the guided tour to learn the key features.
+                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                            onClick={startTourFromBanner}
+                            className="px-3 py-1 rounded-md bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-medium transition-colors"
+                        >
+                            ▶ Take the guided tour
+                        </button>
+                        <button
+                            onClick={dismissWelcomeBanner}
+                            className="text-cyan-500 hover:text-cyan-300 text-xs transition-colors"
+                            aria-label="Dismiss"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div className="flex flex-row flex-1 overflow-hidden relative">
                 {isSidebarCollapsed && (

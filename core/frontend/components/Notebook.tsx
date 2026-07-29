@@ -274,6 +274,25 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     />
                 );
             })}
+            {!presenterMode && cells.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-16 text-center gap-4 max-w-lg mx-auto">
+                    <div className="text-gray-600 text-4xl">✦</div>
+                    <div>
+                        <h2 className="text-base font-semibold text-gray-300 mb-1">Notebook is empty</h2>
+                        <p className="text-sm text-gray-500">Add a cell below, open the command palette (<kbd className="font-mono text-xs bg-gray-700 border border-gray-600 px-1 rounded">⇧⇧</kbd> or <kbd className="font-mono text-xs bg-gray-700 border border-gray-600 px-1 rounded">⌘K</kbd>), or load a template from the toolbar.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 w-full">
+                        <div className="bg-gray-800/50 rounded p-2.5 text-left">
+                            <div className="text-gray-300 font-medium mb-0.5">Quick query</div>
+                            <div>Type <span className="font-mono text-yellow-400">!! SELECT …</span> in the palette to add a SQL cell instantly.</div>
+                        </div>
+                        <div className="bg-gray-800/50 rounded p-2.5 text-left">
+                            <div className="text-gray-300 font-medium mb-0.5">AI-assisted</div>
+                            <div>Type <span className="font-mono text-yellow-400">+ describe your query</span> to let AI write the cell.</div>
+                        </div>
+                    </div>
+                </div>
+            )}
             {!presenterMode && (
                 <div className="flex justify-center py-4">
                     <button
