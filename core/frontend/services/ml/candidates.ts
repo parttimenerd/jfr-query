@@ -126,46 +126,45 @@ export function cleanPlotConfig(raw: string): string {
 
     // Find the first occurrence of a known plot name (canonical or short alias),
     // case-insensitively. Word-boundary anchored so `linear` doesn't match `line`.
-    let earliest = -1;
     const m = PLOT_NAME_REGEX.exec(s);
-    if (m && m.index !== undefined) {
-        // Adjust earliest to the plot-name start, not the boundary char.
-        earliest = m.index + (m[0].length - m[1].length);
-    }
+    if (!m || m.index === undefined) return 'TABLE()';
+
+    // Adjust earliest to the plot-name start, not the boundary char.
+    const earliest = m.index + (m[0].length - m[1].length);
     if (earliest > 0) s = s.slice(earliest);
 
     // Take the first paren-balanced expression starting at the plot name.
-    if (earliest !== -1) {
-        const open = s.indexOf('(');
-        if (open !== -1) {
-            let depth = 0;
-            let end = -1;
-            let inStr: string | null = null;
-            let escape = false;
-            for (let i = open; i < s.length; i++) {
-                const ch = s[i];
-                if (inStr) {
-                    if (escape) { escape = false; continue; }
-                    if (ch === '\\') { escape = true; continue; }
-                    if (ch === inStr) inStr = null;
-                    continue;
-                }
-                if (ch === '"' || ch === "'") { inStr = ch; continue; }
-                if (ch === '(') depth++;
-                else if (ch === ')') {
-                    depth--;
-                    if (depth === 0) { end = i; break; }
-                }
-            }
-            if (end !== -1) {
-                // Only keep recognised trailing modifiers (TITLE, LINK_X, etc.);
-                // strip any trailing prose the model may have appended.
-                const remainder = s.slice(end + 1).split('\n')[0];
-                const modMatch = /^(\s+(?:TITLE|LINK_X|LINK_Y|LINK_XY|LINK_SCROLL|ZOOM|ZOOM_X|BRUSH|PALETTE|WIDTH|HEIGHT|LEGEND|AXIS_X|AXIS_Y|LET|DATASET|TOOLTIP|ON\s+HOVER|DISABLED|NAME)\b.*)/i.exec(remainder);
-                s = s.slice(0, end + 1) + (modMatch ? modMatch[1] : '');
-            }
+    const open = s.indexOf('(');
+    if (open === -1) return 'TABLE()';
+
+    let depth = 0;
+    let end = -1;
+    let inStr: string | null = null;
+    let escape = false;
+    for (let i = open; i < s.length; i++) {
+        const ch = s[i];
+        if (inStr) {
+            if (escape) { escape = false; continue; }
+            if (ch === '\\') { escape = true; continue; }
+            if (ch === inStr) inStr = null;
+            continue;
+        }
+        if (ch === '"' || ch === "'") { inStr = ch; continue; }
+        if (ch === '(') depth++;
+        else if (ch === ')') {
+            depth--;
+            if (depth === 0) { end = i; break; }
         }
     }
+
+    // Unclosed paren — malformed output, return safe default.
+    if (end === -1) return 'TABLE()';
+
+    // Only keep recognised trailing modifiers (TITLE, LINK_X, etc.);
+    // strip any trailing prose the model may have appended.
+    const remainder = s.slice(end + 1).split('\n')[0];
+    const modMatch = /^(\s+(?:TITLE|LINK_X|LINK_Y|LINK_XY|LINK_SCROLL|ZOOM|ZOOM_X|BRUSH|PALETTE|WIDTH|HEIGHT|LEGEND|AXIS_X|AXIS_Y|LET|DATASET|TOOLTIP|ON\s+HOVER|DISABLED|NAME)\b.*)/i.exec(remainder);
+    s = s.slice(0, end + 1) + (modMatch ? modMatch[1] : '');
 
     return s.trim() || 'TABLE()';
 }
