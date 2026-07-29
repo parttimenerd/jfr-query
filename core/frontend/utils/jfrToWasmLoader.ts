@@ -886,7 +886,7 @@ export async function loadJfrIntoWasm(
   console.log(`[jfr-import] ${numChunks} chunk(s), using up to ${numWorkers} parallel worker(s)`);
 
   // Reset semaphore for this import session.
-  // Single slot: one Arrow IPC insert in flight at a time. Keeps peak memory
+  // Two slots: at most 2 Arrow IPC inserts in flight at once. Keeps peak memory
   // (worker WASM linear mem + Arrow buffer + DuckDB) bounded on memory-constrained tabs.
   insertSemaphore = new InsertSemaphore(2);
 
