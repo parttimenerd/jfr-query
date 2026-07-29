@@ -7,9 +7,9 @@ import { AiModeCards } from '../components/SettingsModal';
 describe('AiModeCards', () => {
     it('renders all three mode labels', () => {
         render(<AiModeCards isAiActive={true} />);
-        expect(screen.getByText('Ghost-text')).toBeTruthy();
-        expect(screen.getByText('Inline chat')).toBeTruthy();
-        expect(screen.getByText('Command palette')).toBeTruthy();
+        screen.getByText('Ghost-text');
+        screen.getByText('Inline chat');
+        screen.getByText('Command palette');
     });
 
     it('applies muted styling when AI is not active', () => {
@@ -20,5 +20,12 @@ describe('AiModeCards', () => {
     it('does not apply muted styling when AI is active', () => {
         const { container } = render(<AiModeCards isAiActive={true} />);
         expect((container.firstChild as HTMLElement).classList.contains('opacity-50')).toBe(false);
+    });
+
+    it('renders shortcut and description text', () => {
+        render(<AiModeCards isAiActive={true} />);
+        // Verify at least one shortcut and description are present
+        screen.getByText('Tab to accept');
+        screen.getByText('⌘K / Ctrl+K');
     });
 });

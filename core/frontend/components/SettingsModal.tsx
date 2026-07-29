@@ -507,7 +507,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <section>
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">AI Entry Points</h3>
                 <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">AI Entry Points</label>
                     <AiModeCards isAiActive={
                         localSettings.aiProvider === 'browser' ||
                         !!(localSettings as any)[`${localSettings.aiProvider}ApiKey`]
