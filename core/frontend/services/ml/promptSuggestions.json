@@ -2,7 +2,7 @@
   "version": 1,
   "dim": 384,
   "count": 1200,
-  "trainedAt": "2026-06-25T09:45:56.774Z",
+  "trainedAt": "2026-07-29T23:34:51.267Z",
   "prompts": [
     {
       "suggestedPrompt": "Show me the different GC causes in this recording",

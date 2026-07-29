@@ -81,7 +81,7 @@ def extract_signals_v12(sql: str, columns: list[str]) -> str:
         re.search(r'^min', nm) or re.match(r'^p([0-9]|[1-4]\d)$', nm)
         for nm in names)
     has_range_end = any(
-        re.search(r'\bend|finish|upper', nm) or nm in ('high',) or
+        re.search(r'(^|_)end(_|$)|^end[a-z]|finish|upper', nm) or nm in ('high',) or
         re.search(r'^max', nm) or re.match(r'^p([5-9]\d|100)$', nm) or nm in ('p95', 'p99')
         for nm in names)
     if has_range_start and has_range_end: tags.append('range')

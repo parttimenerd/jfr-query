@@ -48,6 +48,10 @@ export default defineConfig(({ mode }) => {
         'process.env.ANTHROPIC_BASE_URL': JSON.stringify(
           env.ANTHROPIC_BASE_URL ? '/anthropic-proxy' : ''
         ),
+        // Default to enabling local ML in dev mode; set VITE_USE_LOCAL_ML=false to opt out
+        'import.meta.env.VITE_USE_LOCAL_ML': JSON.stringify(
+          env.VITE_USE_LOCAL_ML ?? (mode === 'production' ? 'false' : 'true')
+        ),
       },
       resolve: {
         alias: {

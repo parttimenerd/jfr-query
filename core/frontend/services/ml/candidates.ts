@@ -169,7 +169,8 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
         /^min/.test(n) ||
         /^p([0-9]|[1-4]\d)$/.test(n));   // p0..p49 = lower bound
     const hasRangeEnd = names.some(n =>
-        /\bend|finish|upper/.test(n) || n === 'high' ||
+        // Match "end" as token: delimited by _ or start/end of string, plus camelCase suffix (endtime=endTime lowercased)
+        /(^|_)end(_|$)/.test(n) || /^end[a-z]/.test(n) || /finish|upper/.test(n) || n === 'high' ||
         /^max/.test(n) ||
         /^p([5-9]\d|100)$/.test(n) || n === 'p95' || n === 'p99');  // p50..p100 = upper bound
     if (hasRangeStart && hasRangeEnd) tags.push('range');

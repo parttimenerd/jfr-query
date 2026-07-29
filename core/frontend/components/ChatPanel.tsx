@@ -30,6 +30,7 @@ import { SkillContext } from '../context/SkillContext';
 import { builtinSkillManifest } from '../data/skills/skills-manifest';
 import { renderMarkdown } from './chat/ChatMarkdownView';
 import { BtwSuggestionCard } from './chat/BtwSuggestionCard';
+import { PromptSuggester, type PromptSuggestion } from '../services/ml/PromptSuggester';
 import { ChatPlanCard } from './chat/ChatPlanCard';
 import { buildStatusTooltip, buildModeTooltip, buildModelTooltip } from './chat/chatStatusTooltip';
 import { buildAddCellArgs } from './chat/addCellButton';
@@ -344,6 +345,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     const [mentionSuggestions, setMentionSuggestions] = useState<MentionCandidate[]>([]);
     const [mentionIdx, setMentionIdx] = useState(0);
     const [mentionRange, setMentionRange] = useState<{ start: number; end: number } | null>(null);
+
+    // Prompt suggestions from PromptSuggester (shown when input is empty + focused)
+    const [promptSuggestions, setPromptSuggestions] = useState<PromptSuggestion[]>([]);
+    const promptSuggestionsRef = useRef(promptSuggestions);
+    promptSuggestionsRef.current = promptSuggestions;
 
     // --- C4 header state: per-chat overrides that do not mutate global Settings ---
     const configuredProviders = useMemo(() => listConfiguredProviders(settings), [settings]);
@@ -1478,6 +1484,27 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         ))}
                     </div>
                 )}
+                {/* Prompt suggestions from PromptSuggester (shown when input is empty and focused) */}
+                {promptSuggestions.length > 0 && !input.trim() && (
+                    <div className="flex flex-wrap gap-1.5">
+                        {promptSuggestions.map((s, idx) => (
+                            <button
+                                key={idx}
+                                onMouseDown={e => {
+                                    // Use mousedown to fire before onBlur hides the list
+                                    e.preventDefault();
+                                    setInput(s.prompt);
+                                    setPromptSuggestions([]);
+                                    setTimeout(() => inputRef.current?.focus(), 0);
+                                }}
+                                className="inline-flex items-center px-2.5 py-1 rounded-full border border-cyan-700/50 bg-cyan-900/20 text-xs text-cyan-300 hover:bg-cyan-800/40 hover:border-cyan-500/60 transition-colors truncate max-w-[280px]"
+                                title={s.prompt}
+                            >
+                                <span className="truncate">{s.prompt}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
                 {/* Slash command autocomplete */}
                 {cmdSuggestions.length > 0 && (
                     <div className="rounded-md border border-gray-600 bg-gray-800 py-1 text-xs">
@@ -1547,6 +1574,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                             setInput(v);
                             e.target.style.height = 'auto';
                             e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+                            // Hide prompt suggestions as soon as user starts typing
+                            if (v.trim()) setPromptSuggestions([]);
                             // Slash command autocomplete
                             const suggestions = commandCompletions(v.trimStart(), availableSkills.map(s => s.name));
                             setCmdSuggestions(suggestions);
@@ -1577,6 +1606,27 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                             }
                         }}
                         onKeyDown={handleKeyDown}
+                        onFocus={() => {
+                            if (input.trim()) return;
+                            // Build context from recent cells' SQL content + schema tables
+                            const cellContext = (cells ?? [])
+                                .map(c => c.content.slice(0, 120))
+                                .filter(Boolean)
+                                .slice(-3)
+                                .join(' ');
+                            const schemaContext = schema
+                                ? (schema.tables ?? []).concat(schema.views ?? []).map(t => t.name).slice(0, 10).join(' ')
+                                : '';
+                            const ctx = [cellContext, schemaContext].filter(Boolean).join(' ').trim() || 'JFR profiling';
+                            PromptSuggester.suggest(ctx, 3).then(suggs => {
+                                if (!inputRef.current || !document.activeElement || inputRef.current !== document.activeElement) return;
+                                setPromptSuggestions(suggs);
+                            });
+                        }}
+                        onBlur={() => {
+                            // Small delay so click on a suggestion chip fires first
+                            setTimeout(() => setPromptSuggestions([]), 150);
+                        }}
                         placeholder={`Ask for a query… or type / for commands, @ to mention a cell`}
                         aria-label="Chat message"
                         className="w-full bg-gray-800 border border-gray-600 rounded-lg py-2 pl-4 pr-20 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200 resize-none overflow-hidden"

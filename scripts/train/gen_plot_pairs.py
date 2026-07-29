@@ -429,7 +429,7 @@ def extract_input_signals(sql: str, columns: list) -> str:
         re.match(r'^p([0-9]|[1-4]\d)$', n)
         for n in names)
     has_range_end = any(
-        re.search(r'\bend|finish|upper', n) or n in ('high',) or
+        re.search(r'(^|_)end(_|$)|^end[a-z]|finish|upper', n) or n in ('high',) or
         re.search(r'^max', n) or
         re.match(r'^p([5-9]\d|100)$', n) or n in ('p95', 'p99')
         for n in names)
