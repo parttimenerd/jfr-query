@@ -835,8 +835,10 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 runTimersRef.current[i] = setTimeout(() => {
                     delete runTimersRef.current[i];
                     setPendingRunStates(s=>({...s,[i]:false}));
-                    // Use the latest SQL from the ref in case the user edited during the debounce window.
-                    const latestSql = prevSqlBlocksRef.current?.[i] ?? sql;
+                    // Use the live parsedSqlBlocksRef (not prevSqlBlocksRef, which is
+                    // reset to [] by the effect cleanup) so edits during the debounce
+                    // window are picked up correctly.
+                    const latestSql = parsedSqlBlocksRef.current?.[i] ?? sql;
                     handleRunRef.current(latestSql, i);
                 }, 800);
             }
@@ -945,13 +947,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         debouncedOnUpdate(newSegments);
     }, [debouncedOnUpdate]);
 
-    const handleSuggest = async (sql: string, index: number) => { const s = await onSuggestPlot(sql, metadata.customSystemPrompt); if (s) handlePlotChange(s, index); };
+    const handleSuggest = async (sql: string, index: number) => { const s = await onSuggestPlot(sql, metadataRef.current.customSystemPrompt); if (s) handlePlotChange(s, index); };
     const handleSparkle = async (plotIdx: number, sqlIdx: number) => {
         const sqlContent = parsedSqlBlocks[sqlIdx] ?? '';
         if (!sqlContent.trim() || sparkleLoading[plotIdx]) return;
         setSparkleLoading(p => ({ ...p, [plotIdx]: true }));
         try {
-            const suggestion = await onSuggestPlot(sqlContent, metadata.customSystemPrompt);
+            const suggestion = await onSuggestPlot(sqlContent, metadataRef.current.customSystemPrompt);
             if (suggestion) handlePlotChange(suggestion, sqlIdx);
         } finally {
             setSparkleLoading(p => ({ ...p, [plotIdx]: false }));

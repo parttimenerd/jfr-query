@@ -735,6 +735,7 @@ class PlotParser {
         }
         if (this.at('rbracket')) node.to = this.consume().to;
         else node.to = this.peek().from;
+        node.text = this.src.slice(node.from, node.to);
         this.setCursor(node);
         return node;
     }

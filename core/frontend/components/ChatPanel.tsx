@@ -861,6 +861,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         }
         } // end !override
 
+        // Abort any in-flight request from a previous send (possibly on another
+        // channel). Without this, switching channels and sending a new message
+        // would orphan the old AbortController and let the prior stream run forever.
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
         cancelledRef.current = false;
         abortControllerRef.current = new AbortController();
         const userMessage: ChatMessage = {

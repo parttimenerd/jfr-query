@@ -84,6 +84,8 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
     let currentSection: 'views' | 'macros' | 'variables' | 'cellConditions' | null = null;
     let currentObject: any = null;
     let multilineKey: string | null = null;
+    /** Tracks whether the first line of the customSystemPrompt block scalar has been consumed. */
+    let customSystemPromptStarted = false;
     /** When parsing a `cellConditions:` block-scalar value (`key: |`), this is the key being built. */
     let cellConditionMultilineKey: string | null = null;
 
@@ -109,6 +111,7 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
             }
             currentSection = null;
             multilineKey = null;
+            customSystemPromptStarted = false;
             cellConditionMultilineKey = null;
             currentObject = null;
             const [key, ...valParts] = trimmedLine.split(':');
@@ -153,7 +156,12 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
                 (result as any)[keyTrimmed] = value.startsWith("'") ? unquoted.replace(/''/g, "'") : unquoted;
             }
         } else if (multilineKey && !currentSection) { // Top-level multiline (customSystemPrompt)
-             result.customSystemPrompt += (result.customSystemPrompt ? '\n' : '') + line.substring(2);
+             if (!customSystemPromptStarted) {
+                 result.customSystemPrompt = line.substring(2);
+                 customSystemPromptStarted = true;
+             } else {
+                 result.customSystemPrompt += '\n' + line.substring(2);
+             }
         } else if (currentSection === 'cellConditions') {
             // `key: <single-line SQL>` or `key: |` followed by indented lines.
             if (cellConditionMultilineKey && indent > 2) {
@@ -380,7 +388,11 @@ export const tokenizeCellContent = (content: string): CellSegment[] => {
     // Match either a typed fence (```sql / ```plot / ```variables) or a
     // conditional fence (```{if <SQL>}). The conditional regex is anchored
     // separately so the SQL can contain anything except the closing brace.
-    const blockRegex = /(```(?:sql|plot|variables)|```\{if\s+([^}]*)\})([\s\S]*?)(```)/g;
+    // Use a negative-lookahead tempered token so that triple-backtick sequences
+    // *inside* a block's content (e.g. in a SQL comment) don't prematurely
+    // terminate the match — only a standalone ``` that isn't part of longer
+    // content is treated as the closing fence.
+    const blockRegex = /(```(?:sql|plot|variables)|```\{if\s+([^}]*)\})((?:(?!```)[\s\S])*)(```)/g;
     let lastIndex = 0;
     let match;
 

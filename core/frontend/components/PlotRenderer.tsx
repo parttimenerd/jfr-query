@@ -401,8 +401,11 @@ const InteractivePlotWrapper: React.FC<{
         setIsDragging(false);
     }, [handleInteraction, commitToVariables]);
 
-    const isZoomed = localDomain !== null && dataRange !== null &&
-        (localDomain[0] !== dataRange.min || localDomain[1] !== dataRange.max);
+    const isZoomed = localDomain !== null && dataRange !== null && (() => {
+        const span = dataRange.max - dataRange.min;
+        const eps = span > 0 ? span * 1e-9 : 1e-9;
+        return Math.abs(localDomain[0] - dataRange.min) > eps || Math.abs(localDomain[1] - dataRange.max) > eps;
+    })();
 
     return (
         <div
@@ -569,8 +572,11 @@ const StandaloneZoomWrapper: React.FC<{
         setIsDragging(false);
     }, [applyDomain]);
 
-    const isZoomed = localDomain !== null && dataRange !== null &&
-        (localDomain[0] !== dataRange.min || localDomain[1] !== dataRange.max);
+    const isZoomed = localDomain !== null && dataRange !== null && (() => {
+        const span = dataRange.max - dataRange.min;
+        const eps = span > 0 ? span * 1e-9 : 1e-9;
+        return Math.abs(localDomain[0] - dataRange.min) > eps || Math.abs(localDomain[1] - dataRange.max) > eps;
+    })();
 
     return (
         <div
