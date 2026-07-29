@@ -63,8 +63,8 @@ const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnima
   if (chartData.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">No valid data.</div>;
 
   // Resolve radius/label config with defaults.
-  const innerR = Math.max(0, Math.min(0.95, config.innerRadius ?? 0));
   const outerR = Math.max(0.1, Math.min(1, config.outerRadius ?? 0.8));
+  const innerR = Math.max(0, Math.min(outerR - 0.05, config.innerRadius ?? 0));
   const sliceLabel = config.sliceLabel ?? 'outside';
   const showPercent = config.showPercent ?? true;
 
