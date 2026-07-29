@@ -113,6 +113,30 @@ NUM_COLS = g.JFR_NUMERIC_COLS + g.GENERIC_NUMERIC
 CAT_COLS = g.JFR_CAT_COLS + g.GENERIC_CAT
 
 
+def gen_flamegraph_agg_ordered(n: int) -> list[dict]:
+    """FLAMEGRAPH with GROUP BY stack + ORDER BY (the realistic query pattern) → agg+ordered+duo+stack"""
+    records = []
+    stack_cols = ["stackTrace", "stackFrames", "stack", "frames", "stack_trace", "stack_frames", "call_stack"]
+    val_cols = ["count", "samples", "Samples", "Count", "weight", "cpu_ticks", "alloc_kb", "duration_ms", "total_ms"]
+    views = ["cpu_hot_methods", "allocation_sites", "thread_cpu", "lock_contention",
+             "cpu_stacks", "alloc_events", "profiling_events", "jfr_events"]
+    for _ in range(n):
+        stack_col = random.choice(stack_cols)
+        val_col = random.choice(val_cols)
+        view = random.choice(views)
+        agg_fn = random.choice(["count(*)", "sum", "count"])
+        if agg_fn == "count(*)":
+            sql = (f'SELECT "{stack_col}", COUNT(*) AS "{val_col}" FROM {view} '
+                   f'GROUP BY "{stack_col}" ORDER BY "{val_col}" DESC LIMIT {random.choice([100, 200, 500, 1000])}')
+        else:
+            sql = (f'SELECT "{stack_col}", {agg_fn}("{val_col}") AS "{val_col}" FROM {view} '
+                   f'GROUP BY "{stack_col}" ORDER BY "{val_col}" DESC LIMIT {random.choice([100, 200, 500, 1000])}')
+        cols = [stack_col, val_col]
+        output = f'FLAMEGRAPH(label: "{stack_col}", value: "{val_col}")'
+        records.append(make_record(sql, cols, output, 'FLAMEGRAPH'))
+    return records
+
+
 def gen_area_chart(n: int) -> list[dict]:
     """AREA_CHART: time-series with filled area (sorted or agg+sorted+wide+time)"""
     records = []
@@ -285,6 +309,7 @@ def main():
             ("BOX_PLOT duo cat+num",                 gen_boxplot_duo, 200),
             ("TABLE wide",                           gen_table_wide, 150),
             ("AREA_CHART time-series",               gen_area_chart, 500),
+            ("FLAMEGRAPH agg+ordered",               gen_flamegraph_agg_ordered, 400),
         ]
 
         new_train = []

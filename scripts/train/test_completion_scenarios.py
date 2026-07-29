@@ -363,15 +363,15 @@ SCENARIOS: list[Scenario] = [
              ["thread_name", "thread_id", "thread_state"], "Thread listing"),
 
     # ── AREA_CHART ────────────────────────────────────────────────────────────
-    Scenario("area_gc_pause_over_time", "AREA_CHART",
-             "SELECT time_bucket('1s', ts) AS bucket, sum(pause_ms) AS total_pause FROM gc_events GROUP BY bucket ORDER BY bucket",
-             ["bucket", "total_pause"], "GC pause area over time"),
-    Scenario("area_heap_usage_trend", "AREA_CHART",
-             "SELECT time_bucket('2s', ts) AS bucket, avg(heap_used_mb) AS heap_mb FROM heap_snapshots GROUP BY bucket ORDER BY bucket",
-             ["bucket", "heap_mb"], "Heap usage area chart"),
     Scenario("area_alloc_stacked", "AREA_CHART",
              "SELECT time_bucket('1s', ts) AS bucket, class_name, sum(alloc_size_kb) AS alloc_kb FROM alloc_events GROUP BY bucket, class_name ORDER BY bucket",
-             ["bucket", "class_name", "alloc_kb"], "Stacked alloc area by class"),
+             ["bucket", "class_name", "alloc_kb"], "Stacked alloc area by class (agg+sorted+wide+time+cat:1)"),
+    Scenario("area_multi_metric", "AREA_CHART",
+             "SELECT time_bucket('1s', ts) AS bucket, avg(heap_young_mb) AS young, avg(heap_old_mb) AS old, avg(heap_meta_mb) AS meta FROM heap_regions GROUP BY bucket ORDER BY bucket",
+             ["bucket", "young", "old", "meta"], "Multi-metric heap area chart (agg+sorted+wide+time)"),
+    Scenario("area_cpu_regions_stacked", "AREA_CHART",
+             "SELECT time_bucket('2s', ts) AS bucket, thread_type, avg(cpu_pct) AS cpu_pct FROM thread_cpu GROUP BY bucket, thread_type ORDER BY bucket",
+             ["bucket", "thread_type", "cpu_pct"], "CPU usage stacked by thread type"),
 
     # ── Edge cases / ambiguous but expected ───────────────────────────────────
     Scenario("edge_histogram_gc_pause_solo", "HISTOGRAM",
@@ -419,6 +419,25 @@ SCENARIOS: list[Scenario] = [
     Scenario("edge_heatmap_no_order", "HEATMAP",
              "SELECT thread, phase, avg(dur_ms) AS avg_dur FROM events GROUP BY thread, phase",
              ["thread", "phase", "avg_dur"], "2-group cross no-order — heatmap"),
+    # v26 gap-fix tests
+    Scenario("edge_scatter_agg_duo", "SCATTER_PLOT",
+             "SELECT avg(cpu_pct) AS cpu_pct, avg(alloc_rate) AS alloc_rate FROM cpu_profile GROUP BY thread_name",
+             ["cpu_pct", "alloc_rate"], "Agg scatter — two numeric after GROUP BY"),
+    Scenario("edge_gantt_ordered_limit", "GANTT",
+             "SELECT thread_name, lock_start, lock_end FROM lock_events ORDER BY lock_start LIMIT 500",
+             ["thread_name", "lock_start", "lock_end"], "GANTT with ORDER BY LIMIT (ordered)"),
+    Scenario("edge_histogram_raw_solo", "HISTOGRAM",
+             "SELECT pause_ms FROM gc_events LIMIT 10000",
+             ["pause_ms"], "Histogram LIMIT only (raw+solo)"),
+    Scenario("edge_histogram_ordered_solo", "HISTOGRAM",
+             "SELECT cpu_load FROM cpu_samples ORDER BY cpu_load DESC LIMIT 5000",
+             ["cpu_load"], "Histogram ORDER BY LIMIT (ordered+solo)"),
+    Scenario("edge_table_scalar_wide", "TABLE",
+             "SELECT count(*) AS events, sum(pause_ms) AS total_pause, avg(pause_ms) AS avg_pause, max(pause_ms) AS max_pause FROM gc_events",
+             ["events", "total_pause", "avg_pause", "max_pause"], "TABLE scalar wide aggregates"),
+    Scenario("edge_scatter_category", "SCATTER_PLOT",
+             "SELECT cpu_pct, alloc_rate, thread_name FROM thread_stats LIMIT 2000",
+             ["cpu_pct", "alloc_rate", "thread_name"], "Scatter with category (wide+num:2+cat:1)"),
 ]
 
 
