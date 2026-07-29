@@ -181,11 +181,18 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose, onInsert
                             onChange={e => setFilterTerm(e.target.value)}
                             className="w-full bg-gray-900/50 border border-gray-700 rounded-md py-1.5 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
                         />
-                        <div className="flex gap-2">
-                            {(['all', 'cheatsheet'] as const).map(tab => (
+                        <div role="tablist" aria-label="View" className="flex gap-2">
+                            {(['all', 'cheatsheet'] as const).map((tab, i, tabs) => (
                                 <button
                                     key={tab}
+                                    role="tab"
+                                    aria-selected={activeTab === tab}
+                                    tabIndex={activeTab === tab ? 0 : -1}
                                     onClick={() => setActiveTab(tab)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'ArrowRight') setActiveTab(tabs[(i + 1) % tabs.length]);
+                                        else if (e.key === 'ArrowLeft') setActiveTab(tabs[(i - 1 + tabs.length) % tabs.length]);
+                                    }}
                                     className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${
                                         activeTab === tab
                                             ? 'bg-cyan-700 text-white'
