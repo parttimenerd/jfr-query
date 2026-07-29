@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom';
 
 export interface ContextMenuItem {
@@ -16,7 +16,12 @@ interface ContextMenuProps {
 }
 
 const ContextMenu: React.FC<ContextMenuProps> = ({ items, x, y, onClose }) => {
-    
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+    }, [onClose]);
+
     return ReactDOM.createPortal(
         <>
             <div className="fixed inset-0 z-50" onClick={onClose} />
@@ -24,7 +29,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ items, x, y, onClose }) => {
                 className="fixed bg-gray-700 border border-gray-600 rounded-md shadow-lg py-1 z-50 animate-fade-in text-sm"
                 style={{ top: y, left: x }}
             >
-                <ul>
+                <ul role="menu">
                     {items.map((item, index) => (
                         item.isSeparator ? (
                            <li key={`sep-${index}`} className="h-px bg-gray-600 my-1" />
