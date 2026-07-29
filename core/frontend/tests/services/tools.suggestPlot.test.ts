@@ -63,4 +63,36 @@ describe('executeTool — suggestPlot', () => {
         expect(tool).toBeTruthy();
         expect(tool!.kind).toBe('read');
     });
+
+    it('heuristic suggests WATERFALL for delta column + varchar category', async () => {
+        const duckdbQuery = vi.fn()
+            .mockResolvedValueOnce({
+                columns: [
+                    { name: 'phase', type: 'VARCHAR' },
+                    { name: 'heapDelta', type: 'DOUBLE' },
+                ],
+                rows: [],
+            })
+            .mockResolvedValueOnce({ columns: [{ name: 'cnt', type: 'BIGINT' }], rows: [{ cnt: 8 }] });
+        const result = await executeTool('suggestPlot', { cellId: 'cell-1' }, makeDeps({ duckdbQuery }));
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.data.instruction).toContain('WATERFALL');
+    });
+
+    it('heuristic suggests TREEMAP/BAR for single varchar + single numeric (no timestamp)', async () => {
+        const duckdbQuery = vi.fn()
+            .mockResolvedValueOnce({
+                columns: [
+                    { name: 'objectClass', type: 'VARCHAR' },
+                    { name: 'totalWeight', type: 'BIGINT' },
+                ],
+                rows: [],
+            })
+            .mockResolvedValueOnce({ columns: [{ name: 'cnt', type: 'BIGINT' }], rows: [{ cnt: 85 }] });
+        const result = await executeTool('suggestPlot', { cellId: 'cell-1' }, makeDeps({ duckdbQuery }));
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.data.instruction).toContain('TREEMAP');
+    });
 });

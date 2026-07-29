@@ -91,8 +91,8 @@ Supported tail clauses (all uppercase, after the closing paren):
 
 Composites: ROW(a,b) / COL(a,b) / a+b (overlay).
 Shapes: LINE_CHART, BAR_CHART, AREA_CHART, SCATTER_PLOT, PIE_CHART, BOX_PLOT,
-HISTOGRAM, HEATMAP, FLAMEGRAPH, GANTT, RANGE, TABLE.
-Short aliases: line/bar/area/scatter/pie/box/hist/heatmap/flame/gantt/range/table.
+HISTOGRAM, HEATMAP, FLAMEGRAPH, GANTT, RANGE, TABLE, TREEMAP, WATERFALL.
+Short aliases: line/bar/area/scatter/pie/box/hist/heatmap/flame/gantt/range/table/tree/fall.
 
 Return ONLY the next 1-80 tokens that naturally continue at the cursor.
 Stop at closing ) or }, end-of-clause, end-of-statement (newline), or 80 tokens.
@@ -127,9 +127,10 @@ export function summarizeShapeRegistry(
     const lines: string[] = [];
     for (const p of entries) {
         const required = p.params.filter(x => x.required).map(x => `${x.name}: ${x.type}`).join(', ');
-        const optional = p.params.filter(x => !x.required).map(x => x.name).slice(0, 8).join(', ');
-        const ex = p.examples?.[0]?.code?.replace(/\s+/g, ' ').slice(0, 120) ?? '';
-        lines.push(`- ${p.name}(${required}${optional ? ' | ' + optional : ''})${ex ? `  e.g. ${ex}` : ''}`);
+        const optional = p.params.filter(x => !x.required && !x.deprecated).map(x => x.name).slice(0, 6).join(', ');
+        const examples = (p.examples ?? []).slice(0, 3).map(e => e.code.replace(/\s+/g, ' ').slice(0, 100));
+        const exStr = examples.length > 0 ? `  e.g. ${examples.join(' | ')}` : '';
+        lines.push(`- ${p.name}(${required}${optional ? ' | ' + optional : ''})${exStr}`);
     }
     return lines.join('\n');
 }

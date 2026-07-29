@@ -345,13 +345,62 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                     return { ok: false, error: `Cell "${args.cellId}" is a ${cell.type} cell, not a SQL cell. suggestPlot requires a SQL cell to read its result schema.` };
                 }
                 if (isForbiddenSql(cell.content)) return { ok: false, error: 'SQL references $ai_providers which contains sensitive credentials and cannot be queried.' };
-                let columns: string[] = [];
+
+                let schemaColumns: { name: string; type: string }[] = [];
                 try {
                     const result = await deps.duckdbQuery(cell.content, { limit: 0 });
-                    columns = result.columns.map((c: { name: string; type: string }) => `${c.name} (${c.type})`);
+                    schemaColumns = result.columns as { name: string; type: string }[];
                 } catch {
-                    columns = [];
+                    schemaColumns = [];
                 }
+
+                const columns = schemaColumns.map((c: { name: string; type: string }) => `${c.name} (${c.type})`);
+
+                // Lightweight cardinality hint: count distinct values for the first VARCHAR column.
+                let cardinalityHint = '';
+                const firstCatCol = schemaColumns.find(c => c.type === 'VARCHAR' || c.type === 'TEXT');
+                if (firstCatCol) {
+                    try {
+                        const cardResult = await deps.duckdbQuery(
+                            `SELECT COUNT(DISTINCT "${firstCatCol.name}") AS cnt FROM (${cell.content}) _q LIMIT 1`,
+                            {},
+                        );
+                        const cnt = Number(cardResult.rows?.[0]?.cnt ?? cardResult.rows?.[0]?.[0] ?? 0);
+                        if (cnt > 0) cardinalityHint = ` ("${firstCatCol.name}" has ~${cnt} distinct values)`;
+                    } catch {
+                        // cardinality unavailable — proceed without hint
+                    }
+                }
+
+                // Build heuristic recommendation based on column patterns.
+                const colNames = schemaColumns.map(c => c.name.toLowerCase());
+                const colTypes = schemaColumns.map(c => c.type.toUpperCase());
+                const hasTimestamp = colTypes.some(t => t.includes('TIMESTAMP') || t.includes('DATE'));
+                const hasVarchar = colTypes.some(t => t === 'VARCHAR' || t === 'TEXT');
+                const numericCols = schemaColumns.filter(c => /INT|FLOAT|DOUBLE|NUMERIC|DECIMAL|BIGINT|HUGEINT|REAL/.test(c.type.toUpperCase()));
+                const hasDeltaColumn = colNames.some(n => /delta|change|diff|increment|decrement/.test(n));
+                const hasEndTime = colNames.some(n => n.includes('end') || n.includes('endtime') || n.includes('stop'));
+
+                let hint: string;
+                if (hasDeltaColumn && hasVarchar) {
+                    hint = 'Column names suggest sequential deltas → WATERFALL; categorical + delta value → WATERFALL(category: "...", value: "...").';
+                } else if (hasVarchar && numericCols.length === 1 && !hasTimestamp) {
+                    hint = 'One category + one numeric column → consider BAR_CHART or TREEMAP (if many categories); ' +
+                        'TREEMAP works best with > 20 distinct values for the label column' + cardinalityHint + '.';
+                } else if (hasTimestamp && numericCols.length >= 1) {
+                    hint = `Timestamp + numeric → LINE_CHART${numericCols.length > 1 ? ' with multiple y columns' : ''}.`;
+                } else if (!hasTimestamp && numericCols.length >= 2 && !hasVarchar) {
+                    hint = 'Two+ numerics, no timestamps → SCATTER_PLOT or HEATMAP.';
+                } else if (numericCols.length === 1 && !hasTimestamp && !hasVarchar) {
+                    hint = 'Single numeric distribution → HISTOGRAM.';
+                } else if (hasEndTime && hasTimestamp) {
+                    hint = 'Start/end time columns → GANTT or RANGE.';
+                } else if (colNames.some(n => n === 'stackframes' || n === 'stack' || n.includes('frame'))) {
+                    hint = 'Stack frame column → FLAMEGRAPH.';
+                } else {
+                    hint = 'General data → TABLE as safe default; inspect columns to pick a more specific chart.';
+                }
+
                 return {
                     ok: true,
                     data: {
@@ -359,9 +408,11 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                         sql: cell.content,
                         columns: columns.join(', ') || '(schema unavailable — inspect the cell manually)',
                         instruction: 'Based on these column names and types, suggest the most appropriate plot shape and write a minimal DSL config. ' +
-                            'Consider: timestamps → LINE_CHART; categorical + numeric → BAR_CHART; ' +
+                            `Heuristic recommendation: ${hint} ` +
+                            'Also consider: timestamps → LINE_CHART; categorical + numeric → BAR_CHART; ' +
                             'two numerics → SCATTER_PLOT; single numeric distribution → HISTOGRAM; ' +
-                            'hierarchical call stacks → FLAMEGRAPH; time-range events → GANTT. ' +
+                            'hierarchical call stacks → FLAMEGRAPH; time-range events → GANTT; ' +
+                            'part-of-whole hierarchy → TREEMAP; cumulative deltas → WATERFALL. ' +
                             'Return a plot DSL code block the user can copy.',
                     },
                 };
