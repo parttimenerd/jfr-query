@@ -38,6 +38,18 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
         `chat-preview-${Math.random().toString(36).slice(2, 8)}`
     ).current;
 
+    // Pre-extract previewPlot fields unconditionally so useMemo (Rules of Hooks)
+    // can be called at the top level.
+    const plotBranchData = toolName === 'previewPlot' ? (result?.data ?? result) : null;
+    const plotSql = toolName === 'previewPlot' ? String(args?.sql ?? '') : '';
+    const plotConfig = toolName === 'previewPlot' ? String(plotBranchData?.plotConfig ?? args?.plotConfig ?? '') : '';
+    const plotPreviewId: string | undefined = plotBranchData?.previewId;
+    const syntheticCell: NotebookCellData = useMemo(() => ({
+        id: plotPreviewId ?? fallbackPreviewCellId,
+        title: '',
+        content: '```sql\n' + plotSql + '\n```\n\n```plot\n' + plotConfig + '\n```',
+    }), [plotSql, plotConfig, plotPreviewId, fallbackPreviewCellId]);
+
     if (toolName === 'runQuery') {
         const sql = String(args?.sql ?? '');
         // Tool result shape: ToolResult wrapper { ok, data: { columns, rows } }.
@@ -79,23 +91,15 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
     }
 
     if (toolName === 'previewPlot') {
-        const sql = String(args?.sql ?? '');
-        const data = result?.data ?? result;
-        const plotConfig = String(data?.plotConfig ?? args?.plotConfig ?? '');
-        const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
-        const previewId: string | undefined = data?.previewId;
-        const syntheticCell: NotebookCellData = {
-            id: previewId ?? fallbackPreviewCellId,
-            title: '',
-            content: '```sql\n' + sql + '\n```\n\n```plot\n' + plotConfig + '\n```',
-        };
+        const sql = plotSql;
+        const rows: any[] = Array.isArray(plotBranchData?.rows) ? plotBranchData.rows : [];
         const combinedContent = '```sql\n' + sql + '\n```\n\n```plot\n' + plotConfig + '\n```';
         const fallbackMetadata: NotebookMetadata = metadata ?? { views: [], macros: [] };
 
         return (
             <div
                 className="my-2 border border-gray-700 rounded bg-gray-800/60"
-                data-preview-id={previewId}
+                data-preview-id={plotPreviewId}
             >
                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-700 text-[10px] uppercase tracking-wider text-gray-500">
                     <span>Plot preview · {rows.length} row{rows.length === 1 ? '' : 's'}</span>
