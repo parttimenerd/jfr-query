@@ -191,6 +191,11 @@ export async function rankCandidates(
     const allPrecomputed = precomputed.every(v => v !== null);
 
     if (allPrecomputed || _ready) {
+        // When all candidates are precomputed, the model must embed only the query —
+        // trigger load/warmup if not done yet so the fast path can actually be used.
+        if (allPrecomputed && !_ready) {
+            try { await ensureLoaded(signal); } catch { return candidates; }
+        }
         // Embed only the query context.
         const qVec = await embedQuery(queryContext, signal);
         throwIfAborted(signal);

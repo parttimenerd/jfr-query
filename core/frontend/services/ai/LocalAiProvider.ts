@@ -240,6 +240,7 @@ export class LocalAiProvider implements IAiProvider {
             wireMessages.push({ role: 'system', content: (opts?.systemInstruction ?? '') + sysExtras });
         }
         for (const m of messages) {
+            if (m.role === 'system') continue; // system prompt already prepended above
             if (m.role === 'tool') {
                 for (const tr of m.toolResults ?? []) {
                     wireMessages.push({

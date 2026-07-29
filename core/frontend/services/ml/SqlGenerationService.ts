@@ -100,21 +100,24 @@ export async function ensureSqlModelLoaded(
     }
 }
 
-async function _generate(prefix: string, schema?: TableSchema[]): Promise<string> {
+async function _generate(prefix: string, schema?: TableSchema[], signal?: AbortSignal): Promise<string> {
     const entry = cache.get(ARTIFACT_ID);
     if (!entry) throw new Error('SQL model not loaded');
     const { tokenizer, model } = entry;
     const input = buildInput(prefix, schema);
+    throwIfAborted(signal);
     const tokenized = await tokenizer(input, {
         return_tensors: 'pt',
         truncation: true,
         max_length: 512,
     });
+    throwIfAborted(signal);
     const output = await model.generate({ ...tokenized }, {
         max_new_tokens: 64,
         do_sample: false,
         early_stopping: true,
     });
+    throwIfAborted(signal);
     const decoded: string = tokenizer.decode(output[0], { skip_special_tokens: true });
     return cleanSqlCompletion(decoded, prefix);
 }
@@ -150,5 +153,5 @@ export async function generateSqlCompletion(
     throwIfAborted(signal);
     await ensureSqlModelLoaded(signal);
     throwIfAborted(signal);
-    return _generate(prefix, schema);
+    return _generate(prefix, schema, signal);
 }

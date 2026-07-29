@@ -96,7 +96,6 @@ export class OpenAiProvider implements IAiProvider {
         try {
             return parseJson ? JSON.parse(content) : content as unknown as T;
         } catch (e) {
-            if (!parseJson) return content as unknown as T;
             throw new Error(`OpenAI returned malformed JSON: ${content.slice(0, 200)}`);
         }
     }

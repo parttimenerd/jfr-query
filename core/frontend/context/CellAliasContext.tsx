@@ -171,6 +171,12 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
             shadowedTableNames: shadowedNames,
         });
 
+        // Snapshot slot state NOW, before any awaits. Concurrent unregisterCell calls
+        // can evict aliasesRef entries while we await query(), causing stale reads later.
+        const slotKey = `${cellId}::${sqlIndex}`;
+        const prevSlotSnapshot = slotOwnership.current[slotKey];
+        const prevMaterializedSnapshot = aliasesRef.current[prevSlotSnapshot?.qualKey ?? '']?.materialized ?? false;
+
         try {
             for (const stmt of built.statements) {
                 await query(stmt);
@@ -216,15 +222,13 @@ export const CellAliasProvider: React.FC<{ children: ReactNode }> = ({ children 
             bareShadowed: built.bareShadowed,
         };
 
-        const qualKey = qualifiedKey(built.sanitizedHandle, built.aliasOr1);
-
         // Drop any previously registered keys for this exact (cellId, sqlIndex) slot
         // so renamed or removed aliases don't accumulate as stale entries.
-        const slotKey = `${cellId}::${sqlIndex}`;
-        const prevSlot = slotOwnership.current[slotKey];
-        const prevMaterialized = aliasesRef.current[prevSlot?.qualKey ?? '']?.materialized ?? false;
+        const qualKey = qualifiedKey(built.sanitizedHandle, built.aliasOr1);
+        const prevSlot = prevSlotSnapshot;
+        const prevMaterialized = prevMaterializedSnapshot;
         if (prevSlot && (prevSlot.qualKey !== qualKey || prevMaterialized !== materialized)) {
-            const prevObjectKind = aliasesRef.current[prevSlot.qualKey]?.materialized ? 'TABLE' : 'VIEW';
+            const prevObjectKind = prevMaterialized ? 'TABLE' : 'VIEW';
             if (prevSlot.qualKey.includes('.')) {
                 const dotIdx = prevSlot.qualKey.indexOf('.');
                 const h = prevSlot.qualKey.slice(0, dotIdx);

@@ -26,7 +26,9 @@ export function useScrollProducer(group: string | null | undefined): React.RefOb
         el.scrollTop = pos.top;
         el.scrollLeft = pos.left;
         // Reset after the scroll event has had a chance to fire (it is async).
-        Promise.resolve().then(() => { isSyncing.current = false; });
+        // Must be setTimeout, not a microtask — Firefox fires programmatic scroll events
+        // as macrotasks, so a microtask would clear the guard before the event arrives.
+        setTimeout(() => { isSyncing.current = false; }, 0);
     }, []);
 
     useEffect(() => {
