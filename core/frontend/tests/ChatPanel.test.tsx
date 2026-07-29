@@ -170,6 +170,7 @@ describe('TOOLS metadata sanity (consumed by ChatPanel)', () => {
             'sampleRows',
             'screenshotPlot',
             'setVariable',
+            'suggestPlot',
             'updateTaskList',
         ]);
     });

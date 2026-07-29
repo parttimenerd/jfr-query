@@ -336,6 +336,35 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
                     },
                 };
             }
+            case 'suggestPlot': {
+                const cell = deps.listCells().find(c => c.id === args.cellId);
+                if (!cell) {
+                    return { ok: false, error: `Cell "${args.cellId}" not found. Call listCells() to see available cell IDs.` };
+                }
+                if (cell.type !== 'sql') {
+                    return { ok: false, error: `Cell "${args.cellId}" is a ${cell.type} cell, not a SQL cell. suggestPlot requires a SQL cell to read its result schema.` };
+                }
+                let columns: string[] = [];
+                try {
+                    const result = await deps.duckdbQuery(cell.content, { limit: 0 });
+                    columns = result.columns.map((c: { name: string; type: string }) => `${c.name} (${c.type})`);
+                } catch {
+                    columns = [];
+                }
+                return {
+                    ok: true,
+                    data: {
+                        cellId: cell.id,
+                        sql: cell.content,
+                        columns: columns.join(', ') || '(schema unavailable — inspect the cell manually)',
+                        instruction: 'Based on these column names and types, suggest the most appropriate plot shape and write a minimal DSL config. ' +
+                            'Consider: timestamps → LINE_CHART; categorical + numeric → BAR_CHART; ' +
+                            'two numerics → SCATTER_PLOT; single numeric distribution → HISTOGRAM; ' +
+                            'hierarchical call stacks → FLAMEGRAPH; time-range events → GANTT. ' +
+                            'Return a plot DSL code block the user can copy.',
+                    },
+                };
+            }
             default:
                 return { ok: false, error: `Tool "${name}" is recognized but not yet implemented in this version.` };
         }

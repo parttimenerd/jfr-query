@@ -276,6 +276,21 @@ export const TOOLS: Tool[] = [
             required: ['cellId'],
         },
     },
+    {
+        name: 'suggestPlot',
+        kind: 'read',
+        description: 'Suggest the best plot type and a minimal DSL config for a SQL cell\'s result schema. ' +
+            'Pass the cellId of a SQL cell. ' +
+            'The tool returns the column names and types so you can write a ready-to-paste DSL snippet. ' +
+            'After calling this tool, respond with the suggested DSL wrapped in a plot code block so the user can apply it.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                cellId: { type: 'string', description: 'ID of the SQL cell whose result schema to use.' },
+            },
+            required: ['cellId'],
+        },
+    },
 ];
 
 export function getTool(name: string): Tool | undefined {
