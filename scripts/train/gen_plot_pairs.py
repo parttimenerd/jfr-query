@@ -416,6 +416,10 @@ def extract_input_signals(sql: str, columns: list) -> str:
     has_numeric_band = any(re.match(r'^(min|max)', n) or re.match(r'^p\d+$', n) for n in names)
     if has_time and has_numeric_band: tags.append('num_range')
 
+    # cnt_agg: COUNT() with GROUP BY → strong PIE indicator.
+    # In agg+duo+cnt_agg (no order): 84% PIE, 16% TREEMAP.
+    if has_group_by and re.search(r'\bCOUNT\s*\(', sql_up): tags.append('cnt_agg')
+
     NUM_TYPES = {'INTEGER', 'BIGINT', 'DOUBLE', 'FLOAT', 'DECIMAL', 'NUMERIC',
                  'SMALLINT', 'TINYINT', 'REAL', 'HUGEINT', 'INT4', 'INT8', 'FLOAT4', 'FLOAT8'}
     num_count = 0

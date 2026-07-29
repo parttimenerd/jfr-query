@@ -74,6 +74,7 @@ const SEQ2SEQ_INPUT_V2 = (sql: string, columns: string[] | TypedColumn[], schema
  *   raw      — no GROUP/AGG/ORDER, has LIMIT (raw tabular → TABLE; 75% TABLE, ~0% BAR)
  *   scalar   — aggregate fn (COUNT/SUM/etc.) without GROUP BY (single-row → TABLE)
  *   having   — has HAVING clause
+ *   cnt_agg  — has COUNT() aggregate (→ PIE likely: 84% PIE when agg+duo+cnt_agg without order)
  *   time     — timestamp/time-named column (→ LINE_CHART/AREA_CHART likely)
  *   wide     — 3+ result columns
  *   solo     — exactly 1 result column (→ HISTOGRAM: 98% coverage, 0% BAR/PIE/LINE)
@@ -124,6 +125,10 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     if (hasAggrFn && !hasGroupBy) tags.push('scalar');
 
     if (/\bHAVING\b/.test(sqlUp)) tags.push('having');
+
+    // Count-aggregate signal: COUNT() in SQL, with GROUP BY → PIE_CHART indicator.
+    // In agg+duo+cnt_agg (no ORDER): 84% PIE, 16% TREEMAP (vs 52/48 split without it).
+    if (hasGroupBy && /\bCOUNT\s*\(/.test(sqlUp)) tags.push('cnt_agg');
 
     // Column count — exact-count signals complement the wide (3+) tag.
     // solo: exactly 1 col fires 98% HISTOGRAM, 0% BAR/PIE/LINE/HEATMAP.

@@ -89,6 +89,21 @@ describe('extractInputSignals', () => {
             const s = extractInputSignals('SELECT cause, COUNT(*) FROM t GROUP BY cause', ['cause', 'count']);
             expect(s).not.toContain('scalar');
         });
+
+        it('emits "cnt_agg" for COUNT() with GROUP BY (PIE_CHART discriminator)', () => {
+            const s = extractInputSignals('SELECT cause, COUNT(*) FROM GarbageCollections GROUP BY cause', ['cause', 'count']);
+            expect(s).toContain('cnt_agg');
+        });
+
+        it('does NOT emit "cnt_agg" without GROUP BY', () => {
+            const s = extractInputSignals('SELECT COUNT(*) as total FROM t', ['total']);
+            expect(s).not.toContain('cnt_agg');
+        });
+
+        it('does NOT emit "cnt_agg" for SUM with GROUP BY', () => {
+            const s = extractInputSignals('SELECT cause, SUM(duration) FROM t GROUP BY cause', ['cause', 'duration']);
+            expect(s).not.toContain('cnt_agg');
+        });
     });
 
     describe('column count signals', () => {
