@@ -174,9 +174,20 @@ class AiService {
         doc += '- `... WIDTH size`: Set width (e.g., `WIDTH 300px`, `WIDTH 50%`).\n';
         doc += '- `... HEIGHT size`: Set height (e.g., `HEIGHT 300px`).\n';
         doc += '- `... ZOOM factor`: Scale the plot visually (e.g., `ZOOM 0.9` for 90%).\n';
+        doc += '- `... ZOOM_X factor`: Scale only the horizontal axis (e.g., `ZOOM_X 1.5`).\n';
+        doc += '- `... LEGEND AT RIGHT|LEFT|TOP|BOTTOM|NONE`: Position the legend. Use `LEGEND HIDDEN` to suppress it.\n';
+        doc += '- `... PALETTE "palette_name"`: Set color palette. Named: category10, tableau10, pastel1, dark2, set2. Or hex list: `"#e41a1c,#377eb8"`.\n';
+        doc += '- `... AXIS_X TYPE time FORMAT "HH:mm" LABEL "label" DOMAIN [min,max]`: Configure X axis. TYPE: linear|log|time|band.\n';
+        doc += '- `... AXIS_Y TYPE log DOMAIN [0, 100]`: Configure Y axis. Same sub-clauses as AXIS_X.\n';
+        doc += '- `... BRUSH $var MODE X|Y|XY`: Add a brush overlay; writes selection to `$var.lo`/`$var.hi`.\n';
         doc += '- `... LINK_X($start, $end, [master], [clamp])`: Links a plot\'s X-axis to local variables for interactive zooming and panning. All plots linked to the same variables are synchronized.\n';
         doc += '  - `master`: This plot will set the initial values of the variables to its full data range.\n';
-        doc += '  - `clamp`: Prevents zooming or panning beyond this plot\'s own data range.\n\n';
+        doc += '  - `clamp`: Prevents zooming or panning beyond this plot\'s own data range.\n';
+        doc += '- `... LINK_Y $var`: Link Y-axis viewport to a cell variable for shared Y-range.\n';
+        doc += '- `... LINK_SCROLL "group"`: Synchronise scroll position with other plots in the same named group.\n';
+        doc += '- `... TOOLTIP COLUMNS [col1, col2]`: Limit hover tooltip to specific columns.\n';
+        doc += '- `... ON HOVER TOOLTIP "{col1}: {col2}"`: Custom tooltip template with {column} placeholders.\n';
+        doc += '- `... DATASET table_name`: Use a DuckDB table/view as data source instead of query result.\n\n';
         doc += 'AVAILABLE PLOT FUNCTIONS:\n---\n';
         for (const plot of Object.values(plotRegistry) as PlotRegistration[]) {
             doc += `FUNCTION: ${plot.name}${generateSignature(plot.params)}\nDESCRIPTION: ${plot.description}\n`;
@@ -570,7 +581,8 @@ GUIDELINES:
             `  BAR_CHART(x: "col", y: ["col2"])   LINE_CHART(x: "col", y: ["col2"])   SCATTER_PLOT(x: "col", y: "col2")\n` +
             `  AREA_CHART(x: "col", y: ["col2"])  PIE_CHART(category: "col", value: "col2")  TABLE()\n` +
             `  • Column names are ALWAYS quoted strings. y is ALWAYS an array (even for a single series).\n` +
-            `  • Optional modifiers: TITLE "string"  LINK_X($start, $end)  logScale: true  layout: "stacked"|"grouped"\n` +
+            `  • In-call params (inside parens): logScale: true  layout: "stacked"|"grouped"  horizontal: true\n` +
+            `  • Tail modifiers (after closing paren): TITLE "string"  LINK_X($start, $end)  PALETTE "tableau10"  AXIS_Y TYPE log\n` +
             `  • Example: BAR_CHART(x: "objectClass", y: ["totalWeight"]) TITLE "Top Classes"\n` +
             `\n` +
             `${schemaPayload}` +
