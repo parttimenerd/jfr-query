@@ -24,6 +24,7 @@ import {
   type AutocompleteMode,
   type ResultColumn,
 } from './contextBuilder';
+import { filterSuggestionBySchema } from './columnValidation';
 import {
   shouldFire,
   isInSqlComment,
@@ -252,7 +253,9 @@ export function aiAutocompleteExtension(deps: AiAutocompleteDeps): Extension {
 
       try {
         const result = await inflight.start(cacheKey, () => streamPromise);
-        if (result) recent = { upTo, suggestion: result };
+        const schema = deps.getCellResultSchema?.() ?? null;
+        const filteredResult = filterSuggestionBySchema(result, schema);
+        if (filteredResult) recent = { upTo, suggestion: filteredResult };
       } catch { /* swallow */ }
       return;
     }

@@ -183,7 +183,7 @@ export function buildPlotAiContext(input: PlotAiContextInput): BuiltContext {
     const buildUser = (): string => {
         const sections: string[] = [];
         if (shapesBlock) sections.push(`# Available shapes\n${shapesBlock}`);
-        if (resultColsBlock) sections.push(`# Current cell's SQL result columns\n${resultColsBlock}`);
+        if (resultColsBlock) sections.push(`# Current cell's SQL result columns (ONLY reference these — do not invent column names)\n${resultColsBlock}`);
         if (scopeBlock) sections.push(`# Named plots above this cell (referenceable in LINK_X / ON / LINK_SCROLL)\n${scopeBlock}`);
         if (varsBlock) sections.push(`# Variables in scope\n${varsBlock}`);
         if (priors.length > 0) {
