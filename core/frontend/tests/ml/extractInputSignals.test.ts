@@ -222,6 +222,16 @@ describe('extractInputSignals', () => {
             expect(s).toContain('range');
         });
 
+        it('emits "range" for percentile pairs p5/p95 (RANGE plot indicator)', () => {
+            const s = extractInputSignals('SELECT bucket, p5, p95 FROM latency_stats', ['bucket', 'p5', 'p95']);
+            expect(s).toContain('range');
+        });
+
+        it('emits "range" for min*/max* column name prefixes', () => {
+            const s = extractInputSignals('SELECT startTime, minPause, maxPause FROM gc', ['startTime', 'minPause', 'maxPause']);
+            expect(s).toContain('range');
+        });
+
         it('does NOT emit "range" when only start column present', () => {
             const s = extractInputSignals('SELECT startTime, duration FROM gc', ['startTime', 'duration']);
             expect(s).not.toContain('range');

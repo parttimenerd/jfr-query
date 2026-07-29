@@ -59,8 +59,16 @@ def extract_input_signals_v5(sql: str, columns: list) -> str:
     if re.search(r'alloc|tlab|retained|live|object|class', all_names): tags.append('alloc')
     if re.search(r'cpu|thread|method|jvm|machine|load|worker', all_names): tags.append('cpu')
     if re.search(r'delta|change|diff|decrement|increment', all_names): tags.append('delta')
-    has_range_start = any(re.search(r'start|begin', n) or n in ('low', 'min') or 'lower' in n for n in names)
-    has_range_end = any(re.search(r'\bend', n) or 'finish' in n or n in ('high', 'max') or 'upper' in n for n in names)
+    has_range_start = any(
+        re.search(r'start|begin|lower', n) or n in ('low',) or
+        re.search(r'^min', n) or
+        re.match(r'^p([0-9]|[1-4]\d)$', n)
+        for n in names)
+    has_range_end = any(
+        re.search(r'\bend|finish|upper', n) or n in ('high',) or
+        re.search(r'^max', n) or
+        re.match(r'^p([5-9]\d|100)$', n) or n in ('p95', 'p99')
+        for n in names)
     if has_range_start and has_range_end: tags.append('range')
 
     num_count = 0

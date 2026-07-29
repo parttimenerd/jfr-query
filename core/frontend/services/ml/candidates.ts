@@ -156,10 +156,16 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     // Delta/change signal → WATERFALL hint
     if (/delta|change|diff|decrement|increment/.test(allNames)) tags.push('delta');
 
-    // Range/interval signal → RANGE or GANTT hint (start+end or low+high columns)
-    // Use per-name checks: startTime, endTime, low, high, min, max all qualify.
-    const hasRangeStart = names.some(n => /start|begin/.test(n) || n === 'low' || n === 'min' || /lower/.test(n));
-    const hasRangeEnd = names.some(n => /\bend/.test(n) || /finish/.test(n) || n === 'high' || n === 'max' || /upper/.test(n));
+    // Range/interval signal → RANGE or GANTT hint (start+end or low+high columns).
+    // Also catches percentile pairs (p5/p95, p10/p99) and min*/max* name prefixes.
+    const hasRangeStart = names.some(n =>
+        /start|begin|lower/.test(n) || n === 'low' ||
+        /^min/.test(n) ||
+        /^p([0-9]|[1-4]\d)$/.test(n));   // p0..p49 = lower bound
+    const hasRangeEnd = names.some(n =>
+        /\bend|finish|upper/.test(n) || n === 'high' ||
+        /^max/.test(n) ||
+        /^p([5-9]\d|100)$/.test(n) || n === 'p95' || n === 'p99');  // p50..p100 = upper bound
     if (hasRangeStart && hasRangeEnd) tags.push('range');
 
     // Count numeric vs categorical columns using type info when available.
