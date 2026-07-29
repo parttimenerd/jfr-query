@@ -200,9 +200,15 @@ const tryMatchClauses = (remaining: string, result: ParsedPlotCall): { remaining
 /** Strip a trailing `# comment` from a plot config line, ignoring `#` inside quoted strings. */
 function stripTrailingLineComment(s: string): string {
     let inStr: string | null = null;
+    let escaped = false;
     for (let i = 0; i < s.length; i++) {
         const c = s[i];
-        if (inStr) { if (c === inStr) inStr = null; continue; }
+        if (inStr) {
+            if (escaped) { escaped = false; continue; }
+            if (c === '\\') { escaped = true; continue; }
+            if (c === inStr) inStr = null;
+            continue;
+        }
         if (c === '"' || c === "'") { inStr = c; continue; }
         if (c === '#' && i > 0 && /\s/.test(s[i - 1]) && !/\d/.test(s[i + 1] ?? '')) {
             return s.slice(0, i);
