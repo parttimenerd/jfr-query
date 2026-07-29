@@ -264,6 +264,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
           <button
             onClick={() => exportToCsv(finalHeaders, processedData, csvFilename)}
             title="Export to CSV"
+            aria-label="Export table to CSV"
             className="flex-shrink-0 px-2 py-1.5 text-xs rounded-md bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white transition-colors"
           >
             CSV ↓

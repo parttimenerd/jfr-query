@@ -39,6 +39,7 @@ function renderRefTokens(text: string, onRef?: (ref: string) => void): React.Rea
                     onClick={() => onRef?.(label)}
                     className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-xs font-mono text-cyan-400 bg-cyan-900/30 border border-cyan-700/40 hover:bg-cyan-800/50 hover:text-cyan-200 transition-colors cursor-pointer"
                     title={`Navigate to ${label}`}
+                    aria-label={`Navigate to ${label}`}
                 >
                     {p}
                 </button>
