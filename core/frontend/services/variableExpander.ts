@@ -18,7 +18,7 @@
  */
 export function expandBrushOperator(sql: string, variables?: Record<string, string>): string {
     return sql.replace(
-        /\bIN\s+\$([a-zA-Z_][a-zA-Z0-9_]*\.brush)\b/g,
+        /\bIN\s+\$([a-zA-Z_][a-zA-Z0-9_]*\.brush)\b(?!\.)/g,
         (_match, varPath) => {
             if (variables && variables[`$${varPath}.lo`] === undefined) {
                 // Brush not yet set — leave the token unresolved so the caller

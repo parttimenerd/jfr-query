@@ -33,11 +33,10 @@ export function useScrollProducer(group: string | null | undefined): React.RefOb
 
     useEffect(() => {
         if (!group) return;
+        const el = containerRef.current;
+        if (!el) return;  // no element to attach to — skip entirely
         const id = idRef.current;
         const unsub = subscribeScrollGroup(group, id, handleIncoming);
-
-        const el = containerRef.current;
-        if (!el) return unsub;
 
         const handleScroll = () => {
             if (isSyncing.current) return;

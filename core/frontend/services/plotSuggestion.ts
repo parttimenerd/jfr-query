@@ -75,8 +75,27 @@ const DEBOUNCE_MS = 500;
 const MAX_CACHE_SIZE = 64;
 
 const _cache = new Map<string, PlotSuggestionResult | null>();
-let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
-let _pendingResolve: ((v: PlotSuggestionResult | null) => void) | null = null;
+
+// Per-key inflight state so concurrent calls for different SQL blocks don't
+// cancel each other — each key gets its own debounce slot.
+interface _Slot {
+    timer: ReturnType<typeof setTimeout> | null;
+    resolve: ((v: PlotSuggestionResult | null) => void) | null;
+}
+const _slots = new Map<string, _Slot>();
+
+function _getSlot(key: string): _Slot {
+    let s = _slots.get(key);
+    if (!s) { s = { timer: null, resolve: null }; _slots.set(key, s); }
+    return s;
+}
+
+function _clearSlot(key: string): void {
+    const s = _slots.get(key);
+    if (!s) return;
+    if (s.timer) { clearTimeout(s.timer); s.timer = null; }
+    if (s.resolve) { s.resolve(null); s.resolve = null; }
+}
 
 export function rowCountBucket(rowCount: number): number {
     const n = Math.max(0, Number.isFinite(rowCount) ? rowCount : 0);
@@ -89,25 +108,13 @@ export function cacheKey(req: Pick<SuggestPlotRequest, 'sql' | 'columns' | 'rowC
 
 export function _resetPlotSuggestionForTests(): void {
     _cache.clear();
-    if (_debounceTimer) {
-        clearTimeout(_debounceTimer);
-        _debounceTimer = null;
-    }
-    if (_pendingResolve) {
-        _pendingResolve(null);
-        _pendingResolve = null;
-    }
+    for (const key of Array.from(_slots.keys())) _clearSlot(key);
+    _slots.clear();
 }
 
 export function cancel(): void {
-    if (_debounceTimer) {
-        clearTimeout(_debounceTimer);
-        _debounceTimer = null;
-    }
-    if (_pendingResolve) {
-        _pendingResolve(null);
-        _pendingResolve = null;
-    }
+    for (const key of Array.from(_slots.keys())) _clearSlot(key);
+    _slots.clear();
 }
 
 export function suggestPlot(
@@ -119,43 +126,37 @@ export function suggestPlot(
         return Promise.resolve(_cache.get(key) ?? null);
     }
 
-    // Supersede any pending call — resolve its promise to null so callers
-    // aren't left waiting forever for a result that will never fire.
-    if (_debounceTimer) {
-        clearTimeout(_debounceTimer);
-        _debounceTimer = null;
-    }
-    if (_pendingResolve) {
-        _pendingResolve(null);
-        _pendingResolve = null;
-    }
+    // Supersede any pending call for the same key — resolve its promise to
+    // null so the previous caller isn't left waiting forever. Calls for
+    // different keys are independent and must NOT cancel each other.
+    _clearSlot(key);
 
     return new Promise((resolve) => {
-        _pendingResolve = resolve;
+        const slot = _getSlot(key);
+        slot.resolve = resolve;
         const onAbort = () => {
-            if (_debounceTimer) {
-                clearTimeout(_debounceTimer);
-                _debounceTimer = null;
-            }
-            if (_pendingResolve === resolve) {
-                _pendingResolve = null;
+            const s = _slots.get(key);
+            if (s?.timer) { clearTimeout(s.timer); s.timer = null; }
+            if (s?.resolve === resolve) {
+                s.resolve = null;
                 resolve(null);
             }
         };
         req.signal?.addEventListener('abort', onAbort, { once: true });
 
-        _debounceTimer = setTimeout(async () => {
-            _debounceTimer = null;
+        slot.timer = setTimeout(async () => {
+            const s = _slots.get(key);
+            if (s) s.timer = null;
             if (req.signal?.aborted) {
                 req.signal.removeEventListener('abort', onAbort);
-                if (_pendingResolve === resolve) _pendingResolve = null;
+                if (s?.resolve === resolve) s.resolve = null;
                 resolve(null);
                 return;
             }
             try {
                 const result = await _route(req, deps);
                 _setCache(key, result);
-                if (_pendingResolve === resolve) _pendingResolve = null;
+                if (s?.resolve === resolve) s.resolve = null;
                 req.signal?.removeEventListener('abort', onAbort);
                 resolve(result);
             } catch (err) {
@@ -166,12 +167,12 @@ export function suggestPlot(
                         degraded: 'offline-only',
                     };
                     _setCache(key, degraded);
-                    if (_pendingResolve === resolve) _pendingResolve = null;
+                    if (s?.resolve === resolve) s.resolve = null;
                     req.signal?.removeEventListener('abort', onAbort);
                     resolve(degraded);
                     return;
                 }
-                if (_pendingResolve === resolve) _pendingResolve = null;
+                if (s?.resolve === resolve) s.resolve = null;
                 req.signal?.removeEventListener('abort', onAbort);
                 resolve(null);
             }

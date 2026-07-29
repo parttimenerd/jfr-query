@@ -93,6 +93,8 @@ function buildSingleConfig(parsed: ParsedPlotCall): string {
         lx += ')';
         config += ' ' + lx;
     }
+    if (parsed.linkY) config += ` LINK_Y ${parsed.linkY}`;
+    if (parsed.linkXY) config += ` LINK_XY ${parsed.linkXY}`;
     return config;
 }
 

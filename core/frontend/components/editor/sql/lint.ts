@@ -105,7 +105,12 @@ function isDefinitionSite(n: Node): boolean {
     }
     if (p.kind === 'projection' || p.kind === 'tableRef') {
         const idents = p.children.filter(c => c.kind === 'identifier');
-        if (idents.length >= 2 && idents[idents.length - 1] === n) return true;
+        // Mirror schemaAnnotator.isDefinitionSite: when the first child is a
+        // non-identifier expression (e.g. count(*) AS n, a+b AS r), the alias
+        // is the only identifier child, so threshold is 1 not 2.
+        const first = p.children[0];
+        const threshold = first?.kind === 'identifier' ? 2 : 1;
+        if (idents.length >= threshold && idents[idents.length - 1] === n) return true;
         // A tableRef whose first child is a bare identifier — that identifier
         // names the table and is handled by the tableRef diagnostic, not the
         // column diagnostic.

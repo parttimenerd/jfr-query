@@ -116,10 +116,15 @@ function resolveIdentNode(n: Node, input: SchemaAnnotatorInput): void {
             return;
         }
     }
-    // No scope (or no match) — try schema-only lookup.
-    const tab = Scope.resolveTableRef(n.text, [], input.tables, input.views);
+    // No scope (or no match in scope) — try schema-only lookup.
+    // Pass CTEs from the active scope when available so CTE names in unusual
+    // positions (not captured by earlier scope-based checks) still resolve.
+    const ctes = scope ? scope.listCtes() : [];
+    const tab = Scope.resolveTableRef(n.text, ctes, input.tables, input.views);
     if (tab) {
-        if (tab.kind === 'view') {
+        if (tab.kind === 'cte') {
+            n.annotations.resolves = { kind: 'cte', name: tab.name };
+        } else if (tab.kind === 'view') {
             n.annotations.resolves = { kind: 'view', name: tab.name };
         } else {
             n.annotations.resolves = {

@@ -87,7 +87,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
         })();
         return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cells, metadata.cellConditions, metadata.variables]);
+    }, [cells, metadata.cellConditions, metadata.variables, onRunPreviewQuery]);
 
     // B-161/cross-cell ON routing: build a map from SQL alias name → dataset so
     // plots in any cell can reference results from other cells via ON <alias>.

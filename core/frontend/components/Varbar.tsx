@@ -157,6 +157,7 @@ const Varbar: React.FC<VarbarProps> = ({ variables, onVariableChange, paused, on
     const [activePopover, setActivePopover] = useState<{ name: string; anchor: HTMLElement } | null>(null);
 
     const handleClear = (name: string) => {
+        if (activePopover?.name === name) setActivePopover(null);
         const next = { ...variables };
         const prefix = name + '.';
         for (const k of Object.keys(next)) {
