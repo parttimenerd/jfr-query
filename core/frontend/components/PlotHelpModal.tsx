@@ -208,8 +208,8 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                 <p className="text-gray-400 mt-1">Set a fixed height for the plot container. Accepts <code className="bg-gray-600 px-1 rounded">px</code> values.</p>
                             </div>
                             <div>
-                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">PALETTE "sap_horizon"</code>
-                                <p className="text-gray-400 mt-1">Override the color palette. Choices: <code className="bg-gray-600 px-1 rounded">default</code>, <code className="bg-gray-600 px-1 rounded">sap_horizon</code>, <code className="bg-gray-600 px-1 rounded">pastel</code>, <code className="bg-gray-600 px-1 rounded">earth</code>, <code className="bg-gray-600 px-1 rounded">neon</code>, <code className="bg-gray-600 px-1 rounded">monochrome</code>.</p>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">PALETTE "tableau10"</code>
+                                <p className="text-gray-400 mt-1">Override the color palette. Named palettes: <code className="bg-gray-600 px-1 rounded">category10</code>, <code className="bg-gray-600 px-1 rounded">tableau10</code>, <code className="bg-gray-600 px-1 rounded">pastel1</code>, <code className="bg-gray-600 px-1 rounded">dark2</code>, <code className="bg-gray-600 px-1 rounded">set2</code>. Or pass a comma-separated hex list: <code className="bg-gray-600 px-1 rounded">"#e41a1c,#377eb8,#4daf4a"</code>.</p>
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">NAME "plotname"</code>

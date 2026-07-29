@@ -104,7 +104,7 @@ No prose, no fences, no restatement.
 Plot DSL: NAME(param: value, ...) [SUFFIX-CLAUSE ...]
 Plots: LINE_CHART, BAR_CHART, AREA_CHART, SCATTER_PLOT, PIE_CHART, HISTOGRAM, HEATMAP, BOX_PLOT, TABLE, FLAMEGRAPH, GANTT, RANGE; composition: ROW(...), COL(...), A + B.
 Common params: x, y, color, category, value. Quote column names with spaces ("CPU %").
-Suffix clauses (after closing paren): TITLE "...", LEGEND AT BOTTOM|RIGHT|NONE, PALETTE "viridis", AXIS_Y DOMAIN [a, b], LINK_X($s,$e), BRUSH $sel MODE X.
+Suffix clauses (after closing paren): TITLE "...", LEGEND AT BOTTOM|RIGHT|NONE, PALETTE "category10", AXIS_Y DOMAIN [a, b], LINK_X($s,$e), BRUSH $sel MODE X.
 
 Examples (prefix → completion only, after <<CURSOR>>):
   LINE_CHART(x: "ts", y: <<CURSOR>>
