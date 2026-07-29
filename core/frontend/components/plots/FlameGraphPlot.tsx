@@ -605,6 +605,7 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
           )}
           <button
             onClick={() => handleBreadcrumb(0)}
+            aria-label="Go to root frame"
             className={`px-1.5 py-0.5 rounded hover:bg-gray-700 transition-colors flex-shrink-0 ${zoomStack.length === 0 ? 'text-cyan-300 font-semibold' : 'text-gray-400'}`}
           >
             root
@@ -615,6 +616,7 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
               <span className="text-gray-600 flex-shrink-0">/</span>
               <button
                 onClick={() => handleBreadcrumb(i + 1)}
+                aria-label={`Go to frame: ${node.name}`}
                 className={`px-1.5 py-0.5 rounded hover:bg-gray-700 transition-colors truncate max-w-[140px] ${i === zoomStack.length - 1 ? 'text-cyan-300 font-semibold' : 'text-gray-400'}`}
                 title={node.name}
               >
@@ -630,6 +632,8 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
             <button
               key={mode}
               onClick={() => setWidthMode(mode)}
+              aria-pressed={widthMode === mode}
+              aria-label={`Width mode: % ${mode}`}
               className={`px-2 py-0.5 rounded transition-colors ${widthMode === mode ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
             >
               % {mode}
@@ -656,6 +660,7 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
           {(searchTerm || zoomStack.length > 0) && (
             <button
               onClick={handleReset}
+              aria-label="Reset search and zoom"
               className="text-xs text-gray-500 hover:text-gray-300 px-1.5 py-0.5 rounded hover:bg-gray-700 flex-shrink-0"
             >
               Reset
