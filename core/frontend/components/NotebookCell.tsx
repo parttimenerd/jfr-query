@@ -832,7 +832,9 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 runTimersRef.current[i] = setTimeout(() => {
                     delete runTimersRef.current[i];
                     setPendingRunStates(s=>({...s,[i]:false}));
-                    handleRunRef.current(sql, i);
+                    // Use the latest SQL from the ref in case the user edited during the debounce window.
+                    const latestSql = prevSqlBlocksRef.current?.[i] ?? sql;
+                    handleRunRef.current(latestSql, i);
                 }, 800);
             }
         });

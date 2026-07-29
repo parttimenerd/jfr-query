@@ -57,11 +57,10 @@ const Box = (props: any) => {
 
     const { min, q1, median, q3, max } = payload.stats;
 
-    // If q1 and q3 are the same, the box has no height and pixelsPerUnit would be ∞.
+    // If q1 and q3 are the same, all values are equal — render a single median line.
     if (height === 0 || q3 === q1) {
         return (
             <g>
-                <line x1={x + width / 2} y1={y} x2={x + width / 2} y2={y} stroke="#8884d8" />
                 <line x1={x} y1={y} x2={x + width} y2={y} stroke="#fff" strokeWidth={2} />
             </g>
         );

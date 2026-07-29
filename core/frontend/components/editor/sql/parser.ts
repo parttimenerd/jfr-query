@@ -629,7 +629,7 @@ class Parser {
                 left = makeNode('binaryExpr', null, [left, right], this.source);
                 continue;
             }
-            if (this.isKw('NOT') && (this.isKw('LIKE', 1) || this.isKw('ILIKE', 1) || this.isKw('IN', 1) || this.isKw('BETWEEN', 1))) {
+            if (this.isKw('NOT') && (this.isKw('LIKE', 1) || this.isKw('ILIKE', 1) || this.isKw('IN', 1) || this.isKw('BETWEEN', 1) || this.isKw('GLOB', 1) || this.isKw('REGEXP', 1))) {
                 this.advance(); // NOT
                 // Re-enter the comparison loop body for the following operator so
                 // the positive form is built, then wrap it in a unaryExpr for NOT.

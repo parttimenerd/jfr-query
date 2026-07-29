@@ -76,7 +76,7 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
             tick={{ fontSize: 10 }}
             domain={[-0.5, xLabels.length - 0.5]}
             ticks={xLabels.map((_, i) => i)}
-            tickFormatter={(tick) => String(xLabels[tick])}
+            tickFormatter={(tick) => String(xLabels[tick] ?? tick)}
             interval={0}
             angle={-45}
             textAnchor="end"
@@ -91,7 +91,7 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
             tick={{ fontSize: 10 }}
             domain={[-0.5, yLabels.length - 0.5]}
             ticks={yLabels.map((_, i) => i)}
-            tickFormatter={(tick) => String(yLabels[tick])}
+            tickFormatter={(tick) => String(yLabels[tick] ?? tick)}
             interval={0}
             width={80}
             label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined}
