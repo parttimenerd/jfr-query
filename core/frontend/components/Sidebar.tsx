@@ -443,8 +443,12 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
                         className="flex flex-col"
                         style={panelStyle}
                     >
-                        <div 
+                        <div
                             onClick={() => toggleCollapse(index)}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapse(index); } }}
+                            role="button" tabIndex={0}
+                            aria-expanded={!isCurrentCollapsed}
+                            aria-label={`${isCurrentCollapsed ? 'Expand' : 'Collapse'} ${panel.title} panel`}
                             className="h-9 flex-shrink-0 flex items-center justify-between px-3 cursor-pointer bg-gray-800/50 hover:bg-gray-700/50"
                         >
                             <div className="flex items-center gap-2">

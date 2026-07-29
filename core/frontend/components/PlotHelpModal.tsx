@@ -307,7 +307,7 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LET @alias = "cpu_usage"</code>
-                                <p className="text-gray-400 mt-1">Define a reusable constant in the plot config block. Reference it as <code className="bg-gray-600 px-1 rounded">@alias</code> inside the same block — e.g. <code className="bg-gray-600 px-1 rounded">LET @col = "cpu"\nLINE_CHART(x: "ts", y: [@col])</code>.</p>
+                                <p className="text-gray-400 mt-1">Define a reusable constant in the plot config block. Reference it as <code className="bg-gray-600 px-1 rounded">@alias</code> inside the same block — e.g. <code className="bg-gray-600 px-1 rounded font-mono whitespace-pre">{'LET @col = "cpu"\nLINE_CHART(x: "ts", y: [@col])'}</code>.</p>
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINE_CHART(...) LINK_X($s, $e)</code>
