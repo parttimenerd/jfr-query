@@ -14,7 +14,7 @@ export type ModelDtype = 'q4' | 'q8' | 'fp16' | 'q4f16' | 'fp32';
 export interface TypedColumn { name: string; type?: string; }
 export interface TableSchema { name: string; columns: TypedColumn[]; }
 
-export type InputFormatVersion = 'v1' | 'v2';
+export type InputFormatVersion = 'v1' | 'v2' | 'v3';
 
 export interface CandidateModel {
     id: string;
@@ -49,6 +49,104 @@ const SEQ2SEQ_INPUT_V2 = (sql: string, columns: string[] | TypedColumn[], schema
     const typed = (columns as any[]).map(c => typeof c === 'string' ? { name: c } as TypedColumn : c as TypedColumn);
     const colsStr = typed.map(c => c.type ? `"${c.name}" ${c.type}` : `"${c.name}"`).join(', ');
     let out = `sql: ${sql}\ncolumns: ${colsStr}`;
+    if (schema && schema.length > 0) {
+        const capped = schema.slice(0, 3);
+        const tableLines = capped.map(t => {
+            const colList = t.columns.slice(0, 12).map(c => c.type ? `"${c.name}" ${c.type}` : `"${c.name}"`).join(', ');
+            return `- "${t.name}": (${colList})`;
+        });
+        out += `\nschema:\n${tableLines.join('\n')}`;
+    }
+    return out;
+};
+
+/**
+ * Extract compact structural signals from SQL + columns to form a hint prefix.
+ *
+ * The signal line is a space-separated set of short tags injected before the
+ * sql/columns body so the T5 encoder sees a dense summary at position 0
+ * (where attention is strongest). Tags:
+ *
+ *   agg      — has GROUP BY (aggregation query → BAR/PIE/TREEMAP likely)
+ *   ordered  — has ORDER BY + LIMIT (ranked list → BAR_CHART likely)
+ *   time     — has a timestamp/time-named column (→ LINE_CHART likely)
+ *   wide     — 3+ result columns
+ *   gc       — JFR GC domain columns (pause, heap, GC*)
+ *   alloc    — JFR allocation domain (alloc*, tlab, retained)
+ *   cpu      — JFR CPU/thread domain (cpu*, thread*, method*)
+ *   stack    — stack-trace column present (→ FLAMEGRAPH likely)
+ *   num:N    — number of numeric columns (0-4+)
+ *   cat:N    — number of categorical columns
+ *
+ * Kept short (<60 chars typical) to stay inside T5-small's 512-token budget
+ * alongside the sql + columns lines.
+ */
+export function extractInputSignals(sql: string, columns: string[] | TypedColumn[]): string {
+    const sqlUp = sql.toUpperCase();
+    const typed = (columns as any[]).map(c =>
+        typeof c === 'string' ? { name: c, type: undefined } as TypedColumn : c as TypedColumn,
+    );
+    const names = typed.map(c => c.name.toLowerCase());
+    const types = typed.map(c => (c.type ?? '').toUpperCase());
+
+    const tags: string[] = [];
+
+    // SQL structural flags
+    if (/\bGROUP\s+BY\b/.test(sqlUp)) tags.push('agg');
+    if (/\bORDER\s+BY\b/.test(sqlUp) && /\bLIMIT\b/.test(sqlUp)) tags.push('ordered');
+    if (/\bHAVING\b/.test(sqlUp)) tags.push('having');
+
+    // Column count
+    if (typed.length >= 3) tags.push('wide');
+
+    // Time signal — column names containing time/timestamp/bucket or typed as TIMESTAMP.
+    // Use substring match (not word boundary) because camelCase names like
+    // "startTime" and "eventTime" should also trigger this.
+    const hasTimestamp =
+        types.some(t => t === 'TIMESTAMP' || t === 'DATE' || t === 'TIMESTAMP_NS' || t === 'TIMESTAMP_MS') ||
+        names.some(n => /time|timestamp|bucket|date/.test(n));
+    if (hasTimestamp) tags.push('time');
+
+    // Stack trace signal — FLAMEGRAPH indicator
+    const hasStack =
+        names.some(n => /stack|frame|trace/.test(n)) ||
+        types.some(t => t === 'VARCHAR' && names.some(n => n.includes('stack')));
+    if (hasStack) tags.push('stack');
+
+    // JFR domain signals
+    const allNames = names.join(' ');
+    if (/gc|pause|heap|reclai|young|old|survivor|tenur/.test(allNames) ||
+        /GC|Garbage|GARBAGE|HEAP|Heap/i.test(sql)) tags.push('gc');
+    if (/alloc|tlab|retained|live|object|class/.test(allNames)) tags.push('alloc');
+    if (/cpu|thread|method|jvm|machine|load|worker/.test(allNames)) tags.push('cpu');
+
+    // Count numeric vs categorical columns using type info when available.
+    let numCount = 0;
+    let catCount = 0;
+    const NUM_TYPES = new Set(['INTEGER', 'BIGINT', 'DOUBLE', 'FLOAT', 'DECIMAL', 'NUMERIC',
+        'SMALLINT', 'TINYINT', 'REAL', 'HUGEINT', 'INT4', 'INT8', 'FLOAT4', 'FLOAT8']);
+    for (let i = 0; i < typed.length; i++) {
+        const t = types[i] ?? '';
+        const n = names[i] ?? '';
+        if (NUM_TYPES.has(t) || (t === '' && /(?:count|size|ms|mb|kb|rate|pct|load|pause|duration|alloc|heap|cpu|ticks|samples|total|avg|max|p\d+)/i.test(n))) {
+            numCount++;
+        } else if (t === 'VARCHAR' || t === 'TEXT' || t === 'STRING' || (t === '' && !/time|stamp|date|bucket/.test(n))) {
+            catCount++;
+        }
+    }
+    tags.push(`num:${Math.min(numCount, 4)}`);
+    tags.push(`cat:${Math.min(catCount, 4)}`);
+
+    return tags.join(' ');
+}
+
+// V3: signals header + typed columns. The compact tag line gives T5 dense
+// structural hints at position 0 where attention is strongest.
+const SEQ2SEQ_INPUT_V3 = (sql: string, columns: string[] | TypedColumn[], schema?: TableSchema[]): string => {
+    const signals = extractInputSignals(sql, columns);
+    const typed = (columns as any[]).map(c => typeof c === 'string' ? { name: c } as TypedColumn : c as TypedColumn);
+    const colsStr = typed.map(c => c.type ? `"${c.name}" ${c.type}` : `"${c.name}"`).join(', ');
+    let out = `hints: ${signals}\nsql: ${sql}\ncolumns: ${colsStr}`;
     if (schema && schema.length > 0) {
         const capped = schema.slice(0, 3);
         const tableLines = capped.map(t => {
@@ -199,14 +297,14 @@ export const CANDIDATES: Record<string, CandidateModel> = {
      */
     'plot-suggester-local': {
         id: 'plot-suggester-local',
-        label: 'T5-small plot-suggester v2 (in-tree, ~77MB) — typed columns + schema preamble',
+        label: 'T5-small plot-suggester v3 (in-tree, ~77MB) — signals header + typed columns',
         repo: './services/ml/models/plot-suggester-v2',
         kind: 'seq2seq',
         dtype: 'fp32',
         approxSizeMb: 77,
-        buildInput: SEQ2SEQ_INPUT_V2,
+        buildInput: SEQ2SEQ_INPUT_V3,
         extractOutput: SEQ2SEQ_EXTRACT,
-        inputFormat: 'v2',
+        inputFormat: 'v3',
     },
     /**
      * Fine-tuned T5-small LoRA (v10) — trained specifically on plot config generation.

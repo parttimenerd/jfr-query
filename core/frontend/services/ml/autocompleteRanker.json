@@ -1,14 +1,19 @@
 {
-  "version": 1,
-  "mrr": 0.950067243035542,
-  "trainedAt": "2026-06-25T09:45:39.518Z",
+  "version": 2,
+  "mrr": 0.9136599423631115,
+  "trainedAt": "2026-07-29T16:57:05.825Z",
   "weights": {
     "prefixMatch": 1,
     "substringMatch": 0.5,
     "scenarioBoost": 1,
-    "lengthPenalty": 0.1,
+    "lengthPenalty": 0,
     "isKeyword": 0.2,
     "isColumn": 0.3,
-    "isFunction": 0.1
+    "isFunction": 0.1,
+    "prefixDepth": 0.5,
+    "jfrHint": 0.3,
+    "exactMatch": 1.5,
+    "isTable": 0.2,
+    "aggContext": 0.2
   }
 }
