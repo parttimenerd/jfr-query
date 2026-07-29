@@ -44,6 +44,7 @@ export const ToolCallLine: React.FC<ToolCallLineProps> = ({
                     disabled={!canScroll}
                     className={`flex-1 text-left truncate ${canScroll ? 'cursor-pointer hover:text-gray-200' : 'cursor-default'}`}
                     title={canScroll ? 'Scroll to cell' : ''}
+                    aria-label={canScroll ? 'Scroll to cell' : undefined}
                 >
                     <span className="text-gray-300 font-semibold mr-1">{action.verb}</span>
                     <span className="text-gray-500">{action.summary}</span>
