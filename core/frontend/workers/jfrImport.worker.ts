@@ -147,9 +147,12 @@ async function handleImport(bytes: Uint8Array, stacktraceDepth: number, tablePre
         const resultPromise = new Promise<unknown>((resolve, reject) => {
           pending.set(reqId, { resolve, reject });
         });
+        const buf = ipcBytes.byteOffset === 0 && ipcBytes.byteLength === ipcBytes.buffer.byteLength
+          ? ipcBytes.buffer
+          : ipcBytes.slice().buffer;
         (self as unknown as Worker).postMessage(
-          { type: 'insert', reqId, tableName: opts.name, ipcBytes: ipcBytes.buffer },
-          [ipcBytes.buffer],
+          { type: 'insert', reqId, tableName: opts.name, ipcBytes: buf },
+          [buf],
         );
         return resultPromise;
       },
