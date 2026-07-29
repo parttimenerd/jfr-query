@@ -55,6 +55,7 @@ const TIPS = [
     { icon: '$', text: 'Add a variables block to parameterise queries with $name.' },
     { icon: '✦', text: 'The sparkle button on a plot block generates a plot config with AI.' },
     { icon: '👁', text: 'The SEE dropdown in the AI chat controls which query data the AI can see.' },
+    { icon: '🔗', text: 'Use LET @x = $start in a plot config to bind a local variable; LINK_X($min, $max) links chart zoom across plots.' },
 ];
 
 const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({ isOpen, onClose, onStartTour }) => {
@@ -105,6 +106,11 @@ const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({ isOpen,
                                     <ShortcutRow keys={[<Kbd>{mod}↵</Kbd>]} label="Run query" />
                                     <ShortcutRow keys={[<Kbd>{alt}↑</Kbd>]} label="Move cell up" />
                                     <ShortcutRow keys={[<Kbd>{alt}↓</Kbd>]} label="Move cell down" />
+
+                                    <SectionHeading>Tabs</SectionHeading>
+                                    <ShortcutRow keys={[<Kbd>{mod}T</Kbd>]} label="New tab" />
+                                    <ShortcutRow keys={[<Kbd>{mod}W</Kbd>]} label="Close current tab" />
+                                    <ShortcutRow keys={[<Kbd>{mod}1</Kbd>, <span className="text-gray-600 text-xs">–</span>, <Kbd>{mod}9</Kbd>]} label="Switch to tab N" />
 
                                     <SectionHeading>Command palette prefixes</SectionHeading>
                                     <ShortcutRow keys={[<Kbd>!</Kbd>]} label="Run SQL — preview result" />

@@ -109,6 +109,7 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
                             {tabs.length > 1 && (
                                 <span
                                     role="button"
+                                    aria-label="Close tab"
                                     onClick={(e) => handleCloseTab(e, tab)}
                                     className={[
                                         'ml-0.5 w-4 h-4 flex items-center justify-center rounded hover:bg-gray-600/70 text-gray-500 hover:text-gray-200 transition-colors flex-shrink-0',
