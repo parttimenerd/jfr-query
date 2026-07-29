@@ -1331,7 +1331,7 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** All three components declare `color?: string` in their `Config` interface and list a `color` param, but the `useMemo` that builds `chartData` / `allY` / `yCols` never reads `config.color`. The param is silently ignored.
 **Fix:** When `config.color` is set, pivot the data by that column's distinct values: for each unique value, create a series key `colorValue` (or `colorValue yCol` when multiple y columns are given), and produce one row per x value with columns for all series. The pivoted rows are passed to recharts and one `<Line>` / `<Area>` / `<Bar>` per series key is rendered. Applied to `LineChartPlot`, `AreaChartPlot`, and `BarChartPlot`. ✅ FIXED
 
-### 🟡 [B-222] `utils/jfrToWasmLoader.ts`: `?maxWorkers=abc` returns `NaN` instead of default
+### 🟡 [B-222] `utils/jfrToWasmLoader.ts`: `?maxWorkers=abc` returns `NaN` instead of default ✅ FIXED
 **Where:** `utils/jfrToWasmLoader.ts:14-15`
 **Repro:** Open the app with `?maxWorkers=abc` in the URL; `getMaxWorkers()` returns `NaN` because `parseInt('abc', 10)` is `NaN` and `Math.max(1, Math.min(4, NaN))` propagates `NaN`.
 **Observed:** `NaN` is passed to the worker pool constructor; behavior is undefined.
@@ -1463,7 +1463,7 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Repro:** `LINE_CHART(x: "ts", y: ["v"]) AXIS-Y FORMAT ".2s"` — tick labels use default formatting, not the d3 format string.
 **Observed:** `AxisSpec.format` is populated by the parser but no plot component reads `clauses?.axisX?.format` or `clauses?.axisY?.format`. The clause is silently ignored.
 **Expected:** Apply the format string as a custom `tickFormatter` on the relevant axis, using a d3-format-compatible formatter (recharts accepts a custom tick formatter function).
-**Notes:** Requires integrating a d3-format library or writing a minimal subset formatter. Deferred.
+**Notes:** Fixed via `makeTickFormatter` in `utils/axisFormat.ts` which integrates d3-format for numeric format strings and a time formatter for time-type axes. Applied to all plot components via `clauses?.axisX?.format` / `clauses?.axisY?.format`.
 
 ### 🟡 [B-246] Log-scale Y axis with `AXIS-Y DOMAIN [0, N]` breaks recharts (domain includes 0) ✅ FIXED
 **Where:** `LineChartPlot.tsx:113`, `AreaChartPlot.tsx:182`, `BarChartPlot.ts:126`, `HistogramPlot.tsx:82`

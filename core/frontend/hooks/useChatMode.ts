@@ -105,6 +105,29 @@ export function useChatMode(opts: UseChatModeOptions): UseChatModeApi {
 
     const [state, dispatch] = useReducer(channelReducer, undefined as any, init);
 
+    // When channelId changes, reload persisted state for the new channel instead
+    // of keeping the previous channel's state. Without this, the persistence
+    // effect fires with the new channelId but stale state, corrupting the new
+    // channel's storage entry.
+    const prevChannelIdRef = useRef(channelId);
+    const switchingChannelRef = useRef(false);
+    useEffect(() => {
+        if (prevChannelIdRef.current === channelId) return;
+        prevChannelIdRef.current = channelId;
+        switchingChannelRef.current = true;
+        let mode: ChatMode = initialMode ?? initialChannelState.mode;
+        let hints: BtwHint[] = [];
+        if (persistStorage) {
+            const persisted = loadPersistedState(persistStorage);
+            const channel = persisted.channels.find(c => c.id === channelId);
+            if (channel) {
+                mode = initialMode ?? channel.mode;
+                hints = channel.hints;
+            }
+        }
+        dispatch({ type: 'reset-to', mode, hints });
+    }, [channelId, initialMode, persistStorage]);
+
     // Snapshot of state for the async orchestrator — avoids stale closures.
     const stateRef = useRef(state);
     stateRef.current = state;
@@ -112,6 +135,10 @@ export function useChatMode(opts: UseChatModeOptions): UseChatModeApi {
     const isFirst = useRef(true);
     useEffect(() => {
         if (isFirst.current) { isFirst.current = false; return; }
+        // Skip saving when we just switched channels — state is being reset to the
+        // new channel's persisted values; saving would write stale data under the
+        // new channelId before the reset-to dispatch has been applied.
+        if (switchingChannelRef.current) { switchingChannelRef.current = false; return; }
         if (!persistStorage) return;
         saveChannel(persistStorage, {
             id: channelId,

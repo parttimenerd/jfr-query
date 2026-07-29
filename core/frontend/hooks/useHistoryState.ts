@@ -72,6 +72,7 @@ export const useHistoryState = <T,>(
             isDebouncing.current = false;
         }
 
+        let didChange = true;
         _setState(prevState => {
             // If we're in a debouncing session, modify the current history entry
             // (not necessarily the last one — user may have undone before typing).
@@ -87,6 +88,7 @@ export const useHistoryState = <T,>(
 
             // Don't add a new history state if the value is the same as the last one.
             if (newHistory.length > 0 && JSON.stringify(newHistory[newHistory.length - 1]) === JSON.stringify(value)) {
+                didChange = false;
                 return prevState;
             }
 
@@ -98,6 +100,9 @@ export const useHistoryState = <T,>(
                 currentIndex: newHistory.length - 1
             };
         });
+
+        // Don't open a new debounce session if the state didn't change.
+        if (!didChange) return;
 
         if (!isDebouncing.current) {
             sessionStartTime.current = now;

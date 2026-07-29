@@ -565,7 +565,8 @@ export type ChannelAction =
     | { type: 'dismiss-hint'; id: string }
     | { type: 'clear-hints' }
     | { type: 'mark-btw-fired'; at: number; tier: AiTier }
-    | { type: 'reset' };
+    | { type: 'reset' }
+    | { type: 'reset-to'; mode: ChatMode; hints: BtwHint[] };
 
 export const initialChannelState: ChannelState = {
     mode: DEFAULT_MODE,
@@ -595,5 +596,7 @@ export function channelReducer(s: ChannelState, a: ChannelAction): ChannelState 
             return { ...s, lastBtwCallAt: a.at, lastBtwTier: a.tier };
         case 'reset':
             return { ...initialChannelState, btwHints: [] };
+        case 'reset-to':
+            return { ...initialChannelState, mode: a.mode, btwHints: a.hints };
     }
 }

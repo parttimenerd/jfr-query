@@ -281,16 +281,18 @@ describe('plotTokenize', () => {
             expect(firstText('3.14')).toBe('3.14');
         });
 
-        it('negative number -5 tokenizes as number', () => {
-            expect(firstKind('-5')).toBe('number');
+        it('negative number -5 tokenizes as minus then number', () => {
+            // The tokenizer splits -5 into ['minus', 'number']; unary minus is
+            // handled at the parser level (parseUnaryExpr), not the tokenizer level.
+            expect(firstKind('-5')).toBe('minus');
         });
 
-        it('negative float -3.14 tokenizes as number', () => {
-            expect(firstKind('-3.14')).toBe('number');
+        it('negative float -3.14 tokenizes as minus then number', () => {
+            expect(firstKind('-3.14')).toBe('minus');
         });
 
-        it('negative number text preserved: -5', () => {
-            expect(firstText('-5')).toBe('-5');
+        it('negative number: minus token text is -', () => {
+            expect(firstText('-5')).toBe('-');
         });
 
         it('scientific notation 1e10 tokenizes as number', () => {

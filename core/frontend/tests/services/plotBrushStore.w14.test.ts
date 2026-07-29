@@ -29,7 +29,13 @@ describe('plotBrushStore W14 semantics', () => {
             expect(warnSpy).toHaveBeenCalledTimes(1);
             expect(warnSpy.mock.calls[0][0]).toMatch(/cycle detected/i);
 
-            // Cycle-broken subscriber should not get live updates.
+            // Cycle-broken subscriber receives the stored value once at subscribe time
+            // (so it can render the current brush state) but not live updates.
+            expect(sub).toHaveBeenCalledTimes(1);
+            expect(sub.mock.calls[0][0]).toMatchObject({ name: '$x', domain: [0, 10] });
+
+            // Subsequent publishes must NOT reach the cycle-broken subscriber.
+            sub.mockClear();
             plotBrushStore.publish({ name: '$x', domain: [1, 9], mode: 'x', cellName: 'cellA' });
             expect(sub).not.toHaveBeenCalled();
         });

@@ -162,6 +162,9 @@ const runWasmQuery = async (conn: AsyncDuckDBConnection, sql: string): Promise<a
                     if (ArrayBuffer.isView(v) && !(v instanceof DataView)) {
                         const arr = v as unknown as { [i: number]: number; length: number };
                         if (arr.length === 4 && arr[1] === 0 && arr[2] === 0 && arr[3] === 0) return (arr[0] >>> 0) / divisor;
+                        if (arr.length === 4 && arr[2] === 0 && arr[3] === 0) {
+                            return ((arr[1] >>> 0) * 0x100000000 + (arr[0] >>> 0)) / divisor;
+                        }
                         return Array.from(v as unknown as ArrayLike<unknown>);
                     }
                     return v;
@@ -191,6 +194,9 @@ const runWasmQuery = async (conn: AsyncDuckDBConnection, sql: string): Promise<a
                         if (ArrayBuffer.isView(v) && !(v instanceof DataView)) {
                             const arr = v as unknown as { [i: number]: number; length: number };
                             if (arr.length === 4 && arr[1] === 0 && arr[2] === 0 && arr[3] === 0) return arr[0] >>> 0;
+                            if (arr.length === 4 && arr[2] === 0 && arr[3] === 0) {
+                                return (arr[1] >>> 0) * 0x100000000 + (arr[0] >>> 0);
+                            }
                             return Array.from(v as unknown as ArrayLike<unknown>);
                         }
                         return v;
@@ -359,7 +365,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               if (!cancelled && status.currentFile) setServerCurrentFile(status.currentFile);
             }
           } catch { /* server may not have /api/status yet */ }
-          await fetchSchemaFor(executeRemoteQuery, true);
+          if (!cancelled) await fetchSchemaFor(executeRemoteQuery, true);
           if (!cancelled) setDbState(DBState.READY);
         } catch (err: any) {
           if (!cancelled) {

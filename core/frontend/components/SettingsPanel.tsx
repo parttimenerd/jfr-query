@@ -105,7 +105,7 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
     const handleAddGlobalVariable = () => {
         let name = 'newVar';
         let i = 1;
-        while (globalVars[name]) name = `newVar${i++}`;
+        while (name in globalVars) name = `newVar${i++}`;
         onMetadataChange({ ...metadata, variables: { ...globalVars, [name]: '' } });
         pendingFocusVar.current = name;
         setIsVariablesCollapsed(false);
