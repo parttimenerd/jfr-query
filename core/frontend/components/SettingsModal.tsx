@@ -55,7 +55,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             delete next[provider];
             return next;
         });
-        testedKeys.current[provider] = undefined;
+        delete testedKeys.current[provider];
     }
   }, [localSettings.aiProvider, localSettings.googleApiKey, localSettings.openaiApiKey, localSettings.anthropicApiKey, localSettings.gardenerApiKey, localSettings.localApiKey, localSettings.localBaseUrl]);
 
@@ -665,6 +665,10 @@ const BrowserModelPicker: React.FC<{ modelId: string; onChange: (id: string) => 
     const [sqlReady, setSqlReady] = useState(SqlGenerationService.isSqlModelReady());
     const [downloading, setDownloading] = useState(false);
     const [progress, setProgress] = useState(0);
+
+    useEffect(() => {
+        setGenReady(PlotGenerationService.isModelReady(modelId));
+    }, [modelId]);
 
     const handleDownload = async () => {
         setDownloading(true);

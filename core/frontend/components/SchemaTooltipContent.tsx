@@ -10,7 +10,7 @@ const SimpleSyntaxHighlighter: React.FC<{ code: string }> = ({ code }) => {
         'SELECT', 'FROM', 'WHERE', 'GROUP', 'BY', 'ORDER', 'LIMIT', 'AS', 'CASE',
         'WHEN', 'END', 'JOIN', 'ON', 'AND', 'OR', 'IN', 'NOT', 'NULL', 'TRUE', 'FALSE',
         'CREATE', 'REPLACE', 'MACRO', 'VIEW', 'DROP', 'TABLE', 'INSERT', 'INTO', 'VALUES',
-        'AS', '->'
+        'RETURNS', '->'
     ]);
     const parts = code.split(/(\s+|[(),])/g).filter(Boolean);
     return (
