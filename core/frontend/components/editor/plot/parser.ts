@@ -37,6 +37,10 @@ const UPPERCASE_TAIL_KEYWORDS = new Set([
     'TITLE', 'NAME', 'ZOOM', 'ZOOM_X',
     'WIDTH', 'HEIGHT', 'ON', 'DISABLED',
     'LINK_X', 'LINK_Y', 'LINK_XY', 'LINK_SCROLL',
+    // Regex-parsed clauses — included here so the AST parser treats them as tails
+    // and doesn't flag them as unknown shapes.
+    'LEGEND', 'PALETTE', 'BRUSH', 'DATASET',
+    'AXIS_X', 'AXIS_Y', 'TOOLTIP',
 ]);
 
 // Recognised lowercase tail keys (after `|`). Hyphenated `link-x` etc. are
@@ -44,6 +48,7 @@ const UPPERCASE_TAIL_KEYWORDS = new Set([
 const LOWERCASE_TAIL_KEYS = new Set([
     'title', 'name', 'zoom', 'zoom-x', 'width', 'height',
     'on', 'disabled', 'link-x', 'link-y', 'link-xy', 'link-scroll',
+    'legend', 'palette', 'brush', 'dataset', 'axis-x', 'axis-y', 'tooltip',
 ]);
 
 export interface ParseOptions {
@@ -914,6 +919,29 @@ class PlotParser {
         }
 
         // Other tails (TITLE, NAME, ZOOM, WIDTH, HEIGHT) — single value.
+        // For regex-parsed multi-word clauses (LEGEND, PALETTE, BRUSH, DATASET,
+        // AXIS_X, AXIS_Y, TOOLTIP), consume all remaining tokens until the next
+        // tail keyword or end-of-clause boundary. This prevents false-positive
+        // "unknown shape" errors for valid clauses parsed at runtime by plotParser.ts.
+        const MULTI_WORD_TAILS = new Set(['LEGEND', 'PALETTE', 'BRUSH', 'DATASET', 'AXIS_X', 'AXIS_Y', 'TOOLTIP']);
+        if (MULTI_WORD_TAILS.has(keyword)) {
+            let last = kwTok.to;
+            while (!this.at('eof')) {
+                const pk = this.peek();
+                // Stop at semicolons and double-newline separators (plot delimiters)
+                if (pk.kind === 'semi') break;
+                // Stop at the next uppercase tail keyword
+                if (pk.kind === 'ident' && UPPERCASE_TAIL_KEYWORDS.has(pk.text.toUpperCase())) break;
+                // Stop at a plot-shape keyword (start of next block)
+                if (pk.kind === 'ident' && KNOWN_SHAPES.has(pk.text.toUpperCase())) break;
+                this.consume();
+                last = pk.to;
+            }
+            node.to = last;
+            this.setCursor(node);
+            node.text = this.src.slice(node.from, node.to);
+            return node;
+        }
         const v = this.parseValueWithDimensionFusion();
         if (v) {
             node.children.push(v);
