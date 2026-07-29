@@ -473,16 +473,18 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
                                 )}
                                 {panel.id === 'preview' && (
                                     <>
-                                        <button 
+                                        <button
                                             onClick={(e) => { e.stopPropagation(); setIsPreviewSearchVisible(s => !s); }}
                                             title={isPreviewSearchVisible ? "Hide Search" : "Show Search"}
+                                            aria-label={isPreviewSearchVisible ? "Hide Search" : "Show Search"}
                                             className={`p-1 rounded-md ${isPreviewSearchVisible ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-400 hover:text-gray-200'}`}
                                         >
                                             <SearchIcon className="w-4 h-4" />
                                         </button>
-                                        <button 
+                                        <button
                                             onClick={(e) => { e.stopPropagation(); setIsPreviewEditorVisible(s => !s); }}
                                             title={isPreviewEditorVisible ? "Hide Query Editor" : "Show Query Editor"}
+                                            aria-label={isPreviewEditorVisible ? "Hide Query Editor" : "Show Query Editor"}
                                             className={`p-1 rounded-md ${isPreviewEditorVisible ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-400 hover:text-gray-200'}`}
                                         >
                                             <PencilIcon className="w-4 h-4" />
@@ -490,9 +492,10 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
                                     </>
                                 )}
                                 {panel.id === 'views' && (
-                                    <button 
+                                    <button
                                         onClick={(e) => { e.stopPropagation(); setShowInternalViews(s => !s); }}
                                         title={showInternalViews ? "Hide Internal Views" : "Show Internal Views"}
+                                        aria-label={showInternalViews ? "Hide Internal Views" : "Show Internal Views"}
                                         className={`p-1 rounded-md ${showInternalViews ? 'text-cyan-300 bg-cyan-600/20' : 'text-gray-400 hover:text-gray-200'}`}
                                     >
                                         <EyeIcon className="w-4 h-4" />

@@ -138,6 +138,7 @@ const SessionDateChip: React.FC<SessionDateChipProps> = ({ label, value, onChang
                     onChange={e => setDraft(e.target.value)}
                     onBlur={commit}
                     onKeyDown={handleKeyDown}
+                    aria-label={label}
                     className="bg-transparent text-xs text-gray-200 outline-none border-none w-40 font-mono cursor-pointer"
                 />
                 {draft && (
@@ -145,6 +146,7 @@ const SessionDateChip: React.FC<SessionDateChipProps> = ({ label, value, onChang
                         onMouseDown={e => { e.preventDefault(); onChange(''); setDraft(''); setExpanded(false); }}
                         className="text-gray-600 hover:text-gray-400 text-[10px] ml-0.5"
                         title="Clear"
+                        aria-label={`Clear ${label}`}
                     >×</button>
                 )}
             </div>
@@ -160,6 +162,7 @@ const SessionDateChip: React.FC<SessionDateChipProps> = ({ label, value, onChang
                     : 'border-gray-700/60 text-gray-500 bg-transparent hover:border-gray-600 hover:text-gray-400'
             }`}
             title={`${label}: ${value || 'not set'} — click to edit`}
+            aria-label={`${label}: ${value || 'not set'} — click to edit`}
         >
             <span className="text-[9px] opacity-60">{label}</span>
             <span className="text-[10px]">{displayValue}</span>

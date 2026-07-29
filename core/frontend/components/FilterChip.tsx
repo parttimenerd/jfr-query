@@ -71,6 +71,7 @@ const FilterChip: React.FC<FilterChipProps> = ({ filterFrom, brushValue, onRemov
                 onClick={onRemove}
                 className="ml-0.5 hover:text-red-400 opacity-60 hover:opacity-100 transition-opacity"
                 title="Remove filter"
+                aria-label="Remove filter"
             >
                 ×
             </button>
