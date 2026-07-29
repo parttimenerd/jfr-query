@@ -3,7 +3,7 @@ import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec, getPaletteColors } from '../../utils/plotUtils';
+import { buildParserSpec, findColumn, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 
 const DEFAULT_COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7300'];
@@ -77,6 +77,12 @@ const TreemapComponent: React.FC<{
     const showLabels = config.showLabels ?? true;
 
     const chartData = useMemo(() => {
+        if (!data || data.length === 0) return [];
+        const allColumns = Object.keys(data[0]);
+        const labelCol = findColumn(config.label, allColumns);
+        const valueCol = findColumn(config.value, allColumns);
+        const colorByCol = config.colorBy ? findColumn(config.colorBy, allColumns) : undefined;
+
         const colorMap = new Map<string, string>();
         let colorCounter = 0;
         const getColor = (key: string): string => {
@@ -89,10 +95,10 @@ const TreemapComponent: React.FC<{
 
         return data
             .map(row => {
-                const name = String(row[config.label] ?? '');
-                const size = parseFloat(row[config.value]);
+                const name = String(row[labelCol] ?? '');
+                const size = parseFloat(row[valueCol]);
                 if (isNaN(size) || size <= 0) return null;
-                const colorKey = config.colorBy ? String(row[config.colorBy] ?? '') : name;
+                const colorKey = colorByCol ? String(row[colorByCol] ?? '') : name;
                 return { name, size, fill: getColor(colorKey) };
             })
             .filter((item): item is { name: string; size: number; fill: string } => item !== null);
