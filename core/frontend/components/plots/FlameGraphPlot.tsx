@@ -597,6 +597,7 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
             <button
               onClick={handleGoUp}
               title="Go up one level (←)"
+              aria-label="Go up one level"
               className="px-1.5 py-0.5 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors flex-shrink-0"
             >
               ←
@@ -644,6 +645,7 @@ const FlameGraphComponent: React.FC<{ config: FlameGraphConfig; data: any[]; dom
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             placeholder="Search (⌘F)"
+            aria-label="Search flame graph"
             className="bg-gray-800 border border-gray-700 rounded-md px-2 py-0.5 text-xs w-36 focus:outline-none focus:ring-1 focus:ring-cyan-500"
           />
           {hasSearch && (
