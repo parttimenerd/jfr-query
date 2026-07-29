@@ -14,7 +14,7 @@ import type { ChatMessage } from '../../types';
 
 /** Should the "Add to Notebook" button be rendered for this message? */
 export function shouldShowAddButton(msg: ChatMessage): boolean {
-    return !!(msg.isActionable && msg.code && msg.plotConfig);
+    return !!(msg.isActionable && msg.code);
 }
 
 export interface AddCellArgs {
@@ -33,7 +33,7 @@ export function buildAddCellArgs(msg: ChatMessage): AddCellArgs | null {
     if (!shouldShowAddButton(msg)) return null;
     return {
         code: msg.code!,
-        plotConfig: msg.plotConfig!,
+        plotConfig: msg.plotConfig || 'TABLE()',
         title: 'AI Suggested Cell',
         markdownText: msg.text,
     };
