@@ -32,10 +32,11 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ items, x, y, onClose }) => {
                 <ul role="menu">
                     {items.map((item, index) => (
                         item.isSeparator ? (
-                           <li key={`sep-${index}`} className="h-px bg-gray-600 my-1" />
+                           <li key={`sep-${index}`} role="separator" className="h-px bg-gray-600 my-1" />
                         ) : (
-                            <li key={index} onClick={() => { if (item.disabled) onClose(); }}>
+                            <li key={index} role="none" onClick={() => { if (item.disabled) onClose(); }}>
                                 <button
+                                    role="menuitem"
                                     onClick={() => {
                                         try { item.onClick(); } finally { onClose(); }
                                     }}
