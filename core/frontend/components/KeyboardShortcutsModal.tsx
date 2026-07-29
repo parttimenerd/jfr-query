@@ -96,9 +96,10 @@ const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({ isOpen,
                                 <tbody>
                                     <SectionHeading>Global</SectionHeading>
                                     <ShortcutRow keys={[<Kbd>{shift}{shift}</Kbd>, <span className="text-gray-600 text-xs">or</span>, <Kbd>{mod}K</Kbd>]} label="Open command palette" />
+                                    <ShortcutRow keys={[<Kbd>?</Kbd>]} label="Keyboard shortcuts & tips" />
                                     <ShortcutRow keys={[<Kbd>{mod}S</Kbd>]} label="Save notebook" />
                                     <ShortcutRow keys={[<Kbd>{mod}Z</Kbd>]} label="Undo" />
-                                    <ShortcutRow keys={[<Kbd>{shift}{mod}Z</Kbd>]} label="Redo" />
+                                    <ShortcutRow keys={[<Kbd>{shift}{mod}Z</Kbd>, <span className="text-gray-600 text-xs">or</span>, <Kbd>{mod}Y</Kbd>]} label="Redo" />
 
                                     <SectionHeading>Queries</SectionHeading>
                                     <ShortcutRow keys={[<Kbd>{mod}↵</Kbd>]} label="Run query" />
@@ -111,7 +112,6 @@ const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({ isOpen,
                                     <ShortcutRow keys={[<Kbd>+</Kbd>]} label="AI: create cell from description" />
                                     <ShortcutRow keys={[<Kbd>&gt;</Kbd>]} label="Commands only" />
                                     <ShortcutRow keys={[<Kbd>:N</Kbd>]} label="Jump to cell N (e.g. :3)" />
-                                    <ShortcutRow keys={[<Kbd>?</Kbd>]} label="Show this help" />
                                 </tbody>
                             </table>
                         </div>
