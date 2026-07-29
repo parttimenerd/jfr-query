@@ -68,6 +68,17 @@ TREEMAP(label: "col", value: "col")
   Required: label (category), value (size/weight numeric).
   Use for: proportional area by aggregated count or size.
 
+AREA_CHART(x: "col", y: ["col1", "col2"], layout: "stacked"|"overlay")
+  Required: x, y (array). Use for: time-series with filled area, stacked proportions over time.
+  Prefer over LINE_CHART when showing cumulative stacked values.
+
+GANTT(start: "col", end: "col", lane: "col", color: "col", task: "col")
+  Required: start, end (time/numeric), lane (category string).
+  Use for: event timelines, phase breakdowns, concurrent activity.
+
+RANGE(x: "col", low: "col", high: "col", center: "col")
+  Required: x, low, high. Use for: confidence intervals, min/max bands, percentile ranges.
+
 Optional suffix: TITLE "..." or LINK_X($start, $end)
 
 Rules:
@@ -218,6 +229,38 @@ def make_treemap_inputs():
     sql = f'SELECT "{cat}", "{val}" FROM {view} GROUP BY "{cat}" ORDER BY "{val}" DESC LIMIT 20'
     return sql, [cat, val]
 
+def make_area_chart_inputs():
+    time = random.choice(JFR_TIME_COLS + GENERIC_TIME)
+    nums = random.sample(JFR_NUMERIC_COLS + GENERIC_NUMERIC, random.randint(2, 4))
+    view = random.choice(JFR_VIEWS)
+    sql = f'SELECT "{time}", {", ".join(chr(34)+c+chr(34) for c in nums)} FROM {view} ORDER BY "{time}"'
+    cols = [time] + nums
+    return sql, cols
+
+def make_gantt_inputs():
+    start = random.choice(["startTime", "start", "begin", "startMs", "Start"])
+    end = random.choice(["endTime", "end", "finish", "endMs", "End", "stopTime"])
+    lane = random.choice(JFR_CAT_COLS + GENERIC_CAT)
+    view = random.choice(JFR_VIEWS)
+    cols = [start, end, lane]
+    if random.random() < 0.4:
+        task = random.choice(["name", "label", "description", "vmOperation", "phase"])
+        cols.append(task)
+    sql = f'SELECT {", ".join(chr(34)+c+chr(34) for c in cols)} FROM {view} ORDER BY "{start}"'
+    return sql, cols
+
+def make_range_inputs():
+    x = random.choice(JFR_TIME_COLS + GENERIC_TIME)
+    low = random.choice(["low", "min", "p5", "p10", "lowerBound", "minPause", "minDuration"])
+    high = random.choice(["high", "max", "p95", "p99", "upperBound", "maxPause", "maxDuration"])
+    view = random.choice(JFR_VIEWS)
+    cols = [x, low, high]
+    if random.random() < 0.5:
+        center = random.choice(["avg", "median", "p50", "mean", "center"])
+        cols.append(center)
+    sql = f'SELECT {", ".join(chr(34)+c+chr(34) for c in cols)} FROM {view} ORDER BY "{x}"'
+    return sql, cols
+
 GENERATORS = [
     ("LINE_CHART",   make_line_inputs,       700),
     ("BAR_CHART",    make_bar_inputs,        700),
@@ -230,6 +273,9 @@ GENERATORS = [
     ("TABLE",        make_table_inputs,      350),
     ("WATERFALL",    make_waterfall_inputs,  200),
     ("TREEMAP",      make_treemap_inputs,    200),
+    ("AREA_CHART",   make_area_chart_inputs, 200),
+    ("GANTT",        make_gantt_inputs,      150),
+    ("RANGE",        make_range_inputs,      150),
 ]
 
 # ── Haiku calls ────────────────────────────────────────────────────────────────
@@ -285,7 +331,8 @@ def is_valid(config: str) -> bool:
     fn = extract_plot_type(config)
     known = {"LINE_CHART", "BAR_CHART", "PIE_CHART", "SCATTER_PLOT",
              "HISTOGRAM", "HEATMAP", "BOX_PLOT", "FLAMEGRAPH", "TABLE",
-             "WATERFALL", "TREEMAP", "GANTT", "RANGE", "AREA_CHART"}
+             "WATERFALL", "TREEMAP", "GANTT", "RANGE", "AREA_CHART",
+             "GANTT_CHART", "RANGE_PLOT"}  # legacy aliases
     if fn not in known:
         return False
     depth = 0
@@ -333,6 +380,9 @@ def extract_input_signals(sql: str, columns: list) -> str:
     if re.search(r'alloc|tlab|retained|live|object|class', all_names): tags.append('alloc')
     if re.search(r'cpu|thread|method|jvm|machine|load|worker', all_names): tags.append('cpu')
     if re.search(r'delta|change|diff|decrement|increment', all_names): tags.append('delta')
+    has_range_start = any(re.search(r'start|begin', n) or n in ('low', 'min') or 'lower' in n for n in names)
+    has_range_end = any(re.search(r'\bend', n) or 'finish' in n or n in ('high', 'max') or 'upper' in n for n in names)
+    if has_range_start and has_range_end: tags.append('range')
 
     NUM_TYPES = {'INTEGER', 'BIGINT', 'DOUBLE', 'FLOAT', 'DECIMAL', 'NUMERIC',
                  'SMALLINT', 'TINYINT', 'REAL', 'HUGEINT', 'INT4', 'INT8', 'FLOAT4', 'FLOAT8'}

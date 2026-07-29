@@ -124,6 +124,21 @@ describe('extractInputSignals', () => {
             const s = extractInputSignals('SELECT step, change FROM waterfall_data', ['step', 'change']);
             expect(s).toContain('delta');
         });
+
+        it('emits "range" when both start/low and end/high columns present (RANGE/GANTT hint)', () => {
+            const s = extractInputSignals('SELECT startTime, endTime, phase FROM gc_phases', ['startTime', 'endTime', 'phase']);
+            expect(s).toContain('range');
+        });
+
+        it('emits "range" for low/high column pairs', () => {
+            const s = extractInputSignals('SELECT bucket, low, high, avg FROM stats', ['bucket', 'low', 'high', 'avg']);
+            expect(s).toContain('range');
+        });
+
+        it('does NOT emit "range" when only start column present', () => {
+            const s = extractInputSignals('SELECT startTime, duration FROM gc', ['startTime', 'duration']);
+            expect(s).not.toContain('range');
+        });
     });
 
     describe('num/cat counts', () => {

@@ -124,6 +124,12 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     // Delta/change signal → WATERFALL hint
     if (/delta|change|diff|decrement|increment/.test(allNames)) tags.push('delta');
 
+    // Range/interval signal → RANGE or GANTT hint (start+end or low+high columns)
+    // Use per-name checks: startTime, endTime, low, high, min, max all qualify.
+    const hasRangeStart = names.some(n => /start|begin/.test(n) || n === 'low' || n === 'min' || /lower/.test(n));
+    const hasRangeEnd = names.some(n => /\bend/.test(n) || /finish/.test(n) || n === 'high' || n === 'max' || /upper/.test(n));
+    if (hasRangeStart && hasRangeEnd) tags.push('range');
+
     // Count numeric vs categorical columns using type info when available.
     let numCount = 0;
     let catCount = 0;

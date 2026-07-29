@@ -297,7 +297,7 @@ export function _clearRankCacheForTests(): void {
 
 /**
  * Apply AutocompleteRanker scores as a small boost nudge on top of existing
- * boosts. The ranker is a trained linear model (MRR 0.95) that uses prefix
+ * boosts. The ranker is a trained linear model (MRR 0.9137) that uses prefix
  * match, scenario, column/keyword/function type signals. Scores are normalized
  * to a [-2, +2] delta so they don't override the structural/embedding signal
  * but still break ties correctly.
