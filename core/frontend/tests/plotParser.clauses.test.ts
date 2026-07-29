@@ -88,6 +88,12 @@ describe('parsePlotCall — new showcase clauses', () => {
         expect(p.let).toEqual({ sloMs: '500', host: '"edge-1"' });
     });
 
+    it('parses ZOOM_X 1.5 as a horizontal-only scale', () => {
+        const p = parsePlotCall('LINE_CHART(x:"ts",y:["cpu"]) ZOOM_X 1.5');
+        expect(p.zoomX).toBe(1.5);
+        expect(p.zoom).toBeUndefined();
+    });
+
     it('combines new clauses with legacy ones in any order', () => {
         const p = parsePlotCall(
             'LINE_CHART(x: "ts", y: ["cpu"]) TITLE "CPU" PALETTE "viridis" LEGEND AT BOTTOM HEIGHT 400px',

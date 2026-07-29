@@ -118,6 +118,7 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
                                 placeholder="Search templates…"
+                                aria-label="Search templates"
                                 className="w-full bg-gray-900 border border-gray-700 text-gray-200 px-3 py-1.5 rounded text-sm"
                             />
                             {allTags.length > 0 && (

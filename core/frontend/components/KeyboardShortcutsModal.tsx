@@ -55,7 +55,7 @@ const TIPS = [
     { icon: '$', text: 'Add a variables block to parameterise queries with $name.' },
     { icon: '✦', text: 'The sparkle button on a plot block generates a plot config with AI.' },
     { icon: '👁', text: 'The SEE dropdown in the AI chat controls which query data the AI can see.' },
-    { icon: '🔗', text: 'Use LET @x = $start in a plot config to bind a local variable; LINK_X($min, $max) links chart zoom across plots.' },
+    { icon: '🔗', text: 'Use LET @col = "cpu" at the top of a plot block to define a reusable constant; LINK_X($min, $max) links chart zoom across plots.' },
 ];
 
 const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({ isOpen, onClose, onStartTour }) => {

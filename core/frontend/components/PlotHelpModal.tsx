@@ -302,12 +302,12 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose }) => {
                                 <p className="text-gray-400 mt-1">Define a variable in the cell's <code className="bg-gray-600 px-1 rounded">variables</code> block. Use it in SQL as <code className="bg-gray-600 px-1 rounded">WHERE duration &gt; $threshold</code>.</p>
                             </div>
                             <div>
-                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LET $name = expr</code>
-                                <p className="text-gray-400 mt-1">Compute a variable from a SQL expression at plot-render time. The result is stored in <code className="bg-gray-600 px-1 rounded">$name</code> and can drive other plots or queries in the same cell.</p>
+                                <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LET @alias = "cpu_usage"</code>
+                                <p className="text-gray-400 mt-1">Define a reusable constant in the plot config block. Reference it as <code className="bg-gray-600 px-1 rounded">@alias</code> inside the same block — e.g. <code className="bg-gray-600 px-1 rounded">LET @col = "cpu"\nLINE_CHART(x: "ts", y: [@col])</code>.</p>
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">LINE_CHART(...) LINK_X($s, $e)</code>
-                                <p className="text-gray-400 mt-1">Variables written by <code className="bg-gray-600 px-1 rounded">LINK_X</code>, <code className="bg-gray-600 px-1 rounded">BRUSH</code>, or <code className="bg-gray-600 px-1 rounded">LET</code> are automatically passed to the SQL re-run on the next render cycle.</p>
+                                <p className="text-gray-400 mt-1">Variables written by <code className="bg-gray-600 px-1 rounded">LINK_X</code> or <code className="bg-gray-600 px-1 rounded">BRUSH</code> are automatically passed to the SQL re-run on the next render cycle.</p>
                             </div>
                             <div>
                                 <code className="bg-gray-700 text-yellow-300 p-1 rounded-md font-mono">WHERE ts BETWEEN $start AND $end</code>
