@@ -97,6 +97,9 @@ export function aiCompletionSource(deps: AiCompletionDeps) {
 
     const cached = aiCache.get(key);
     if (!cached) return null;
+    // Refresh position in the Map so eviction is LRU, not FIFO.
+    aiCache.delete(key);
+    aiCache.set(key, cached);
 
     // The cached suggestion is a continuation from the cursor.
     // Trim leading whitespace / quotes that match the current token.

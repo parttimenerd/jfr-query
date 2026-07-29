@@ -364,7 +364,7 @@ export function extractPlotMetadata(plotSrc: string): PlotMetadata {
     // (uppercase hyphenated bare form without parens). Use the regex-based
     // parseComposite to fill in what the walk missed. B-160: use parseComposite
     // so composite plots (`A + B + C`) have their inner linkY/brush refs collected.
-    if (!meta.linkedYVars || !meta.brushVarName) {
+    if (!meta.linkedYVars || meta.linkedYVars.length === 0 || !meta.brushVarName) {
         try {
             const composite = parseComposite(plotSrc);
             // Collect all leaf parsed calls from the composite tree.

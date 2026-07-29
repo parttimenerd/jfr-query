@@ -17,9 +17,13 @@ function detectStringValueColumn(stmt: string): { column: string; table: string 
     const lastQuote = stmt.lastIndexOf("'");
     if (lastQuote < 0) return null;
     // Total quote count: even ⇒ outside, odd ⇒ inside.
+    // DuckDB uses '' (doubled single quote) to escape; skip pairs so they don't flip parity.
     let count = 0;
     for (let i = 0; i < stmt.length; i++) {
-        if (stmt[i] === "'" && stmt[i - 1] !== '\\') count++;
+        if (stmt[i] === "'") {
+            if (stmt[i + 1] === "'") { i++; continue; }
+            count++;
+        }
     }
     if (count % 2 === 0) return null;
     const head = stmt.slice(0, lastQuote).replace(/\s+$/, '');

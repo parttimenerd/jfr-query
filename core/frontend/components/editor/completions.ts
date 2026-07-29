@@ -137,6 +137,9 @@ function collectColumnsForQualifier(
   if (tbl) tbl.columns.forEach(c => push({ name: c.name, type: c.type, sourceName: tbl.name }));
   const vw = schema.viewMap.get(targetName);
   if (vw) vw.columns.forEach(c => push({ name: c.name, type: c.type, sourceName: vw.name }));
+  // CTE with explicit column list: `WITH foo(a, b) AS (...)` — expose declared columns.
+  const cte = ctx.ctes.get(targetName);
+  if (cte?.columns) cte.columns.forEach(col => push({ name: col, type: 'column', sourceName: cte.name }));
   return out;
 }
 

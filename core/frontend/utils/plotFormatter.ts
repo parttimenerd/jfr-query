@@ -59,7 +59,8 @@ interface EState {
     inlineThreshold: number;
     atLineStart: boolean;
     // Stack of paren contexts: 'call' for plotCall args, 'group' for arithmetic.
-    parenStack: Array<'call' | 'group'>;
+    // 'call-broke' marks a 'call' entry where at least one line break was emitted.
+    parenStack: Array<'call' | 'call-broke' | 'group'>;
     // Depth of `{ … }` composite bodies — controls between-plot newlines.
     braceDepth: number;
 }
@@ -126,6 +127,10 @@ function emitToken(s: EState, tokens: PlotToken[], i: number): void {
             // Break onto a new line when comma is inside a plot-call paren and
             // the clause list is long enough; else single space.
             if (shouldBreakCallArgs(s, tokens, i)) {
+                // Mark the innermost call paren as having emitted a line break,
+                // so emitRParen can close on its own line without scanning s.buf globally.
+                const top = s.parenStack.length - 1;
+                if (top >= 0 && s.parenStack[top] === 'call') s.parenStack[top] = 'call-broke';
                 newline(s);
                 s.buf += s.indent.repeat(s.level + 1);
                 s.atLineStart = false;
@@ -253,8 +258,8 @@ function emitLParen(s: EState, t: PlotToken, prev: PlotToken | undefined, tokens
 
 function emitRParen(s: EState, t: PlotToken): void {
     const ctx = s.parenStack.pop();
-    if (ctx === 'call' && s.buf.includes('\n')) {
-        // Multi-line call — close on its own line at outer indent.
+    if (ctx === 'call-broke') {
+        // This specific call emitted line breaks — close on its own line at outer indent.
         newline(s);
         indentHere(s);
     }

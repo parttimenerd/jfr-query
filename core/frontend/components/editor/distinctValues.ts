@@ -30,8 +30,12 @@ type CacheEntry =
 const cache = new Map<string, CacheEntry>();
 const inflight = new Set<string>();
 
+function unquoteIdent(s: string): string {
+  return s.startsWith('"') && s.endsWith('"') ? s.slice(1, -1) : s;
+}
+
 function cacheKey(table: string, column: string): string {
-  return `${table.toLowerCase()}::${column.toLowerCase()}`;
+  return `${unquoteIdent(table).toLowerCase()}::${unquoteIdent(column).toLowerCase()}`;
 }
 
 function evict() {
@@ -47,8 +51,8 @@ function findColumn(
   table: string,
   column: string,
 ): { type: string; tableName: string; columnName: string } | null {
-  const tlc = table.toLowerCase();
-  const clc = column.toLowerCase();
+  const tlc = unquoteIdent(table).toLowerCase();
+  const clc = unquoteIdent(column).toLowerCase();
   const tbl = schema.tableMap.get(tlc);
   if (tbl) {
     const col = tbl.columns.find(c => c.name.toLowerCase() === clc);
@@ -71,7 +75,7 @@ function resolveColumn(
   column: string,
   candidates: Set<string>,
 ): { type: string; tableName: string; columnName: string } | null {
-  const clc = column.toLowerCase();
+  const clc = unquoteIdent(column).toLowerCase();
   for (const t of candidates) {
     const tbl = schema.tableMap.get(t);
     if (tbl) {

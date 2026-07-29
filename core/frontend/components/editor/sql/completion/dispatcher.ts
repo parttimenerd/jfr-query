@@ -289,9 +289,15 @@ export function _clearRankCacheForTests(): void {
 }
 
 function countUnescapedQuotes(s: string): number {
+    // DuckDB uses '' (doubled single quote) to escape a literal quote inside a string.
+    // Backslash is NOT a quote escape in DuckDB SQL — treat every ' as significant,
+    // but skip '' pairs so they don't flip the odd/even parity.
     let n = 0;
     for (let i = 0; i < s.length; i++) {
-        if (s[i] === "'" && s[i - 1] !== '\\') n++;
+        if (s[i] === "'") {
+            if (s[i + 1] === "'") { i++; continue; }
+            n++;
+        }
     }
     return n;
 }
