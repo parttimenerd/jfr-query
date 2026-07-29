@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-Migrate plot_pairs_v15.jsonl → plot_pairs_v16.jsonl by re-extracting signals
-with the v5 signal logic:
-  - New: `sorted` tag for ORDER BY without LIMIT (disambiguates BAR from HEATMAP)
-    - Before: ORDER BY without LIMIT got no signal, now gets `sorted`
-    - Before: ORDER BY + LIMIT got `ordered`, unchanged
-  - Impact: ~1770 BAR_CHART examples gain `sorted` tag, 0% HEATMAP gain it
+Migrate plot_pairs_v16.jsonl → plot_pairs_v17.jsonl by re-extracting signals
+with the v6 signal logic:
+  - New: `cross` tag for GROUP BY with 2+ columns and no ORDER BY
+    (→ HEATMAP: fires in 100% of HEATMAP examples, 0% of BAR_CHART)
+  - Impact: ~850 HEATMAP examples gain `cross` tag; BAR/LINE/SCATTER unaffected
 
 Run:
-    python3 scripts/train/migrate_v15_to_v16.py
+    python3 scripts/train/migrate_v16_to_v17.py
 """
 
 import json
@@ -19,7 +18,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def extract_input_signals_v5(sql: str, columns: list) -> str:
+def extract_input_signals_v6(sql: str, columns: list) -> str:
     sql_up = sql.upper()
     names = [c.lower() for c in columns]
     all_names = ' '.join(names)
@@ -75,7 +74,7 @@ def extract_input_signals_v5(sql: str, columns: list) -> str:
 
 
 def remigrate_input(old_input: str) -> str:
-    """Re-extract signals using v5 logic, replacing existing hints: line."""
+    """Re-extract signals using v6 logic, replacing existing hints: line."""
     lines = old_input.split('\n')
     sql = ''
     cols_raw = ''
@@ -86,7 +85,7 @@ def remigrate_input(old_input: str) -> str:
             cols_raw = line[9:]
 
     columns = [c.strip() for c in cols_raw.split(',') if c.strip()]
-    signals = extract_input_signals_v5(sql, columns)
+    signals = extract_input_signals_v6(sql, columns)
     new_hints = f"hints: {signals}"
 
     if lines[0].startswith('hints: '):
@@ -116,16 +115,16 @@ def migrate_file(src: Path, dst: Path) -> None:
 def main():
     data_dir = REPO_ROOT / 'data'
     pairs = [
-        (data_dir / 'plot_pairs_v15.jsonl', data_dir / 'plot_pairs_v16.jsonl'),
-        (data_dir / 'plot_eval_v15.jsonl',  data_dir / 'plot_eval_v16.jsonl'),
+        (data_dir / 'plot_pairs_v16.jsonl', data_dir / 'plot_pairs_v17.jsonl'),
+        (data_dir / 'plot_eval_v16.jsonl',  data_dir / 'plot_eval_v17.jsonl'),
     ]
-    print("Migrating v15→v16 (adding `sorted` signal for ORDER BY without LIMIT)...")
+    print("Migrating v16→v17 (adding `cross` signal for GROUP BY 2+ cols without ORDER BY)...")
     for src, dst in pairs:
         migrate_file(src, dst)
-    print("\nDone. Expected impact: ~1770 BAR_CHART examples gain `sorted` tag.")
-    print("This disambiguates BAR_CHART (sorted) from HEATMAP (neither ordered nor sorted).")
-    print("\nTo retrain on v16 data:")
-    print("  Update run_training.sh DATA/EVAL to v16, then:")
+    print("\nDone. Expected impact: ~850 HEATMAP examples gain `cross` tag.")
+    print("This is the definitive HEATMAP discriminator: fires 100% HEATMAP, 0% BAR_CHART.")
+    print("\nTo retrain on v17 data:")
+    print("  Update run_training.sh DATA/EVAL to v17, then:")
     print("  ./scripts/train/run_training.sh --skip-data")
 
 

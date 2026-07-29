@@ -35,9 +35,59 @@ describe('extractInputSignals', () => {
             expect(s).not.toContain('sorted');
         });
 
+        it('emits "cross" for GROUP BY 2+ cols without ORDER BY (HEATMAP discriminator)', () => {
+            const s = extractInputSignals('SELECT thread, lockClass, duration FROM t GROUP BY thread, lockClass', ['thread', 'lockClass', 'duration']);
+            expect(s).toContain('cross');
+        });
+
+        it('does NOT emit "cross" when ORDER BY is present (that is BAR_CHART territory)', () => {
+            const s = extractInputSignals('SELECT name, phase, max FROM t GROUP BY name, phase ORDER BY max DESC', ['name', 'phase', 'max']);
+            expect(s).not.toContain('cross');
+        });
+
+        it('does NOT emit "cross" for single-column GROUP BY', () => {
+            const s = extractInputSignals('SELECT cause, COUNT(*) FROM t GROUP BY cause', ['cause', 'count']);
+            expect(s).not.toContain('cross');
+        });
+
         it('emits "having" for HAVING queries', () => {
             const s = extractInputSignals('SELECT x, COUNT(*) FROM t GROUP BY x HAVING COUNT(*) > 5', ['x', 'count']);
             expect(s).toContain('having');
+        });
+
+        it('emits "raw" for SELECT with LIMIT and no GROUP/AGG/ORDER (TABLE discriminator)', () => {
+            const s = extractInputSignals('SELECT className, allocSize FROM ObjectAllocations LIMIT 100', ['className', 'allocSize']);
+            expect(s).toContain('raw');
+        });
+
+        it('does NOT emit "raw" when ORDER BY is present', () => {
+            const s = extractInputSignals('SELECT name, cnt FROM t ORDER BY cnt LIMIT 10', ['name', 'cnt']);
+            expect(s).not.toContain('raw');
+        });
+
+        it('does NOT emit "raw" when GROUP BY is present', () => {
+            const s = extractInputSignals('SELECT cause, COUNT(*) FROM t GROUP BY cause LIMIT 10', ['cause', 'count']);
+            expect(s).not.toContain('raw');
+        });
+
+        it('does NOT emit "raw" when no LIMIT is present', () => {
+            const s = extractInputSignals('SELECT name, value FROM t', ['name', 'value']);
+            expect(s).not.toContain('raw');
+        });
+
+        it('emits "scalar" for aggregate fn without GROUP BY (TABLE discriminator)', () => {
+            const s = extractInputSignals('SELECT COUNT(*) as total FROM GarbageCollections', ['total']);
+            expect(s).toContain('scalar');
+        });
+
+        it('emits "scalar" for SUM/AVG/MIN/MAX without GROUP BY', () => {
+            const s = extractInputSignals('SELECT AVG(pauseMs) as avgPause, MAX(pauseMs) as maxPause FROM GarbageCollections', ['avgPause', 'maxPause']);
+            expect(s).toContain('scalar');
+        });
+
+        it('does NOT emit "scalar" when GROUP BY is present', () => {
+            const s = extractInputSignals('SELECT cause, COUNT(*) FROM t GROUP BY cause', ['cause', 'count']);
+            expect(s).not.toContain('scalar');
         });
     });
 

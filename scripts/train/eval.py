@@ -4,10 +4,10 @@ Evaluate a fine-tuned checkpoint or ONNX model against the held-out eval set.
 
 Usage:
     # Checkpoint (LoRA or merged):
-    python scripts/train/eval.py --checkpoint checkpoints/t5-small-v4 --eval data/plot_eval_v16.jsonl
+    python scripts/train/eval.py --checkpoint checkpoints/t5-small-v4 --eval data/plot_eval_v17.jsonl
 
     # ONNX model:
-    python scripts/train/eval.py --onnx onnx/t5-small-v4-q8-arm --eval data/plot_eval_v16.jsonl
+    python scripts/train/eval.py --onnx onnx/t5-small-v4-q8-arm --eval data/plot_eval_v17.jsonl
 
     # Causal-LM ONNX:
     python scripts/train/eval.py --onnx onnx/qwen-coder-q8 --eval data/plot_eval.jsonl --kind causal-lm
@@ -28,7 +28,7 @@ KNOWN_PLOT_TYPES = {
     "GANTT", "RANGE", "AREA_CHART",
 }
 
-SIGNAL_TAGS = ["agg", "ordered", "sorted", "having", "wide", "time", "stack", "gc", "alloc", "cpu", "delta", "range"]
+SIGNAL_TAGS = ["agg", "cross", "ordered", "sorted", "raw", "scalar", "having", "wide", "time", "stack", "gc", "alloc", "cpu", "delta", "range"]
 
 
 def load_eval(path: str) -> list[dict]:

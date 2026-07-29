@@ -32,6 +32,15 @@ def extract_input_signals_v4(sql: str, columns: list) -> str:
     has_limit = bool(re.search(r'\bLIMIT\b', sql_up))
     if has_order_by and has_limit: tags.append('ordered')
     elif has_order_by: tags.append('sorted')
+
+    gb_match = re.search(r'\bGROUP\s+BY\b(.+?)(?:\bHAVING\b|\bORDER\b|\bLIMIT\b|$)', sql, re.I | re.S)
+    if gb_match and not has_order_by and ',' in gb_match.group(1): tags.append('cross')
+
+    has_group_by = bool(re.search(r'\bGROUP\s+BY\b', sql_up))
+    has_aggr_fn = bool(re.search(r'\b(?:COUNT|SUM|AVG|MIN|MAX)\s*\(', sql_up))
+    if not has_group_by and not has_aggr_fn and not has_order_by and has_limit: tags.append('raw')
+    if has_aggr_fn and not has_group_by: tags.append('scalar')
+
     if re.search(r'\bHAVING\b', sql_up): tags.append('having')
 
     if len(columns) >= 3: tags.append('wide')

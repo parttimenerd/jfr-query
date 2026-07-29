@@ -68,8 +68,11 @@ const SEQ2SEQ_INPUT_V2 = (sql: string, columns: string[] | TypedColumn[], schema
  * (where attention is strongest). Tags:
  *
  *   agg      — has GROUP BY (→ BAR/PIE/HEATMAP/TREEMAP likely)
+ *   cross    — GROUP BY 2+ cols, no ORDER BY (→ HEATMAP; 100% coverage, 0% BAR)
  *   ordered  — has ORDER BY + LIMIT (ranked list → BAR_CHART likely)
  *   sorted   — has ORDER BY without LIMIT (BAR_CHART with explicit sort)
+ *   raw      — no GROUP/AGG/ORDER, has LIMIT (raw tabular → TABLE; 75% TABLE, ~0% BAR)
+ *   scalar   — aggregate fn (COUNT/SUM/etc.) without GROUP BY (single-row → TABLE)
  *   having   — has HAVING clause
  *   time     — timestamp/time-named column (→ LINE_CHART/AREA_CHART likely)
  *   wide     — 3+ result columns
@@ -99,8 +102,24 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     if (/\bGROUP\s+BY\b/.test(sqlUp)) tags.push('agg');
     const hasOrderBy = /\bORDER\s+BY\b/.test(sqlUp);
     const hasLimit = /\bLIMIT\b/.test(sqlUp);
+    const hasGroupBy = /\bGROUP\s+BY\b/.test(sqlUp);
+    const hasAggrFn = /\b(?:COUNT|SUM|AVG|MIN|MAX)\s*\(/.test(sqlUp);
     if (hasOrderBy && hasLimit) tags.push('ordered');
     else if (hasOrderBy) tags.push('sorted');
+
+    // Cross-dimensional aggregation (GROUP BY 2+ cols, no ORDER BY) → HEATMAP.
+    // Fires in 100% of HEATMAP training examples and 0% of BAR_CHART.
+    const gbMatch = /\bGROUP\s+BY\b([\s\S]+?)(?:\bHAVING\b|\bORDER\b|\bLIMIT\b|$)/i.exec(sql);
+    if (gbMatch && !hasOrderBy && gbMatch[1].includes(',')) tags.push('cross');
+
+    // Raw select: no GROUP BY, no aggregate fn, no ORDER BY, LIMIT present → TABLE.
+    // Fires in 75% of TABLE training examples and ~0% of BAR/HISTOGRAM.
+    if (!hasGroupBy && !hasAggrFn && !hasOrderBy && hasLimit) tags.push('raw');
+
+    // Scalar aggregate: aggregate fn, no GROUP BY → single-row result → TABLE.
+    // Fires in 9% of TABLE, 0% of other plot types.
+    if (hasAggrFn && !hasGroupBy) tags.push('scalar');
+
     if (/\bHAVING\b/.test(sqlUp)) tags.push('having');
 
     // Column count

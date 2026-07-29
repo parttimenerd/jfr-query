@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Migrate plot_pairs_v15.jsonl → plot_pairs_v16.jsonl by re-extracting signals
-with the v5 signal logic:
-  - New: `sorted` tag for ORDER BY without LIMIT (disambiguates BAR from HEATMAP)
-    - Before: ORDER BY without LIMIT got no signal, now gets `sorted`
-    - Before: ORDER BY + LIMIT got `ordered`, unchanged
-  - Impact: ~1770 BAR_CHART examples gain `sorted` tag, 0% HEATMAP gain it
+Migrate plot_pairs_v17.jsonl → plot_pairs_v18.jsonl by re-extracting signals
+with the v7 signal logic:
+  - New: `raw` tag for SELECT without GROUP BY / aggregate fn / ORDER BY but with LIMIT
+    (→ TABLE: fires in ~75% of TABLE examples, ~0% of BAR/HISTOGRAM)
+  - New: `scalar` tag for aggregate fn (COUNT/SUM/AVG/MIN/MAX) without GROUP BY
+    (→ TABLE: fires in ~9% of TABLE examples, 0% of other plot types)
+  - Impact: TABLE examples gain clearer discriminators vs BAR/HISTOGRAM
 
 Run:
-    python3 scripts/train/migrate_v15_to_v16.py
+    python3 scripts/train/migrate_v17_to_v18.py
 """
 
 import json
@@ -19,7 +20,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def extract_input_signals_v5(sql: str, columns: list) -> str:
+def extract_input_signals_v7(sql: str, columns: list) -> str:
     sql_up = sql.upper()
     names = [c.lower() for c in columns]
     all_names = ' '.join(names)
@@ -75,7 +76,7 @@ def extract_input_signals_v5(sql: str, columns: list) -> str:
 
 
 def remigrate_input(old_input: str) -> str:
-    """Re-extract signals using v5 logic, replacing existing hints: line."""
+    """Re-extract signals using v7 logic, replacing existing hints: line."""
     lines = old_input.split('\n')
     sql = ''
     cols_raw = ''
@@ -86,7 +87,7 @@ def remigrate_input(old_input: str) -> str:
             cols_raw = line[9:]
 
     columns = [c.strip() for c in cols_raw.split(',') if c.strip()]
-    signals = extract_input_signals_v5(sql, columns)
+    signals = extract_input_signals_v7(sql, columns)
     new_hints = f"hints: {signals}"
 
     if lines[0].startswith('hints: '):
@@ -116,16 +117,18 @@ def migrate_file(src: Path, dst: Path) -> None:
 def main():
     data_dir = REPO_ROOT / 'data'
     pairs = [
-        (data_dir / 'plot_pairs_v15.jsonl', data_dir / 'plot_pairs_v16.jsonl'),
-        (data_dir / 'plot_eval_v15.jsonl',  data_dir / 'plot_eval_v16.jsonl'),
+        (data_dir / 'plot_pairs_v17.jsonl', data_dir / 'plot_pairs_v18.jsonl'),
+        (data_dir / 'plot_eval_v17.jsonl',  data_dir / 'plot_eval_v18.jsonl'),
     ]
-    print("Migrating v15→v16 (adding `sorted` signal for ORDER BY without LIMIT)...")
+    print("Migrating v17→v18 (adding `raw` and `scalar` signals for TABLE disambiguation)...")
     for src, dst in pairs:
         migrate_file(src, dst)
-    print("\nDone. Expected impact: ~1770 BAR_CHART examples gain `sorted` tag.")
-    print("This disambiguates BAR_CHART (sorted) from HEATMAP (neither ordered nor sorted).")
-    print("\nTo retrain on v16 data:")
-    print("  Update run_training.sh DATA/EVAL to v16, then:")
+    print("\nDone. Expected impact:")
+    print("  TABLE examples with raw SELECT + LIMIT gain `raw` tag (~75% of TABLE)")
+    print("  TABLE examples with scalar aggregates gain `scalar` tag (~9% of TABLE)")
+    print("  Both signals fire 0% for BAR_CHART/HISTOGRAM/LINE_CHART")
+    print("\nTo retrain on v18 data:")
+    print("  Update run_training.sh DATA/EVAL to v18, then:")
     print("  ./scripts/train/run_training.sh --skip-data")
 
 
