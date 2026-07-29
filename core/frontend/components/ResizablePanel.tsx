@@ -101,7 +101,7 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
                 onMouseDown={handleMouseDown}
             >
                 <div className="absolute w-6 h-8 bg-gray-700 hover:bg-cyan-600 rounded-full flex items-center justify-center transition-colors -translate-x-1/2 -translate-y-1/2 top-1/2" style={{left: '50%'}}>
-                    <button onClick={handleToggleCollapse} className="text-gray-300" title={side === 'left' ? 'Collapse sidebar' : 'Collapse assistant'}>
+                    <button onClick={handleToggleCollapse} className="text-gray-300" title={side === 'left' ? 'Collapse sidebar' : 'Collapse assistant'} aria-label={side === 'left' ? 'Collapse sidebar' : 'Collapse assistant'}>
                     {side === 'left' ? <ChevronDoubleLeftIcon className="w-4 h-4" /> : <ChevronDoubleRightIcon className="w-4 h-4" />}
                     </button>
                 </div>

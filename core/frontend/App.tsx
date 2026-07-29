@@ -1354,6 +1354,7 @@ const App: React.FC = () => {
                         onClick={() => setIsSidebarCollapsed(false)}
                         className="absolute top-1/2 left-2 -translate-y-1/2 z-20 p-1.5 bg-gray-700/50 hover:bg-cyan-600/50 rounded-full"
                         title="Expand Sidebar"
+                        aria-label="Expand Sidebar"
                     >
                         <ChevronDoubleRightIcon className="w-5 h-5" />
                     </button>
@@ -1433,6 +1434,7 @@ const App: React.FC = () => {
                         onClick={() => setIsChatPanelCollapsed(false)}
                         className="absolute top-1/2 right-2 -translate-y-1/2 z-20 p-1.5 bg-gray-700/50 hover:bg-cyan-600/50 rounded-full"
                         title="Expand Assistant"
+                        aria-label="Expand Assistant"
                     >
                         <ChevronDoubleLeftIcon className="w-4 h-4" />
                     </button>

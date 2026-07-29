@@ -99,7 +99,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ code, isActionable, targetType, d
     return (
         <div className="my-2">
             {targetType === 'plot' && data && (<div className="my-2 p-2 bg-gray-900/50 rounded-lg border border-gray-700 h-[250px] overflow-hidden"><h6 className="text-xs font-semibold text-gray-400 text-center mb-1">Preview</h6><PlotRenderer config={code} data={data.slice(0, 50)} sql={sql || ''} cellContext={cellContext} onApplyFix={onApplyCode} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange || (async () => {})} onCellVariableChange={() => {}} allVariables={{}} /></div>)}
-            <div className="relative bg-gray-900 rounded-md"><pre className="p-3 text-sm text-cyan-300 overflow-x-auto font-mono">{code}</pre><button onClick={handleCopy} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded-md"><ClipboardIcon className={`w-4 h-4 ${copied ? 'text-green-400' : 'text-gray-300'}`}/></button></div>
+            <div className="relative bg-gray-900 rounded-md"><pre className="p-3 text-sm text-cyan-300 overflow-x-auto font-mono">{code}</pre><button onClick={handleCopy} aria-label="Copy code" className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded-md"><ClipboardIcon className={`w-4 h-4 ${copied ? 'text-green-400' : 'text-gray-300'}`}/></button></div>
             {isActionable && (<button onClick={() => onApplyCode(code)} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-green-600/30 hover:bg-green-600/50 text-green-300 rounded-md font-semibold"><CheckCircleIcon className="w-4 h-4"/>Apply Code</button>)}
         </div>
     );
