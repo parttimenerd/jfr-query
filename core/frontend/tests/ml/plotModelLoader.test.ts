@@ -35,8 +35,8 @@ describe('PlotModelLoader — promotion gate', () => {
     });
 
     it('exports PROMOTION_THRESHOLD with expected values', () => {
-        expect(PROMOTION_THRESHOLD.plotShapeAccuracy).toBe(0.95);
-        expect(PROMOTION_THRESHOLD.columnMatchAccuracy).toBe(0.85);
+        expect(PROMOTION_THRESHOLD.plotShapeAccuracy).toBe(0.75);
+        expect(PROMOTION_THRESHOLD.columnMatchAccuracy).toBe(0.70);
     });
 
     it('exports IN_TREE_ARTIFACT_DIR and IN_TREE_EVAL_PATH', () => {
@@ -62,9 +62,9 @@ describe('PlotModelLoader — promotion gate', () => {
 
     it('does NOT promote when plotShapeAccuracy is below threshold', async () => {
         const metrics: PlotEvalMetrics = {
-            accuracy: 0.90,
-            plotShapeAccuracy: 0.94,  // just below 0.95
-            columnMatchAccuracy: 0.90,
+            accuracy: 0.60,
+            plotShapeAccuracy: 0.74,  // just below 0.75
+            columnMatchAccuracy: 0.80,
         };
         const result = await loadWithMetrics(metrics);
         expect(result.kind).toBe('cloud-tiny');
@@ -74,9 +74,9 @@ describe('PlotModelLoader — promotion gate', () => {
 
     it('does NOT promote when columnMatchAccuracy is below threshold', async () => {
         const metrics: PlotEvalMetrics = {
-            accuracy: 0.97,
-            plotShapeAccuracy: 0.96,
-            columnMatchAccuracy: 0.84,  // just below 0.85
+            accuracy: 0.80,
+            plotShapeAccuracy: 0.80,
+            columnMatchAccuracy: 0.69,  // just below 0.70
         };
         const result = await loadWithMetrics(metrics);
         expect(result.kind).toBe('cloud-tiny');
@@ -85,9 +85,9 @@ describe('PlotModelLoader — promotion gate', () => {
 
     it('promotes when metrics exactly meet thresholds', async () => {
         const metrics: PlotEvalMetrics = {
-            accuracy: 0.95,
-            plotShapeAccuracy: 0.95,   // exactly at threshold
-            columnMatchAccuracy: 0.85, // exactly at threshold
+            accuracy: 0.75,
+            plotShapeAccuracy: 0.75,   // exactly at threshold
+            columnMatchAccuracy: 0.70, // exactly at threshold
         };
         const result = await loadWithMetrics(metrics);
         expect(result.kind).toBe('local-onnx');

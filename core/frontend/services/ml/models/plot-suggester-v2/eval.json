@@ -1,0 +1,9 @@
+{
+  "accuracy": 0.3775,
+  "plotShapeAccuracy": 0.7826,
+  "columnMatchAccuracy": 0.8656,
+  "sampledAt": "2026-07-29T00:00:00.000Z",
+  "sampleSize": 506,
+  "modelVersion": "t5-small-jfr-v3",
+  "trainingData": "plot_pairs_v13.jsonl"
+}

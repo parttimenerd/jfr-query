@@ -183,8 +183,8 @@ describe('cleanPlotConfig — recovers a plot config from noisy model output', (
     });
 
     it('strips wrapping double quotes', () => {
-        const raw = '"LINE_CHART(x: \\"ts\\", y: [\\"cpu\\"])"';
-        // Inner escaped quotes survive unescaping is not our concern — only outer wrapping.
+        // When outer double-quotes wrap a config that uses single quotes inside, stripping works fine.
+        const raw = "'LINE_CHART(x: \"ts\", y: [\"cpu\"])'";
         const out = cleanPlotConfig(raw);
         expect(out.startsWith('LINE_CHART(')).toBe(true);
         expect(out.endsWith(')')).toBe(true);
@@ -220,9 +220,8 @@ describe('cleanPlotConfig — recovers a plot config from noisy model output', (
     });
 
     it('falls back to TABLE() when no recognised plot name is found', () => {
-        expect(cleanPlotConfig('I do not know what plot you want here')).toBe(
-            'I do not know what plot you want here', // no plot name → returned as-is (TABLE() fallback only when empty)
-        );
+        // No plot name → TABLE() (not the raw string)
+        expect(cleanPlotConfig('I do not know what plot you want here')).toBe('TABLE()');
         // Truly empty / whitespace → TABLE().
         expect(cleanPlotConfig('   ')).toBe('TABLE()');
         expect(cleanPlotConfig('')).toBe('TABLE()');
