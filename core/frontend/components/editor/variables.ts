@@ -38,14 +38,18 @@ export const setVariableSpec = StateEffect.define<VariableSpec | null>();
 
 const variableRegex = /\$\$?\w+/g;
 
-// Matches LINK_X/LINK_Y/LINK_XY/LINK_SCROLL(...) — uppercase paren form.
-const LINK_ARGS_PAREN_RE = /\bLINK_(?:X|Y|XY|SCROLL)\s*\(([^)]*)\)/gi;
+// LINK_X uses paren form: LINK_X($s, $e) — variables are binding targets (output).
+const LINK_ARGS_PAREN_RE = /\bLINK_X\s*\(([^)]*)\)/gi;
+// LINK_Y/LINK_XY/LINK_SCROLL use space form: LINK_Y $var — capture the $var.
+const LINK_Y_SPACE_RE = /\bLINK_(?:Y|XY|SCROLL)\s+(\$\w+)/gi;
+// BRUSH uses space form: BRUSH $var MODE ... — the $var is a binding target (output).
+const BRUSH_SPACE_RE = /\bBRUSH\s+(\$\w+)\s+MODE\b/gi;
 // Matches lowercase pipe-DSL form: `| link-x: [...]` or `| link-y: $var`.
-// Captures everything from the colon to end-of-value (up to next `|` or end).
 const LINK_ARGS_PIPE_RE = /\|\s*link-(?:x|y|xy|scroll)\s*:\s*(\[[^\]]*\]|\$\w+)/gi;
 
 function buildLinkArgRanges(text: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
+
   LINK_ARGS_PAREN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = LINK_ARGS_PAREN_RE.exec(text)) !== null) {
@@ -53,9 +57,18 @@ function buildLinkArgRanges(text: string): Array<[number, number]> {
     const parenClose = m.index + m[0].length - 1;
     ranges.push([parenOpen + 1, parenClose]);
   }
+
+  // Suppress undefined-variable warnings for LINK_Y/XY/SCROLL and BRUSH binding vars.
+  for (const re of [LINK_Y_SPACE_RE, BRUSH_SPACE_RE]) {
+    re.lastIndex = 0;
+    while ((m = re.exec(text)) !== null) {
+      const valueStart = m.index + m[0].indexOf(m[1]);
+      ranges.push([valueStart, valueStart + m[1].length]);
+    }
+  }
+
   LINK_ARGS_PIPE_RE.lastIndex = 0;
   while ((m = LINK_ARGS_PIPE_RE.exec(text)) !== null) {
-    // m[1] is the value portion (bracket list or bare $var); find its start.
     const valueStart = m.index + m[0].indexOf(m[1]);
     ranges.push([valueStart, valueStart + m[1].length]);
   }
@@ -81,7 +94,7 @@ function buildDecorations(state: EditorState): DecorationSet {
     const name = match[0];
     const start = match.index;
     const end = start + name.length;
-    // Variables inside LINK_X/LINK_Y/LINK_XY/LINK_SCROLL are output bindings.
+    // Variables inside LINK_X/LINK_Y/LINK_XY/LINK_SCROLL/BRUSH are binding targets — not "undefined".
     if (isInsideLinkArgs(start, linkRanges)) continue;
     const defined = Object.prototype.hasOwnProperty.call(spec.variables, name);
     ranges.push(

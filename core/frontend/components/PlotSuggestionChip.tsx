@@ -16,7 +16,7 @@ export function formatSuggestionPreview(config: string): string {
     // is a closing paren followed by the modifier keyword.
     const firstStatement = config.split(/\n\s*\n|;/)[0].trim();
     const trimmed = firstStatement.replace(
-        /\)\s+(TITLE|ON|WIDTH|HEIGHT|ZOOM|LINK_X)\b.*$/i,
+        /\)\s+(TITLE|ON|WIDTH|HEIGHT|ZOOM|ZOOM_X|LINK_X|LINK_Y|LINK_XY|LINK_SCROLL|BRUSH|PALETTE|LEGEND|AXIS_X|AXIS_Y|TOOLTIP|DATASET|NAME|LET|DISABLED)\b.*$/i,
         ')',
     );
     return trimmed;

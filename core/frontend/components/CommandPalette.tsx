@@ -487,6 +487,7 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
                     {showSubMode ? (
                         <>
                             <button onClick={() => { setSubMode(null); setSubValue(''); setSubResult(null); setSubError(null); inputRef.current?.focus(); }}
+                                aria-label="Back to command palette"
                                 className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-400 hover:text-gray-200 flex items-center gap-1">
                                 ← back
                             </button>
@@ -494,9 +495,9 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
                         </>
                     ) : (
                         <>
-                            <button className={`text-xs px-2 py-0.5 rounded ${mode === 'actions' ? 'bg-cyan-600 text-white' : 'bg-gray-800 text-gray-400'}`} onClick={() => setMode('actions')}>Actions</button>
+                            <button className={`text-xs px-2 py-0.5 rounded ${mode === 'actions' ? 'bg-cyan-600 text-white' : 'bg-gray-800 text-gray-400'}`} onClick={() => setMode('actions')} aria-pressed={mode === 'actions'}>Actions</button>
                             <button className={`text-xs px-2 py-0.5 rounded ${mode === 'ask' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400'} ${aiOn ? '' : 'opacity-40 cursor-not-allowed'}`}
-                                onClick={() => aiOn && setMode('ask')} title={aiOn ? 'Ask the AI assistant' : 'AI not configured — open Settings (⚙) to add an API key'}>Ask AI</button>
+                                onClick={() => aiOn && setMode('ask')} aria-pressed={mode === 'ask'} title={aiOn ? 'Ask the AI assistant' : 'AI not configured — open Settings (⚙) to add an API key'}>Ask AI</button>
                             <div className="text-[10px] text-gray-600 ml-auto">Esc · ↑↓ · Enter</div>
                         </>
                     )}
@@ -619,6 +620,7 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
                             {/* Special-mode items (!, !!, +) — no group header */}
                             {(prefix === '!' || prefix === '!!' || prefix === '+') && items.map((it, idx) => (
                                 <button key={it.id} data-idx={idx} onClick={() => handleSelect(idx)} onMouseEnter={() => setSelectedIdx(idx)}
+                                    aria-current={idx === selectedIdx ? 'true' : undefined}
                                     className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left ${idx === selectedIdx ? 'bg-gray-800' : ''}`}>
                                     <span className="flex items-center gap-2 min-w-0">
                                         <span className="font-mono text-yellow-400 flex-shrink-0">{prefix}</span>
@@ -646,6 +648,7 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
                                         const globalIdx = g.start + localIdx;
                                         return (
                                             <button key={it.id} data-idx={globalIdx} onClick={() => handleSelect(globalIdx)} onMouseEnter={() => setSelectedIdx(globalIdx)}
+                                                aria-current={globalIdx === selectedIdx ? 'true' : undefined}
                                                 className={`w-full flex items-center justify-between gap-3 px-4 py-2 text-left ${globalIdx === selectedIdx ? 'bg-gray-800' : ''}`}>
                                                 <span className="flex items-center gap-2 min-w-0">
                                                     <span className={`font-mono ${KIND_COLOR[it.kind]} flex-shrink-0`}>{KIND_ICON[it.kind]}</span>

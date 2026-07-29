@@ -279,7 +279,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
                 return (
                   <th key={h} scope="col" aria-sort={sortConfig.key===h ? (sortConfig.direction==='ascending' ? 'ascending' : 'descending') : 'none'} className={`p-2 font-medium whitespace-nowrap overflow-hidden text-ellipsis relative ${isNumeric ?'text-right':'text-left'}`} style={{width: widths[i]}}>
                     <>
-                      <button onClick={()=>requestSort(h)} className="inline-flex items-center gap-1.5">
+                      <button onClick={()=>requestSort(h)} className="inline-flex items-center gap-1.5" aria-label={`Sort by ${h}`}>
                         {h}
                         {durationColumns.has(h) && <span className="text-[10px] text-gray-500 font-normal">⏱</span>}
                         {byteColumns.has(h) && <span className="text-[10px] text-gray-500 font-normal">💾</span>}
