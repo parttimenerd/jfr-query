@@ -301,15 +301,18 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
             }
             case 'rememberFact': {
                 const { key, value } = args as { key: string; value: string };
-                deps.setMemory?.(key, String(value).slice(0, 200));
+                if (!deps.setMemory) return { ok: false, error: 'memory not supported in this environment' };
+                deps.setMemory(key, String(value).slice(0, 200));
                 return { ok: true, data: { stored: key } };
             }
             case 'recallMemory': {
-                return { ok: true, data: deps.getMemory?.() ?? {} };
+                if (!deps.getMemory) return { ok: false, error: 'memory not supported in this environment' };
+                return { ok: true, data: deps.getMemory() };
             }
             case 'updateTaskList': {
                 const tasks = (args as any).tasks ?? [];
-                deps.setTaskList?.(tasks);
+                if (!deps.setTaskList) return { ok: false, error: 'task list not supported in this environment' };
+                deps.setTaskList(tasks);
                 return { ok: true, data: { updated: tasks.length } };
             }
             default:

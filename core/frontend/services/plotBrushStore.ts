@@ -135,7 +135,10 @@ class BrushStore {
                         this.cycleWarned.add(pairKey);
                         console.warn(`[plotBrushStore] cycle detected between cells "${subscriberCell}" and "${publisherCell}"; second subscriber will see initial value only.`);
                     }
-                    // Skip live notifications for the second subscriber.
+                    // Skip live notifications for the second subscriber, but still
+                    // deliver the current stored value so it renders correctly once.
+                    const initial = this.state.get(name);
+                    if (initial) fn(initial);
                     return () => {
                         const ns = this.subscriberToNames.get(subscriberCell);
                         if (ns) { ns.delete(name); if (ns.size === 0) this.subscriberToNames.delete(subscriberCell); }
@@ -224,9 +227,13 @@ class BrushStore {
             this.state.set(name, cleared);
             // Capture the subscriber set now so subscribers who join between now
             // and the microtask fire don't receive a double notification.
+            // Check against the live set before calling so unsubscribed entries
+            // that were in the snapshot don't fire after they've left.
             const subsAtScheduleTime = this.listeners.get(name) ? new Set(this.listeners.get(name)!) : null;
             queueMicrotask(() => {
-                if (subsAtScheduleTime) subsAtScheduleTime.forEach(entry => entry.fn(cleared));
+                if (!subsAtScheduleTime) return;
+                const live = this.listeners.get(name);
+                subsAtScheduleTime.forEach(entry => { if (live?.has(entry)) entry.fn(cleared); });
             });
             return 'cleared';
         }
@@ -235,7 +242,9 @@ class BrushStore {
         this.state.set(name, clamped);
         const subsAtScheduleTime2 = this.listeners.get(name) ? new Set(this.listeners.get(name)!) : null;
         queueMicrotask(() => {
-            if (subsAtScheduleTime2) subsAtScheduleTime2.forEach(entry => entry.fn(clamped));
+            if (!subsAtScheduleTime2) return;
+            const live = this.listeners.get(name);
+            subsAtScheduleTime2.forEach(entry => { if (live?.has(entry)) entry.fn(clamped); });
         });
         return 'clamped';
     }
