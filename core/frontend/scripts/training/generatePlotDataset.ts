@@ -375,12 +375,12 @@ const SQL_POOL: SqlExample[] = [
         plotFamilyHint: 'WATERFALL',
     },
     {
-        sql: "SELECT gcId, heapBeforeGC - heapAfterGC AS freed FROM GarbageCollection ORDER BY gcId",
-        columns: [{ name: 'gcId', type: 'BIGINT' }, { name: 'freed', type: 'DOUBLE' }],
+        sql: "SELECT cause AS step, duration - longestPause AS delta FROM GarbageCollection ORDER BY startTime",
+        columns: [{ name: 'step', type: 'VARCHAR' }, { name: 'delta', type: 'DOUBLE' }],
         schema: pickSchemas('GarbageCollection'),
-        sample: [{ gcId: 1, freed: 256000 }, { gcId: 2, freed: -4096 }],
+        sample: [{ step: 'G1 Evacuation Pause', delta: 3.8 }, { step: 'GCLocker Initiated GC', delta: -1.2 }],
         plotFamilyHint: 'WATERFALL',
-        biasHint: 'Column "freed" is a heap delta; use WATERFALL with category="gcId", value="freed".',
+        biasHint: 'Column "delta" is a derived delta (duration minus longestPause); use WATERFALL with category="step", value="delta".',
     },
     {
         sql: "SELECT cause AS step, longestPause AS pauseMs FROM GarbageCollection ORDER BY startTime",
