@@ -67,18 +67,21 @@ const SEQ2SEQ_INPUT_V2 = (sql: string, columns: string[] | TypedColumn[], schema
  * sql/columns body so the T5 encoder sees a dense summary at position 0
  * (where attention is strongest). Tags:
  *
- *   agg      — has GROUP BY (aggregation query → BAR/PIE/TREEMAP likely)
+ *   agg      — has GROUP BY (→ BAR/PIE/HEATMAP/TREEMAP likely)
  *   ordered  — has ORDER BY + LIMIT (ranked list → BAR_CHART likely)
- *   time     — has a timestamp/time-named column (→ LINE_CHART likely)
+ *   having   — has HAVING clause
+ *   time     — timestamp/time-named column (→ LINE_CHART/AREA_CHART likely)
  *   wide     — 3+ result columns
- *   gc       — JFR GC domain columns (pause, heap, GC*)
+ *   stack    — stack-trace column (→ FLAMEGRAPH likely)
+ *   gc       — JFR GC domain (pause, heap, GC*)
  *   alloc    — JFR allocation domain (alloc*, tlab, retained)
  *   cpu      — JFR CPU/thread domain (cpu*, thread*, method*)
- *   stack    — stack-trace column present (→ FLAMEGRAPH likely)
- *   num:N    — number of numeric columns (0-4+)
- *   cat:N    — number of categorical columns
+ *   delta    — delta/change/diff column (→ WATERFALL likely)
+ *   range    — start+end or low+high column pair (→ RANGE/GANTT likely)
+ *   num:N    — number of numeric columns (0–4, capped)
+ *   cat:N    — number of categorical columns (0–4, capped)
  *
- * Kept short (<60 chars typical) to stay inside T5-small's 512-token budget
+ * Kept short (<80 chars typical) to stay inside T5-small's 512-token budget
  * alongside the sql + columns lines.
  */
 export function extractInputSignals(sql: string, columns: string[] | TypedColumn[]): string {
