@@ -69,9 +69,10 @@ The DSL is: SHAPE(param: value, ...) followed by optional tail clauses.
 Supported tail clauses (all uppercase, after the closing paren):
   TITLE "str"          — chart title
   NAME "alias"         — name this plot so other plots can reference it
-  WIDTH Npx            — fixed pixel width (e.g. WIDTH 600px)
-  HEIGHT Npx           — fixed pixel height (e.g. HEIGHT 300px)
-  ZOOM N               — initial zoom level (number)
+  WIDTH N[px|%]        — fixed width (e.g. WIDTH 600px or WIDTH 50%)
+  HEIGHT N[px|%]       — fixed height (e.g. HEIGHT 300px)
+  ZOOM N               — scale the whole chart (e.g. ZOOM 0.8)
+  ZOOM_X N             — scale only the horizontal axis (e.g. ZOOM_X 1.5)
   DISABLED             — render placeholder instead of chart
   ON #N | viewName     — use result of query #N or a named view
   LINK_X($s, $e)       — link x-axis domain to variables $s and $e (supports optional third "master" arg)
@@ -79,6 +80,14 @@ Supported tail clauses (all uppercase, after the closing paren):
   LINK_XY $v           — link both axes to variable $v
   LINK_SCROLL "grp"    — synchronise scroll position within a named group
   LET @name=val        — define a local constant; reference as @name inside params
+  LEGEND AT position   — position legend: RIGHT, LEFT, TOP, BOTTOM, NONE; or LEGEND HIDDEN
+  PALETTE "name"       — color palette: category10, tableau10, pastel1, dark2, set2, or hex list
+  BRUSH $var MODE X    — add brush overlay; MODE can be X, Y, or XY
+  AXIS_X TYPE LOG      — configure X axis; sub-clauses: TYPE (LINEAR|LOG|TIME|BAND), FORMAT "fmt", LABEL "str", DOMAIN [min,max]
+  AXIS_Y TYPE LOG      — configure Y axis; same sub-clauses as AXIS_X
+  TOOLTIP COLUMNS [col1,col2] — limit hover tooltip to specific columns
+  ON HOVER TOOLTIP "tmpl" — custom tooltip; use {col} placeholders
+  DATASET table_name   — use a named DuckDB table/view as data source
 
 Composites: ROW(a,b) / COL(a,b) / a+b (overlay).
 Shapes: LINE_CHART, BAR_CHART, AREA_CHART, SCATTER_PLOT, PIE_CHART, BOX_PLOT,
