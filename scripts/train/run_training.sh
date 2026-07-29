@@ -53,8 +53,8 @@ for arg in "$@"; do
   esac
 done
 
-DATA="data/plot_pairs_v14.jsonl"
-EVAL="data/plot_eval_v14.jsonl"
+DATA="data/plot_pairs_v15.jsonl"
+EVAL="data/plot_eval_v15.jsonl"
 CHECKPOINT_DIR="checkpoints/t5-small-latest"
 ONNX_OUT="onnx/t5-small-q8-arm"
 
@@ -67,11 +67,12 @@ if $DO_DATA; then
     python3 scripts/train/gen_plot_pairs.py \
       --out data/plot_pairs_new.jsonl \
       --count 2000
-    echo "New data written to data/plot_pairs_new.jsonl"
-    echo "To use it: merge with the existing v10 data and re-run with --skip-data"
+    echo "New data written to data/plot_pairs_new.jsonl (v3 input format with hints: tag)"
+    echo "To use it: merge with the existing v14 data and re-run with --skip-data"
   else
     echo "ANTHROPIC_API_KEY not set — skipping Haiku data generation."
-    echo "Using existing training data: $DATA"
+    echo "Using existing training data: $DATA (v3 format with hints: tag line)"
+    echo "To upgrade from v13: python3 scripts/train/migrate_v13_to_v14.py"
   fi
 
   N_TRAIN=$(wc -l < "$DATA")
@@ -121,6 +122,8 @@ python3 scripts/train/eval.py \
   --checkpoint "$CHECKPOINT_DIR" \
   --eval "$EVAL" \
   || echo "(eval.py failed — check checkpoint manually)"
+echo
+echo "  Per-plot-type and per-signal breakdowns printed above."
 
 if ! $DO_EXPORT; then
   echo "Skipping ONNX export (--skip-export)."

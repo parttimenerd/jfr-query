@@ -293,7 +293,7 @@ def extract_input_signals(sql: str, columns: list) -> str:
 
     TIME_TYPES = {'TIMESTAMP', 'DATE', 'TIMESTAMP_NS', 'TIMESTAMP_MS'}
     has_time = (any(t in TIME_TYPES for t in types) or
-                any(re.search(r'time|timestamp|bucket|date', n) for n in names))
+                any(re.search(r'time|timestamp|bucket|date|_at$|_ts$|_dt$|^ts$|^dt$|^when$', n) for n in names))
     if has_time: tags.append('time')
 
     has_stack = any(re.search(r'stack|frame|trace', n) for n in names)
@@ -312,7 +312,7 @@ def extract_input_signals(sql: str, columns: list) -> str:
     for n, t in zip(names, types):
         if t in NUM_TYPES or (not t and re.search(r'(?:count|size|ms|mb|kb|rate|pct|load|pause|duration|alloc|heap|cpu|ticks|samples|total|avg|max|p\d+)', n, re.I)):
             num_count += 1
-        elif t in ('VARCHAR', 'TEXT', 'STRING') or (not t and not re.search(r'time|stamp|date|bucket', n)):
+        elif t in ('VARCHAR', 'TEXT', 'STRING') or (not t and not re.search(r'time|stamp|date|bucket|_at$|_ts$|_dt$', n)):
             cat_count += 1
     tags.append(f'num:{min(num_count, 4)}')
     tags.append(f'cat:{min(cat_count, 4)}')

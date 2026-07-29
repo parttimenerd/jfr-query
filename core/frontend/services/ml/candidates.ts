@@ -102,9 +102,10 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     // Time signal — column names containing time/timestamp/bucket or typed as TIMESTAMP.
     // Use substring match (not word boundary) because camelCase names like
     // "startTime" and "eventTime" should also trigger this.
+    // Also catch _at / _ts / _dt suffixes common in generic schemas.
     const hasTimestamp =
         types.some(t => t === 'TIMESTAMP' || t === 'DATE' || t === 'TIMESTAMP_NS' || t === 'TIMESTAMP_MS') ||
-        names.some(n => /time|timestamp|bucket|date/.test(n));
+        names.some(n => /time|timestamp|bucket|date|_at$|_ts$|_dt$|^ts$|^dt$|^when$/.test(n));
     if (hasTimestamp) tags.push('time');
 
     // Stack trace signal — FLAMEGRAPH indicator
@@ -130,7 +131,7 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
         const n = names[i] ?? '';
         if (NUM_TYPES.has(t) || (t === '' && /(?:count|size|ms|mb|kb|rate|pct|load|pause|duration|alloc|heap|cpu|ticks|samples|total|avg|max|p\d+)/i.test(n))) {
             numCount++;
-        } else if (t === 'VARCHAR' || t === 'TEXT' || t === 'STRING' || (t === '' && !/time|stamp|date|bucket/.test(n))) {
+        } else if (t === 'VARCHAR' || t === 'TEXT' || t === 'STRING' || (t === '' && !/time|stamp|date|bucket|_at$|_ts$|_dt$/.test(n))) {
             catCount++;
         }
     }

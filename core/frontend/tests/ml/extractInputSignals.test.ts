@@ -55,9 +55,30 @@ describe('extractInputSignals', () => {
             expect(s).toContain('time');
         });
 
+        it('emits "time" for _at suffix (created_at, occurred_at, etc.)', () => {
+            const s = extractInputSignals('SELECT created_at, value FROM metrics ORDER BY created_at', ['created_at', 'value']);
+            expect(s).toContain('time');
+        });
+
+        it('emits "time" for _ts suffix (event_ts, log_ts)', () => {
+            const s = extractInputSignals('SELECT log_ts, cpu_pct FROM stats ORDER BY log_ts', ['log_ts', 'cpu_pct']);
+            expect(s).toContain('time');
+        });
+
+        it('emits "time" for bare "ts" column name', () => {
+            const s = extractInputSignals('SELECT ts, value FROM metrics ORDER BY ts', ['ts', 'value']);
+            expect(s).toContain('time');
+        });
+
         it('does NOT emit "time" for pure numeric columns', () => {
             const s = extractInputSignals('SELECT pauseMs, heapUsed FROM t', ['pauseMs', 'heapUsed']);
             expect(s).not.toContain('time');
+        });
+
+        it('does NOT count _at columns as categorical', () => {
+            const s = extractInputSignals('SELECT created_at, value FROM t', ['created_at', 'value']);
+            // created_at should not be cat (it's a time column)
+            expect(s).not.toContain('cat:2');
         });
     });
 
