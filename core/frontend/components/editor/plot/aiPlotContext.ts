@@ -82,7 +82,7 @@ Supported tail clauses (all uppercase, after the closing paren):
   LET @name=val        — define a local constant; reference as @name inside params
   LEGEND AT position   — position legend: RIGHT, LEFT, TOP, BOTTOM, NONE; or LEGEND HIDDEN
   PALETTE "name"       — color palette: category10, tableau10, pastel1, dark2, set2, or hex list
-  BRUSH $var MODE X    — add brush overlay; MODE can be X, Y, or XY
+  BRUSH $var MODE X    — add brush overlay; MODE X/Y writes $var.brush.lo/$var.brush.hi; MODE XY writes $var.brush.x_lo/$var.brush.x_hi/$var.brush.y_lo/$var.brush.y_hi
   AXIS_X TYPE LOG      — configure X axis; sub-clauses: TYPE (LINEAR|LOG|TIME|BAND), FORMAT "fmt", LABEL "str", DOMAIN [min,max]
   AXIS_Y TYPE LOG      — configure Y axis; same sub-clauses as AXIS_X
   TOOLTIP COLUMNS [col1,col2] — limit hover tooltip to specific columns
@@ -91,7 +91,7 @@ Supported tail clauses (all uppercase, after the closing paren):
 
 Composites: ROW(a,b) / COL(a,b) / a+b (overlay).
 Shapes: LINE_CHART, BAR_CHART, AREA_CHART, SCATTER_PLOT, PIE_CHART, BOX_PLOT,
-HISTOGRAM, HEATMAP, FLAMEGRAPH, GANTT_CHART, RANGE, TABLE.
+HISTOGRAM, HEATMAP, FLAMEGRAPH, GANTT, RANGE, TABLE.
 Short aliases: line/bar/area/scatter/pie/box/hist/heatmap/flame/gantt/range/table.
 
 Return ONLY the next 1-80 tokens that naturally continue at the cursor.
