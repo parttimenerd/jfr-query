@@ -90,6 +90,8 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
                             key={tab.id}
                             onClick={() => onSelectTab(tab.id)}
                             title={tab.filePath ?? tab.displayName}
+                            aria-label={`${tab.displayName}${tab.isDirty ? ' (unsaved changes)' : ''}`}
+                            aria-selected={isActive}
                             className={[
                                 'flex items-center gap-1.5 px-3 h-[34px] text-xs font-medium border-r border-gray-700/60 whitespace-nowrap flex-shrink-0 group transition-colors',
                                 isActive
@@ -109,8 +111,10 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
                             {tabs.length > 1 && (
                                 <span
                                     role="button"
+                                    tabIndex={0}
                                     aria-label="Close tab"
                                     onClick={(e) => handleCloseTab(e, tab)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCloseTab(e as any, tab); } }}
                                     className={[
                                         'ml-0.5 w-4 h-4 flex items-center justify-center rounded hover:bg-gray-600/70 text-gray-500 hover:text-gray-200 transition-colors flex-shrink-0',
                                         isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',

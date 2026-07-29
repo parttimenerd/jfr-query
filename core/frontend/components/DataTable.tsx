@@ -277,7 +277,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
               {finalHeaders.map((h,i) => {
                 const isNumeric = numericColumns.has(h);
                 return (
-                  <th key={h} className={`p-2 font-medium whitespace-nowrap overflow-hidden text-ellipsis relative ${isNumeric ?'text-right':'text-left'}`} style={{width: widths[i]}}>
+                  <th key={h} scope="col" aria-sort={sortConfig.key===h ? (sortConfig.direction==='ascending' ? 'ascending' : 'descending') : 'none'} className={`p-2 font-medium whitespace-nowrap overflow-hidden text-ellipsis relative ${isNumeric ?'text-right':'text-left'}`} style={{width: widths[i]}}>
                     <>
                       <button onClick={()=>requestSort(h)} className="inline-flex items-center gap-1.5">
                         {h}
