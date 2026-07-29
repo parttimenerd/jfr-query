@@ -408,6 +408,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
             <input
                 type="text"
                 placeholder="Search schema..."
+                aria-label="Search schema"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); setSearchTerm(''); } }}

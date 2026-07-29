@@ -253,7 +253,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
         <div className="px-4 py-2 flex-shrink-0 flex items-center gap-2">
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"/>
-            <input type="text" placeholder="Search..." value={filterTerm} onChange={e=>setFilterTerm(e.target.value)}
+            <input type="text" placeholder="Search..." aria-label="Search table" value={filterTerm} onChange={e=>setFilterTerm(e.target.value)}
               onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); setFilterTerm(''); } }}
               className="w-full bg-gray-900/50 border border-gray-700 rounded-md py-1.5 pl-9 pr-3 text-sm"/>
           </div>

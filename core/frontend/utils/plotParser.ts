@@ -20,6 +20,7 @@ export interface ParsedPlotCall {
     width?: string; // e.g., "100px", "50%"
     height?: string; // e.g., "300px"
     zoom?: number; // legacy — kept for back-compat; not in showcase
+    zoomX?: number; // horizontal-only scale factor
     title?: string;
     linkX?: [string, string];
     linkXMaster?: boolean;
@@ -153,6 +154,7 @@ const CLAUSES: ClauseSpec[] = [
     // Legacy clauses (kept verbatim, /i for case-insensitivity per W12)
     { key: 'title', regex: /(?<!\w)TITLE\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     { key: 'zoom', regex: /(?<!\w)ZOOM\s+([\d\.]+)\s*$/i, processor: (m) => parseFloat(m[1]) },
+    { key: 'zoomX', regex: /(?<!\w)ZOOM_X\s+([\d\.]+)\s*$/i, processor: (m) => parseFloat(m[1]) },
     { key: 'height', regex: /(?<!\w)HEIGHT\s+((?:\d+)(?:px|%)?)\s*$/i, processor: (m) => m[1] },
     { key: 'width', regex: /(?<!\w)WIDTH\s+((?:\d+)(?:px|%)?)\s*$/i, processor: (m) => m[1] },
     { key: 'on', regex: /(?<!\w)ON\s+((?:#\d+|\w+|\d+)(?:\s*,\s*(?:#\d+|\w+|\d+))*)\s*$/i, processor: (m) => m[1].split(',').map(s => s.trim()) },

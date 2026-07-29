@@ -1046,7 +1046,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                         mainConfig = parsedCall.mainConfig;
                         outerClauses = singleConfig.substring(mainConfig.length);
 
-                        const { width, height, zoom, title, linkX, linkXClamp, linkXMaster, linkScroll } = parsedCall;
+                        const { width, height, zoom, zoomX, title, linkX, linkXClamp, linkXMaster, linkScroll } = parsedCall;
                         const plotTypeName = normalizePlotName(mainConfig.match(/^(\w+)/)?.[1] || 'TABLE');
                         const reg = plotRegistry[plotTypeName];
                         if (!reg) throw new Error(`Unknown plot type "${plotTypeName}". Available types: ${Object.keys(plotRegistry).filter(k => k !== 'FLAME_GRAPH').join(', ')}.`);
@@ -1103,7 +1103,12 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                         const finalPlotEl = (
                             <ScrollSyncWrapper group={linkScroll ?? null}>
                                 <div style={{position:'relative',width:'100%',height:'100%',overflow:'hidden'}}>
-                                    <div style={{width:zoom?`${100/zoom}%`:'100%',height:zoom?`${100/zoom}%`:'100%',transform:`scale(${zoom||1})`,transformOrigin:'top left'}}>
+                                    <div style={{
+                                        width: zoom ? `${100/zoom}%` : zoomX ? `${100/zoomX}%` : '100%',
+                                        height: zoom ? `${100/zoom}%` : '100%',
+                                        transform: zoom ? `scale(${zoom})` : zoomX ? `scaleX(${zoomX})` : undefined,
+                                        transformOrigin: 'top left',
+                                    }}>
                                         {plotContent}
                                     </div>
                                 </div>

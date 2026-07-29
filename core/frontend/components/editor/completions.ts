@@ -445,7 +445,7 @@ export interface PlotCompletionDeps {
 }
 
 const UPPERCASE_TAILS_DEFAULT: ReadonlyArray<string> = [
-  'TITLE', 'NAME', 'ZOOM',
+  'TITLE', 'NAME', 'ZOOM', 'ZOOM_X',
   'WIDTH', 'HEIGHT', 'ON',
   'LINK_X', 'LINK_Y', 'LINK_XY', 'LINK_SCROLL',
   'BRUSH', 'LEGEND', 'PALETTE', 'DATASET',
