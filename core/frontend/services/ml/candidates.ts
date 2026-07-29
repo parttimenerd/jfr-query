@@ -121,6 +121,9 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     if (/alloc|tlab|retained|live|object|class/.test(allNames)) tags.push('alloc');
     if (/cpu|thread|method|jvm|machine|load|worker/.test(allNames)) tags.push('cpu');
 
+    // Delta/change signal → WATERFALL hint
+    if (/delta|change|diff|decrement|increment/.test(allNames)) tags.push('delta');
+
     // Count numeric vs categorical columns using type info when available.
     let numCount = 0;
     let catCount = 0;

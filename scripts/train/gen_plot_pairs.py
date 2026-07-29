@@ -60,6 +60,14 @@ FLAMEGRAPH(label: "col", value: "col")
 TABLE(headers: ["col1", "col2"], columnWidths: ["50%", 100, -1])
   No required params. Use for: raw tabular data, mixed/wide columns.
 
+WATERFALL(category: "col", value: "col")
+  Required: category (step name), value (delta/change numeric).
+  Use for: showing incremental changes that sum to a total (GC phase durations, heap deltas).
+
+TREEMAP(label: "col", value: "col")
+  Required: label (category), value (size/weight numeric).
+  Use for: proportional area by aggregated count or size.
+
 Optional suffix: TITLE "..." or LINK_X($start, $end)
 
 Rules:
@@ -193,6 +201,23 @@ def make_table_inputs():
     sql = f'SELECT {", ".join(chr(34)+c+chr(34) for c in cols)} FROM {random.choice(JFR_VIEWS)} LIMIT 20'
     return sql, cols
 
+def make_waterfall_inputs():
+    delta_cols = ["delta", "change", "diff", "increment", "decrement",
+                  "gcDelta", "heapDelta", "memDelta", "sizeDelta", "durationDelta"]
+    step_cols = ["step", "phase", "cause", "name", "label", "stage"]
+    step = random.choice(step_cols)
+    delta = random.choice(delta_cols)
+    view = random.choice(JFR_VIEWS)
+    sql = f'SELECT "{step}", "{delta}" FROM {view} ORDER BY "{step}"'
+    return sql, [step, delta]
+
+def make_treemap_inputs():
+    cat = random.choice(JFR_CAT_COLS + GENERIC_CAT)
+    val = random.choice(JFR_NUMERIC_COLS + GENERIC_NUMERIC)
+    view = random.choice(JFR_VIEWS)
+    sql = f'SELECT "{cat}", "{val}" FROM {view} GROUP BY "{cat}" ORDER BY "{val}" DESC LIMIT 20'
+    return sql, [cat, val]
+
 GENERATORS = [
     ("LINE_CHART",   make_line_inputs,       700),
     ("BAR_CHART",    make_bar_inputs,        700),
@@ -203,6 +228,8 @@ GENERATORS = [
     ("BOX_PLOT",     make_boxplot_inputs,    350),
     ("FLAMEGRAPH",   make_flamegraph_inputs, 300),
     ("TABLE",        make_table_inputs,      350),
+    ("WATERFALL",    make_waterfall_inputs,  200),
+    ("TREEMAP",      make_treemap_inputs,    200),
 ]
 
 # ── Haiku calls ────────────────────────────────────────────────────────────────
@@ -257,7 +284,8 @@ def extract_plot_type(config: str) -> str:
 def is_valid(config: str) -> bool:
     fn = extract_plot_type(config)
     known = {"LINE_CHART", "BAR_CHART", "PIE_CHART", "SCATTER_PLOT",
-             "HISTOGRAM", "HEATMAP", "BOX_PLOT", "FLAMEGRAPH", "TABLE"}
+             "HISTOGRAM", "HEATMAP", "BOX_PLOT", "FLAMEGRAPH", "TABLE",
+             "WATERFALL", "TREEMAP", "GANTT", "RANGE", "AREA_CHART"}
     if fn not in known:
         return False
     depth = 0
@@ -304,6 +332,7 @@ def extract_input_signals(sql: str, columns: list) -> str:
         tags.append('gc')
     if re.search(r'alloc|tlab|retained|live|object|class', all_names): tags.append('alloc')
     if re.search(r'cpu|thread|method|jvm|machine|load|worker', all_names): tags.append('cpu')
+    if re.search(r'delta|change|diff|decrement|increment', all_names): tags.append('delta')
 
     NUM_TYPES = {'INTEGER', 'BIGINT', 'DOUBLE', 'FLOAT', 'DECIMAL', 'NUMERIC',
                  'SMALLINT', 'TINYINT', 'REAL', 'HUGEINT', 'INT4', 'INT8', 'FLOAT4', 'FLOAT8'}

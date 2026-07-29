@@ -114,6 +114,16 @@ describe('extractInputSignals', () => {
             const s = extractInputSignals('SELECT cpuLoad, threadName FROM t', ['cpuLoad', 'threadName']);
             expect(s).toContain('cpu');
         });
+
+        it('emits "delta" for delta/change/diff column names (WATERFALL hint)', () => {
+            const s = extractInputSignals('SELECT phase, delta FROM gc_phases', ['phase', 'delta']);
+            expect(s).toContain('delta');
+        });
+
+        it('emits "delta" for change/increment/decrement columns', () => {
+            const s = extractInputSignals('SELECT step, change FROM waterfall_data', ['step', 'change']);
+            expect(s).toContain('delta');
+        });
     });
 
     describe('num/cat counts', () => {

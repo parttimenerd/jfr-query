@@ -43,6 +43,7 @@ def extract_input_signals(sql: str, columns: list) -> str:
         tags.append('gc')
     if re.search(r'alloc|tlab|retained|live|object|class', all_names): tags.append('alloc')
     if re.search(r'cpu|thread|method|jvm|machine|load|worker', all_names): tags.append('cpu')
+    if re.search(r'delta|change|diff|decrement|increment', all_names): tags.append('delta')
 
     # Without type info, infer from name patterns
     num_count = 0

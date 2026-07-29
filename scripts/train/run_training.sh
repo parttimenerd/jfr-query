@@ -65,14 +65,16 @@ if $DO_DATA; then
   # For quick retraining without new data, use --skip-data.
   if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
     python3 scripts/train/gen_plot_pairs.py \
-      --out data/plot_pairs_new.jsonl \
-      --count 2000
+      --output data/plot_pairs_new.jsonl \
+      --eval   data/plot_eval_new.jsonl
     echo "New data written to data/plot_pairs_new.jsonl (v3 input format with hints: tag)"
-    echo "To use it: merge with the existing v14 data and re-run with --skip-data"
+    echo "To use it: copy over v15 files and re-run with --skip-data"
+    echo "  cp data/plot_pairs_new.jsonl data/plot_pairs_v15.jsonl"
+    echo "  cp data/plot_eval_new.jsonl data/plot_eval_v15.jsonl"
   else
     echo "ANTHROPIC_API_KEY not set — skipping Haiku data generation."
     echo "Using existing training data: $DATA (v3 format with hints: tag line)"
-    echo "To upgrade from v13: python3 scripts/train/migrate_v13_to_v14.py"
+    echo "To upgrade from v14: python3 scripts/train/migrate_v14_to_v15.py"
   fi
 
   N_TRAIN=$(wc -l < "$DATA")

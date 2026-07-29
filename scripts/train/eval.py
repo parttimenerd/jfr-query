@@ -28,7 +28,7 @@ KNOWN_PLOT_TYPES = {
     "GANTT", "RANGE", "AREA_CHART",
 }
 
-SIGNAL_TAGS = ["agg", "ordered", "having", "wide", "time", "stack", "gc", "alloc", "cpu"]
+SIGNAL_TAGS = ["agg", "ordered", "having", "wide", "time", "stack", "gc", "alloc", "cpu", "delta"]
 
 
 def load_eval(path: str) -> list[dict]:

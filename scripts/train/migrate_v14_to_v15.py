@@ -45,6 +45,7 @@ def extract_input_signals_v4(sql: str, columns: list) -> str:
         tags.append('gc')
     if re.search(r'alloc|tlab|retained|live|object|class', all_names): tags.append('alloc')
     if re.search(r'cpu|thread|method|jvm|machine|load|worker', all_names): tags.append('cpu')
+    if re.search(r'delta|change|diff|decrement|increment', all_names): tags.append('delta')
 
     num_count = 0
     cat_count = 0
