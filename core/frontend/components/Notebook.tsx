@@ -26,6 +26,7 @@ interface NotebookProps {
     onRunQuery: (cellId: string, sql: string, queryIndex: number, allVariables: Record<string, string>) => void;
     onUpdateCell: (cellId: string, updatedContent: string) => void;
     onDeleteCell: (cellId: string) => void;
+    onDuplicateCell?: (cellId: string) => void;
     onDeleteQueryBlock: (cellId: string, index: number) => void;
     onAddCell: () => void;
     /** C7 — tool-runtime addCell forwarded to InlineChat for AI-driven cell creation. */
@@ -45,7 +46,7 @@ interface NotebookProps {
 const Notebook: React.FC<NotebookProps> = (props) => {
     const {
         notebookMarkdown, setNotebookMarkdown, isMarkdownMode, isAutoRunEnabled, cells, metadata, results, queryTimings,
-        collapseTrigger, allCollapsed, isAiFeatureActive, clearResultsTrigger, onRunQuery, onUpdateCell, onDeleteCell, onDeleteQueryBlock,
+        collapseTrigger, allCollapsed, isAiFeatureActive, clearResultsTrigger, onRunQuery, onUpdateCell, onDeleteCell, onDuplicateCell, onDeleteQueryBlock,
         onAddCell, onAddCellFromTool, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange,
         presenterMode = false, onPopChatToSidebar, onNavigateRef,
     } = props;
@@ -184,6 +185,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                                     onUpdateCell={onUpdateCell}
                                     onAddCellFromTool={onAddCellFromTool}
                                     onDeleteCell={onDeleteCell}
+                                    onDuplicateCell={onDuplicateCell}
                                     onDeleteQueryBlock={onDeleteQueryBlock}
                                     onMoveCell={onMoveCell}
                                     onSuggestPlot={onSuggestPlot}
@@ -275,20 +277,26 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                 );
             })}
             {!presenterMode && cells.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-16 text-center gap-4 max-w-lg mx-auto">
+                <div className="flex flex-col items-center justify-center py-16 text-center gap-5 max-w-lg mx-auto">
                     <div className="text-gray-600 text-4xl">✦</div>
                     <div>
                         <h2 className="text-base font-semibold text-gray-300 mb-1">Notebook is empty</h2>
-                        <p className="text-sm text-gray-500">Add a cell below, open the command palette (<kbd className="font-mono text-xs bg-gray-700 border border-gray-600 px-1 rounded">⇧⇧</kbd> or <kbd className="font-mono text-xs bg-gray-700 border border-gray-600 px-1 rounded">⌘K</kbd>), or load a template from the toolbar.</p>
+                        <p className="text-sm text-gray-500">Add a cell and write your first SQL query to get started.</p>
                     </div>
+                    <button
+                        onClick={onAddCell}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg transition-colors font-semibold text-sm"
+                    >
+                        <PlusIcon className="w-4 h-4" /> Add SQL Cell
+                    </button>
                     <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 w-full">
                         <div className="bg-gray-800/50 rounded p-2.5 text-left">
                             <div className="text-gray-300 font-medium mb-0.5">Quick query</div>
-                            <div>Type <span className="font-mono text-yellow-400">!! SELECT …</span> in the palette to add a SQL cell instantly.</div>
+                            <div>Open the palette (<kbd className="font-mono text-[11px] bg-gray-700 border border-gray-600 px-1 rounded">⇧⇧</kbd>) and type <span className="font-mono text-yellow-400">!! SELECT …</span> to add a SQL cell instantly.</div>
                         </div>
                         <div className="bg-gray-800/50 rounded p-2.5 text-left">
                             <div className="text-gray-300 font-medium mb-0.5">AI-assisted</div>
-                            <div>Type <span className="font-mono text-yellow-400">+ describe your query</span> to let AI write the cell.</div>
+                            <div>In the palette, type <span className="font-mono text-yellow-400">+ describe your query</span> to let AI write the cell for you.</div>
                         </div>
                     </div>
                 </div>

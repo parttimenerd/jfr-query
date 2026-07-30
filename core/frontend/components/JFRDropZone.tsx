@@ -199,30 +199,33 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                 )}
 
                 {(onLoadDemo || onLoadGcNotebook) && !isImporting && (
-                    <div className="mt-4 flex flex-col items-center gap-2">
-                        {onLoadDemo && (
-                            <div className="text-center">
+                    <>
+                        <div className="mt-5 flex items-center gap-3 text-xs text-gray-600">
+                            <div className="flex-1 border-t border-gray-700" />
+                            <span>or try a built-in example</span>
+                            <div className="flex-1 border-t border-gray-700" />
+                        </div>
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {onLoadDemo && (
                                 <button
                                     onClick={onLoadDemo}
-                                    className="text-sm text-cyan-400 hover:text-cyan-300 underline underline-offset-2"
+                                    className="flex flex-col items-start gap-0.5 p-3.5 rounded-lg border border-cyan-700/50 bg-cyan-900/10 hover:bg-cyan-900/25 hover:border-cyan-600 transition-colors text-left"
                                 >
-                                    Try the demo — no file needed
+                                    <span className="text-sm font-semibold text-cyan-300">▶ Try the demo</span>
+                                    <span className="text-xs text-gray-400">Starter notebook with sample JFR data — no file needed</span>
                                 </button>
-                                <p className="text-xs text-gray-600 mt-0.5">Loads sample JFR data with a starter notebook</p>
-                            </div>
-                        )}
-                        {onLoadGcNotebook && (
-                            <div className="text-center">
+                            )}
+                            {onLoadGcNotebook && (
                                 <button
                                     onClick={onLoadGcNotebook}
-                                    className="text-sm text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
+                                    className="flex flex-col items-start gap-0.5 p-3.5 rounded-lg border border-emerald-700/50 bg-emerald-900/10 hover:bg-emerald-900/25 hover:border-emerald-600 transition-colors text-left"
                                 >
-                                    Open GC analysis notebook
+                                    <span className="text-sm font-semibold text-emerald-300">📊 GC analysis notebook</span>
+                                    <span className="text-xs text-gray-400">Pre-built GC pause analysis with queries, charts & commentary</span>
                                 </button>
-                                <p className="text-xs text-gray-600 mt-0.5">Full GC analysis notebook with queries, charts, and commentary</p>
-                            </div>
-                        )}
-                    </div>
+                            )}
+                        </div>
+                    </>
                 )}
 
                 <div className="mt-6 grid grid-cols-2 gap-2 text-left">

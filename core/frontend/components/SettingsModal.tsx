@@ -169,6 +169,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const currentApiKeyValue = (localSettings as any)[currentApiKeyName];
   const currentTestResult = testResults[localSettings.aiProvider];
 
+  // True if no cloud API key has been entered across any provider.
+  const hasNoApiKeyConfigured = !localSettings.googleApiKey && !localSettings.openaiApiKey &&
+      !localSettings.anthropicApiKey && !localSettings.gardenerApiKey && !localSettings.localApiKey &&
+      localSettings.aiProvider !== 'browser';
+
   // Detect if the current key came from an environment variable
   const envVarNames: Record<AiProviderType, string> = {
       google: 'GEMINI_API_KEY',
@@ -208,6 +213,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             {/* Provider Selection */}
             <section>
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">AI Provider</h3>
+                {hasNoApiKeyConfigured && (
+                    <div className="mb-3 p-3 rounded-lg border border-yellow-700/40 bg-yellow-900/10 text-xs text-gray-300">
+                        <span className="font-semibold text-yellow-400">Quick start:</span>{' '}
+                        Pick a provider below and paste an API key to enable AI chat, query suggestions, and plot generation.
+                        {' '}<span className="text-gray-400">Fastest options: <strong className="text-gray-200">Anthropic</strong> (claude.ai) or <strong className="text-gray-200">Google Gemini</strong> (aistudio.google.com) — both offer free tiers.</span>
+                    </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {(Object.keys(providerMetadataRegistry) as AiProviderType[]).map(key => {
                         const meta = providerMetadataRegistry[key];

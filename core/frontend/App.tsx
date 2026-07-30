@@ -259,6 +259,13 @@ const App: React.FC = () => {
     const [isTemplateGalleryOpen, setIsTemplateGalleryOpen] = useState(false);
     const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
     const [isTourOpen, setIsTourOpen] = useState(false);
+    const [aiNudgeDismissed, setAiNudgeDismissed] = useState(
+        () => { try { return !!localStorage.getItem('jfrq:ai-nudge-dismissed'); } catch { return false; } }
+    );
+    const dismissAiNudge = useCallback(() => {
+        try { localStorage.setItem('jfrq:ai-nudge-dismissed', '1'); } catch {}
+        setAiNudgeDismissed(true);
+    }, []);
     const [showWelcomeBanner, setShowWelcomeBanner] = useState(() => {
         try { return !localStorage.getItem('jfr-tour-seen'); } catch { return false; }
     });
@@ -1426,7 +1433,12 @@ const App: React.FC = () => {
                     <div className="w-px h-5 bg-gray-700 mx-1" />
                     <a href="https://parttimenerd.github.io/jfr-query/docs/" target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Documentation" aria-label="Documentation"><BookOpenIcon className="w-4 h-4"/></a>
                     <button onClick={() => setIsShortcutsModalOpen(true)} data-tour="shortcuts-btn" className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Keyboard Shortcuts & Tips (?)" aria-label="Keyboard Shortcuts"><QuestionMarkCircleIcon className="w-4 h-4"/></button>
-                    <button onClick={() => setIsSettingsModalOpen(true)} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Settings" aria-label="Settings"><CogIcon className="w-4 h-4"/></button>
+                    <button onClick={() => setIsSettingsModalOpen(true)} className="relative p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Settings" aria-label="Settings">
+                        <CogIcon className="w-4 h-4"/>
+                        {!isAiAvailable && !aiNudgeDismissed && (
+                            <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" aria-hidden="true" />
+                        )}
+                    </button>
                 </div>
             </header>
 
@@ -1459,6 +1471,23 @@ const App: React.FC = () => {
                             ✕
                         </button>
                     </div>
+                </div>
+            )}
+
+            {!isAiAvailable && !aiNudgeDismissed && !showWelcomeBanner && (
+                <div className="flex-shrink-0 flex items-center justify-between gap-3 px-4 py-1.5 bg-gray-800/80 border-b border-gray-700/60 text-xs">
+                    <span className="text-gray-400">
+                        <span className="text-yellow-400 font-medium">✦ AI features are off.</span>
+                        {' '}Set up an API key in{' '}
+                        <button
+                            onClick={() => { setIsSettingsModalOpen(true); dismissAiNudge(); }}
+                            className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2"
+                        >
+                            Settings
+                        </button>
+                        {' '}to enable chat, query suggestions, and plot generation.
+                    </span>
+                    <button onClick={dismissAiNudge} className="text-gray-600 hover:text-gray-400 ml-2 flex-shrink-0" aria-label="Dismiss AI nudge">✕</button>
                 </div>
             )}
 
