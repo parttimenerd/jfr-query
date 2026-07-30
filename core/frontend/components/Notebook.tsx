@@ -284,7 +284,10 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                         <p className="text-sm text-gray-500">Add a cell and write your first SQL query to get started.</p>
                     </div>
                     <button
-                        onClick={onAddCell}
+                        onClick={() => onAddCellFromTool
+                            ? onAddCellFromTool({ type: 'sql', content: 'SELECT\n  *\nFROM\n  ' })
+                            : onAddCell()
+                        }
                         className="flex items-center gap-2 px-5 py-2.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg transition-colors font-semibold text-sm"
                     >
                         <PlusIcon className="w-4 h-4" /> Add SQL Cell
@@ -303,12 +306,40 @@ const Notebook: React.FC<NotebookProps> = (props) => {
             )}
             {!presenterMode && (
                 <div className="flex justify-center py-4">
-                    <button
-                        onClick={onAddCell}
-                        className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-cyan-600/50 text-gray-300 hover:text-cyan-300 rounded-lg transition-colors font-semibold"
-                    >
-                        <PlusIcon className="w-5 h-5" /> Add Cell
-                    </button>
+                    <div className="flex items-center gap-1 bg-gray-800/60 border border-gray-700 rounded-lg p-1">
+                        <button
+                            onClick={() => onAddCellFromTool
+                                ? onAddCellFromTool({ type: 'sql', content: 'SELECT\n  *\nFROM\n  ' })
+                                : onAddCell()
+                            }
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-gray-400 hover:text-cyan-300 hover:bg-cyan-600/20 transition-colors text-sm font-medium"
+                            title="Add SQL cell"
+                        >
+                            <PlusIcon className="w-4 h-4" /> SQL
+                        </button>
+                        <div className="w-px h-4 bg-gray-700" />
+                        <button
+                            onClick={() => onAddCellFromTool
+                                ? onAddCellFromTool({ type: 'plot', content: 'TABLE()' })
+                                : onAddCell()
+                            }
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-gray-400 hover:text-cyan-300 hover:bg-cyan-600/20 transition-colors text-sm font-medium"
+                            title="Add Plot / Table cell"
+                        >
+                            <PlusIcon className="w-4 h-4" /> Plot
+                        </button>
+                        <div className="w-px h-4 bg-gray-700" />
+                        <button
+                            onClick={() => onAddCellFromTool
+                                ? onAddCellFromTool({ type: 'markdown', content: '## Notes\n\n' })
+                                : onAddCell()
+                            }
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-gray-400 hover:text-cyan-300 hover:bg-cyan-600/20 transition-colors text-sm font-medium"
+                            title="Add Markdown notes cell"
+                        >
+                            <PlusIcon className="w-4 h-4" /> Markdown
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

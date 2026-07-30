@@ -415,6 +415,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
                 className="w-full bg-gray-800/50 border border-gray-700 rounded-md py-1.5 pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
         </div>
+        <p className="text-[11px] text-gray-600">Click a table to preview it · double-click to copy its name</p>
       </div>
       <div className="flex-grow overflow-hidden flex flex-col" ref={containerRef}>
         {panelConfigs.map((panel, index) => {
