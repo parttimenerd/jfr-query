@@ -65,6 +65,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
   useEffect(() => { try { localStorage.setItem('jfr-sidebar-editor-visible', JSON.stringify(isPreviewEditorVisible)); } catch {} }, [isPreviewEditorVisible]);
 
   const [collapsedStates, setCollapsedStates] = useState(INITIAL_COLLAPSED_STATES);
+  const [analysisGuideOpen, setAnalysisGuideOpen] = useState(false);
   const [panelBasis, setPanelBasis] = useState<number[]>([]);
   const [copiedName, setCopiedName] = useState<string | null>(null);
   const copyTimeoutRef = useRef<number | null>(null);
@@ -416,6 +417,40 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
             />
         </div>
         <p className="text-[11px] text-gray-600">Click a table to preview it · double-click to copy its name</p>
+        {/* Analysis guide */}
+        <div className="border-t border-gray-800 pt-1.5">
+            <button
+                onClick={() => setAnalysisGuideOpen(o => !o)}
+                className="flex items-center justify-between w-full text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
+            >
+                <span className="font-medium">Where to start?</span>
+                <span className="text-gray-600">{analysisGuideOpen ? '▲' : '▼'}</span>
+            </button>
+            {analysisGuideOpen && (
+                <div className="mt-2 space-y-2 text-[11px] text-gray-400">
+                    {[
+                        { symptom: '🐢 App is slow', templates: ['Recording Overview', 'CPU Profiling'], tables: ['CPULoad', 'ExecutionSample'] },
+                        { symptom: '📈 High GC overhead', templates: ['GC Analysis'], tables: ['GarbageCollection', 'GCPhasePause', 'GCHeapSummary'] },
+                        { symptom: '💾 Memory leak', templates: ['Memory Leak Detection'], tables: ['OldObjectSample', 'ObjectAllocationSample'] },
+                        { symptom: '🔒 Thread contention', templates: ['Threading & Contention'], tables: ['JavaMonitorEnter', 'JavaThreadStatistics'] },
+                        { symptom: '🌐 Slow I/O', templates: ['I/O & Latency'], tables: ['FileRead', 'SocketRead', 'ThreadPark'] },
+                        { symptom: '⚙️ JVM overhead', templates: ['JVM Internals'], tables: ['ExecuteVMOperation', 'SafepointBegin', 'Deoptimization'] },
+                        { symptom: '📦 Container throttled', templates: ['Container & Cloud'], tables: ['ContainerCPUThrottling', 'ContainerMemoryUsage'] },
+                    ].map(({ symptom, templates, tables }) => (
+                        <div key={symptom} className="rounded bg-gray-800/40 px-2 py-1.5">
+                            <div className="text-gray-300 font-medium mb-0.5">{symptom}</div>
+                            <div className="text-gray-500">
+                                <span className="text-gray-600">Templates: </span>
+                                {templates.join(', ')}
+                            </div>
+                            <div className="text-gray-600 font-mono text-[10px] mt-0.5">
+                                {tables.join(' · ')}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
       </div>
       <div className="flex-grow overflow-hidden flex flex-col" ref={containerRef}>
         {panelConfigs.map((panel, index) => {

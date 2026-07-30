@@ -21,6 +21,8 @@ Where heap memory is going — which classes allocate the most and how the rate 
 
 Counts are **sampled approximations**, not exact totals. The `$limit` variable controls how many top classes are shown.
 
+**Interpreting results:** The top allocating class is the primary GC pressure source — reducing its allocation (e.g. via object pooling or caching) will lower GC frequency the most. An allocation rate > 1 GB/s is very high and will cause frequent young-gen GC. Correlate rate spikes with GC pause spikes in the GC Analysis template.
+
 ---
 
 <!-- @cell name=top-classes -->

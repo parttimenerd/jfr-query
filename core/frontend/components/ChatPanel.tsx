@@ -1476,6 +1476,37 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     );
                 })}
                 {isLoading && streamingText === null && (<div className="flex justify-start"><div className="bg-gray-700 rounded-lg p-3 inline-flex items-center space-x-2"><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-0"></span><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-150"></span><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-300"></span></div></div>)}
+                {/* Symptom-based starter chips — shown only on fresh conversations */}
+                {messages.length === 1 && !isLoading && (
+                    <div className="mt-2 space-y-2">
+                        <p className="text-[10px] uppercase tracking-wider text-gray-500">Start with a symptom</p>
+                        <div className="flex flex-wrap gap-1.5">
+                            {[
+                                { label: '🐢 App is slow', prompt: 'My app seems slow. Can you give me an overview of where time is being spent — GC, CPU hotspots, I/O, and thread contention?' },
+                                { label: '📈 High GC overhead', prompt: 'Show me GC pause time by cause, the longest pauses, and whether heap is growing after each GC.' },
+                                { label: '💾 Memory leak?', prompt: 'I suspect a memory leak. Show me long-lived objects by class and which allocation sites created them.' },
+                                { label: '🔥 CPU hotspot', prompt: 'Which methods are consuming the most CPU? Show a top-methods table and explain what to look for.' },
+                                { label: '🔒 Thread contention', prompt: 'Show me the top monitor contention hotspots — which locks are blocking threads the most.' },
+                                { label: '🌐 Slow I/O', prompt: 'Show me file and socket I/O latency, the slowest paths and hosts, and total blocking time by event type.' },
+                                { label: '📦 Container throttled', prompt: 'Is this JVM being CPU-throttled by container limits? Show throttle percentage over time.' },
+                                { label: '🔍 What events are here?', prompt: 'What JFR event types are present in this recording? Give me a summary of what analysis is possible.' },
+                            ].map(({ label, prompt }) => (
+                                <button
+                                    key={label}
+                                    onMouseDown={e => {
+                                        e.preventDefault();
+                                        setInput(prompt);
+                                        setTimeout(() => inputRef.current?.focus(), 0);
+                                    }}
+                                    className="inline-flex items-center px-2.5 py-1 rounded-full border border-gray-600 bg-gray-800/60 text-xs text-gray-300 hover:bg-gray-700/60 hover:border-gray-500 hover:text-gray-100 transition-colors"
+                                    title={prompt}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 <div ref={messagesEndRef}/>
             </div>
             {/* ── Input ── */}

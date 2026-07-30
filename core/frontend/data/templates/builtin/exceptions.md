@@ -21,6 +21,8 @@ Which exception classes are thrown most often during the recording.
 
 These events require `-XX:StartFlightRecording:settings=profile` (they're off in the default profile). Frequent exceptions on hot paths can cause significant overhead — look for surprising counts of `NullPointerException`, `SocketTimeoutException`, or similar control-flow exceptions.
 
+**Interpreting results:** A few hundred exceptions per second is rarely a problem. Tens of thousands per second of `NullPointerException` or `IOException` used for control flow can add significant CPU overhead and GC pressure. `OutOfMemoryError` appearing even once is critical. Any exception type you don't recognise is worth investigating with a stack trace query.
+
 ---
 
 <!-- @cell name=exceptions-by-class -->
