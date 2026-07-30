@@ -41,8 +41,8 @@ async function setCmContent(page: Page, editor: import('@playwright/test').Locat
   const isMac = process.platform === 'darwin';
   const modKey = isMac ? 'Meta' : 'Control';
   await page.keyboard.press(`${modKey}+a`);
-  await page.keyboard.press('Delete');
-  await page.keyboard.type(text);
+  // Use insertText to atomically replace the selection (avoids per-key autocomplete).
+  await page.keyboard.insertText(text);
 }
 
 // ---------------------------------------------------------------------------
@@ -363,7 +363,12 @@ test.describe.serial('Per-cell: Format SQL and Copy SQL', () => {
 
     const formatBtn = page.getByRole('button', { name: 'Format SQL' }).first();
     await formatBtn.click();
-    await page.waitForTimeout(1000);
+    // Wait until the formatter has applied — formatted SQL spans multiple CM lines.
+    await expect.poll(
+      () => firstSqlEditor.locator('.cm-line').count(),
+      { timeout: 5_000, intervals: [200, 200, 500, 500] }
+    ).toBeGreaterThan(1);
+    await page.waitForTimeout(100);
 
     const content = await firstSqlEditor.locator('.cm-content').first().innerText();
     expect(content, 'formatted SQL has newlines').toMatch(/\n/);
@@ -718,7 +723,7 @@ test.describe.serial('PlotSuggestionChip', () => {
     }
 
     // Open Settings and enable auto-plot suggestion if possible.
-    const settingsBtn = page.getByRole('button', { name: 'Settings' });
+    const settingsBtn = page.getByRole('button', { name: 'Settings' }).first();
     await settingsBtn.click();
     await page.waitForTimeout(400);
 
@@ -827,5 +832,222 @@ test.describe('Multi-plot cell keys', () => {
     await page.waitForTimeout(2000);
 
     expect(keyErrors, `duplicate key console errors: ${keyErrors.join(' | ')}`).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 16: NotebookTabs — tab bar interactions
+// ---------------------------------------------------------------------------
+
+test.describe.serial('NotebookTabs: tab bar', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T43. Tab bar is visible and shows at least one tab', async () => {
+    const tabBar = page.locator('[data-testid="notebook-tab-bar"]');
+    await tabBar.waitFor({ state: 'visible', timeout: 10_000 });
+    const tabs = tabBar.locator('button[aria-selected]');
+    const tabCount = await tabs.count();
+    expect(tabCount, 'at least one tab button').toBeGreaterThan(0);
+  });
+
+  test('T44. Clicking the "+" button opens a new tab', async () => {
+    const tabBar = page.locator('[data-testid="notebook-tab-bar"]');
+    const newTabBtn = tabBar.getByRole('button', { name: 'New tab' });
+    await newTabBtn.waitFor({ state: 'visible', timeout: 5_000 });
+    const countBefore = await tabBar.locator('button[aria-selected]').count();
+    await newTabBtn.click();
+    await page.waitForTimeout(300);
+    const countAfter = await tabBar.locator('button[aria-selected]').count();
+    expect(countAfter, 'tab count increased by 1').toBe(countBefore + 1);
+  });
+
+  test('T45. Switching to the first tab sets it as active (aria-selected=true)', async () => {
+    const tabBar = page.locator('[data-testid="notebook-tab-bar"]');
+    const firstTab = tabBar.locator('button[aria-selected]').first();
+    await firstTab.click();
+    await page.waitForTimeout(200);
+    const isSelected = await firstTab.getAttribute('aria-selected');
+    expect(isSelected, 'first tab is active').toBe('true');
+  });
+
+  test('T46. Closing the extra tab (via ×) removes it from the bar', async () => {
+    const tabBar = page.locator('[data-testid="notebook-tab-bar"]');
+    const tabsBefore = await tabBar.locator('button[aria-selected]').count();
+    if (tabsBefore < 2) { test.skip(); return; }
+
+    // Click the last tab first to make it active (so close button is visible).
+    const lastTab = tabBar.locator('button[aria-selected]').last();
+    await lastTab.click();
+    await page.waitForTimeout(200);
+    const closeBtn = lastTab.getByRole('button', { name: 'Close tab' });
+    await closeBtn.waitFor({ state: 'visible', timeout: 3_000 });
+    await closeBtn.click();
+    await page.waitForTimeout(300);
+    const tabsAfter = await tabBar.locator('button[aria-selected]').count();
+    expect(tabsAfter, 'tab removed').toBe(tabsBefore - 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 17: ContextMenu — right-click on cell header
+// ---------------------------------------------------------------------------
+
+test.describe.serial('ContextMenu: cell header right-click', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T47. Right-clicking a cell header opens the context menu', async () => {
+    const cellHeader = page.locator('[data-testid="cell-header"]').first();
+    await cellHeader.waitFor({ state: 'visible', timeout: 10_000 });
+    await cellHeader.click({ button: 'right' });
+    await page.waitForTimeout(200);
+    const menu = page.locator('[role="menu"]');
+    await menu.waitFor({ state: 'visible', timeout: 3_000 });
+    expect(await menu.isVisible(), 'context menu visible').toBe(true);
+  });
+
+  test('T48. Context menu shows expected items (Duplicate, Move up/down, Delete)', async () => {
+    const menu = page.locator('[role="menu"]');
+    const visible = await menu.isVisible().catch(() => false);
+    if (!visible) {
+      // Reopen if needed
+      const cellHeader = page.locator('[data-testid="cell-header"]').first();
+      await cellHeader.click({ button: 'right' });
+      await page.waitForTimeout(200);
+    }
+    const items = page.locator('[role="menuitem"]');
+    const count = await items.count();
+    expect(count, 'at least 3 menu items').toBeGreaterThanOrEqual(3);
+    const labels = await items.allInnerTexts();
+    expect(labels.some(l => /duplicate/i.test(l)), 'Duplicate item').toBe(true);
+    expect(labels.some(l => /delete/i.test(l)), 'Delete item').toBe(true);
+  });
+
+  test('T49. Pressing Escape closes the context menu', async () => {
+    const menu = page.locator('[role="menu"]');
+    const visible = await menu.isVisible().catch(() => false);
+    if (!visible) {
+      const cellHeader = page.locator('[data-testid="cell-header"]').first();
+      await cellHeader.click({ button: 'right' });
+      await menu.waitFor({ state: 'visible', timeout: 3_000 });
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    const stillVisible = await menu.isVisible().catch(() => false);
+    expect(stillVisible, 'menu dismissed by Escape').toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section 18: CompareView — side-by-side query comparison
+// ---------------------------------------------------------------------------
+
+test.describe.serial('CompareView: side-by-side result comparison', () => {
+  test.skip(SKIP, 'SKIP_E2E=1 set');
+
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await gotoDemo(page);
+  });
+
+  test.afterAll(async () => page.close());
+
+  test('T50. "⇔ Compare" button appears when a cell has ≥2 SQL queries with results', async () => {
+    // Add a cell with two SQL blocks so the Compare button appears.
+    const addCellBtn = page.getByRole('button', { name: 'Add Cell' });
+    await addCellBtn.waitFor({ state: 'visible', timeout: 10_000 });
+    await addCellBtn.click();
+    await page.waitForTimeout(500);
+
+    // New cell has no SQL editor yet — click "Add SQL" to create one.
+    const lastCell = page.locator('[data-cell-id]').last();
+    await lastCell.scrollIntoViewIfNeeded();
+    const firstAddSql = lastCell.getByRole('button', { name: 'Add SQL' }).first();
+    await firstAddSql.waitFor({ state: 'visible', timeout: 10_000 });
+    await firstAddSql.click();
+    await page.waitForTimeout(400);
+
+    // The new cell's SQL editor.
+    const sqlEditor = lastCell.locator('.cm-jfr-editor .cm-editor').first();
+    await sqlEditor.waitFor({ state: 'visible', timeout: 10_000 });
+    await setCmContent(page, sqlEditor, 'SELECT 1 AS a, 2 AS b');
+
+    // Run the first query.
+    const runBtns = lastCell.getByRole('button', { name: /run query/i });
+    await runBtns.first().waitFor({ state: 'visible', timeout: 5_000 });
+    await runBtns.first().click();
+    await page.waitForTimeout(1500);
+
+    // Add a second SQL block.
+    const addSqlBtn = lastCell.getByRole('button', { name: 'Add SQL' }).first();
+    const hasSqlBtn = await addSqlBtn.isVisible().catch(() => false);
+    if (!hasSqlBtn) { test.skip(); return; }
+    await addSqlBtn.click();
+    await page.waitForTimeout(400);
+
+    const sqlEditors = lastCell.locator('.cm-jfr-editor .cm-editor');
+    const sqlCount = await sqlEditors.count();
+    if (sqlCount < 2) { test.skip(); return; }
+    await setCmContent(page, sqlEditors.nth(1), 'SELECT 3 AS a, 4 AS b');
+
+    await runBtns.nth(1).click();
+    await page.waitForTimeout(1500);
+
+    // Compare button should now appear.
+    const compareBtn = lastCell.locator('[data-testid="compare-view-toggle"]');
+    await compareBtn.waitFor({ state: 'visible', timeout: 5_000 });
+    expect(await compareBtn.isVisible(), '⇔ Compare button visible').toBe(true);
+  });
+
+  test('T51. Clicking "⇔ Compare" shows side-by-side panes', async () => {
+    const lastCell = page.locator('[data-cell-id]').last();
+    const compareBtn = lastCell.locator('[data-testid="compare-view-toggle"]');
+    const btnVisible = await compareBtn.isVisible().catch(() => false);
+    if (!btnVisible) { test.skip(); return; }
+
+    await compareBtn.click();
+    await page.waitForTimeout(400);
+
+    // CompareView renders two labelled panes.  Labels use uppercase "CANDIDATE" / "BASELINE"
+    // or the query alias.  We look for the div.flex.h-full container.
+    const panes = lastCell.locator('.divide-x');
+    await panes.waitFor({ state: 'visible', timeout: 3_000 });
+    // Each pane has a header with row-count info.
+    const rowCountLabels = panes.locator('span.opacity-60');
+    const paneLabelCount = await rowCountLabels.count();
+    expect(paneLabelCount, '2 panes with row count labels').toBeGreaterThanOrEqual(2);
+  });
+
+  test('T52. Clicking "⇔ Compare" again hides the compare view', async () => {
+    const lastCell = page.locator('[data-cell-id]').last();
+    const compareBtn = lastCell.locator('[data-testid="compare-view-toggle"]');
+    const btnVisible = await compareBtn.isVisible().catch(() => false);
+    if (!btnVisible) { test.skip(); return; }
+
+    // Toggle off.
+    await compareBtn.click();
+    await page.waitForTimeout(300);
+    const panes = lastCell.locator('.divide-x');
+    const panesVisible = await panes.isVisible().catch(() => false);
+    expect(panesVisible, 'compare view hidden after second click').toBe(false);
   });
 });

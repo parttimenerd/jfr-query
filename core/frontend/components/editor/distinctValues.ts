@@ -108,7 +108,8 @@ export function getCachedValues(table: string, column: string): string[] | null 
 
 /**
  * Kick off a lookup if we haven't already. Returns synchronously — the result
- * lands in the cache and shows up on the user's next keystroke.
+ * lands in the cache. When `onReady` is provided it is called after the values
+ * are stored, so the editor can re-trigger completion to surface them.
  */
 export function requestDistinctValues(
   runner: DistinctValuesRunner,
@@ -116,6 +117,7 @@ export function requestDistinctValues(
   table: string | null,
   column: string,
   referenced: Set<string>,
+  onReady?: (() => void) | null,
 ): void {
   let resolved: { tableName: string; columnName: string; type: string } | null = null;
   if (table) {
@@ -142,6 +144,7 @@ export function requestDistinctValues(
         .filter((v): v is string => v != null && v.length < 200);
       cache.set(key, { state: 'ready', values });
       evict();
+      try { onReady?.(); } catch { /* swallow */ }
     })
     .catch(() => {
       cache.set(key, { state: 'error' });

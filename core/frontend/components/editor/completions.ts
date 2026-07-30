@@ -34,6 +34,11 @@ export interface SqlCompletionDeps {
   /** Optional: enables live distinct-value completion inside string literals. */
   getQueryRunner?: () => DistinctValuesRunner | null;
   /**
+   * Optional: called when a fresh distinct-value set is cached, so the editor
+   * can re-trigger the completion popup to surface the new values.
+   */
+  onDistinctValuesReady?: () => void;
+  /**
    * Optional: semantic reranker (MiniLM). When provided, completion labels are
    * reordered by similarity to the cursor's left-context using a cache-then-
    * rerank pattern. Cache is keyed on the lowercased context.
@@ -200,7 +205,7 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
     if (sqlCtx.insideStringForColumn) {
       const { column, table } = sqlCtx.insideStringForColumn;
       // Trigger background fetch (cheap if cached).
-      if (runner) requestDistinctValues(runner, schema, table, column, sqlCtx.referenced);
+      if (runner) requestDistinctValues(runner, schema, table, column, sqlCtx.referenced, deps.onDistinctValuesReady);
       const values = lookupCachedValues(schema, table, column, sqlCtx.referenced);
       // String tokens: find the unclosed quote and offer completions from inside.
       const lastQuote = upTo.lastIndexOf("'");

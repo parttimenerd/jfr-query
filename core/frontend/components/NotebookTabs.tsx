@@ -80,6 +80,7 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
 
     return (
         <div className="flex-shrink-0 flex items-center bg-gray-900/60 border-b border-gray-700/80 overflow-x-auto z-20"
+            data-testid="notebook-tab-bar"
             style={{ minHeight: '34px' }}
         >
             <div className="flex items-stretch min-w-0 flex-1">

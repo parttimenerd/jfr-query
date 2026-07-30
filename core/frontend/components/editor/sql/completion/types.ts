@@ -39,6 +39,9 @@ export interface ProviderContext {
     // The SQL clause enclosing the cursor, if any. Computed by walking up
     // through clause-kind ancestors.
     enclosingClause: SqlClause | null;
+    // Called when a distinct-value query completes and the cache is populated.
+    // Allows the editor to re-trigger the completion popup to show fresh values.
+    onDistinctValuesReady?: () => void;
 }
 
 // What each provider returns. `from` overrides the dispatcher's default

@@ -459,6 +459,87 @@ const InteractivePlotWrapper: React.FC<{
     );
 };
 
+// ─── BrushModeWrapper ─────────────────────────────────────────────────────────
+// Used when a plot has a BRUSH clause. Any drag on the chart area creates a
+// selection box and publishes the selection to the named variable.
+const BrushModeWrapper: React.FC<{
+    children: React.ReactElement;
+    data: any[];
+    xCol: string;
+    mode: string;
+    onVariableChange: (vars: Record<string, unknown>) => void;
+    gestureName: string;
+}> = ({ children, data, xCol, mode, onVariableChange, gestureName }) => {
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const dragRef = useRef<{ startX: number; startPct: number } | null>(null);
+    const [selectBox, setSelectBox] = useState<{ startPct: number; endPct: number } | null>(null);
+
+    const dataRange = useMemo(() => computeDataRange(data, xCol), [data, xCol]);
+
+    const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.button !== 0) return;
+        if ((e.target as HTMLElement).closest('button, .recharts-brush')) return;
+        const rect = wrapperRef.current?.getBoundingClientRect();
+        if (!rect || rect.width <= 0) return;
+        const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        dragRef.current = { startX: e.clientX, startPct: pct };
+        setSelectBox({ startPct: pct, endPct: pct });
+        e.preventDefault();
+    }, []);
+
+    const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (!dragRef.current) return;
+        const rect = wrapperRef.current?.getBoundingClientRect();
+        if (!rect || rect.width <= 0) return;
+        const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        setSelectBox({ startPct: dragRef.current.startPct, endPct: pct });
+    }, []);
+
+    const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (!dragRef.current) return;
+        const rect = wrapperRef.current?.getBoundingClientRect();
+        if (rect && rect.width > 0) {
+            const { startPct } = dragRef.current;
+            const endPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            if (Math.abs(endPct - startPct) > 0.01 && dataRange) {
+                const lo = dataRange.min + Math.min(startPct, endPct) * (dataRange.max - dataRange.min);
+                const hi = dataRange.min + Math.max(startPct, endPct) * (dataRange.max - dataRange.min);
+                onVariableChange({ [`${gestureName}.brush`]: { lo, hi } });
+            }
+        }
+        dragRef.current = null;
+        // Keep selectBox visible briefly then clear on next interaction
+    }, [dataRange, gestureName, onVariableChange]);
+
+    const handleMouseLeave = useCallback(() => {
+        if (dragRef.current) {
+            dragRef.current = null;
+        }
+    }, []);
+
+    return (
+        <div
+            ref={wrapperRef}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
+            style={{ width: '100%', height: '100%', position: 'relative', cursor: dragRef.current ? 'col-resize' : 'crosshair' }}
+        >
+            {selectBox && Math.abs(selectBox.endPct - selectBox.startPct) > 0.005 && (
+                <div style={{
+                    position: 'absolute', top: 0, bottom: 0, zIndex: 20, pointerEvents: 'none',
+                    left: `${Math.min(selectBox.startPct, selectBox.endPct) * 100}%`,
+                    width: `${Math.abs(selectBox.endPct - selectBox.startPct) * 100}%`,
+                    background: 'rgba(6,182,212,0.2)', border: '1px solid rgba(6,182,212,0.7)',
+                    opacity: 0.9,
+                }} />
+            )}
+            {children}
+        </div>
+    );
+};
+
 // ─── StandaloneZoomWrapper ────────────────────────────────────────────────────
 // Used when a plot has a numeric x-axis but no LINK_X clause.
 // Zoom/pan is local only — no notebook variable writes.
@@ -1101,6 +1182,14 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                                     <InteractivePlotWrapper linkX={linkX} linkXClamp={!!linkXClamp} linkXMaster={linkXMaster} data={singlePlotData} xCol={(parsedConfig as any).x} allVariables={allVariables} onVariableChange={handleVariableChange}>
                                         {singlePlotEl}
                                     </InteractivePlotWrapper>
+                                </PlotErrorBoundary>
+                            );
+                        } else if (singleBrushVarName && singleBrushHandler && (parsedConfig as any).x) {
+                            plotContent = (
+                                <PlotErrorBoundary>
+                                    <BrushModeWrapper data={singlePlotData} xCol={(parsedConfig as any).x} mode={parsedCall.brush!.mode} gestureName={singleBrushVarName.replace(/^\$/, '')} onVariableChange={singleBrushHandler}>
+                                        {singlePlotEl}
+                                    </BrushModeWrapper>
                                 </PlotErrorBoundary>
                             );
                         } else if (reg.supportsZoom && singlePlotData && singlePlotData.length > 0 && (parsedConfig as any).x) {

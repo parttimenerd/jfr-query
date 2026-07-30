@@ -68,7 +68,7 @@ export const distinctValueProvider: CompletionProvider = {
         if (!det) return { items: [] };
         const referenced = visibleTableNames(ctx);
         if (ctx.runner) {
-            requestDistinctValues(ctx.runner, ctx.schema, det.table, det.column, referenced);
+            requestDistinctValues(ctx.runner, ctx.schema, det.table, det.column, referenced, ctx.onDistinctValuesReady);
         }
         const values = lookupCachedValues(ctx.schema, det.table, det.column, referenced);
         const lastQuote = ctx.upTo.lastIndexOf("'");

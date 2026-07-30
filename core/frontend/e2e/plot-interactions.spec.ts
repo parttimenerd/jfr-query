@@ -670,10 +670,14 @@ test.describe.serial('Plot: HISTOGRAM PALETTE clause', () => {
     await expect(container).toBeVisible({ timeout: 10_000 });
 
     // tableau10 first color is #4e79a7 (steel blue), NOT the default #8884d8 (purple)
+    // Scope to the last result container to avoid picking up bars from earlier cells.
     const barFill = await page.evaluate(() => {
-      const bars = document.querySelectorAll('.recharts-bar-rectangle rect, .recharts-rectangle');
+      const containers = Array.from(document.querySelectorAll('div[id^="result-container-"]'));
+      const last = containers[containers.length - 1];
+      if (!last) return null;
+      const bars = last.querySelectorAll('.recharts-bar-rectangle rect, .recharts-rectangle, .recharts-bar-rectangle path');
       for (const bar of Array.from(bars)) {
-        const fill = bar.getAttribute('fill') || window.getComputedStyle(bar).fill;
+        const fill = (bar as SVGElement).getAttribute('fill') || window.getComputedStyle(bar as Element).fill;
         if (fill && fill !== 'none') return fill;
       }
       return null;
@@ -1450,7 +1454,7 @@ test.describe.serial('Plot: GANTT color column', () => {
     const sqlEd = await getLastSqlEditor(page);
     if (!sqlEd) { test.skip(); return; }
     await setCmContent(page, sqlEd,
-      `SELECT startTime, endTime, cause AS lane, cause AS color_col
+      `SELECT startTime, startTime + (duration * INTERVAL '1 second') AS endTime, cause AS lane, cause AS color_col
        FROM GarbageCollection ORDER BY startTime LIMIT 8`);
     await pressRun(page);
     await page.waitForTimeout(1500);
@@ -1748,11 +1752,14 @@ test.describe.serial('Plot: AXIS_Y FORMAT', () => {
     expect(hasError).toBe(false);
 
     // ".2f" format produces tick labels with a decimal point (e.g. "25.00", "50.00")
+    // Recharts 3 renders tick labels via portals outside .recharts-yAxis, so we
+    // search all tick-value elements in the result container.
     const hasFormattedTick = await page.evaluate(() => {
       const cs = [...document.querySelectorAll('div[id^="result-container-"]')];
       const c = cs[cs.length - 1];
       if (!c) return false;
-      const ticks = [...c.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value, .recharts-yAxis text')];
+      // Portaled ticks may be outside .recharts-yAxis — search entire container
+      const ticks = [...c.querySelectorAll('.recharts-cartesian-axis-tick-value, .recharts-cartesian-axis-tick text')];
       return ticks.some(t => /\d+\.\d+/.test(t.textContent ?? ''));
     });
     expect(hasFormattedTick, 'Y axis ticks formatted with decimal places').toBe(true);

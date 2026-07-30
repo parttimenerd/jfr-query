@@ -2,7 +2,7 @@ import React, { useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { EditorState, Compartment, Extension, Annotation } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, dropCursor, highlightActiveLine, lineNumbers } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, selectAll } from '@codemirror/commands';
-import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
+import { autocompletion, completionKeymap, startCompletion } from '@codemirror/autocomplete';
 import { searchKeymap } from '@codemirror/search';
 import { editorHighlight, editorTheme } from './theme';
 import { buildPlotLanguage, buildSqlLanguage, markdownLanguage } from './languages';
@@ -236,6 +236,10 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(function Edito
         getQueryRunner: () => runQueryRef.current,
         rankCandidates: (q: string, c: string[]) => rankCandidatesRef.current?.(q, c) ?? Promise.resolve([]),
         isRankerReady: () => !!(isRankerReadyRef.current?.()),
+        onDistinctValuesReady: () => {
+          const v = viewRef.current;
+          if (v && v.hasFocus) startCompletion(v);
+        },
       };
       exts.push(
         autocompletion({

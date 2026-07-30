@@ -179,6 +179,7 @@ export function dispatchCompletion(
         tokenFrom,
         explicit: cx.explicit,
         enclosingClause: clauseAtOffset(root, cursor, cx.pos),
+        onDistinctValuesReady: deps.onDistinctValuesReady,
     };
 
     // No schema (only valid when handling `$variable` completions).

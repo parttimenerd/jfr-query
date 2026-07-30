@@ -32,6 +32,8 @@ import PlotRenderer from './PlotRenderer';
 import InlineChat from './InlineChat';
 import PlotHelpModal from './PlotHelpModal';
 import StaticCodeHighlighter from './StaticCodeHighlighter';
+import ContextMenu, { type ContextMenuItem } from './ContextMenu';
+import CompareView from './CompareView';
 import { TrashIcon } from './icons/TrashIcon';
 import { ChevronUpIcon } from './icons/ChevronUpIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
@@ -81,6 +83,7 @@ interface NotebookCellProps {
     onUpdateCell: (cellId: string, content: string) => void;
     onAddCellFromTool?: (mut: { type: 'sql' | 'plot' | 'markdown'; content: string; afterCellId?: string }) => string | undefined;
     onDeleteCell: (cellId: string) => void;
+    onDuplicateCell?: (cellId: string) => void;
     onDeleteQueryBlock: (cellId: string, index: number) => void;
     onMoveCell: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
     /** Forward to InlineChat so "pop to sidebar" can be triggered from a cell. */
@@ -161,10 +164,11 @@ const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: stri
 };
 
 
-const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, queryTimings, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, initialCellCollapsed, onCellCollapseChange, clearResultsTrigger, onRunQuery, onUpdateCell, onAddCellFromTool, onDeleteCell, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false, onPopChatToSidebar, onNavigateRef }) => {
+const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, queryTimings, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, initialCellCollapsed, onCellCollapseChange, clearResultsTrigger, onRunQuery, onUpdateCell, onAddCellFromTool, onDeleteCell, onDuplicateCell, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false, onPopChatToSidebar, onNavigateRef }) => {
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [editingTitleValue, setEditingTitleValue] = useState('');
     const [isRawEditing, setIsRawEditing] = useState(false);
+    const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
     const [editingSection, setEditingSection] = useState<'intro' | 'conclusion' | null>(null);
     const [runningStates, setRunningStates] = useState<Record<number, boolean>>({});
     const [pendingRunStates, setPendingRunStates] = useState<Record<number, boolean>>({});
@@ -178,6 +182,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const deleteConfirmRef = useRef(false);
     deleteConfirmRef.current = isDeleteConfirming;
     const [resultHeight, setResultHeight] = useState(250);
+    const [showCompareView, setShowCompareView] = useState(false);
     const resultResizeRef = useRef<{ startY: number; startH: number } | null>(null);
     const resultHeightUserSet = useRef(false);
     const [copiedSql, setCopiedSql] = useState<number | null>(null);
@@ -1001,6 +1006,22 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', cell.id); e.dataTransfer.effectAllowed = 'move'; setIsBeingDragged(true); };
     const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); setIsDraggingOver(e.clientY < r.top+r.height/2 ? 'top':'bottom'); };
     const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const id = e.dataTransfer.getData('text/plain'); if(id && id !== cell.id && isDraggingOver) onMoveCell(id, cell.id, isDraggingOver==='top'?'before':'after'); setIsDraggingOver(null); };
+    const handleCellHeaderContextMenu = (e: React.MouseEvent) => {
+        if (presenterMode) return;
+        e.preventDefault();
+        setCtxMenu({ x: e.clientX, y: e.clientY });
+    };
+    const ctxMenuItems = useMemo<ContextMenuItem[]>(() => {
+        const cellIdx = allCells.findIndex(c => c.id === cell.id);
+        return [
+            { label: 'Duplicate cell', onClick: () => onDuplicateCell?.(cell.id), disabled: !onDuplicateCell },
+            { isSeparator: true, label: '', onClick: () => {} },
+            { label: 'Move up', onClick: () => { if (cellIdx > 0) onMoveCell(cell.id, allCells[cellIdx - 1].id, 'before'); }, disabled: cellIdx <= 0 },
+            { label: 'Move down', onClick: () => { if (cellIdx < allCells.length - 1) onMoveCell(cell.id, allCells[cellIdx + 1].id, 'after'); }, disabled: cellIdx >= allCells.length - 1 },
+            { isSeparator: true, label: '', onClick: () => {} },
+            { label: 'Delete cell', onClick: () => onDeleteCell(cell.id) },
+        ];
+    }, [cell.id, allCells, onDuplicateCell, onMoveCell, onDeleteCell]);
     // B-055: Alt+Up / Alt+Down on the drag handle (or the cell wrapper) moves
     // the cell one position up or down without requiring mouse drag.
     const handleCellKeyDown = (e: React.KeyboardEvent) => {
@@ -1084,7 +1105,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             onKeyDown={handleCellKeyDown}
             onDragOver={handleDragOver} onDragLeave={()=>setIsDraggingOver(null)} onDrop={handleDrop}>
             {isDraggingOver === 'top' && <div className="absolute top-0 left-0 right-0 h-1 bg-cyan-400 z-10" />}
-            <div className="px-3 py-2 border-b border-gray-700/60 flex items-center justify-between bg-gray-700/20">
+            <div className="px-3 py-2 border-b border-gray-700/60 flex items-center justify-between bg-gray-700/20" data-testid="cell-header" onContextMenu={handleCellHeaderContextMenu}>
                 <div className="flex items-center gap-2 w-full">
                      {!presenterMode && <div draggable onDragStart={handleDragStart} onDragEnd={()=>setIsBeingDragged(false)} title="Drag to reorder (Alt+↑/↓ for keyboard)" aria-label="Drag to reorder cell" role="button" tabIndex={0} className="cursor-grab p-1 text-gray-600 hover:text-gray-400"><Bars2Icon className="w-4 h-4"/></div>}
                     {!presenterMode && <button onClick={()=>{ const next = !isCellCollapsed; setIsCellCollapsed(next); onCellCollapseChange?.(cell.id, next); }} className="p-1 text-gray-400 hover:text-gray-300 flex-shrink-0" title={isCellCollapsed ? "Expand cell" : "Collapse cell"} aria-label={isCellCollapsed ? "Expand cell" : "Collapse cell"}>{isCellCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5"/> : <ChevronUpIcon className="w-3.5 h-3.5"/>}</button>}
@@ -1500,6 +1521,17 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                             <button onClick={handleAddVariable} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add variable</button>
                             <button onClick={handleAddPlot} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add Plot</button>
                             <button onClick={handleAddSql} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add SQL</button>
+                            {results.filter(r => r && r.length > 0 && !r[0]?.error).length >= 2 && (
+                                <button
+                                    onClick={() => setShowCompareView(p => !p)}
+                                    title="Compare first two query results side-by-side"
+                                    aria-label="Toggle compare view"
+                                    data-testid="compare-view-toggle"
+                                    className={`flex items-center gap-1 text-xs px-1 py-0.5 rounded ${showCompareView ? 'text-cyan-400 hover:text-cyan-300' : 'text-gray-600 hover:text-gray-400'}`}
+                                >
+                                    ⇔ Compare
+                                </button>
+                            )}
                         </div>
                     )}
                     {/* Resize controls: size presets + drag handle */}
@@ -1517,6 +1549,22 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                             <div onMouseDown={handleResultResizeStart} className="flex-1 h-1.5 cursor-row-resize rounded-full bg-gray-700 hover:bg-cyan-600/50 transition-colors" title="Drag to resize results" aria-label="Drag to resize results" />
                         </div>
                     )}
+                    {showCompareView && (() => {
+                        const validResults = results.map((r, i) => ({ data: r, idx: i })).filter(({ data }) => data && data.length > 0 && !data[0]?.error);
+                        if (validResults.length < 2) return null;
+                        const candidateAlias = parsed.queryAliases[validResults[0].idx] ?? `Query ${validResults[0].idx + 1}`;
+                        const baselineAlias = parsed.queryAliases[validResults[1].idx] ?? `Query ${validResults[1].idx + 1}`;
+                        return (
+                            <div className="mt-2 rounded-md border border-gray-700/60 overflow-hidden" style={{ height: `${resultHeight}px` }}>
+                                <CompareView
+                                    candidateData={validResults[0].data}
+                                    baselineData={validResults[1].data}
+                                    candidateLabel={candidateAlias}
+                                    baselineLabel={baselineAlias}
+                                />
+                            </div>
+                        );
+                    })()}
                 </div>
                  <MarkdownSectionEditor
                     section={parsedConclusion}
@@ -1532,6 +1580,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             </div>)}
             {isDraggingOver === 'bottom' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-cyan-400 z-10" />}
             <PlotHelpModal isOpen={isPlotHelpModalOpen} onClose={() => { setIsPlotHelpModalOpen(false); plotHelpInsertRef.current = null; }} onInsertExample={plotHelpInsertRef.current ?? undefined} />
+            {ctxMenu && <ContextMenu items={ctxMenuItems} x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)} />}
         </div>
     );
 };
