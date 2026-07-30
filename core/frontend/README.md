@@ -54,3 +54,25 @@ The app supports four AI backends. Select your provider and configure the API ke
 - **OpenAI GPT** — Uses `gpt-4o` (advanced) and `gpt-3.5-turbo` (basic) by default
 - **Anthropic Claude** — Uses `claude-sonnet-4-6` by default
 - **Gardener Answering Machine** — SAP-internal multi-provider gateway (requires VPN); supports Claude, Gemini, and GPT models
+
+## Testing
+
+**Unit / component tests** (Vitest):
+
+```
+npm test
+```
+
+**End-to-end tests** (Playwright) — requires the dev server to be running (`npm run dev`):
+
+```
+npx playwright test e2e/
+```
+
+Set `SKIP_E2E=1` to skip e2e tests in CI environments where no browser is available:
+
+```
+SKIP_E2E=1 npx playwright test e2e/
+```
+
+Test files live in `core/frontend/e2e/` and follow the naming convention `<feature>.spec.ts`. Each spec uses `test.describe.serial` with graceful `test.skip()` guards so tests are safe to run against any build (demo, local dev, or CI).

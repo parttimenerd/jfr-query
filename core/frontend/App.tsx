@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Notebook from './components/Notebook';
+import NotebookTabs, { type Tab } from './components/NotebookTabs';
 import ChatPanel from './components/ChatPanel';
 import ResizablePanel from './components/ResizablePanel';
 import FileLoader from './components/FileLoader';
@@ -169,13 +170,83 @@ const App: React.FC = () => {
     const prevCellsRef = useRef<NotebookCellData[]>([]);
     const savedMarkdownRef = useRef<string>(notebookMarkdown);
 
+    // ---------------------------------------------------------------------------
+    // Multi-tab state
+    // ---------------------------------------------------------------------------
+    // Each entry tracks the display name and the last-saved markdown for that tab
+    // (used to compute isDirty). The actual live notebook content lives in the
+    // useHistoryState above; switching tabs snapshots it into tabsRef and restores
+    // the new tab's content via resetNotebookHistory.
+    const [tabs, setTabs] = useState<Tab[]>(() => [
+        { id: 'tab-1', displayName: 'Notebook', filePath: null, isDirty: false },
+    ]);
+    const [activeTabId, setActiveTabId] = useState<string>('tab-1');
+    // Per-tab saved markdown snapshot (used to compute isDirty and restore on switch).
+    const tabMarkdownRef = useRef<Record<string, string>>({ 'tab-1': initialNotebook });
+
+    // Keep isDirty in sync for the active tab whenever notebookMarkdown changes.
+    useEffect(() => {
+        const savedForTab = tabMarkdownRef.current[activeTabId] ?? '';
+        const dirty = notebookMarkdown !== savedForTab;
+        setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, isDirty: dirty } : t));
+    }, [notebookMarkdown, activeTabId]);
+
+    const handleSelectTab = useCallback((id: string) => {
+        if (id === activeTabId) return;
+        // Snapshot current content into the leaving tab.
+        tabMarkdownRef.current[activeTabId] = notebookMarkdown;
+        // Switch to the new tab.
+        setActiveTabId(id);
+        const target = tabMarkdownRef.current[id] ?? initialNotebook;
+        resetNotebookHistory(target);
+        setResults({});
+        setQueryTimings({});
+        savedMarkdownRef.current = target;
+    }, [activeTabId, notebookMarkdown, resetNotebookHistory]);
+
+    const handleNewTab = useCallback(() => {
+        // Snapshot current content.
+        tabMarkdownRef.current[activeTabId] = notebookMarkdown;
+        const newId = `tab-${Date.now()}`;
+        const newMd = initialNotebook;
+        tabMarkdownRef.current[newId] = newMd;
+        setTabs(prev => [...prev, { id: newId, displayName: 'Notebook', filePath: null, isDirty: false }]);
+        setActiveTabId(newId);
+        resetNotebookHistory(newMd);
+        setResults({});
+        setQueryTimings({});
+        savedMarkdownRef.current = newMd;
+    }, [activeTabId, notebookMarkdown, resetNotebookHistory]);
+
+    const handleCloseTab = useCallback((id: string) => {
+        setTabs(prev => {
+            if (prev.length <= 1) return prev; // never close the last tab
+            const idx = prev.findIndex(t => t.id === id);
+            const next = prev.filter(t => t.id !== id);
+            if (id === activeTabId) {
+                // Switch to adjacent tab.
+                const nextTab = next[Math.min(idx, next.length - 1)];
+                tabMarkdownRef.current[activeTabId] = notebookMarkdown;
+                setActiveTabId(nextTab.id);
+                const targetMd = tabMarkdownRef.current[nextTab.id] ?? initialNotebook;
+                resetNotebookHistory(targetMd);
+                setResults({});
+                setQueryTimings({});
+                savedMarkdownRef.current = targetMd;
+            }
+            delete tabMarkdownRef.current[id];
+            return next;
+        });
+    }, [activeTabId, notebookMarkdown, resetNotebookHistory]);
+
     const loadNotebook = useCallback((source: string) => {
         resetNotebookHistory(source);
         setResults({});
         setQueryTimings({});
-        // Mark as saved so beforeunload doesn't fire just from loading a file.
         savedMarkdownRef.current = source;
-    }, [resetNotebookHistory]);
+        // Mark active tab as saved at this content.
+        tabMarkdownRef.current[activeTabId] = source;
+    }, [resetNotebookHistory, activeTabId]);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = usePersistentState('jfr-ui-sidebarCollapsed', false);
     const [isChatPanelCollapsed, setIsChatPanelCollapsed] = usePersistentState('jfr-ui-chatPanelCollapsed', true);
     const [isAutoRunEnabled, setIsAutoRunEnabled] = usePersistentState('jfr-ui-autoRunEnabled', true);
@@ -251,6 +322,7 @@ const App: React.FC = () => {
         a.click();
         URL.revokeObjectURL(url);
         savedMarkdownRef.current = notebookMarkdown;
+        tabMarkdownRef.current[activeTabId] = notebookMarkdown;
     };
 
     // Drag-and-drop .md anywhere in the app loads it as the notebook.
@@ -774,6 +846,16 @@ const App: React.FC = () => {
         updateCellsAndMarkdown([...cellsRef.current, newCell]);
     }, [updateCellsAndMarkdown]);
 
+    const duplicateCell = useCallback((cellId: string) => {
+        const current = cellsRef.current;
+        const idx = current.findIndex(c => c.id === cellId);
+        if (idx === -1) return;
+        const orig = current[idx];
+        const copy: NotebookCellData = { ...orig, id: `cell-${Date.now()}` };
+        const next = [...current.slice(0, idx + 1), copy, ...current.slice(idx + 1)];
+        updateCellsAndMarkdown(next);
+    }, [updateCellsAndMarkdown]);
+
     /**
      * C7 — Tool-runtime variant of addCell. The AI tool runtime emits
      * `{ type: 'sql' | 'plot' | 'markdown', content, afterCellId? }`; we
@@ -1178,7 +1260,16 @@ const App: React.FC = () => {
                         'Registering views…'}
                     importProgress={importProgress}
                     errorMessage={dbState === DBState.ERROR ? errorMessage : null}
-                    onLoadDemo={() => { loadNotebook(initialNotebook); void loadDemo(); }}
+                    onLoadDemo={() => {
+                        const isFirstVisit = showWelcomeBanner;
+                        loadNotebook(initialNotebook);
+                        void loadDemo().then(() => {
+                            if (isFirstVisit) {
+                                dismissWelcomeBanner();
+                                setTimeout(() => setIsTourOpen(true), 800);
+                            }
+                        });
+                    }}
                     onLoadGcNotebook={() => { loadNotebook(gcAnalysisNotebook); void loadDemo(); }}
                     wasmInitializing={wasmInitializing}
                 />
@@ -1339,11 +1430,19 @@ const App: React.FC = () => {
                 </div>
             </header>
 
+            <NotebookTabs
+                tabs={tabs}
+                activeTabId={activeTabId}
+                onSelectTab={handleSelectTab}
+                onCloseTab={handleCloseTab}
+                onNewTab={handleNewTab}
+            />
+
             {showWelcomeBanner && (
                 <div className="flex-shrink-0 flex items-center justify-between gap-3 px-4 py-2 bg-cyan-950/60 border-b border-cyan-800/40 text-sm">
                     <span className="text-cyan-300/90">
                         <span className="font-semibold">New here?</span>
-                        {' '}Drop a <code className="text-cyan-200 font-mono text-xs bg-cyan-900/40 px-1 rounded">.jfr</code> file to get started, then take the guided tour to learn the key features.
+                        {' '}Try the demo to explore instantly, drop a <code className="text-cyan-200 font-mono text-xs bg-cyan-900/40 px-1 rounded">.jfr</code> file, or pick a template (📄) — then take the guided tour to learn the key features.
                     </span>
                     <div className="flex items-center gap-2 flex-shrink-0">
                         <button
@@ -1397,12 +1496,13 @@ const App: React.FC = () => {
                             </button>
                             <h3 className="font-semibold text-cyan-300 mb-2">Getting started</h3>
                             <ol className="space-y-1 list-decimal list-inside text-gray-400">
-                                <li>Load a JFR file — drag &amp; drop onto the page or use <kbd className="text-xs bg-gray-700 px-1 rounded">File → Open</kbd></li>
-                                <li>Write a SQL query in a cell — e.g. <code className="text-xs bg-gray-800 px-1 rounded font-mono">SELECT * FROM jfr LIMIT 100</code></li>
-                                <li>Add a Plot cell below the query to visualise the results</li>
+                                <li>Load a JFR file — drag &amp; drop anywhere on the page, or use the <strong className="text-gray-300">Load Notebook</strong> toolbar button</li>
+                                <li>No file yet? Click <strong className="text-gray-300">Try the demo</strong> on the landing page, or open a pre-built notebook via <strong className="text-gray-300">New from template</strong> (📄)</li>
+                                <li>Write SQL in a cell and press <kbd className="text-xs bg-gray-700 px-1 rounded">⌘↩</kbd> / <kbd className="text-xs bg-gray-700 px-1 rounded">Ctrl+↩</kbd> to run</li>
+                                <li>Add a Plot block below a query to visualise results — use the <strong className="text-gray-300">Plot syntax reference</strong> (ℹ) button for the DSL guide</li>
                             </ol>
                             <p className="mt-2 text-xs text-gray-500">
-                                Press <kbd className="bg-gray-700 px-1 rounded">Ctrl+Shift+P</kbd> (or <kbd className="bg-gray-700 px-1 rounded">Cmd+Shift+P</kbd>) to open the command palette. Type <kbd className="bg-gray-700 px-1 rounded">?</kbd> for help.
+                                Press <kbd className="bg-gray-700 px-1 rounded">⇧⇧</kbd> or <kbd className="bg-gray-700 px-1 rounded">⌘K</kbd> / <kbd className="bg-gray-700 px-1 rounded">Ctrl+K</kbd> to open the command palette. Press <kbd className="bg-gray-700 px-1 rounded">?</kbd> for all keyboard shortcuts.
                             </p>
                         </div>
                     )}
@@ -1422,6 +1522,7 @@ const App: React.FC = () => {
                         onRunQuery={runQuery}
                         onUpdateCell={updateCell}
                         onDeleteCell={deleteCell}
+                        onDuplicateCell={duplicateCell}
                         onAddCell={addCell}
                         onAddCellFromTool={addCellFromTool}
                         onMoveCell={moveCell}
