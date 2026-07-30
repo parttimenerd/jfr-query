@@ -4,8 +4,8 @@
 // No env flag needed: the JSON artifact is committed in-tree and loading it
 // is free (no network, no large binary).
 
-import { featurize, score as scoreFeatures } from '../../scripts/training/trainAutocompleteRanker';
-import type { RankerFeatures, Weights } from '../../scripts/training/trainAutocompleteRanker';
+import { featurize, score as scoreFeatures } from '../../scripts/training/rankerCore';
+import type { RankerFeatures, Weights } from '../../scripts/training/rankerCore';
 
 export type { RankerFeatures, Weights };
 
