@@ -114,3 +114,47 @@ ORDER BY MAX(duration) DESC
 ```plot
 BAR_CHART(x: "Phase", y: ["Median (ms)", "P90 (ms)", "P99 (ms)", "Max (ms)"], layout: "grouped") TITLE "Pause Percentiles by Phase"
 ```
+
+---
+
+<!-- @cell name=heap-over-time -->
+
+## Heap Usage Over Time
+
+Heap used (MB) before and after each GC. A narrow gap between Before/After means GC isn't reclaiming much — watch for a rising "After" trend indicating a memory leak.
+
+```sql
+SELECT
+  g."startTime" AS "Time",
+  round(h."heapUsed" / 1048576.0, 1) AS "Heap Used MB",
+  h."when" AS "Phase"
+FROM "GCHeapSummary" h
+JOIN "GarbageCollection" g ON g."gcId" = h."gcId"
+ORDER BY g."startTime"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Heap Used MB"], color: "Phase") TITLE "Heap Used (MB) — Before/After Each GC" LINK_X($start, $end) ZOOM
+```
+
+---
+
+<!-- @cell name=allocation-rate -->
+
+## Allocation Rate
+
+Sampled allocation rate in MB/s per second. Spikes often correlate with GC pauses — high allocation pressure forces more frequent collections.
+
+*Requires `ObjectAllocationSample` events. If this cell shows no data, re-record with allocation profiling enabled.*
+
+```sql
+SELECT
+  "Bucket" AS "Time",
+  round("Sample MB/s", 2) AS "Alloc MB/s"
+FROM "allocation-rate"
+ORDER BY 1
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Alloc MB/s"]) TITLE "Allocation Rate (sampled MB/s)" LINK_X($start, $end) ZOOM
+```

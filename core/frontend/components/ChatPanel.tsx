@@ -114,7 +114,26 @@ export interface InlineChatSnapshot {
 }
 
 const initialConversation: ChatMessage[] = [
-    { id: '1', sender: MessageSender.AI, text: 'Hello! I can help you analyze your JFR data. What would you like to investigate? For example, you could ask about CPU load or garbage collection pauses.\n\nType `/help` to see available commands.' },
+    { id: '1', sender: MessageSender.AI, text: `Hello! I can help you analyze your JFR recording. Here are some things you can ask:
+
+**GC & memory**
+- *"Show GC pause time by cause"*
+- *"Plot heap usage over time"*
+- *"What is my allocation rate?"*
+
+**CPU & hotspots**
+- *"Show a CPU flame graph"*
+- *"Which methods are consuming the most CPU?"*
+
+**Threads & locks**
+- *"Show thread contention hotspots"*
+- *"Are there any virtual thread pinning events?"*
+
+**Getting started**
+- *"What JFR events are in this recording?"*
+- *"Summarize this recording in a few sentences"*
+
+Type \`/help\` to see available commands, or just ask a question.` },
 ];
 
 /** A named conversation channel shown as a tab in the panel header. */
