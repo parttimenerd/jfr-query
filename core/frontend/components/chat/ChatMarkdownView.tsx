@@ -103,7 +103,7 @@ export function renderMarkdown(text: string, onRef?: (ref: string) => void): Rea
                     // true inline code (single line) vs a language-less fenced block.
                     const isSingleLine = node?.position?.start?.line === node?.position?.end?.line;
                     if (!className && isSingleLine) {
-                        return <code className="px-1 py-0.5 bg-gray-800 rounded text-xs font-mono text-cyan-300">{children}</code>;
+                        return <code className="bg-gray-950 text-cyan-400 px-1 py-0.5 rounded text-[11px] font-mono">{children}</code>;
                     }
                     return <code className={className} {...props}>{children}</code>;
                 },
