@@ -29,9 +29,12 @@ export const QUERY_DATA_TOOL: Tool = {
 
 export async function handleQueryData(
     args: { sql: string; reason: string; tables: string[] },
-    deps: Pick<ToolDeps, 'duckdbQuery'>,
+    deps: Pick<ToolDeps, 'duckdbQuery' | 'checkQueryPermission'>,
 ): Promise<string> {
     try {
+        if (deps.checkQueryPermission) {
+            await deps.checkQueryPermission(args);
+        }
         const result = await deps.duckdbQuery(args.sql);
         const columns = result.columns.map(c => c.name);
         const { rows } = result;

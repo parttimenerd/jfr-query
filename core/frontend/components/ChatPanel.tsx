@@ -29,6 +29,8 @@ import { parseSlashCommand, commandCompletions, STATIC_COMMANDS } from '../utils
 import { SkillContext } from '../context/SkillContext';
 import { builtinSkillManifest } from '../data/skills/skills-manifest';
 import { ChatMarkdownView, renderMarkdown } from './chat/ChatMarkdownView';
+import { ChatPermissionCard } from './chat/ChatPermissionCard';
+import { ChatTraceView, type TraceStep } from './chat/ChatTraceView';
 import type { CellFenceType } from './chat/ChatEmbeddedCell';
 import { BtwSuggestionCard } from './chat/BtwSuggestionCard';
 import { PromptSuggester, type PromptSuggestion } from '../services/ml/PromptSuggester';
@@ -237,7 +239,7 @@ const ChatPanelCodeBlock: React.FC<{ code: string }> = ({ code }) => {
 
 const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells, onAddCell, onAddCellsBatch, onUpdateCell, onDeleteCell, onMoveCell, onMetadataChange, onNavigateRef, onUndoLastAction, onBeforeMutate, incomingChannel, onIncomingChannelConsumed }) => {
     const { schema, query } = useContext(DataContext);
-    const { settings } = useContext(SettingsContext);
+    const { settings, saveSettings } = useContext(SettingsContext);
     const { activeSkills, availableSkills, mergedSystemPrompt, toggleSkill, deactivateSkill, isActive } = useContext(SkillContext);
 
     // --- Multi-channel state ---
@@ -332,6 +334,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     const [renameDraft, setRenameDraft] = useState('');
     const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
     const [chatVisibility, setChatVisibility] = useState<VisibilityMode>(settings.aiDefaultVisibility);
+
+    // Session-level permission state for query_data and mutation tools.
+    // 'ask' = show permission card on first call; 'granted' = run silently; 'denied' = block.
+    const [sessionQueryPerm, setSessionQueryPerm] = useState<'ask' | 'granted' | 'denied'>('ask');
+    const [sessionMutatePerm, setSessionMutatePerm] = useState<'ask' | 'granted' | 'denied'>('ask');
+    const [pendingPermission, setPendingPermission] = useState<{
+        tool: string;
+        args: Record<string, unknown>;
+        resolve: (granted: boolean) => void;
+    } | null>(null);
+    // Accumulates trace steps for the current AI turn; flushed into meta on completion.
+    const traceRef = useRef<TraceStep[]>([]);
 
     // Per-channel AI memory (key/value facts) and task checklists.
     const [channelMemory, setChannelMemory] = useState<Record<string, Record<string, string>>>({});
@@ -934,6 +948,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         toolHistory.push({ role: 'user', content: inputText });
 
         const deps = buildToolDeps();
+        // Reset trace accumulator for this turn.
+        traceRef.current = [];
         // We override the approval gate so we can register the proposal BEFORE
         // the runtime awaits it. Wrap deps.requireApproval so it just waits on
         // the resolver we set in the tool_call handler.
@@ -959,6 +975,26 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     reject(new Error('cancelled'));
                 }
             }),
+            checkQueryPermission: (args) => {
+                const globalPerm = settings.aiPermQueryData ?? 'ask';
+                if (globalPerm === 'never' || sessionQueryPerm === 'denied') {
+                    return Promise.reject(new Error('Permission denied by user.'));
+                }
+                if (globalPerm === 'always' || sessionQueryPerm === 'granted') {
+                    return Promise.resolve();
+                }
+                // First call — show permission card and wait.
+                return new Promise<void>((resolve, reject) => {
+                    setPendingPermission({
+                        tool: 'query_data',
+                        args: args as Record<string, unknown>,
+                        resolve: (granted) => {
+                            if (granted) resolve();
+                            else reject(new Error('Permission denied by user.'));
+                        },
+                    });
+                });
+            },
         };
 
         let assistantBuf = '';
@@ -1012,6 +1048,22 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     }
                 } else if (chunk.kind === 'tool_result') {
                     setProposals(prev => applyApprovalAction(prev, { type: 'complete', id: chunk.id, result: chunk.result }));
+                    // Capture trace step.
+                    const toolRecord = proposalsRef.current.find(p => p.id === chunk.id);
+                    if (toolRecord) {
+                        let rowCount: number | undefined;
+                        try {
+                            const parsed = JSON.parse(chunk.result);
+                            if (typeof parsed.totalRows === 'number') rowCount = parsed.totalRows;
+                        } catch { /* not JSON or no totalRows */ }
+                        traceRef.current.push({
+                            tool: toolRecord.name,
+                            args: toolRecord.args,
+                            result: chunk.result,
+                            durationMs: 0,
+                            rowCount,
+                        });
+                    }
                 }
             }
         } catch (e: any) {
@@ -1030,6 +1082,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     const parsed = chatMode.parsePlan(trimmed);
                     if (parsed) meta = { plan: parsed, planStatus: 'pending' };
                 }
+                if (traceRef.current.length > 0) {
+                    meta = { ...meta, trace: [...traceRef.current] };
+                }
+                traceRef.current = [];
                 const assistantMsg: ChatMessage = {
                     id: (Date.now() + 1).toString(),
                     sender: MessageSender.AI,
@@ -1330,6 +1386,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                                 <div className="text-sm leading-relaxed">
                                                 {msg.sender === MessageSender.AI ? <ChatMarkdownView text={msg.text} onNavigateRef={onNavigateRef} onAddToNotebook={handleAddCellFromFence} /> : <span className="whitespace-pre-wrap">{msg.text}</span>}
                                                 </div>
+                                                {msg.meta?.trace && msg.meta.trace.length > 0 && (
+                                                    <ChatTraceView steps={msg.meta.trace} />
+                                                )}
                                                 {msg.meta?.plan && (<ChatPlanCard plan={msg.meta.plan} meta={msg.meta} getCellContent={getCellContent} onExecute={executePlanFor(msg.id)} onDiscard={discardPlanFor(msg.id)}/>)}
                                                 {msg.code && <ChatPanelCodeBlock code={msg.code}/>}
                                                 {addArgs && (<button data-testid="add-to-notebook" onClick={() => onAddCellFromAI(addArgs.code, addArgs.plotConfig, addArgs.title, addArgs.markdownText)} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-md text-sm font-semibold"><PlusIcon className="w-4 h-4"/>Add to Notebook</button>)}
@@ -1393,6 +1452,28 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                             <div className="text-sm leading-relaxed">{renderMarkdown(streamingText, onNavigateRef)}<span className="inline-block w-1.5 h-3.5 bg-cyan-400 ml-0.5 animate-pulse" style={{verticalAlign:'text-bottom'}}/></div>
                         </div>
                     </div>
+                )}
+                {pendingPermission && (
+                    <ChatPermissionCard
+                        toolName={pendingPermission.tool}
+                        args={pendingPermission.args}
+                        onAllowSession={() => {
+                            setSessionQueryPerm('granted');
+                            pendingPermission.resolve(true);
+                            setPendingPermission(null);
+                        }}
+                        onAllowAlways={() => {
+                            saveSettings({ aiPermQueryData: 'always' });
+                            setSessionQueryPerm('granted');
+                            pendingPermission.resolve(true);
+                            setPendingPermission(null);
+                        }}
+                        onDeny={() => {
+                            setSessionQueryPerm('denied');
+                            pendingPermission.resolve(false);
+                            setPendingPermission(null);
+                        }}
+                    />
                 )}
                 {proposals.map(record => {
                     const tool = TOOLS.find(t => t.name === record.name);

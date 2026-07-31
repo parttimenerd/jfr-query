@@ -67,6 +67,8 @@ export interface ChatMessageMeta {
   planDiscardedAt?: number;
   /** When this plan supersedes a prior plan in the same channel, the prior message's id. */
   planPredecessorMessageId?: string;
+  /** Tool call trace for this AI turn (query_data + mutation steps). */
+  trace?: import('./components/chat/ChatTraceView').TraceStep[];
 }
 
 export interface ViewParam {

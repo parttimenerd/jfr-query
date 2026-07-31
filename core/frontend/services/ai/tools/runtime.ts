@@ -40,6 +40,12 @@ export interface ToolDeps {
     setMemory?: (key: string, value: string) => void;
     /** Replace the per-channel task list. */
     setTaskList?: (tasks: Array<{ id: string; text: string; done: boolean }>) => void;
+    /**
+     * Optional session-level permission gate for query_data calls. Resolves if
+     * the user approves, rejects with an error string if denied. Read tools
+     * don't call requireApproval, so this is the dedicated hook for that tool.
+     */
+    checkQueryPermission?: (args: { sql: string; reason: string; tables: string[] }) => Promise<void>;
 }
 
 export type NotebookMutation =
