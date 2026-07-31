@@ -1278,6 +1278,7 @@ const App: React.FC = () => {
                         });
                     }}
                     onLoadGcNotebook={() => { loadNotebook(gcAnalysisNotebook); void loadDemo(); }}
+                    onOpenTemplates={() => setIsTemplateGalleryOpen(true)}
                     wasmInitializing={wasmInitializing}
                 />
             );

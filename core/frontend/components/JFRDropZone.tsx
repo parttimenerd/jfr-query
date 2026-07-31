@@ -12,6 +12,7 @@ interface JFRDropZoneProps {
     errorMessage: string | null;
     onLoadDemo?: () => void;
     onLoadGcNotebook?: () => void;
+    onOpenTemplates?: () => void;
     wasmInitializing?: boolean;
 }
 
@@ -38,7 +39,7 @@ interface PendingFile {
     sizeMb: number;
 }
 
-const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, importPhase, importProgress, errorMessage, onLoadDemo, onLoadGcNotebook, wasmInitializing }) => {
+const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, importPhase, importProgress, errorMessage, onLoadDemo, onLoadGcNotebook, onOpenTemplates, wasmInitializing }) => {
     const [fileName, setFileName] = useState<string | null>(null);
     const [fileBytes, setFileBytes] = useState<number | null>(null);
     const [pending, setPending] = useState<PendingFile | null>(null);
@@ -198,7 +199,7 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                     </div>
                 )}
 
-                {(onLoadDemo || onLoadGcNotebook) && !isImporting && (
+                {(onLoadDemo || onOpenTemplates) && !isImporting && (
                     <>
                         <div className="mt-5 flex items-center gap-3 text-xs text-gray-600">
                             <div className="flex-1 border-t border-gray-700" />
@@ -215,13 +216,13 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                                     <span className="text-xs text-gray-400">Starter notebook with sample JFR data — no file needed</span>
                                 </button>
                             )}
-                            {onLoadGcNotebook && (
+                            {onOpenTemplates && (
                                 <button
-                                    onClick={onLoadGcNotebook}
+                                    onClick={onOpenTemplates}
                                     className="flex flex-col items-start gap-0.5 p-3.5 rounded-lg border border-emerald-700/50 bg-emerald-900/10 hover:bg-emerald-900/25 hover:border-emerald-600 transition-colors text-left"
                                 >
-                                    <span className="text-sm font-semibold text-emerald-300">📊 GC analysis notebook</span>
-                                    <span className="text-xs text-gray-400">Pre-built GC pause analysis with queries, charts & commentary</span>
+                                    <span className="text-sm font-semibold text-emerald-300">📄 Browse templates</span>
+                                    <span className="text-xs text-gray-400">GC analysis, CPU profiling, memory leaks, I/O, threading & more</span>
                                 </button>
                             )}
                         </div>
