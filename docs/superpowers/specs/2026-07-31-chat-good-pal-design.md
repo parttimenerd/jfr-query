@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Transform the existing chat panel into a rich, conversational JFR analyst that embeds live visualizations inline, can run its own queries with user permission, works equally well with local and remote models, and integrates fully with notebook variables and cells.
+**Goal:** Transform the existing chat panel into a rich, conversational JFR analyst that embeds live visualizations inline, streams answers token-by-token, automatically retries failed queries with error feedback, can run its own queries and call tools with user permission, works equally well with local and remote models, and integrates fully with notebook variables and cells. The AI is a genuinely helpful performance analyst — it proactively suggests next steps, explains what it finds, and iterates autonomously when something goes wrong.
 
 **Architecture:** Three phased deliveries — (1) visual refresh + embedded cells, (2) AI-initiated queries + data access with permissions, (3) local model routing as a first-class path. Each phase ships independently and improves the experience on its own.
 
@@ -75,6 +75,29 @@ Behaviour:
 - System prompt always includes current variable snapshot via the existing `variablesSystemPromptLine()` helper
 - AI-generated SQL may reference variables as `$varName` — the cell executor substitutes them before running (same as notebook cells)
 - The AI can also mutate variables via the existing `variables` tool (already wired, needs to remain available in chat mode)
+
+### Streaming
+
+AI responses stream token-by-token into the bubble as they arrive — text appears incrementally, cell fences are detected and rendered as soon as the closing `:::` arrives. A blinking cursor shows at the end of the current streaming position. The embedded cell executes its query as soon as the fence is complete, so the chart or table renders while the AI is still writing the text below it.
+
+### Error feedback loop (automatic retry)
+
+When an embedded cell fails to execute (SQL error, missing table, bad plot config) or when a `query_data` result is empty:
+
+1. The error is shown inside the cell — a red inline notice with the DuckDB error message
+2. The error is automatically fed back to the AI as a follow-up system message: `"The query failed: <error>. Please fix the SQL and try again."`
+3. The AI retries up to **2 times** autonomously — no user action needed
+4. If still failing after 2 retries, the cell shows the final error and a `"Ask AI to fix"` button that re-prompts manually
+5. Same loop applies to tool calls that return errors — the tool result includes the error string and the AI can correct its arguments
+
+### Tool calls in chat
+
+The full tool call loop is available in chat (already implemented in `AiService.streamChatWithTools`):
+
+- AI can call `query_data`, `add_cell`, `update_cell`, `delete_cell`, `set_variable` in a single turn
+- Tool results stream back into the conversation and the AI continues generating after each result
+- Multiple sequential tool calls in one response are supported (e.g. query → inspect result → embed chart)
+- Permission cards appear inline for gated tools; ungated tools (like `set_variable`) run immediately
 
 ---
 
@@ -196,35 +219,38 @@ To make local models as capable as possible:
 ### Local model system prompt (template)
 
 ```
-You are a JFR performance analyst embedded in a notebook tool.
-The user has loaded a Java Flight Recording. Answer questions about it concisely and precisely.
+You are a JFR performance analyst embedded in a notebook tool. Be concise, direct, and genuinely helpful.
+When you find something interesting, say so. Suggest the next useful question. Don't pad answers.
 
 Available tables: {schema}
 Current variables: {variables}
 
-When a chart or table would make the answer clearer, embed it using:
+When a chart or table would make the answer clearer, embed it inline:
   :::cell type=chart
   sql: SELECT ...
   plot: LINE_CHART(x: "col", y: ["col2"])
   :::
-or :::cell type=table / :::cell type=flamegraph
+Supported types: chart, table, flamegraph. Embed cells naturally within your answer — text can appear before and after.
+
+If a query result is empty or an error is returned, fix the SQL and try again. Explain what you changed.
 
 To query data you don't have, call the query_data tool with the SQL, a one-sentence reason, and the table names accessed.
+You may call tools multiple times in one response — query, inspect the result, then embed a chart.
 
 --- Examples ---
 Q: What is the average GC pause?
-A: The average GC pause is 14ms. (queried from GarbageCollection.duration)
+A: Average GC pause is 14ms (p99: 48ms). Mostly short Young GC — looks healthy. Want a breakdown by GC type?
 
 Q: Show me heap usage over time.
-A: Here is heap usage over the session:
+A: Heap grew steadily over the session — peaked at 2.4 GB around t=40s:
 :::cell type=chart
 sql: SELECT time_bucket('1s', ts) AS t, avg(heapUsed) AS heap_mb FROM gc_heap_summary GROUP BY t ORDER BY t
 plot: LINE_CHART(x: "t", y: ["heap_mb"])
 :::
-Heap peaks at 2.4 GB around the 40s mark.
+No GC recovery after the peak — likely a retained reference. Want me to find the top allocating classes?
 
 Q: Which methods are consuming the most CPU?
-A: [calls query_data tool with sql=SELECT stackTrace, sum(samples)... reason="Find hot methods" tables=["ExecutionSample"]]
+A: [calls query_data: sql=SELECT stackTrace, sum(samples) AS n FROM ExecutionSample GROUP BY stackTrace ORDER BY n DESC LIMIT 20, reason="Find hot methods", tables=["ExecutionSample"]]
 ```
 
 ### Local model testing
@@ -238,8 +264,11 @@ A new test file `tests/ai/localModel.test.ts` covers:
   - Contains at least one `:::cell` example
 - **Few-shot format tests**: the 3 example pairs parse correctly as valid chat turns
 - **Mock server integration test**: spins up a minimal OpenAI-compatible mock server (using `msw` or a simple `http.createServer`), sends a chat message through `LocalAiProvider`, verifies streaming chunks arrive and the full response assembles correctly
+- **Streaming test**: mock server sends response in 10-character chunks, verify the assembled text matches expected and that `:::cell` fences trigger cell render at fence-close not at stream-end
+- **Error retry test**: mock server returns a valid response containing a `:::cell` with bad SQL; verify the error is fed back as a system message and the AI is re-invoked; verify it stops after 2 retries and shows the "Ask AI to fix" button
+- **Tool call loop test**: mock server returns a `query_data` tool call, then a follow-up text response; verify the full loop (tool call → permission → result → continuation) assembles the correct final message
 - **Fallback test**: mock server returns 503, verify `AiService` retries with cloud provider and emits the fallback notice message
-- **`:::cell` parse round-trip**: generate a response containing cell fences, verify `ChatMarkdownView` parser extracts `type`, `sql`, `plotConfig` correctly
+- **`:::cell` parse round-trip**: generate a response containing multiple cell fences interleaved with text, verify `ChatMarkdownView` parser extracts `type`, `sql`, `plotConfig` for each fence and leaves surrounding text intact
 
 ### Local model settings (Settings panel additions)
 
