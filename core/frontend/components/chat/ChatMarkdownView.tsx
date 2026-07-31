@@ -4,7 +4,7 @@
 // and to recognise our chat-specific reference tokens ([[alias]], @cell-name,
 // #plot-N, #cell-N) so the user can click to navigate.
 
-import React from 'react';
+import React, { useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { splitCellFences, parseCellFence, ChatEmbeddedCell, type CellFenceType } from './ChatEmbeddedCell';
@@ -13,12 +13,15 @@ interface ChatMarkdownViewProps {
     text: string;
     onNavigateRef?: (ref: string) => void;
     onAddToNotebook?: (sql: string, type: CellFenceType, plotConfig?: string) => void;
+    onCellError?: (error: string, sql: string, type: CellFenceType, plotConfig?: string) => void;
     /** Extra class on the wrapper. Defaults to `text-sm leading-relaxed`. */
     className?: string;
 }
 
-export const ChatMarkdownView: React.FC<ChatMarkdownViewProps> = ({ text, onNavigateRef, onAddToNotebook, className }) => {
+export const ChatMarkdownView: React.FC<ChatMarkdownViewProps> = ({ text, onNavigateRef, onAddToNotebook, onCellError, className }) => {
     const parts = splitCellFences(text);
+    // Track per-sql retry counts within this message.
+    const retryCounts = useRef<Map<string, number>>(new Map());
     return (
         <div className={className ?? 'text-sm leading-relaxed'}>
             {parts.map((part, i) => {
@@ -31,6 +34,7 @@ export const ChatMarkdownView: React.FC<ChatMarkdownViewProps> = ({ text, onNavi
                 }
                 const parsed = parseCellFence(part.content);
                 if (!parsed) return null;
+                const retryCount = retryCounts.current.get(parsed.sql) ?? 0;
                 return (
                     <ChatEmbeddedCell
                         key={i}
@@ -38,6 +42,12 @@ export const ChatMarkdownView: React.FC<ChatMarkdownViewProps> = ({ text, onNavi
                         sql={parsed.sql}
                         plotConfig={parsed.plotConfig}
                         onAddToNotebook={() => onAddToNotebook?.(parsed.sql, parsed.type, parsed.plotConfig)}
+                        onError={(error, sql, type, plotConfig) => {
+                            const count = (retryCounts.current.get(sql) ?? 0) + 1;
+                            retryCounts.current.set(sql, count);
+                            onCellError?.(error, sql, type, plotConfig);
+                        }}
+                        retryCount={retryCount}
                     />
                 );
             })}

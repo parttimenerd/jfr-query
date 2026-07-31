@@ -70,6 +70,8 @@ interface ChatEmbeddedCellProps {
     sql: string;
     plotConfig?: string;
     onAddToNotebook: () => void;
+    onError?: (error: string, sql: string, type: CellFenceType, plotConfig?: string) => void;
+    retryCount?: number;
 }
 
 type CellState =
@@ -84,7 +86,7 @@ const TYPE_LABELS: Record<CellFenceType, string> = {
     sql: 'SQL',
 };
 
-export function ChatEmbeddedCell({ type, sql, plotConfig, onAddToNotebook }: ChatEmbeddedCellProps) {
+export function ChatEmbeddedCell({ type, sql, plotConfig, onAddToNotebook, onError, retryCount }: ChatEmbeddedCellProps) {
     const { query } = useContext(DataContext);
     const [state, setState] = useState<CellState>({ status: 'loading' });
 
@@ -92,7 +94,11 @@ export function ChatEmbeddedCell({ type, sql, plotConfig, onAddToNotebook }: Cha
         setState({ status: 'loading' });
         query(sql)
             .then(data => setState({ status: 'done', data }))
-            .catch(err => setState({ status: 'error', message: String((err as Error)?.message ?? err) }));
+            .catch(err => {
+                const message = String((err as Error)?.message ?? err);
+                setState({ status: 'error', message });
+                onError?.(message, sql, type, plotConfig);
+            });
     }, [sql, query]);
 
     const truncatedSql = sql.length > 60 ? sql.slice(0, 60) + '…' : sql;
@@ -122,7 +128,17 @@ export function ChatEmbeddedCell({ type, sql, plotConfig, onAddToNotebook }: Cha
                     <div className="text-xs text-gray-600 py-2 px-1">Running query…</div>
                 )}
                 {state.status === 'error' && (
-                    <div className="text-xs text-red-400 py-2 px-1 font-mono">{state.message}</div>
+                    <div className="py-2 px-1">
+                        <div className="text-xs text-red-400 font-mono">{state.message}</div>
+                        {(retryCount ?? 0) >= 2 && onError && (
+                            <button
+                                onClick={() => onError(state.message, sql, type, plotConfig)}
+                                className="text-[10px] text-cyan-500 hover:text-cyan-300 cursor-pointer mt-1"
+                            >
+                                Ask AI to fix →
+                            </button>
+                        )}
+                    </div>
                 )}
                 {state.status === 'done' && (type === 'table' || type === 'sql') && (
                     <div className="max-h-[200px] overflow-y-auto">

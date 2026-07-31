@@ -1182,6 +1182,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         onAddCellFromAI(sql, plotConfig ?? '', title, '');
     }, [onAddCellFromAI]);
 
+    // Per-sql cell retry count tracker; resets on new conversation turns.
+    const cellRetryCount = useRef<Map<string, number>>(new Map());
+
+    const handleCellError = useCallback((error: string, sql: string, type: CellFenceType, plotConfig?: string) => {
+        const count = (cellRetryCount.current.get(sql) ?? 0) + 1;
+        cellRetryCount.current.set(sql, count);
+        if (count > 2) return; // Give up after 2 auto-retries; user sees "Ask AI to fix" button
+        const typeLabel = type === 'flamegraph' ? 'flame graph' : type;
+        const feedback = `The ${typeLabel} cell failed with error: "${error}". The SQL was:\n\`\`\`sql\n${sql}\n\`\`\`\nPlease fix the SQL and try again.`;
+        handleSend({ text: feedback, hiddenUserMessage: true, forceMode: 'normal' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     /** Apply a meta patch to a specific message by id (no-op if not found). */
     const patchMessageMeta = useCallback((id: string, patch: Partial<ChatMessageMeta>) => {
         setMessages(prev => prev.map(m => m.id === id ? { ...m, meta: { ...(m.meta ?? {}), ...patch } } : m));
@@ -1384,7 +1397,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                                     : 'rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-xl bg-[#161b27] border border-[#1e2d3d] text-slate-300'
                                             }`}>
                                                 <div className="text-sm leading-relaxed">
-                                                {msg.sender === MessageSender.AI ? <ChatMarkdownView text={msg.text} onNavigateRef={onNavigateRef} onAddToNotebook={handleAddCellFromFence} /> : <span className="whitespace-pre-wrap">{msg.text}</span>}
+                                                {msg.sender === MessageSender.AI ? <ChatMarkdownView text={msg.text} onNavigateRef={onNavigateRef} onAddToNotebook={handleAddCellFromFence} onCellError={handleCellError} /> : <span className="whitespace-pre-wrap">{msg.text}</span>}
                                                 </div>
                                                 {msg.meta?.trace && msg.meta.trace.length > 0 && (
                                                     <ChatTraceView steps={msg.meta.trace} />
