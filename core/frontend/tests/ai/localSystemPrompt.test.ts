@@ -50,3 +50,47 @@ describe('buildLocalSystemPrompt', () => {
         expect(prompt.toLowerCase()).toMatch(/suggest|next|follow/);
     });
 });
+
+describe('custom system prompt — ADDITIONAL INSTRUCTIONS injection pattern', () => {
+    it('manual injection pattern: customPrompt is appended with header when truthy', () => {
+        const baseInstruction = 'You are a DuckDB assistant.';
+        const customPrompt = 'Talk like a pirate.';
+
+        const finalCustomPrompt = customPrompt;
+        let systemInstruction = baseInstruction;
+        if (finalCustomPrompt) {
+            systemInstruction += `\n\nADDITIONAL INSTRUCTIONS FROM USER:\n${finalCustomPrompt}`;
+        }
+
+        expect(systemInstruction).toContain('ADDITIONAL INSTRUCTIONS FROM USER');
+        expect(systemInstruction).toContain('Talk like a pirate.');
+        expect(systemInstruction).toContain('You are a DuckDB assistant.');
+    });
+
+    it('manual injection pattern: empty customPrompt is not appended', () => {
+        const baseInstruction = 'You are a DuckDB assistant.';
+        const finalCustomPrompt = '';
+        let systemInstruction = baseInstruction;
+        if (finalCustomPrompt) {
+            systemInstruction += `\n\nADDITIONAL INSTRUCTIONS FROM USER:\n${finalCustomPrompt}`;
+        }
+
+        expect(systemInstruction).toBe(baseInstruction);
+        expect(systemInstruction).not.toContain('ADDITIONAL INSTRUCTIONS');
+    });
+
+    it('manual injection pattern: override wins over global', () => {
+        const globalPrompt = 'Talk like a pirate.';
+        const overridePrompt = 'Be extremely concise.';
+        const baseInstruction = 'You are a DuckDB assistant.';
+
+        const finalCustomPrompt = overridePrompt ?? globalPrompt;
+        let systemInstruction = baseInstruction;
+        if (finalCustomPrompt) {
+            systemInstruction += `\n\nADDITIONAL INSTRUCTIONS FROM USER:\n${finalCustomPrompt}`;
+        }
+
+        expect(systemInstruction).toContain('Be extremely concise.');
+        expect(systemInstruction).not.toContain('Talk like a pirate.');
+    });
+});

@@ -9,6 +9,7 @@ import { SettingsContext, Settings } from '../context/SettingsContext';
 import { providerMetadataRegistry, providerFactoryRegistry } from '../services/AiService';
 import { ModelDefinition, AiProviderType } from '../services/ai/IAiProvider';
 import { CANDIDATES } from '../services/ml/candidates';
+import { BROWSER_CHAT_MODELS } from '../services/ai/BrowserChatService';
 import * as EmbeddingService from '../services/ml/EmbeddingService';
 import * as PlotGenerationService from '../services/ml/PlotGenerationService';
 import * as SqlGenerationService from '../services/ml/SqlGenerationService';
@@ -249,23 +250,51 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     {/* Base URL for local servers */}
                     {localSettings.aiProvider === 'local' && (
                         <div>
+                            {/* Quick presets */}
+                            <div className="mb-3">
+                                <p className="text-xs text-gray-500 mb-1.5">Quick presets:</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {[
+                                        { label: 'llama-server', url: 'http://localhost:8080', model: 'qwen3:9b' },
+                                        { label: 'Ollama', url: 'http://localhost:11434', model: 'qwen3:9b' },
+                                        { label: 'SAP / HAI Proxy', url: '/local-ai-proxy', model: 'gpt-4.1' },
+                                    ].map(p => (
+                                        <button
+                                            key={p.label}
+                                            type="button"
+                                            onClick={() => setLocalSettings(s => ({
+                                                ...s,
+                                                localBaseUrl: p.url,
+                                                localGoodModel: p.model,
+                                                localBasicModel: p.label === 'SAP / HAI Proxy' ? 'gpt-4.1-mini' : s.localBasicModel,
+                                            }))}
+                                            className="px-2 py-0.5 text-xs rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors"
+                                        >
+                                            {p.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                             <label className="block text-sm font-medium text-gray-300 mb-1">Base URL</label>
                             <input
-                                type="url"
+                                type="text"
                                 name="localBaseUrl"
                                 value={localSettings.localBaseUrl}
                                 onChange={handleInputChange}
                                 className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500"
                                 placeholder="http://localhost:8080"
-                                pattern="https?://.+"
-                                title="Must be a valid http:// or https:// URL" aria-label="Must be a valid http:// or https:// URL"
+                                title="URL or proxy path (e.g. /local-ai-proxy)" aria-label="URL or proxy path"
                             />
-                            {localSettings.localBaseUrl && !/^https?:\/\/.+/.test(localSettings.localBaseUrl) && (
-                                <p className="text-xs text-red-400 mt-1">Must start with http:// or https://</p>
+                            {localSettings.localBaseUrl && !/^(https?:\/\/.+|\/.+)/.test(localSettings.localBaseUrl) && (
+                                <p className="text-xs text-red-400 mt-1">Must start with http://, https://, or / (for a proxy path)</p>
                             )}
                             <p className="text-xs text-gray-500 mt-1">
                                 Any OpenAI-compatible <code className="font-mono">/v1/chat/completions</code> server.
-                                Tested with llama.cpp <code className="font-mono">llama-server</code> (:8080), Ollama (:11434), vLLM, LM Studio.
+                                Tested with llama.cpp <code className="font-mono">llama-server</code> (:8080), Ollama (:11434), vLLM, LM Studio,
+                                and SAP AI Core / HAI Proxy. For HAI Proxy start the dev server with{' '}
+                                <code className="font-mono">LOCAL_AI_BASE_URL=http://localhost:6655/openai npm run dev</code>{' '}
+                                and use the <strong>SAP / HAI Proxy</strong> preset (routes via <code className="font-mono">/local-ai-proxy</code> to avoid CORS).{' '}
+                                <a href="https://parttimenerd.github.io/jfr-query/docs/ai-providers" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">Docs ↗</a>
                             </p>
                         </div>
                     )}
@@ -640,6 +669,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     <BrowserModelPicker
                         modelId={localSettings.browserModelId}
                         onChange={(id) => setLocalSettings(prev => ({ ...prev, browserModelId: id }))}
+                        chatModelId={localSettings.browserChatModelId ?? 'qwen2.5-0.5b'}
+                        onChatModelChange={(id) => setLocalSettings(prev => ({ ...prev, browserChatModelId: id }))}
                     />
                 )}
             </section>
@@ -767,6 +798,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     ))}
                 </div>
             </section>
+            <section className="p-4 border-b border-gray-700">
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-1">Custom System Prompt</h3>
+                <p className="text-xs text-gray-500 mb-3">Appended to every AI conversation. Use it to set a persona, restrict topics, or add global instructions. Example: <em className="text-gray-400">Talk like a pirate.</em></p>
+                <textarea
+                    value={localSettings.customSystemPrompt}
+                    onChange={e => setLocalSettings(s => ({ ...s, customSystemPrompt: e.target.value }))}
+                    rows={4}
+                    placeholder="e.g. Always respond in Spanish. / Talk like a pirate."
+                    className="w-full bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-md px-3 py-2 resize-y placeholder-gray-600 focus:outline-none focus:border-cyan-500"
+                />
+            </section>
         </div>
 
         <footer className="flex-shrink-0 p-4 border-t border-gray-700 flex justify-end items-center">
@@ -781,9 +823,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   );
 };
 
-const BrowserModelPicker: React.FC<{ modelId: string; onChange: (id: string) => void }> = ({
+const BrowserModelPicker: React.FC<{
+    modelId: string;
+    onChange: (id: string) => void;
+    chatModelId: string;
+    onChatModelChange: (id: string) => void;
+}> = ({
     modelId,
     onChange,
+    chatModelId,
+    onChatModelChange,
 }) => {
     const [embReady, setEmbReady] = useState(EmbeddingService.isReady());
     const [genReady, setGenReady] = useState(PlotGenerationService.isModelReady(modelId));
@@ -825,8 +874,21 @@ const BrowserModelPicker: React.FC<{ modelId: string; onChange: (id: string) => 
     return (
         <div className="mt-4 space-y-3">
             <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Chat Model</label>
+                <p className="text-xs text-gray-500 mb-2">Model used for in-browser chat. Coder variant may produce better SQL; both are ~490MB.</p>
+                <select
+                    value={chatModelId}
+                    onChange={e => onChatModelChange(e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                >
+                    {Object.values(BROWSER_CHAT_MODELS).map(m => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                </select>
+            </div>
+            <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">Plot Config Model</label>
-                <p className="text-xs text-gray-500 mb-2">Choose which model generates plot configurations. Only affects "Suggest Plot" — chat requires a cloud or local provider.</p>
+                <p className="text-xs text-gray-500 mb-2">Choose which model generates plot configurations. Only affects "Suggest Plot".</p>
                 <select
                     value={modelId}
                     onChange={e => onChange(e.target.value)}
