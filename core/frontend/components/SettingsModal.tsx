@@ -702,6 +702,36 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     </div>
                 </div>
             </section>
+
+            {/* AI Permissions */}
+            <section className="p-4 border-b border-gray-700">
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">AI Permissions</h3>
+                <div className="space-y-3">
+                    {(
+                        [
+                            { key: 'aiPermQueryData' as const, label: 'Run queries' },
+                            { key: 'aiPermAddCell' as const, label: 'Create cells' },
+                            { key: 'aiPermUpdateCell' as const, label: 'Edit cells' },
+                            { key: 'aiPermDeleteCell' as const, label: 'Delete cells' },
+                        ]
+                    ).map(({ key, label }) => (
+                        <div key={key} className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">{label}</span>
+                            <select
+                                value={localSettings[key]}
+                                onChange={e =>
+                                    setLocalSettings(s => ({ ...s, [key]: e.target.value as 'never' | 'ask' | 'always' }))
+                                }
+                                className="bg-gray-800 border border-gray-700 text-slate-300 text-xs rounded px-2 py-1"
+                            >
+                                <option value="ask">Ask every time</option>
+                                <option value="always">Always allow</option>
+                                <option value="never">Never allow</option>
+                            </select>
+                        </div>
+                    ))}
+                </div>
+            </section>
         </div>
 
         <footer className="flex-shrink-0 p-4 border-t border-gray-700 flex justify-end items-center">

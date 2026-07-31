@@ -63,6 +63,12 @@ export interface Settings {
     // W11 — Suppress one-shot deprecation warnings for renamed plot DSL params.
     // Default false (warnings on). When true, warnDeprecated() is a no-op.
     suppressDeprecationWarnings: boolean;
+    // Phase 2 — AI permission defaults. 'ask' shows a one-time session card;
+    // 'always' never asks; 'never' blocks silently.
+    aiPermQueryData: 'never' | 'ask' | 'always';
+    aiPermAddCell: 'never' | 'ask' | 'always';
+    aiPermUpdateCell: 'never' | 'ask' | 'always';
+    aiPermDeleteCell: 'never' | 'ask' | 'always';
 }
 
 interface SettingsContextType {
@@ -117,6 +123,10 @@ const defaultSettings: Settings = {
     autoPlotSuggestionEnabled: true,
     plotSchemaDiscoveryEnabled: true,
     suppressDeprecationWarnings: false,
+    aiPermQueryData: 'ask',
+    aiPermAddCell: 'ask',
+    aiPermUpdateCell: 'ask',
+    aiPermDeleteCell: 'ask',
 };
 
 export const SettingsContext = createContext<SettingsContextType>({
