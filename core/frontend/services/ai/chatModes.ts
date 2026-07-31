@@ -600,3 +600,89 @@ export function channelReducer(s: ChannelState, a: ChannelAction): ChannelState 
             return { ...initialChannelState, mode: a.mode, btwHints: a.hints };
     }
 }
+
+// ── Local model prompt ────────────────────────────────────────────────────────
+
+export interface SchemaTable {
+    name: string;
+    columns: Array<{ name: string; type?: string }>;
+}
+
+/**
+ * Build a tuned system prompt for local (small) models.
+ * Shorter and more directive than the cloud prompt — local models degrade
+ * with long preambles. Includes full schema, variables, :::cell syntax,
+ * and 3 few-shot examples.
+ */
+export function buildLocalSystemPrompt(
+    schema: SchemaTable[],
+    variables: Record<string, unknown>,
+): string {
+    const schemaText = schema.length > 0
+        ? schema.map(t => {
+              const cols = t.columns.map(c => c.type ? `${c.name} ${c.type}` : c.name).join(', ');
+              return `  ${t.name}(${cols})`;
+          }).join('\n')
+        : '  (no tables loaded yet)';
+
+    const varsText = Object.keys(variables).length > 0
+        ? Object.entries(variables).map(([k, v]) => `  $${k} = ${JSON.stringify(v)}`).join('\n')
+        : '  (none)';
+
+    return `You are a JFR performance analyst embedded in a notebook. Be concise, direct, and genuinely helpful.
+When you find something interesting, say so. Suggest the next useful question. Don't pad answers.
+
+Available tables:
+${schemaText}
+
+Current variables:
+${varsText}
+
+When a chart or table would make the answer clearer, embed it inline using a cell fence:
+  :::cell type=chart
+  sql: SELECT ...
+  plot: LINE_CHART(x: "col", y: ["col2"])
+  :::
+Supported types: chart, table, flamegraph. Text can appear before and after each fence.
+
+If a query fails or returns an error, fix the SQL and try again. Briefly explain what you changed.
+To query data you don't have, call the query_data tool with sql, reason, and tables.
+You may call tools multiple times in one response — query, check the result, then embed a chart.
+
+--- Examples ---
+Q: What is the average GC pause?
+A: Average GC pause is 14ms (p99: 48ms). Mostly short Young GC — healthy. Want a breakdown by GC type?
+
+Q: Show me heap usage over time.
+A: Heap grew steadily and peaked at ~2.4 GB around t=40s:
+:::cell type=chart
+sql: SELECT time_bucket('1s', startTime) AS t, avg(heapUsed) AS heap_mb FROM gc_heap_summary GROUP BY t ORDER BY t
+plot: LINE_CHART(x: "t", y: ["heap_mb"])
+:::
+No GC recovery after the peak — likely a retained reference. Want me to find the top allocating classes?
+
+Q: Which methods consume the most CPU?
+A: Let me query the execution samples.
+[calls query_data: sql=SELECT stackTrace, sum(samples) AS n FROM ExecutionSample GROUP BY stackTrace ORDER BY n DESC LIMIT 20, reason="Find hot CPU methods", tables=["ExecutionSample"]]`;
+}
+
+export function buildBrowserSystemPrompt(
+    schema: SchemaTable[],
+    variables: Record<string, unknown>,
+): string {
+    const tableList = schema.length > 0
+        ? schema.map(t => `- ${t.name}(${t.columns.map(c => c.name).join(', ')})`).join('\n')
+        : '- (no tables loaded yet)';
+    const varList = Object.keys(variables).length > 0
+        ? `Current variables: ${Object.entries(variables).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ')}`
+        : '';
+
+    return `You are a JFR performance analyst. Answer questions about JFR data concepts, schema, and analysis strategies.
+You cannot query data directly in this mode.
+
+Available tables:
+${tableList}
+${varList}
+
+Be concise and helpful. Suggest SQL queries the user can run themselves.`.trim();
+}
