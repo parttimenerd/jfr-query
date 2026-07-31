@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useContext, useMemo, useCallback } from 'react';
 import { aiService, providerMetadataRegistry } from '../services/AiService';
-import type { VisibilityMode, AiTier } from '../services/AiService';
+import type { VisibilityMode, AiTier, SchemaTable } from '../services/AiService';
 import { SettingsContext } from '../context/SettingsContext';
 import { validatePlotConfig } from '../utils/plotValidator';
 import type { ChatMessage, NotebookMetadata, NotebookCellData } from '../types';
@@ -334,6 +334,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     const [renameDraft, setRenameDraft] = useState('');
     const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
     const [chatVisibility, setChatVisibility] = useState<VisibilityMode>(settings.aiDefaultVisibility);
+    // Session routing override — only shown when a local model URL is configured.
+    const [sessionRouting, setSessionRouting] = useState<'auto' | 'local' | 'cloud'>('auto');
+    // Track which provider was actually used for the last message.
+    const [lastRouteUsed, setLastRouteUsed] = useState<'local' | 'cloud' | null>(null);
 
     // Session-level permission state for query_data and mutation tools.
     // 'ask' = show permission card on first call; 'granted' = run silently; 'denied' = block.
@@ -1018,6 +1022,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     modelOverride: chatModel,
                     customSystemPrompt: composeSystemPromptForMode(baseSystemPrompt, activeMode),
                     signal: abortControllerRef.current?.signal,
+                    routingPreference: sessionRouting,
+                    schemaForLocalPrompt: schema.tables as SchemaTable[],
+                    variablesForPrompt: metadata?.variables ?? {},
                 },
             );
 
@@ -1072,6 +1079,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                 setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Error: ${errorMsg}` }]);
             }
         } finally {
+            // Update route badge to reflect what was actually used this turn.
+            setLastRouteUsed(settings.localBaseUrl && settings.aiProvider === 'local' && sessionRouting !== 'cloud' ? 'local' : 'cloud');
             setStreamingText(null);
             const trimmed = assistantBuf.trim();
             if (trimmed && !cancelledRef.current) {
@@ -1235,8 +1244,30 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2"><SparklesIcon className="w-5 h-5 text-yellow-400"/>AI Assistant</h2>
                     <div className="flex items-center gap-1">
                         <span className="bg-[#1e2433] text-cyan-400 text-[10px] px-2 py-0.5 rounded-full border border-cyan-400/20">
-                            {settings.aiProvider} ✦ {settings.localBaseUrl ? 'local' : 'cloud'}
+                            {lastRouteUsed === 'local'
+                                ? `local: ${settings.localModelName || settings.aiProvider}`
+                                : lastRouteUsed === 'cloud'
+                                ? `cloud: ${settings.aiProvider}`
+                                : settings.aiProvider}
                         </span>
+                        {settings.localBaseUrl && settings.aiProvider === 'local' && (
+                            <div className="flex items-center gap-0.5 text-[10px]">
+                                {(['auto', 'local', 'cloud'] as const).map(r => (
+                                    <button
+                                        key={r}
+                                        onClick={() => setSessionRouting(r)}
+                                        className={`px-1.5 py-0.5 rounded border cursor-pointer ${
+                                            sessionRouting === r
+                                                ? 'bg-violet-700/30 border-violet-600/40 text-violet-400'
+                                                : 'bg-transparent border-gray-700 text-gray-600 hover:text-gray-400'
+                                        }`}
+                                        title={r === 'auto' ? 'Auto-route (local for simple, cloud for complex)' : r === 'local' ? 'Force local model' : 'Force cloud model'}
+                                    >
+                                        {r === 'local' ? '⚡' : r === 'cloud' ? '☁' : '⟳'} {r}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         <button onClick={() => addChannel()} title="New chat channel" aria-label="New chat channel" className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-md"><PlusIcon className="w-4 h-4"/></button>
                         <button onClick={handleReset} title="Reset Conversation" aria-label="Reset Conversation" className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-md"><ArrowCounterclockwiseIcon className="w-4 h-4"/></button>
                     </div>
