@@ -69,6 +69,10 @@ export interface Settings {
     aiPermAddCell: 'never' | 'ask' | 'always';
     aiPermUpdateCell: 'never' | 'ask' | 'always';
     aiPermDeleteCell: 'never' | 'ask' | 'always';
+    // Phase 3 — Local model routing.
+    localModelName: string;
+    localRoutingPreference: 'auto' | 'local' | 'cloud';
+    localToolAccess: 'read-only' | 'full';
 }
 
 interface SettingsContextType {
@@ -127,6 +131,9 @@ const defaultSettings: Settings = {
     aiPermAddCell: 'ask',
     aiPermUpdateCell: 'ask',
     aiPermDeleteCell: 'ask',
+    localModelName: '',
+    localRoutingPreference: 'auto',
+    localToolAccess: 'read-only',
 };
 
 export const SettingsContext = createContext<SettingsContextType>({

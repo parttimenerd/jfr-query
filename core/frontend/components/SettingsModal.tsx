@@ -310,8 +310,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             </div>
                         )}
                     </div>
-                    {/* Local-only: max_tokens cap */}
-                    {localSettings.aiProvider === 'local' && (
+                    {/* Local-only: max_tokens and routing settings */}
+                    {localSettings.aiProvider === 'local' && (<>
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-1">Max Output Tokens</label>
                             <input
@@ -328,7 +328,42 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                                 Cap output length to bound generation time on slow CPUs (default 2048).
                             </p>
                         </div>
-                    )}
+                        {/* Local model name */}
+                        <div>
+                            <label className="text-xs text-slate-400 block mb-1">Local model name</label>
+                            <input
+                                value={localSettings.localModelName}
+                                onChange={e => setLocalSettings(s => ({ ...s, localModelName: e.target.value }))}
+                                placeholder="e.g. qwen3:8b, llama3.2:3b"
+                                className="w-full bg-gray-800 border border-gray-700 text-slate-300 text-xs rounded px-2 py-1.5"
+                            />
+                        </div>
+                        {/* Routing preference */}
+                        <div>
+                            <label className="text-xs text-slate-400 block mb-1">Routing preference</label>
+                            <select
+                                value={localSettings.localRoutingPreference}
+                                onChange={e => setLocalSettings(s => ({ ...s, localRoutingPreference: e.target.value as any }))}
+                                className="w-full bg-gray-800 border border-gray-700 text-slate-300 text-xs rounded px-2 py-1"
+                            >
+                                <option value="auto">Auto (local for simple, cloud for complex)</option>
+                                <option value="local">Prefer local</option>
+                                <option value="cloud">Always cloud</option>
+                            </select>
+                        </div>
+                        {/* Tool access */}
+                        <div>
+                            <label className="text-xs text-slate-400 block mb-1">Local model tool access</label>
+                            <select
+                                value={localSettings.localToolAccess}
+                                onChange={e => setLocalSettings(s => ({ ...s, localToolAccess: e.target.value as any }))}
+                                className="w-full bg-gray-800 border border-gray-700 text-slate-300 text-xs rounded px-2 py-1"
+                            >
+                                <option value="read-only">Read-only queries only</option>
+                                <option value="full">Full tools (including notebook edits)</option>
+                            </select>
+                        </div>
+                    </>)}
                 </div>
             </section>}
 

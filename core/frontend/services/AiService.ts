@@ -19,8 +19,11 @@ import {
     type SchemaBundle,
 } from './ai/visibility';
 import { TOOLS, executeTool, type ToolDeps, type Tool } from './ai/tools/runtime';
+import { routeMessage, type RoutingPreference } from './ai/routing';
+import { buildLocalSystemPrompt, buildBrowserSystemPrompt, type SchemaTable } from './ai/chatModes';
 
 export type { VisibilityMode, RecentResult } from './ai/visibility';
+export type { SchemaTable } from './ai/chatModes';
 
 /**
  * Thrown by AiService when a feature is invoked against a cloud provider while
@@ -498,6 +501,12 @@ GUIDELINES:
              *  notebook system prompt instead of being appended to it. Used by
              *  the BTW caller so the model only sees the BTW context. */
             replaceSystemPrompt?: boolean;
+            /** Routing preference for local vs cloud dispatch. */
+            routingPreference?: RoutingPreference;
+            /** Schema tables for injecting into local model system prompt. */
+            schemaForLocalPrompt?: SchemaTable[];
+            /** Variables for injecting into local model system prompt. */
+            variablesForPrompt?: Record<string, unknown>;
         },
     ): AsyncIterable<ToolStreamChunk> {
         if (!this.provider) throw new Error('AI Service not initialized — configure an API key in ⚙ Settings first.');
@@ -507,9 +516,46 @@ GUIDELINES:
         // No-op for chat per the plan, but call for symmetry with other paths.
         this.assertOfflineAllowed(feature);
 
+        // Routing: when a local model is configured and no explicit override is set,
+        // route simple messages to the local provider with a tuned prompt.
+        let resolvedProviderOverride = opts.providerOverride;
+        let resolvedTools = tools;
+        let resolvedCustomSystemPrompt = opts.customSystemPrompt;
+        let resolvedReplaceSystemPrompt = opts.replaceSystemPrompt;
+
+        const hasLocalModel = !!(this.settings?.localBaseUrl);
+        const isLocalProvider = this.settings?.aiProvider === 'local';
+        const effectiveRoutingPref = opts.routingPreference ?? this.settings?.localRoutingPreference;
+        // Routing only activates when the user's default provider is local
+        // (or routing is explicitly requested) and a local model URL is configured.
+        if (hasLocalModel && isLocalProvider && effectiveRoutingPref !== 'cloud' && !resolvedProviderOverride) {
+            const lastMessage = messages[messages.length - 1];
+            const msgText = typeof lastMessage?.content === 'string' ? lastMessage.content : '';
+            const route = routeMessage(
+                msgText,
+                tools,
+                opts.visibility,
+                effectiveRoutingPref,
+            );
+            if (route === 'local') {
+                resolvedProviderOverride = 'local';
+                if (opts.schemaForLocalPrompt !== undefined || opts.variablesForPrompt !== undefined) {
+                    resolvedCustomSystemPrompt = buildLocalSystemPrompt(
+                        opts.schemaForLocalPrompt ?? [],
+                        opts.variablesForPrompt ?? {},
+                    );
+                    resolvedReplaceSystemPrompt = true;
+                }
+                // Local models only get read tools unless settings say otherwise
+                if (this.settings?.localToolAccess !== 'full') {
+                    resolvedTools = tools.filter(t => t.kind === 'read');
+                }
+            }
+        }
+
         let provider: IAiProvider = this.provider;
-        if (opts.providerOverride && opts.providerOverride !== this.settings?.aiProvider && this.settings) {
-            const factory = providerFactoryRegistry[opts.providerOverride];
+        if (resolvedProviderOverride && resolvedProviderOverride !== this.settings?.aiProvider && this.settings) {
+            const factory = providerFactoryRegistry[resolvedProviderOverride];
             if (factory) provider = factory(this.settings);
         }
 
@@ -530,10 +576,10 @@ GUIDELINES:
             opts.recentResult ?? null,
             this.settings?.visibilityFullRowLimit,
         );
-        const customPrompt = (opts.customSystemPrompt ?? this.settings?.customSystemPrompt ?? '').trim();
+        const customPrompt = (resolvedCustomSystemPrompt ?? this.settings?.customSystemPrompt ?? '').trim();
         // When replaceSystemPrompt is set the caller wants its own system
         // prompt used verbatim — skip the full notebook preamble entirely.
-        const systemInstruction = opts.replaceSystemPrompt
+        const systemInstruction = resolvedReplaceSystemPrompt
             ? (customPrompt || '')
             :
             `You are an expert DuckDB and data visualization assistant for analyzing Java Flight Recorder (JFR) data inside a notebook.\n` +
@@ -629,7 +675,7 @@ GUIDELINES:
             const pendingCalls: Array<{ id: string; name: string; args: any }> = [];
             const assistantText: string[] = [];
 
-            const stream = provider.streamChatWithTools(convo, tools, {
+            const stream = provider.streamChatWithTools(convo, resolvedTools, {
                 systemInstruction,
                 model,
                 signal: opts.signal,
@@ -650,7 +696,20 @@ GUIDELINES:
                 }
             } catch (e: any) {
                 if (opts.signal?.aborted || e?.name === 'AbortError') return;
-                throw e;
+                // Local model failed: fall back to cloud for this round
+                if (resolvedProviderOverride === 'local' && round === 0 && assistantText.length === 0 && pendingCalls.length === 0) {
+                    yield { kind: 'text', delta: '\n\n*Local model unavailable — switching to cloud for this message.*\n\n' };
+                    const cloudProvider = this.provider!;
+                    const cloudStream = cloudProvider.streamChatWithTools!(convo, tools, { systemInstruction: opts.customSystemPrompt ? (opts.replaceSystemPrompt ? opts.customSystemPrompt : systemInstruction) : systemInstruction, model: this.getModelFor(tier, feature), signal: opts.signal });
+                    for await (const chunk of cloudStream) {
+                        if (opts.signal?.aborted) return;
+                        if (chunk.kind === 'text') { assistantText.push(chunk.delta); yield chunk; }
+                        else if (chunk.kind === 'tool_call') { pendingCalls.push({ id: chunk.id, name: chunk.name, args: chunk.args }); yield chunk; }
+                        else yield chunk;
+                    }
+                } else {
+                    throw e;
+                }
             }
 
             // Append the assistant turn that produced this round's output.

@@ -65,6 +65,15 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
         plotAiAutocompleteEnabled: false,
         plotAiAutocompleteDebounceMs: 250,
         plotSchemaDiscoveryEnabled: true,
+        autoPlotSuggestionEnabled: true,
+        suppressDeprecationWarnings: false,
+        aiPermQueryData: 'ask',
+        aiPermAddCell: 'ask',
+        aiPermUpdateCell: 'ask',
+        aiPermDeleteCell: 'ask',
+        localModelName: '',
+        localRoutingPreference: 'auto',
+        localToolAccess: 'read-only',
     };
     return { ...base, ...overrides };
 }
