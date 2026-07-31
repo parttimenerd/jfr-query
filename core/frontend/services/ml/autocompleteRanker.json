@@ -1,7 +1,7 @@
 {
-  "version": 2,
+  "version": 3,
   "mrr": 0.9136599423631115,
-  "trainedAt": "2026-07-29T16:57:05.825Z",
+  "trainedAt": "2026-07-31T07:30:42.529Z",
   "weights": {
     "prefixMatch": 1,
     "substringMatch": 0.5,
@@ -14,6 +14,7 @@
     "jfrHint": 0.3,
     "exactMatch": 1.5,
     "isTable": 0.2,
-    "aggContext": 0.2
+    "aggContext": 0.2,
+    "inValuePos": 0
   }
 }

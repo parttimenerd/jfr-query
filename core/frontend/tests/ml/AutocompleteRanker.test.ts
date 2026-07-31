@@ -41,6 +41,35 @@ describe('featurize / score', () => {
         expect(scoreFeatures(colF, W)).toBeGreaterThan(scoreFeatures(kwF, W));
     });
 
+    it('suppresses column scenarioBoost in WHERE value position (after =)', () => {
+        const colInValPos = featurize('SELECT * FROM t WHERE cause = ', 30, 'duration', 'where');
+        const colInColPos = featurize('SELECT * FROM t WHERE ', 22, 'duration', 'where');
+        // Column in value position should get scenarioBoost = 0
+        expect(colInValPos.scenarioBoost).toBe(0);
+        // Column in column position should get scenarioBoost = 1
+        expect(colInColPos.scenarioBoost).toBe(1);
+        // Score in value pos must be lower
+        expect(scoreFeatures(colInValPos, W)).toBeLessThan(scoreFeatures(colInColPos, W));
+    });
+
+    it('suppresses column scenarioBoost in WHERE value position (after LIKE)', () => {
+        const f = featurize('SELECT * FROM t WHERE name LIKE ', 32, 'cause', 'where');
+        expect(f.scenarioBoost).toBe(0);
+        expect(f.inValuePos).toBe(1);
+    });
+
+    it('suppresses column scenarioBoost in WHERE value position (after BETWEEN)', () => {
+        const f = featurize('SELECT * FROM t WHERE ts BETWEEN ', 33, 'ts', 'where');
+        expect(f.scenarioBoost).toBe(0);
+        expect(f.inValuePos).toBe(1);
+    });
+
+    it('does NOT suppress scenarioBoost in WHERE after AND (new column expected)', () => {
+        const f = featurize('SELECT * FROM t WHERE ts > 0 AND ', 33, 'cause', 'where');
+        expect(f.scenarioBoost).toBe(1);
+        expect(f.inValuePos).toBe(0);
+    });
+
     it('rewards dollar candidates in dollar scenario', () => {
         const dol = featurize('WHERE id = $', 12, '${gcId}', 'dollar');
         const plain = featurize('WHERE id = $', 12, 'gcId', 'dollar');

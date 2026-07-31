@@ -6,7 +6,7 @@
 export interface RankerFeatures {
     prefixMatch: number;       // 1 if candidate starts with the cursor word
     substringMatch: number;    // 1 if cursor word is a substring of candidate
-    scenarioBoost: number;     // scenario-specific boost
+    scenarioBoost: number;     // scenario-specific boost (where boost suppressed in value position)
     lengthPenalty: number;     // normalized 1/(1+len)
     isKeyword: number;         // 1 if candidate is a known SQL keyword
     isColumn: number;          // 1 if candidate looks like a column (snake/camel)
@@ -17,6 +17,8 @@ export interface RankerFeatures {
     exactMatch: number;        // 1 if candidate equals the cursor word exactly
     isTable: number;           // 1 if candidate looks like a JFR table/view name
     aggContext: number;        // 1 if context has an aggregate function before cursor
+    // V3 features
+    inValuePos: number;        // 1 if cursor is after = / LIKE / BETWEEN / IS (value position, not column)
 }
 
 export type Weights = Record<keyof RankerFeatures, number>;
@@ -38,6 +40,10 @@ const JFR_TABLE_RE = /^(?:GarbageCollection|GcHeap|GcPhase|ObjectAllocation|CpuL
 // likely in a numeric column slot.
 const AGG_FN_RE = /\b(?:SUM|AVG|COUNT|MIN|MAX|MEDIAN|STDDEV|QUANTILE|VAR_POP|VAR_SAMP|FIRST|LAST|STRING_AGG|LIST|APPROX_COUNT_DISTINCT)\s*\(/i;
 
+// Value-position detection: cursor is after a comparison operator or keyword,
+// so we expect a literal/value, not a column name.
+const AFTER_EQ_RE = /[=<>!]\s*$|(?:LIKE|IN|BETWEEN|IS)\s*$/i;
+
 export function extractCursorWord(context: string, cursorPos: number): string {
     let i = cursorPos - 1;
     while (i >= 0 && /[A-Za-z0-9_$]/.test(context[i]!)) i--;
@@ -57,8 +63,15 @@ export function featurize(
     const isCol = !isKw && !isFn && /^[a-z_][a-zA-Z0-9_]*$/.test(candidate) &&
         !JFR_TABLE_RE.test(candidate);
 
+    // Context before cursor (up to 80 chars) for aggregate/context detection.
+    const contextBefore = context.slice(Math.max(0, cursorPos - 80), cursorPos);
+
+    // Value-position: cursor appears after a comparison operator or keyword,
+    // meaning the user expects a literal/value, not a column name.
+    const inValuePos = AFTER_EQ_RE.test(contextBefore);
+
     let scenarioBoost = 0;
-    if (scenario === 'where' && isCol) scenarioBoost = 1;
+    if (scenario === 'where' && isCol && !inValuePos) scenarioBoost = 1;
     else if (scenario === 'select' && isCol) scenarioBoost = 1;
     else if (scenario === 'function-arg' && isCol) scenarioBoost = 0.5;
     else if (scenario === 'join' && isCol) scenarioBoost = 0.8;
@@ -71,9 +84,6 @@ export function featurize(
         ? (() => { let k = 0; while (k < word.length && k < cand.length && word[k] === cand[k]) k++; return k; })()
         : 0;
     const prefixDepth = Math.min(matchLen / 4, 1);
-
-    // Context before cursor (up to 80 chars) for aggregate/context detection.
-    const contextBefore = context.slice(Math.max(0, cursorPos - 80), cursorPos);
 
     return {
         prefixMatch: word && cand.startsWith(word) ? 1 : 0,
@@ -88,6 +98,7 @@ export function featurize(
         exactMatch: word && word === cand ? 1 : 0,
         isTable: JFR_TABLE_RE.test(candidate) ? 1 : 0,
         aggContext: AGG_FN_RE.test(contextBefore) ? 1 : 0,
+        inValuePos: inValuePos ? 1 : 0,
     };
 }
 
@@ -104,6 +115,7 @@ export function score(features: RankerFeatures, w: Weights): number {
         (w.jfrHint ?? 0) * features.jfrHint +
         (w.exactMatch ?? 0) * features.exactMatch +
         (w.isTable ?? 0) * features.isTable +
-        (w.aggContext ?? 0) * features.aggContext
+        (w.aggContext ?? 0) * features.aggContext +
+        (w.inValuePos ?? 0) * features.inValuePos
     );
 }

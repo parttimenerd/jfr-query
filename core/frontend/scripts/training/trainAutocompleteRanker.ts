@@ -40,7 +40,7 @@ function mrr(examples: AutocompleteExample[], w: Weights): number {
 const KEYS: (keyof Weights)[] = [
     'prefixMatch', 'substringMatch', 'scenarioBoost', 'lengthPenalty',
     'isKeyword', 'isColumn', 'isFunction',
-    'prefixDepth', 'jfrHint', 'exactMatch', 'isTable', 'aggContext',
+    'prefixDepth', 'jfrHint', 'exactMatch', 'isTable', 'aggContext', 'inValuePos',
 ];
 
 function gridSearch(examples: AutocompleteExample[]): { weights: Weights; mrr: number } {
@@ -48,6 +48,7 @@ function gridSearch(examples: AutocompleteExample[]): { weights: Weights; mrr: n
         prefixMatch: 1, substringMatch: 0.5, scenarioBoost: 1,
         lengthPenalty: 0.1, isKeyword: 0.2, isColumn: 0.3, isFunction: 0.1,
         prefixDepth: 0.5, jfrHint: 0.3, exactMatch: 1.5, isTable: 0.2, aggContext: 0.2,
+        inValuePos: 0,
     };
     let best = mrr(examples, w);
     let bestWeights: Weights = { ...w };
@@ -89,7 +90,7 @@ function main(): void {
     const { weights, mrr: m } = gridSearch(examples);
     writeFileSync(
         OUT,
-        JSON.stringify({ version: 2, mrr: m, trainedAt: new Date().toISOString(), weights }, null, 2),
+        JSON.stringify({ version: 3, mrr: m, trainedAt: new Date().toISOString(), weights }, null, 2),
     );
     console.log(`Trained MRR=${m.toFixed(4)}; wrote ${OUT}`);
 }
