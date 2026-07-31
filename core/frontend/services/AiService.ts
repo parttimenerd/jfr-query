@@ -580,6 +580,23 @@ GUIDELINES:
             `  • Read-only only: SELECT / WITH / DESCRIBE / SHOW / EXPLAIN. No INSERT / UPDATE / DELETE / CREATE / DROP / ATTACH.\n` +
             `  • Add a LIMIT for exploratory queries unless the user asked for the full set.\n` +
             `\n` +
+            `JFR DATA MODEL — key conventions for working with JFR tables:\n` +
+            `  • Tables are created lazily — a table only exists if that event type was present in the recording. Always check with describeTable or information_schema.tables before querying an unfamiliar table.\n` +
+            `  • Time columns (startTime, endTime) are DuckDB TIMESTAMP. Durations are stored as fractional SECONDS (DOUBLE) — multiply by 1000 for milliseconds.\n` +
+            `  • recording_start() and recording_end() are macros returning the earliest/latest event timestamp in the recording. Use them for time-window filtering.\n` +
+            `  • time_bucket(INTERVAL '1 second', startTime) groups events into 1-second buckets — handy for time-series queries.\n` +
+            `  • Many tables have FK columns that reference other tables by integer _id. Common FK patterns:\n` +
+            `      stackTrace → StackTrace._id (the call stack)\n` +
+            `      thread → Thread._id (the Java thread)\n` +
+            `      eventThread → Thread._id (the thread that produced the event)\n` +
+            `      type / klass / objectClass → Class._id (the Java class)\n` +
+            `  • Flat shortcut columns (no JOIN needed):\n` +
+            `      stackTrace$topMethod — top frame method name on ExecutionSample/ObjectAllocationInNewTLAB etc.\n` +
+            `      stackTrace$topApplicationMethod — same but skips JVM/JDK frames to find the first app frame.\n` +
+            `      thread$javaName — thread name without a join to Thread table.\n` +
+            `  • format_duration(seconds) returns a human-readable string ("1.23 ms"). Never use this in a column you intend to plot — the chart requires a numeric value. Use round(seconds * 1000, 2) instead.\n` +
+            `  • Views (e.g. "latencies-by-type") are pre-built aggregations; they may use format_duration() making them unsuitable for charts. Prefer writing raw SQL with numeric casts for chart cells.\n` +
+            `\n` +
             `PLOT DSL — plot cells and previewPlot's plotConfig MUST use this custom DSL (NOT Observable Plot, NOT Vega):\n` +
             `  BAR_CHART(x: "col", y: ["col2"])   LINE_CHART(x: "col", y: ["col2"])   SCATTER_PLOT(x: "col", y: "col2")\n` +
             `  AREA_CHART(x: "col", y: ["col2"])  PIE_CHART(category: "col", value: "col2")  TABLE()\n` +
