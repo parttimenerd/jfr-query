@@ -93,7 +93,7 @@ export function ChatEmbeddedCell({ type, sql, plotConfig, onAddToNotebook }: Cha
         query(sql)
             .then(data => setState({ status: 'done', data }))
             .catch(err => setState({ status: 'error', message: String((err as Error)?.message ?? err) }));
-    }, [sql]);
+    }, [sql, query]);
 
     const truncatedSql = sql.length > 60 ? sql.slice(0, 60) + '…' : sql;
 
@@ -129,8 +129,10 @@ export function ChatEmbeddedCell({ type, sql, plotConfig, onAddToNotebook }: Cha
                         <DataTable data={state.data} showSearch={false} />
                     </div>
                 )}
-                {state.status === 'done' && type === 'chart' && plotConfig && (
-                    <ChartEmbed data={state.data} plotConfig={plotConfig} />
+                {state.status === 'done' && type === 'chart' && (
+                    plotConfig
+                        ? <ChartEmbed data={state.data} plotConfig={plotConfig} />
+                        : <div className="text-xs text-yellow-500 py-2 px-1">No plot config provided.</div>
                 )}
                 {state.status === 'done' && type === 'flamegraph' && (
                     <FlameEmbed data={state.data} />
