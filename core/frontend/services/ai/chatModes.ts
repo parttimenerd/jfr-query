@@ -1,13 +1,16 @@
-// Pure logic for chat modes (normal / plan / btw). No DOM, no SDK imports.
+// Pure logic for chat modes (normal / plan / btw / verbose). No DOM, no SDK imports.
 //
 // Mode behaviour:
-//   - normal: current behaviour. All tools available; no extra system prompt.
-//   - plan:   defense-in-depth — mutate tools removed from the tool list,
-//             AND a system prompt suffix tells the model to emit a structured
-//             plan instead of mutating. Plans are parsed strictly (fenced JSON)
-//             with a numbered-list fallback for cooperative-but-not-perfect models.
-//   - btw:    main turn runs as normal; a separate sub-call after the turn
-//             produces small "by the way" suggestion cards.
+//   - normal:  current behaviour. All tools available; no extra system prompt.
+//   - plan:    defense-in-depth — mutate tools removed from the tool list,
+//              AND a system prompt suffix tells the model to emit a structured
+//              plan instead of mutating. Plans are parsed strictly (fenced JSON)
+//              with a numbered-list fallback for cooperative-but-not-perfect models.
+//   - btw:     main turn runs as normal; a separate sub-call after the turn
+//              produces small "by the way" suggestion cards.
+//   - verbose: like normal but the model is instructed to show full reasoning:
+//              intermediate query results, column stats, explicit hypotheses,
+//              and step-by-step analysis before conclusions.
 //
 // Everything in this file is pure and unit-tested.
 
@@ -15,7 +18,7 @@ import type { Tool } from './tools';
 import type { VisibilityMode } from '../AiService';
 import { tokenizeCellContent } from '../../utils/notebookParser';
 
-export type ChatMode = 'normal' | 'plan' | 'btw';
+export type ChatMode = 'normal' | 'plan' | 'btw' | 'verbose';
 export const DEFAULT_MODE: ChatMode = 'normal';
 
 // ───────────────────────── System prompt suffixes ──────────────────────────
@@ -124,6 +127,24 @@ export interface BtwHint {
     action?: { type: 'send-prompt'; prompt: string };
 }
 
+export const VERBOSE_MODE_SYSTEM_SUFFIX = `
+
+VERBOSE MODE — IMPORTANT
+You are in VERBOSE MODE. Show your full reasoning process — don't just give conclusions.
+
+For every non-trivial question:
+  1. State your hypothesis before querying ("I think the issue is X because...")
+  2. After each tool call, show what you found and what it means ("The query returned N rows. Key observation: ...")
+  3. Show intermediate results inline — row counts, min/max/avg of key columns, surprising values
+  4. Explicitly state when you update your hypothesis based on data
+  5. Give a structured summary at the end: Findings → Root cause (if applicable) → Recommended next steps
+
+For SQL queries: explain WHY you wrote the query that way (which columns, which filters, why that aggregation).
+For plots: explain what the visual pattern means and what to look for.
+
+Be thorough but not padded — every sentence should add information.
+`;
+
 // ───────────────────────── Tool filtering ──────────────────────────
 
 export function filterToolsForMode(tools: Tool[], mode: ChatMode): Tool[] {
@@ -133,6 +154,7 @@ export function filterToolsForMode(tools: Tool[], mode: ChatMode): Tool[] {
 
 export function composeSystemPromptForMode(base: string, mode: ChatMode): string {
     if (mode === 'plan') return (base ?? '') + PLAN_MODE_SYSTEM_SUFFIX;
+    if (mode === 'verbose') return (base ?? '') + VERBOSE_MODE_SYSTEM_SUFFIX;
     return base ?? '';
 }
 
@@ -200,26 +222,99 @@ function validateStrictStep(s: any): PlanStep | null {
 
 /** Find every fenced ```jfr-plan block. Returns the *last* one's inner JSON
  * string (last-fence-wins), or null when none. Case-insensitive on the tag. */
+/** Replace literal (unescaped) newlines/tabs inside JSON string values so that
+ * JSON.parse can handle model output that forgot to escape them. */
+function repairJsonStrings(s: string): string {
+    // Walk the string character by character tracking whether we're inside a
+    // JSON string literal. Replace bare \n, \r, \t inside strings with the
+    // JSON escape sequences. Skips already-escaped sequences (\n → \\n, etc.).
+    let out = '';
+    let inStr = false;
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (inStr) {
+            if (ch === '\\') {
+                // consume the escape pair as-is
+                out += ch;
+                if (i + 1 < s.length) { out += s[++i]; }
+            } else if (ch === '"') {
+                inStr = false;
+                out += ch;
+            } else if (ch === '\n') {
+                out += '\\n';
+            } else if (ch === '\r') {
+                out += '\\r';
+            } else if (ch === '\t') {
+                out += '\\t';
+            } else {
+                out += ch;
+            }
+        } else {
+            if (ch === '"') inStr = true;
+            out += ch;
+        }
+    }
+    return out;
+}
+
 function findLastPlanFence(text: string): string | null {
-    const re = /```jfr-plan\s*\n([\s\S]*?)```/gi;
-    let match: RegExpExecArray | null;
-    let last: string | null = null;
-    while ((match = re.exec(text)) !== null) last = match[1];
-    return last;
+    // Use balanced-brace extraction anchored on the "steps" key — this handles
+    // all model output styles: jfr-plan fence, json fence, unlabelled fence, or
+    // bare JSON. The regex-based fence approach was dropped because models often
+    // embed nested ```sql fences inside the content string, which causes a non-
+    // greedy regex to terminate early on the inner fence.
+    // Find the LAST occurrence of "steps" to implement last-fence-wins semantics.
+    const stepsIdx = text.lastIndexOf('"steps"');
+    if (stepsIdx === -1) return null;
+    // Walk left to find the opening '{' of the containing object
+    let openIdx = -1;
+    for (let i = stepsIdx - 1; i >= 0; i--) {
+        if (text[i] === '{') { openIdx = i; break; }
+    }
+    if (openIdx === -1) return null;
+    // Walk forward with brace counter, skipping characters inside string literals
+    // so braces in SQL content don't confuse the depth counter.
+    let depth = 0;
+    let inStr = false;
+    for (let i = openIdx; i < text.length; i++) {
+        const ch = text[i];
+        if (inStr) {
+            if (ch === '\\') { i++; continue; }   // skip escaped char
+            if (ch === '"') inStr = false;
+        } else {
+            if (ch === '"') { inStr = true; continue; }
+            if (ch === '{') depth++;
+            else if (ch === '}') {
+                depth--;
+                if (depth === 0) {
+                    const candidate = text.slice(openIdx, i + 1);
+                    try { JSON.parse(candidate); return candidate; } catch {
+                        // Model emitted literal newlines inside string values — repair and retry.
+                        const repaired = repairJsonStrings(candidate);
+                        try { JSON.parse(repaired); return repaired; } catch { return null; }
+                    }
+                }
+            }
+        }
+    }
+    return null;
 }
 
 function tryStrictParse(text: string): ParsedPlan | null {
     const fence = findLastPlanFence(text);
     if (!fence) return null;
     let parsed: any;
-    try { parsed = JSON.parse(fence); } catch { return null; }
+    try { parsed = JSON.parse(fence); } catch {
+        // Model emitted literal newlines inside string values — repair and retry.
+        try { parsed = JSON.parse(repairJsonStrings(fence)); } catch { return null; }
+    }
     if (!parsed || typeof parsed !== 'object') return null;
     if (!Array.isArray(parsed.steps)) return null;
     const summary = typeof parsed.summary === 'string' ? parsed.summary : '';
     const steps: PlanStep[] = [];
     for (const raw of parsed.steps) {
         const step = validateStrictStep(raw);
-        if (!step) return null;        // any malformed step rejects whole plan
+        if (!step) return null;
         steps.push(step);
     }
     return { summary, steps, raw: text, parseLayer: 'strict' };

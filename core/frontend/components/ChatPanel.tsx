@@ -29,7 +29,6 @@ import { parseSlashCommand, commandCompletions, STATIC_COMMANDS } from '../utils
 import { SkillContext } from '../context/SkillContext';
 import { builtinSkillManifest } from '../data/skills/skills-manifest';
 import { ChatMarkdownView, renderMarkdown } from './chat/ChatMarkdownView';
-import { ChatPermissionCard } from './chat/ChatPermissionCard';
 import { ChatTraceView, type TraceStep } from './chat/ChatTraceView';
 import type { CellFenceType } from './chat/ChatEmbeddedCell';
 import { BtwSuggestionCard } from './chat/BtwSuggestionCard';
@@ -144,6 +143,8 @@ interface Channel {
     id: string;
     label: string;
     messages: ChatMessage[];
+    /** Per-channel model override. When set, overrides the global chatModel for this tab. */
+    model?: string;
     /** If this channel originated from an InlineChat pop, the originating context. */
     fromInline?: boolean;
 }
@@ -151,12 +152,37 @@ interface Channel {
 interface TaskItem { id: string; text: string; done: boolean; }
 
 /**
- * Compact conversation history when it grows beyond MAX_HISTORY_TURNS turns.
- * Older turns beyond the keep window are replaced with a single summary message
- * so the context payload stays manageable. This is a simple sliding-window
- * approach — no LLM summarisation required.
+ * Rough character budget before auto-compact triggers. ~60k chars ≈ 15k tokens —
+ * well within typical context limits while leaving headroom for the reply.
+ */
+const AUTO_COMPACT_CHAR_THRESHOLD = 60_000;
+
+/**
+ * Hard sliding-window limit: never send more than this many turns even after
+ * auto-compact, so context stays manageable on every provider.
  */
 const MAX_HISTORY_TURNS = 20;
+
+/**
+ * Strip large SQL result blobs embedded in an AI message's text so they don't
+ * bloat the context on every subsequent turn. We only strip content that looks
+ * like a JSON array with more than RESULT_ROW_TRIM_THRESHOLD items — genuine
+ * prose is left untouched.
+ */
+const RESULT_ROW_TRIM_THRESHOLD = 5;
+function trimSqlResultsFromText(text: string): string {
+    // Replace ```json\n[...big array...]\n``` blocks.
+    return text.replace(/```json\s*(\[[\s\S]*?\])\s*```/g, (_match, json) => {
+        try {
+            const parsed = JSON.parse(json);
+            if (Array.isArray(parsed) && parsed.length > RESULT_ROW_TRIM_THRESHOLD) {
+                return `\`\`\`json\n[${parsed.length} rows — re-run the query to retrieve data]\n\`\`\``;
+            }
+        } catch { /* not valid JSON, leave as-is */ }
+        return _match;
+    });
+}
+
 function compactHistory(history: ToolChatMessage[]): ToolChatMessage[] {
     if (history.length <= MAX_HISTORY_TURNS) return history;
     let dropCount = history.length - MAX_HISTORY_TURNS;
@@ -174,6 +200,11 @@ function compactHistory(history: ToolChatMessage[]): ToolChatMessage[] {
         content: `[Earlier conversation summary — ${dropped.length} turns omitted]\n${summary}\n[End of summary]`,
     };
     return [summaryMsg, ...kept];
+}
+
+/** Total character count of all messages in a history array. */
+function historyCharCount(history: ToolChatMessage[]): number {
+    return history.reduce((n, m) => n + (m.content?.length ?? 0), 0);
 }
 
 /**
@@ -199,6 +230,19 @@ export function defaultModelForProvider(provider: AiProviderType, tier: AiTier =
     const meta = providerMetadataRegistry[provider];
     if (!meta) return '';
     return meta.defaultModels[tier] ?? meta.defaultModels.advanced ?? '';
+}
+
+export function defaultModelForProviderWithSettings(
+    provider: AiProviderType,
+    tier: AiTier = 'advanced',
+    settings?: { [key: string]: unknown },
+): string {
+    if (settings) {
+        const key = `${provider}${tier === 'basic' ? 'Basic' : tier === 'tiny' ? 'Tiny' : 'Good'}Model`;
+        const fromSettings = settings[key];
+        if (typeof fromSettings === 'string' && fromSettings.trim()) return fromSettings.trim();
+    }
+    return defaultModelForProvider(provider, tier);
 }
 
 /**
@@ -260,7 +304,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         const newId = id ?? `channel-${Date.now()}`;
         setChannels(prev => {
             const channelLabel = label ?? `Channel ${prev.length + 1}`;
-            return [...prev, { id: newId, label: channelLabel, messages: initial ?? initialConversation, fromInline: !!id }];
+            return [...prev, { id: newId, label: channelLabel, messages: initial ?? initialConversation, model: defaultModelRef.current, fromInline: !!id }];
         });
         setActiveChannelId(newId);
         return newId;
@@ -338,16 +382,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     const [sessionRouting, setSessionRouting] = useState<'auto' | 'local' | 'cloud' | 'browser'>('auto');
     // Track which provider was actually used for the last message.
     const [lastRouteUsed, setLastRouteUsed] = useState<'local' | 'cloud' | null>(null);
+    // Browser model download progress (0–1, null when not loading).
+    const [browserLoadProgress, setBrowserLoadProgress] = useState<number | null>(null);
 
-    // Session-level permission state for query_data and mutation tools.
-    // 'ask' = show permission card on first call; 'granted' = run silently; 'denied' = block.
-    const [sessionQueryPerm, setSessionQueryPerm] = useState<'ask' | 'granted' | 'denied'>('ask');
     const [sessionMutatePerm, setSessionMutatePerm] = useState<'ask' | 'granted' | 'denied'>('ask');
-    const [pendingPermission, setPendingPermission] = useState<{
-        tool: string;
-        args: Record<string, unknown>;
-        resolve: (granted: boolean) => void;
-    } | null>(null);
+    const [sessionQueryPerm, setSessionQueryPerm] = useState<'ask' | 'granted' | 'denied'>('ask');
+    const [showQueryPermBanner, setShowQueryPermBanner] = useState(false);
+    const sessionQueryPermRef = useRef<'ask' | 'granted' | 'denied'>('ask');
+    sessionQueryPermRef.current = sessionQueryPerm;
+    const sessionQueryPermResolverRef = useRef<((granted: boolean) => void) | null>(null);
     // Accumulates trace steps for the current AI turn; flushed into meta on completion.
     const traceRef = useRef<TraceStep[]>([]);
 
@@ -392,10 +435,24 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     // --- C4 header state: per-chat overrides that do not mutate global Settings ---
     const configuredProviders = useMemo(() => listConfiguredProviders(settings), [settings]);
     const [chatProvider, setChatProvider] = useState<AiProviderType>(() => {
+        const nbProvider = metadata?.aiProvider as AiProviderType | undefined;
+        if (nbProvider && configuredProviders.includes(nbProvider)) return nbProvider;
         if (configuredProviders.includes(settings.aiProvider)) return settings.aiProvider;
         return configuredProviders[0] ?? settings.aiProvider;
     });
-    const [chatModel, setChatModel] = useState<string>(() => defaultModelForProvider(chatProvider, 'advanced'));
+    const [defaultModel, setDefaultModel] = useState<string>(() => {
+        const nbModel = metadata?.aiModel;
+        if (nbModel) return nbModel;
+        return defaultModelForProviderWithSettings(chatProvider, 'advanced', settings);
+    });
+    const defaultModelRef = useRef(defaultModel);
+    defaultModelRef.current = defaultModel;
+    // Per-channel model: active channel's model overrides the default
+    const chatModel = activeChannel.model ?? defaultModel;
+    const setChatModel = useCallback((model: string) => {
+        // Store on the current channel only — don't bleed across tabs
+        setChannels(prev => prev.map(c => c.id === activeChannelId ? { ...c, model } : c));
+    }, [activeChannelId]);
     const providerMeta = providerMetadataRegistry[chatProvider];
     const isFreeFormModel = chatProvider === 'local' || chatProvider === 'browser';
 
@@ -428,17 +485,31 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     const providerSupportsImagesRef = useRef(false);
     providerSupportsImagesRef.current = providerMetadataRegistry[chatProvider]?.supportsImageToolResults === true;
 
+    // Guard against concurrent auto-compact triggers.
+    const autoCompactRunning = useRef(false);
+
     useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, proposals]);
 
-    // Keep chat header in sync if the user changes the global provider in Settings.
+    // Keep chat header in sync when the user changes the global provider in Settings.
+    // Two cases:
+    //   1. Current provider is no longer configured → must switch.
+    //   2. Global setting changed to a new configured provider → follow it (unless
+    //      the user already manually picked a different provider for this chat, tracked
+    //      via lastGlobalProviderRef so we don't stomp intentional per-chat overrides).
+    const lastGlobalProviderRef = useRef(settings.aiProvider);
     useEffect(() => {
         if (!configuredProviders.length) return;
-        if (!configuredProviders.includes(chatProvider)) {
+        const globalChanged = settings.aiProvider !== lastGlobalProviderRef.current;
+        lastGlobalProviderRef.current = settings.aiProvider;
+        const currentUnconfigured = !configuredProviders.includes(chatProvider);
+        // Don't override notebook-level provider preference unless current provider becomes unconfigured
+        const hasNotebookPref = !!metadata?.aiProvider && configuredProviders.includes(metadata.aiProvider as AiProviderType);
+        if (currentUnconfigured || (globalChanged && !hasNotebookPref)) {
             const next = configuredProviders.includes(settings.aiProvider) ? settings.aiProvider : configuredProviders[0];
             setChatProvider(next);
-            setChatModel(defaultModelForProvider(next, 'advanced'));
+            setDefaultModel(defaultModelForProviderWithSettings(next, 'advanced', settings));
         }
-    }, [configuredProviders, chatProvider, settings.aiProvider]);
+    }, [configuredProviders, chatProvider, settings.aiProvider, metadata?.aiProvider]);
 
     const handleReset = () => {
         setMessages(() => initialConversation);
@@ -450,6 +521,56 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         cancelledRef.current = false;
         setChannelMemory(prev => ({ ...prev, [activeChannelId]: {} }));
         setChannelTasks(prev => ({ ...prev, [activeChannelId]: [] }));
+        setSessionQueryPerm('ask');
+        sessionQueryPermRef.current = 'ask';
+        setShowQueryPermBanner(false);
+        sessionQueryPermResolverRef.current = null;
+    };
+
+    /**
+     * AI-powered compaction: summarises the conversation via the model, preserving
+     * SQL queries verbatim and dropping raw result rows. Falls back to a plain
+     * text summary if the AI call fails. Idempotent — safe to call concurrently.
+     */
+    const handleCompact = async (opts?: { silent?: boolean }) => {
+        if (autoCompactRunning.current) return;
+        autoCompactRunning.current = true;
+        const placeholderId = Date.now().toString();
+        if (!opts?.silent) {
+            setMessages(prev => [...prev,
+                { id: placeholderId, sender: MessageSender.AI, text: '_Compacting conversation…_' },
+            ]);
+        }
+        try {
+            const conversationText = messagesRef.current.slice(1)
+                .map(m => {
+                    const role = m.sender === MessageSender.User ? 'User' : 'Assistant';
+                    return `${role}: ${m.text}${m.code ? `\n\`\`\`sql\n${m.code}\n\`\`\`` : ''}`;
+                })
+                .join('\n\n');
+            const summary = await aiService.getCompactSummary(conversationText);
+            const summaryText = summary
+                ? `**Conversation compacted.**\n\n${summary}`
+                : `**Conversation compacted** (${messagesRef.current.length - 1} turns summarised).`;
+            const summaryMsg: ChatMessage = {
+                id: placeholderId,
+                sender: MessageSender.AI,
+                text: summaryText,
+            };
+            setMessages(() => [initialConversation[0], summaryMsg]);
+        } catch {
+            // Fallback: naive text summary.
+            const summary = messagesRef.current.slice(1)
+                .map(m => `${m.sender === MessageSender.User ? 'User' : 'AI'}: ${m.text.slice(0, 150)}`)
+                .join('\n');
+            setMessages(() => [initialConversation[0], {
+                id: Date.now().toString(),
+                sender: MessageSender.AI,
+                text: `**Conversation compacted.**\n\n${summary.slice(0, 600)}${summary.length > 600 ? '\n…' : ''}`,
+            }]);
+        } finally {
+            autoCompactRunning.current = false;
+        }
     };
 
     const handleRewindTo = useCallback((keepUpToOriginalIdx: number) => {
@@ -687,7 +808,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         }
     };
 
-    const handleSend = async (override?: { text?: string; hiddenUserMessage?: boolean; forceMode?: 'normal' | 'plan' | 'btw' }): Promise<{ ok: boolean; error?: string }> => {
+    const handleSend = async (override?: { text?: string; hiddenUserMessage?: boolean; forceMode?: 'normal' | 'plan' | 'btw' | 'verbose' }): Promise<{ ok: boolean; error?: string }> => {
         const inputText0 = override?.text ?? input;
         if (inputText0.trim() === '' || isLoading || !schema) return { ok: false, error: 'invalid input or chat busy' };
 
@@ -702,15 +823,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                 return { ok: true };
             }
             if (slashCmd.kind === 'compact') {
-                const summary = messages.slice(1)
-                    .map(m => `${m.sender === MessageSender.User ? 'User' : 'AI'}: ${m.text.slice(0, 120)}`)
-                    .join('\n');
-                const summaryMsg: ChatMessage = {
-                    id: Date.now().toString(),
-                    sender: MessageSender.AI,
-                    text: `**Conversation compacted.**\n\n${summary.slice(0, 800)}${summary.length > 800 ? '\n…' : ''}`,
-                };
-                setMessages(() => [initialConversation[0], summaryMsg]);
+                void handleCompact();
                 return { ok: true };
             }
             if (slashCmd.kind === 'help') {
@@ -723,8 +836,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
             if (slashCmd.kind === 'mode') {
                 chatMode.setMode(slashCmd.mode);
                 const label =
-                    slashCmd.mode === 'plan' ? 'Plan mode — I will propose changes without modifying the notebook.' :
-                    slashCmd.mode === 'btw'  ? 'BTW mode — you will get "by the way" suggestions after each reply.' :
+                    slashCmd.mode === 'plan'    ? 'Plan mode — I will propose changes without modifying the notebook.' :
+                    slashCmd.mode === 'btw'     ? 'BTW mode — you will get "by the way" suggestions after each reply.' :
+                    slashCmd.mode === 'verbose' ? 'Verbose mode — I will show full reasoning, intermediate results, and step-by-step analysis.' :
                     'Normal mode — I may modify the notebook directly.';
                 setMessages(prev => [...prev,
                     { id: Date.now().toString(), sender: MessageSender.User, text: `/${slashCmd.mode}` },
@@ -745,12 +859,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     const target = (providerMeta?.models ?? []).find(m => m.id === slashCmd.query || m.name.toLowerCase() === slashCmd.query.toLowerCase());
                     if (target) {
                         setChatModel(target.id);
+                        onMetadataChange?.({ ...metadataRef.current, aiModel: target.id });
                         setMessages(prev => [...prev,
                             { id: Date.now().toString(), sender: MessageSender.User, text: `/model ${slashCmd.query}` },
                             { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Switched to \`${target.id}\`.` },
                         ]);
                     } else {
                         setChatModel(slashCmd.query);
+                        onMetadataChange?.({ ...metadataRef.current, aiModel: slashCmd.query });
                         setMessages(prev => [...prev,
                             { id: Date.now().toString(), sender: MessageSender.User, text: `/model ${slashCmd.query}` },
                             { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Model set to \`${slashCmd.query}\`.` },
@@ -771,6 +887,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     if (target) {
                         setChatProvider(target as AiProviderType);
                         setChatModel(defaultModelForProvider(target as AiProviderType, 'advanced'));
+                        onMetadataChange?.({ ...metadataRef.current, aiProvider: target });
                         setMessages(prev => [...prev,
                             { id: Date.now().toString(), sender: MessageSender.User, text: `/provider ${slashCmd.query}` },
                             { id: (Date.now() + 1).toString(), sender: MessageSender.AI, text: `Switched to provider \`${target}\`.` },
@@ -935,18 +1052,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         approveAllReadsRef.current = false;
         approvalResolvers.current.clear();
 
-        // Browser provider has no tool support → use legacy path.
-        if (chatProvider === 'browser') {
-            await handleSendLegacy();
-            setIsLoading(false);
-            return { ok: true };
-        }
+        // Browser provider: use streaming browser inference instead of tool-calling path.
+        // Force routingPreference to 'browser' so AiService routes to the in-browser model.
+        const effectiveRouting = chatProvider === 'browser' ? 'browser' : sessionRouting;
 
-        // Build tool message history (text-only summaries).
-        // Compact history beyond 20 messages to avoid context overflow.
+        // Build tool message history. Trim large SQL result blobs from AI messages
+        // so they don't bloat context on every turn — the model can re-run the query.
         const rawHistory = messagesRef.current.slice(1).map(m => ({
             role: m.sender === MessageSender.User ? 'user' : 'assistant',
-            content: m.text + (m.code ? `\n\`\`\`sql\n${m.code}\n\`\`\`` : ''),
+            content: trimSqlResultsFromText(m.text + (m.code ? `\n\`\`\`sql\n${m.code}\n\`\`\`` : '')),
         })) as ToolChatMessage[];
         const toolHistory: ToolChatMessage[] = compactHistory(rawHistory);
         toolHistory.push({ role: 'user', content: inputText });
@@ -979,24 +1093,30 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     reject(new Error('cancelled'));
                 }
             }),
-            checkQueryPermission: (args) => {
-                const globalPerm = settings.aiPermQueryData ?? 'ask';
-                if (globalPerm === 'never' || sessionQueryPerm === 'denied') {
-                    return Promise.reject(new Error('Permission denied by user.'));
-                }
-                if (globalPerm === 'always' || sessionQueryPerm === 'granted') {
-                    return Promise.resolve();
-                }
-                // First call — show permission card and wait.
+            checkQueryPermission: () => {
+                const globalPerm = settings.aiPermQueryData ?? 'always';
+                if (globalPerm === 'never') return Promise.reject(new Error('Permission denied by user.'));
+                if (globalPerm === 'always') return Promise.resolve();
+                // ask — session gate: granted once per session
+                if (sessionQueryPermRef.current === 'granted') return Promise.resolve();
+                if (sessionQueryPermRef.current === 'denied') return Promise.reject(new Error('Permission denied by user.'));
+                // First query this session — show inline approval
                 return new Promise<void>((resolve, reject) => {
-                    setPendingPermission({
-                        tool: 'query_data',
-                        args: args as Record<string, unknown>,
-                        resolve: (granted) => {
-                            if (granted) resolve();
-                            else reject(new Error('Permission denied by user.'));
-                        },
-                    });
+                    sessionQueryPermResolverRef.current = (granted: boolean) => {
+                        sessionQueryPermResolverRef.current = null;
+                        setShowQueryPermBanner(false);
+                        if (granted) {
+                            setSessionQueryPerm('granted');
+                            sessionQueryPermRef.current = 'granted';
+                            resolve();
+                        } else {
+                            setSessionQueryPerm('denied');
+                            sessionQueryPermRef.current = 'denied';
+                            reject(new Error('Permission denied by user.'));
+                        }
+                    };
+                    setSessionQueryPerm('ask');
+                    setShowQueryPermBanner(true);
                 });
             },
         };
@@ -1022,9 +1142,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     modelOverride: chatModel,
                     customSystemPrompt: composeSystemPromptForMode(baseSystemPrompt, activeMode),
                     signal: abortControllerRef.current?.signal,
-                    routingPreference: sessionRouting,
+                    routingPreference: effectiveRouting,
                     schemaForLocalPrompt: schema.tables as SchemaTable[],
                     variablesForPrompt: metadata?.variables ?? {},
+                    onBrowserLoadProgress: (p: number) => setBrowserLoadProgress(p < 1 ? p : null),
                 },
             );
 
@@ -1080,7 +1201,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
             }
         } finally {
             // Update route badge to reflect what was actually used this turn.
-            setLastRouteUsed(settings.localBaseUrl && settings.aiProvider === 'local' && sessionRouting !== 'cloud' ? 'local' : 'cloud');
+            setLastRouteUsed(settings.localBaseUrl && settings.aiProvider === 'local' && effectiveRouting !== 'cloud' ? 'local' : 'cloud');
             setStreamingText(null);
             const trimmed = assistantBuf.trim();
             if (trimmed && !cancelledRef.current) {
@@ -1102,6 +1223,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     meta,
                 };
                 setMessages(prev => [...prev, assistantMsg]);
+                // Auto-compact when the accumulated history grows too large.
+                // Run in background so it doesn't block the current response.
+                {
+                    const charCount = historyCharCount(rawHistory);
+                    if (charCount > AUTO_COMPACT_CHAR_THRESHOLD && !autoCompactRunning.current) {
+                        void handleCompact({ silent: true });
+                    }
+                }
                 // Fire btw orchestrator after a successful assistant reply.
                 // This is a fire-and-forget; hints arrive asynchronously.
                 if (activeMode === 'btw') {
@@ -1218,7 +1347,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         patchMessageMeta(messageId, planMetaStart());
         const result = await handleSend({ text: prompt, hiddenUserMessage: true, forceMode: 'normal' });
         if (result.ok) {
-            patchMessageMeta(messageId, planMetaSuccess(plan.steps.length, Date.now()));
+            // Count only approved/done steps; rejected ones don't count as executed.
+            const approvedCount = proposalsRef.current.filter(p => p.status === 'approved' || p.status === 'done').length;
+            const stepCount = approvedCount || plan.steps.length;
+            patchMessageMeta(messageId, planMetaSuccess(stepCount, Date.now()));
         } else {
             patchMessageMeta(messageId, planMetaFail(result.error));
         }
@@ -1273,15 +1405,27 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                 In-browser mode — data queries unavailable
                             </span>
                         )}
-                        <button onClick={() => addChannel()} title="New chat channel" aria-label="New chat channel" className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-md"><PlusIcon className="w-4 h-4"/></button>
+                        {browserLoadProgress !== null && (
+                            <div className="flex items-center gap-1.5 px-2 py-0.5">
+                                <span className="text-[10px] text-cyan-400/70">Downloading model…</span>
+                                <div className="w-20 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-cyan-500 rounded-full transition-all duration-150"
+                                        style={{ width: `${Math.round(browserLoadProgress * 100)}%` }}
+                                    />
+                                </div>
+                                <span className="text-[10px] text-gray-500">{Math.round(browserLoadProgress * 100)}%</span>
+                            </div>
+                        )}
                         <button onClick={handleReset} title="Reset Conversation" aria-label="Reset Conversation" className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-md"><ArrowCounterclockwiseIcon className="w-4 h-4"/></button>
                     </div>
                 </div>
-                {/* ── Channel tabs ── */}
-                {channels.length > 1 && (
-                    <div className="flex gap-1 flex-wrap">
+                {/* ── Channel tabs + model selector ── */}
+                <div className="flex items-center gap-1 min-w-0">
+                    <div className="flex gap-0.5 flex-1 flex-wrap min-w-0 overflow-hidden">
                         {channels.map(ch => {
                             const isRenaming = renamingChannelId === ch.id;
+                            const isActive = ch.id === activeChannelId;
                             const commitRename = () => {
                                 const next = renameDraft.trim();
                                 if (next) {
@@ -1291,7 +1435,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                 setRenameDraft('');
                             };
                             return (
-                                <div key={ch.id} className={`group flex items-center gap-1 px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${ch.id === activeChannelId ? 'bg-cyan-700/40 text-cyan-200' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'}`}>
+                                <div key={ch.id} className={`group flex items-center gap-1 px-2 py-1 rounded-t-md text-xs cursor-pointer transition-colors border-b-2 ${isActive ? 'border-cyan-400 bg-gray-800/60 text-cyan-200' : 'border-transparent bg-gray-800/30 text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'}`}>
                                     {isRenaming ? (
                                         <input
                                             autoFocus
@@ -1310,17 +1454,39 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                         <button
                                             onClick={() => setActiveChannelId(ch.id)}
                                             onDoubleClick={() => { setRenamingChannelId(ch.id); setRenameDraft(ch.label); }}
-                                            className="max-w-[80px] truncate"
+                                            className="max-w-[100px] truncate"
                                             title={`${ch.label} (double-click to rename)`}
                                             aria-label={`Switch to channel ${ch.label}`}
                                         >{ch.label}</button>
                                     )}
-                                    {channels.length > 1 && !isRenaming && <button onClick={() => removeChannel(ch.id)} className="opacity-0 group-hover:opacity-100 ml-0.5 text-gray-400 hover:text-red-400" title="Close channel" aria-label="Close channel"><XMarkIcon className="w-3 h-3"/></button>}
+                                    {channels.length > 1 && !isRenaming && (
+                                        <button onClick={() => removeChannel(ch.id)} className="opacity-0 group-hover:opacity-100 ml-0.5 text-gray-500 hover:text-red-400 transition-opacity" title="Close tab" aria-label="Close channel"><XMarkIcon className="w-3 h-3"/></button>
+                                    )}
                                 </div>
                             );
                         })}
+                        <button onClick={() => addChannel()} title="New chat tab" aria-label="New chat channel" className="px-1.5 py-1 text-gray-500 hover:text-cyan-400 rounded transition-colors self-end mb-0.5"><PlusIcon className="w-3.5 h-3.5"/></button>
                     </div>
-                )}
+                    {/* Model selector — per-tab */}
+                    {(providerMeta?.models && providerMeta.models.length > 0) ? (
+                        <select
+                            value={chatModel}
+                            onChange={e => { setChatModel(e.target.value); onMetadataChange?.({ ...metadataRef.current, aiModel: e.target.value }); }}
+                            title={buildModelTooltip(chatModel, chatProvider)}
+                            aria-label="AI model"
+                            className="ml-1 flex-shrink-0 bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-[10px] font-mono text-gray-400 focus:outline-none focus:ring-1 focus:ring-cyan-600 cursor-pointer"
+                        >
+                            {!providerMeta.models.some(m => m.id === chatModel) && (
+                                <option value={chatModel} className="bg-gray-800 text-gray-200">{chatModel}</option>
+                            )}
+                            {providerMeta.models.map(m => (
+                                <option key={m.id} value={m.id} className="bg-gray-800 text-gray-200">{m.id}</option>
+                            ))}
+                        </select>
+                    ) : (
+                        <span className="ml-1 flex-shrink-0 font-mono text-[10px] text-gray-500 cursor-help px-1" title={buildModelTooltip(chatModel, chatProvider)}>{chatModel || '—'}</span>
+                    )}
+                </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                     <label className="text-[10px] uppercase tracking-wider text-gray-400" htmlFor="chat-visibility">See</label>
                     <select id="chat-visibility" aria-label="AI data visibility" value={chatVisibility} onChange={e => setChatVisibility(e.target.value as VisibilityMode)} title="Controls what slice of recent query results the AI can see" className="bg-gray-800 border border-gray-600 rounded text-xs px-1.5 py-1 text-gray-200 focus:outline-none focus:ring-1 focus:ring-cyan-500">
@@ -1334,31 +1500,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                             onChange={e => chatMode.setMode(e.target.value as ChatMode)}
                             title={buildModeTooltip(chatMode.state.mode)}
                             aria-label="Chat mode"
-                            className={`bg-transparent border-none p-0 pr-3 text-[10px] focus:outline-none cursor-pointer appearance-none ${chatMode.state.mode === 'plan' ? 'text-amber-400' : chatMode.state.mode === 'btw' ? 'text-cyan-300' : 'text-gray-400'}`}
+                            className={`bg-transparent border-none p-0 pr-3 text-[10px] focus:outline-none cursor-pointer appearance-none ${chatMode.state.mode === 'plan' ? 'text-amber-400' : chatMode.state.mode === 'btw' ? 'text-cyan-300' : chatMode.state.mode === 'verbose' ? 'text-purple-400' : 'text-gray-400'}`}
                         >
                             <option value="normal" className="bg-gray-800 text-gray-200">/normal</option>
                             <option value="plan" className="bg-gray-800 text-gray-200">/plan</option>
                             <option value="btw" className="bg-gray-800 text-gray-200">/btw</option>
+                            <option value="verbose" className="bg-gray-800 text-gray-200">/verbose</option>
                         </select>
-                        <span className="mx-1 text-gray-600">·</span>
-                        {(providerMeta?.models && providerMeta.models.length > 0) ? (
-                            <select
-                                value={chatModel}
-                                onChange={e => setChatModel(e.target.value)}
-                                title={buildModelTooltip(chatModel, chatProvider)}
-                                aria-label="AI model"
-                                className="bg-transparent border-none p-0 pr-3 text-[10px] font-mono text-gray-400 focus:outline-none cursor-pointer appearance-none"
-                            >
-                                {!providerMeta.models.some(m => m.id === chatModel) && (
-                                    <option value={chatModel} className="bg-gray-800 text-gray-200">{chatModel}</option>
-                                )}
-                                {providerMeta.models.map(m => (
-                                    <option key={m.id} value={m.id} className="bg-gray-800 text-gray-200">{m.id}</option>
-                                ))}
-                            </select>
-                        ) : (
-                            <span className="font-mono text-gray-400 cursor-help" title={buildModelTooltip(chatModel, chatProvider)}>{chatModel || '—'}</span>
-                        )}
                     </span>
                 </div>
                 {/* ── Active skill chips ── */}
@@ -1502,28 +1650,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         </div>
                     </div>
                 )}
-                {pendingPermission && (
-                    <ChatPermissionCard
-                        toolName={pendingPermission.tool}
-                        args={pendingPermission.args}
-                        onAllowSession={() => {
-                            setSessionQueryPerm('granted');
-                            pendingPermission.resolve(true);
-                            setPendingPermission(null);
-                        }}
-                        onAllowAlways={() => {
-                            saveSettings({ aiPermQueryData: 'always' });
-                            setSessionQueryPerm('granted');
-                            pendingPermission.resolve(true);
-                            setPendingPermission(null);
-                        }}
-                        onDeny={() => {
-                            setSessionQueryPerm('denied');
-                            pendingPermission.resolve(false);
-                            setPendingPermission(null);
-                        }}
-                    />
-                )}
                 {proposals.map(record => {
                     const tool = TOOLS.find(t => t.name === record.name);
                     if (!tool) return null;
@@ -1623,6 +1749,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         />
                     );
                 })}
+                {/* Session query permission banner — shown when aiPermQueryData='ask' and first query fires */}
+                {showQueryPermBanner && (
+                    <div className="mx-2 my-1 p-3 bg-gray-800 border border-gray-600 rounded-lg text-xs text-gray-200 flex flex-col gap-2">
+                        <p className="font-medium text-gray-100">Allow AI to query your data?</p>
+                        <p className="text-gray-400">The AI wants to run a SQL query to answer your question. Allow once this session?</p>
+                        <div className="flex gap-2">
+                            <button onClick={() => sessionQueryPermResolverRef.current?.(true)} className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 rounded text-white text-xs">Allow for this session</button>
+                            <button onClick={() => sessionQueryPermResolverRef.current?.(false)} className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-200 text-xs">Deny</button>
+                        </div>
+                    </div>
+                )}
                 {isLoading && streamingText === null && (<div className="flex justify-start"><div className="bg-gray-700 rounded-lg p-3 inline-flex items-center space-x-2"><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-0"></span><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-150"></span><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-300"></span></div></div>)}
                 {/* Symptom-based starter chips — shown only on fresh conversations */}
                 {messages.length === 1 && !isLoading && (
