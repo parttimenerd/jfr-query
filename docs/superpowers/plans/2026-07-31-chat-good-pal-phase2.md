@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Give the AI the ability to run its own DuckDB queries and mutate the notebook, gated by an inline permission card that shows which tables are accessed. Users can allow per-action or grant session-wide/global permissions. Every mutation is undoable.
+**Goal:** Give the AI the ability to run its own DuckDB queries and mutate the notebook. Permissions are gated once per session (not per call) — after first approval the AI iterates autonomously. Every tool call is recorded in a collapsible trace view. Every mutation is undoable.
 
-**Architecture:** A new `query_data` tool is added to the tool registry. `AiService.streamChatWithTools` already handles tool calls — the tool handler executes the query and returns results. A new `ChatPermissionCard` component intercepts gated tool calls before execution (plugging into the existing `chooseProposalKind` / `applyApprovalAction` pattern). Settings gains four `aiPerm*` fields. A per-session visibility override toggle is added to the chat header. `onBeforeMutate` / `onUndoLastAction` are already wired — we add a "Revert last AI action" button to the header.
+**Architecture:** A new `query_data` tool is registered in the tool runtime. `AiService.streamChatWithTools` already handles multi-round tool loops (capped at 10 rounds). Session-level permission state lives in `ChatPanel` — once the user clicks "Allow for this session" on the first `query_data` call, all subsequent calls in that session run silently. `ChatPermissionCard` appears only for the first call of each permission type. `TraceStep[]` is appended to `ChatMessage.meta.trace` on every tool completion — a collapsed "Thinking…" block in the message bubble shows the trace. Settings gains four `aiPerm*` fields for global defaults.
 
-**Tech Stack:** React, Tailwind, existing `AiService`/tool runtime, `DataContext.query()`, existing `ChatProposalCard` pattern, Vitest.
+**Tech Stack:** React, Tailwind, existing `AiService`/tool runtime, `DataContext.query()`, Vitest.
 
 **Prerequisite:** Phase 1 complete.
 
@@ -17,13 +17,15 @@
 | File | Change |
 |------|--------|
 | `services/ai/tools/queryData.ts` | **Create** — `query_data` tool definition + handler |
-| `services/ai/tools/index.ts` | **Modify** — register `query_data` in `TOOLS` array |
-| `components/chat/ChatPermissionCard.tsx` | **Create** — inline approval card for `query_data` + mutation tools |
-| `context/SettingsContext.tsx` | **Modify** — add `aiPermQueryData`, `aiPermAddCell`, `aiPermUpdateCell`, `aiPermDeleteCell` fields |
+| `services/ai/tools/index.ts` | **Modify** — register `query_data` in tools array |
+| `components/chat/ChatPermissionCard.tsx` | **Create** — first-call approval card; hidden on all subsequent calls once session permission is granted |
+| `components/chat/ChatTraceView.tsx` | **Create** — collapsible "Thinking…" trace block rendered inside each AI message bubble |
+| `context/SettingsContext.tsx` | **Modify** — add `aiPermQueryData`, `aiPermAddCell`, `aiPermUpdateCell`, `aiPermDeleteCell` |
 | `components/SettingsModal.tsx` | **Modify** — add AI Permissions section |
-| `components/ChatPanel.tsx` | **Modify** — visibility toggle, revert button, session permission state |
+| `components/ChatPanel.tsx` | **Modify** — session permission state, trace capture, visibility toggle, revert button |
 | `tests/chat/queryData.test.ts` | **Create** — tool definition + handler unit tests |
 | `tests/chat/chatPermissionCard.test.ts` | **Create** — permission card unit tests |
+| `tests/chat/chatTraceView.test.ts` | **Create** — trace view unit tests |
 
 ---
 
@@ -33,15 +35,15 @@
 - Create: `core/frontend/services/ai/tools/queryData.ts`
 - Create: `core/frontend/tests/chat/queryData.test.ts`
 
-**Context:** A `Tool` has shape `{ name: string, description: string, kind: 'read'|'mutate', inputSchema: JsonSchema }`. The tool handler receives `(args: any, deps: ToolDeps)` and returns a string result. `ToolDeps` is defined in `services/ai/tools/runtime.ts` — read the first 40 lines to get its exact shape, then use `deps.duckdbQuery(sql)` (or the equivalent field) to run the query.
+**Context:** The tool runtime lives in `services/ai/tools/`. A `Tool` has shape `{ name, description, kind: 'read'|'mutate', inputSchema }`. The handler receives `(args, deps)` and returns a string result. Read `services/ai/tools/index.ts` (first 60 lines) to find the exact `ToolDeps` type and how the DuckDB query method is named (likely `duckdbQuery` or `runQuery`).
 
-- [ ] **Step 1: Read `runtime.ts` to find `ToolDeps`**
+- [ ] **Step 1: Read tool runtime to find `ToolDeps`**
 
 ```bash
-head -60 core/frontend/services/ai/tools/runtime.ts
+head -60 core/frontend/services/ai/tools/index.ts
 ```
 
-Note the exact field name for running a DuckDB query in `ToolDeps`. It is likely `duckdbQuery` or `runQuery`.
+Note the exact method name on `ToolDeps` for running a SQL query.
 
 - [ ] **Step 2: Write failing tests**
 
@@ -69,12 +71,12 @@ describe('QUERY_DATA_TOOL definition', () => {
     it('tables parameter is an array of strings', () => {
         const tables = QUERY_DATA_TOOL.inputSchema.properties!.tables;
         expect(tables.type).toBe('array');
-        expect(tables.items?.type).toBe('string');
+        expect((tables as any).items?.type).toBe('string');
     });
 });
 
 describe('handleQueryData', () => {
-    it('runs the sql via deps and returns stringified result', async () => {
+    it('runs the sql via deps and returns JSON result', async () => {
         const mockDeps = {
             duckdbQuery: vi.fn().mockResolvedValue({ columns: ['n'], rows: [[42]] }),
         } as any;
@@ -83,10 +85,12 @@ describe('handleQueryData', () => {
             mockDeps,
         );
         expect(mockDeps.duckdbQuery).toHaveBeenCalledWith('SELECT 42 AS n');
-        expect(result).toContain('42');
+        const parsed = JSON.parse(result);
+        expect(parsed.columns).toEqual(['n']);
+        expect(parsed.rows[0]).toEqual([42]);
     });
 
-    it('returns error string on failure', async () => {
+    it('returns error JSON on failure', async () => {
         const mockDeps = {
             duckdbQuery: vi.fn().mockRejectedValue(new Error('Table not found')),
         } as any;
@@ -94,8 +98,22 @@ describe('handleQueryData', () => {
             { sql: 'SELECT * FROM bad', reason: 'test', tables: ['bad'] },
             mockDeps,
         );
-        expect(result).toContain('error');
-        expect(result).toContain('Table not found');
+        const parsed = JSON.parse(result);
+        expect(parsed.error).toContain('Table not found');
+    });
+
+    it('caps rows at 100 in the returned result', async () => {
+        const rows = Array.from({ length: 200 }, (_, i) => [i]);
+        const mockDeps = {
+            duckdbQuery: vi.fn().mockResolvedValue({ columns: ['i'], rows }),
+        } as any;
+        const result = await handleQueryData(
+            { sql: 'SELECT i FROM t', reason: 'test', tables: ['t'] },
+            mockDeps,
+        );
+        const parsed = JSON.parse(result);
+        expect(parsed.rows.length).toBe(100);
+        expect(parsed.totalRows).toBe(200);
     });
 });
 ```
@@ -109,16 +127,18 @@ Expected: FAIL — module not found.
 
 - [ ] **Step 4: Implement `queryData.ts`**
 
-Create `core/frontend/services/ai/tools/queryData.ts`:
+Create `core/frontend/services/ai/tools/queryData.ts` (replace `duckdbQuery` with the field name found in Step 1 if different):
 
 ```typescript
 import type { Tool } from './index';
-import type { ToolDeps } from './runtime';
+import type { ToolDeps } from './index';
 
 export const QUERY_DATA_TOOL: Tool = {
     name: 'query_data',
     kind: 'read',
-    description: 'Run a read-only SQL query against the loaded JFR session data. Always include the reason and the table names you will access — these are shown to the user for approval.',
+    description:
+        'Run a read-only SQL query against the loaded JFR session data. ' +
+        'Always include the reason and the table names you will access — these are shown to the user.',
     inputSchema: {
         type: 'object',
         properties: {
@@ -128,12 +148,12 @@ export const QUERY_DATA_TOOL: Tool = {
             },
             reason: {
                 type: 'string',
-                description: 'One sentence explaining why this query answers the user\'s question.',
+                description: 'One sentence explaining why this query answers the question.',
             },
             tables: {
                 type: 'array',
                 items: { type: 'string' },
-                description: 'List of table names this query accesses. Used to inform the user before running.',
+                description: 'Table names this query accesses — shown to the user before running.',
             },
         },
         required: ['sql', 'reason', 'tables'],
@@ -145,18 +165,14 @@ export async function handleQueryData(
     deps: ToolDeps,
 ): Promise<string> {
     try {
-        // Use the correct field from ToolDeps — adjust if the field name differs
         const result = await (deps as any).duckdbQuery(args.sql);
-        const { columns, rows } = result as { columns: string[]; rows: any[][] };
-        const preview = rows.slice(0, 100);
-        return JSON.stringify({ columns, rows: preview, totalRows: rows.length });
-    } catch (err: any) {
-        return JSON.stringify({ error: String(err?.message ?? err) });
+        const { columns, rows } = result as { columns: string[]; rows: unknown[][] };
+        return JSON.stringify({ columns, rows: rows.slice(0, 100), totalRows: rows.length });
+    } catch (err: unknown) {
+        return JSON.stringify({ error: String((err as Error)?.message ?? err) });
     }
 }
 ```
-
-> **Note:** Replace `deps.duckdbQuery` with the actual field name found in Step 1.
 
 - [ ] **Step 5: Run tests**
 
@@ -165,9 +181,13 @@ cd core/frontend && npx vitest run tests/chat/queryData.test.ts
 ```
 Expected: all 5 tests pass.
 
-- [ ] **Step 6: Register the tool in `index.ts`**
+- [ ] **Step 6: Register the tool**
 
-In `core/frontend/services/ai/tools/index.ts`, find the `TOOLS` array (or equivalent export). Add:
+Read `core/frontend/services/ai/tools/index.ts` lines 1–80 to find:
+1. Where tools are listed in a `TOOLS` array or equivalent export
+2. Where tool calls are dispatched by name (switch/if-else)
+
+Add:
 
 ```typescript
 import { QUERY_DATA_TOOL, handleQueryData } from './queryData';
@@ -175,29 +195,27 @@ import { QUERY_DATA_TOOL, handleQueryData } from './queryData';
 // In TOOLS array:
 QUERY_DATA_TOOL,
 
-// In the tool handler dispatch (wherever tool calls are executed by name):
+// In tool dispatch:
 case 'query_data':
     return handleQueryData(args, deps);
 ```
-
-> **Note:** Read `index.ts` lines 1–50 to find the exact pattern for registering and dispatching tools.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add core/frontend/services/ai/tools/queryData.ts core/frontend/services/ai/tools/index.ts core/frontend/tests/chat/queryData.test.ts
-git commit -m "feat(chat): add query_data tool with permission-aware handler"
+git commit -m "feat(chat): add query_data tool with row-capped handler"
 ```
 
 ---
 
-### Task 2: `ChatPermissionCard` component
+### Task 2: `ChatPermissionCard` — first-call session gate
 
 **Files:**
 - Create: `core/frontend/components/chat/ChatPermissionCard.tsx`
 - Create: `core/frontend/tests/chat/chatPermissionCard.test.ts`
 
-**Context:** The existing `ChatProposalCard` uses pure helper functions (`chooseProposalKind`, `applyApprovalAction`) and renders an inline card with Approve/Reject buttons. `ChatPermissionCard` follows the same pattern but is specific to `query_data` and notebook mutations. It is rendered in `ChatPanel` when a pending approval record has `name === 'query_data'` or a mutate tool.
+**Context:** This card appears exactly **once per session per permission type** — on the first `query_data` call and on the first mutation call. After the user clicks "Allow for this session", the card never shows again in that session (session permission state is held in `ChatPanel`). Three buttons: "Allow for this session" / "Always allow" / "Deny". The card shows: the reason text, the table names accessed, and the first 200 chars of the SQL (for queries).
 
 - [ ] **Step 1: Write failing tests**
 
@@ -216,26 +234,26 @@ const queryArgs = {
 };
 
 describe('ChatPermissionCard — query_data', () => {
-    it('shows the reason', () => {
+    it('shows the reason text', () => {
         render(
             <ChatPermissionCard
                 toolName="query_data"
                 args={queryArgs}
-                onAllow={vi.fn()}
-                onAllowAll={vi.fn()}
+                onAllowSession={vi.fn()}
+                onAllowAlways={vi.fn()}
                 onDeny={vi.fn()}
             />,
         );
         expect(screen.getByText(/Find top allocating classes/)).toBeInTheDocument();
     });
 
-    it('shows each accessed table name', () => {
+    it('shows table names', () => {
         render(
             <ChatPermissionCard
                 toolName="query_data"
                 args={queryArgs}
-                onAllow={vi.fn()}
-                onAllowAll={vi.fn()}
+                onAllowSession={vi.fn()}
+                onAllowAlways={vi.fn()}
                 onDeny={vi.fn()}
             />,
         );
@@ -247,36 +265,54 @@ describe('ChatPermissionCard — query_data', () => {
             <ChatPermissionCard
                 toolName="query_data"
                 args={queryArgs}
-                onAllow={vi.fn()}
-                onAllowAll={vi.fn()}
+                onAllowSession={vi.fn()}
+                onAllowAlways={vi.fn()}
                 onDeny={vi.fn()}
             />,
         );
         expect(screen.getByText(/SELECT class_name/)).toBeInTheDocument();
     });
 
-    it('calls onAllow when Allow clicked', async () => {
-        const onAllow = vi.fn();
+    it('calls onAllowSession when "Allow for this session" clicked', async () => {
+        const onAllowSession = vi.fn();
         render(
-            <ChatPermissionCard toolName="query_data" args={queryArgs} onAllow={onAllow} onAllowAll={vi.fn()} onDeny={vi.fn()} />,
+            <ChatPermissionCard
+                toolName="query_data"
+                args={queryArgs}
+                onAllowSession={onAllowSession}
+                onAllowAlways={vi.fn()}
+                onDeny={vi.fn()}
+            />,
         );
-        await userEvent.click(screen.getByRole('button', { name: /^Allow$/ }));
-        expect(onAllow).toHaveBeenCalledOnce();
+        await userEvent.click(screen.getByRole('button', { name: /Allow for this session/ }));
+        expect(onAllowSession).toHaveBeenCalledOnce();
     });
 
-    it('calls onAllowAll when "Allow all queries" clicked', async () => {
-        const onAllowAll = vi.fn();
+    it('calls onAllowAlways when "Always allow" clicked', async () => {
+        const onAllowAlways = vi.fn();
         render(
-            <ChatPermissionCard toolName="query_data" args={queryArgs} onAllow={vi.fn()} onAllowAll={onAllowAll} onDeny={vi.fn()} />,
+            <ChatPermissionCard
+                toolName="query_data"
+                args={queryArgs}
+                onAllowSession={vi.fn()}
+                onAllowAlways={onAllowAlways}
+                onDeny={vi.fn()}
+            />,
         );
-        await userEvent.click(screen.getByRole('button', { name: /Allow all queries/ }));
-        expect(onAllowAll).toHaveBeenCalledOnce();
+        await userEvent.click(screen.getByRole('button', { name: /Always allow/ }));
+        expect(onAllowAlways).toHaveBeenCalledOnce();
     });
 
     it('calls onDeny when Deny clicked', async () => {
         const onDeny = vi.fn();
         render(
-            <ChatPermissionCard toolName="query_data" args={queryArgs} onAllow={vi.fn()} onAllowAll={vi.fn()} onDeny={onDeny} />,
+            <ChatPermissionCard
+                toolName="query_data"
+                args={queryArgs}
+                onAllowSession={vi.fn()}
+                onAllowAlways={vi.fn()}
+                onDeny={onDeny}
+            />,
         );
         await userEvent.click(screen.getByRole('button', { name: /Deny/ }));
         expect(onDeny).toHaveBeenCalledOnce();
@@ -289,25 +325,25 @@ describe('ChatPermissionCard — notebook mutation', () => {
             <ChatPermissionCard
                 toolName="add_cell"
                 args={{ type: 'sql', content: 'SELECT 1', afterCellId: 'cell-1' }}
-                onAllow={vi.fn()}
-                onAllowAll={vi.fn()}
+                onAllowSession={vi.fn()}
+                onAllowAlways={vi.fn()}
                 onDeny={vi.fn()}
             />,
         );
-        expect(screen.getByText(/Modify notebook/i)).toBeInTheDocument();
+        expect(screen.getByText(/Allow AI to modify your notebook/i)).toBeInTheDocument();
     });
 
-    it('shows "Allow all edits" for mutations', () => {
+    it('shows action description for add_cell', () => {
         render(
             <ChatPermissionCard
-                toolName="editCell"
-                args={{ cellId: 'cell-1', content: 'SELECT 2' }}
-                onAllow={vi.fn()}
-                onAllowAll={vi.fn()}
+                toolName="add_cell"
+                args={{ type: 'sql', content: 'SELECT 1', afterCellId: 'cell-1' }}
+                onAllowSession={vi.fn()}
+                onAllowAlways={vi.fn()}
                 onDeny={vi.fn()}
             />,
         );
-        expect(screen.getByRole('button', { name: /Allow all edits/ })).toBeInTheDocument();
+        expect(screen.getByText(/Add sql cell/i)).toBeInTheDocument();
     });
 });
 ```
@@ -330,68 +366,63 @@ const MUTATION_TOOLS = new Set(['add_cell', 'editCell', 'deleteCell', 'applyPlot
 
 interface ChatPermissionCardProps {
     toolName: string;
-    args: any;
-    onAllow: () => void;
-    onAllowAll: () => void;
+    args: Record<string, unknown>;
+    onAllowSession: () => void;
+    onAllowAlways: () => void;
     onDeny: () => void;
 }
 
-export function ChatPermissionCard({ toolName, args, onAllow, onAllowAll, onDeny }: ChatPermissionCardProps) {
+export function ChatPermissionCard({ toolName, args, onAllowSession, onAllowAlways, onDeny }: ChatPermissionCardProps) {
     const isQuery = toolName === 'query_data';
-    const isMutation = MUTATION_TOOLS.has(toolName);
 
     return (
         <div className="bg-[#0d1420] border border-[#1e2d3d] rounded-lg p-3 my-2 text-sm">
             <div className="flex items-center gap-2 mb-2">
                 <span className="text-base">{isQuery ? '🔍' : '✏️'}</span>
                 <span className="font-semibold text-slate-200">
-                    {isQuery ? 'Run query?' : 'Modify notebook?'}
+                    {isQuery ? 'Allow AI to query your data?' : 'Allow AI to modify your notebook?'}
                 </span>
             </div>
 
             {isQuery && (
                 <>
                     <div className="text-xs text-slate-400 mb-1">
-                        <span className="text-slate-500">Reason: </span>{args.reason}
+                        <span className="text-slate-500">Reason: </span>
+                        {String(args.reason)}
                     </div>
                     <div className="text-xs text-slate-400 mb-2">
-                        <span className="text-slate-500">Tables accessed: </span>
+                        <span className="text-slate-500">Tables: </span>
                         {(args.tables as string[]).join(', ')}
                     </div>
-                    <pre className="text-[10px] text-slate-400 bg-gray-950 rounded p-2 overflow-x-auto mb-3 whitespace-pre-wrap font-mono">
-                        {args.sql}
+                    <pre className="text-[10px] text-cyan-300/70 bg-gray-950 rounded p-2 overflow-x-auto mb-3 whitespace-pre-wrap font-mono leading-relaxed">
+                        {String(args.sql).slice(0, 200)}{String(args.sql).length > 200 ? '…' : ''}
                     </pre>
                 </>
             )}
 
-            {isMutation && (
+            {MUTATION_TOOLS.has(toolName) && (
                 <div className="text-xs text-slate-400 mb-3">
                     <span className="text-slate-500">Action: </span>
-                    {toolName === 'add_cell' && `Add ${args.type} cell`}
-                    {toolName === 'editCell' && `Edit cell ${args.cellId}`}
-                    {toolName === 'deleteCell' && `Delete cell ${args.cellId}`}
-                    {toolName === 'applyPlot' && `Apply plot config to cell ${args.cellId}`}
-                    {toolName === 'moveCell' && `Move cell ${args.cellId}`}
-                    {args.content && (
-                        <pre className="text-[10px] text-slate-400 bg-gray-950 rounded p-2 overflow-x-auto mt-1 whitespace-pre-wrap font-mono">
-                            {String(args.content).slice(0, 200)}{String(args.content).length > 200 ? '…' : ''}
-                        </pre>
-                    )}
+                    {toolName === 'add_cell' && `Add ${String(args.type)} cell`}
+                    {toolName === 'editCell' && `Edit cell`}
+                    {toolName === 'deleteCell' && `Delete cell`}
+                    {toolName === 'applyPlot' && `Apply plot config`}
+                    {toolName === 'moveCell' && `Move cell`}
                 </div>
             )}
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
                 <button
-                    onClick={onAllow}
+                    onClick={onAllowSession}
                     className="px-3 py-1 text-xs bg-cyan-700 hover:bg-cyan-600 text-white rounded cursor-pointer"
                 >
-                    Allow
+                    Allow for this session
                 </button>
                 <button
-                    onClick={onAllowAll}
+                    onClick={onAllowAlways}
                     className="px-3 py-1 text-xs bg-[#1e2d3d] hover:bg-[#263548] text-slate-300 rounded border border-[#2d3f52] cursor-pointer"
                 >
-                    {isQuery ? 'Allow all queries' : 'Allow all edits'}
+                    Always allow
                 </button>
                 <button
                     onClick={onDeny}
@@ -416,7 +447,7 @@ Expected: all 8 tests pass.
 
 ```bash
 git add core/frontend/components/chat/ChatPermissionCard.tsx core/frontend/tests/chat/chatPermissionCard.test.ts
-git commit -m "feat(chat): add ChatPermissionCard for query_data and notebook mutation approval"
+git commit -m "feat(chat): add ChatPermissionCard with session/always/deny buttons"
 ```
 
 ---
@@ -427,19 +458,26 @@ git commit -m "feat(chat): add ChatPermissionCard for query_data and notebook mu
 - Modify: `core/frontend/context/SettingsContext.tsx`
 - Modify: `core/frontend/components/SettingsModal.tsx`
 
-- [ ] **Step 1: Add permission fields to `Settings` type**
+- [ ] **Step 1: Read the Settings type definition**
 
-In `core/frontend/context/SettingsContext.tsx`, add to the `Settings` interface:
+```bash
+grep -n "interface Settings\|type Settings\|aiDefaultVisibility\|localBaseUrl" core/frontend/context/SettingsContext.tsx | head -30
+```
+
+Note where the `Settings` interface is defined and where `defaultSettings` is.
+
+- [ ] **Step 2: Add permission fields to `Settings` interface**
+
+In `core/frontend/context/SettingsContext.tsx`, in the `Settings` interface, add after the existing AI fields:
 
 ```typescript
-// AI Permissions
 aiPermQueryData: 'never' | 'ask' | 'always';
 aiPermAddCell: 'never' | 'ask' | 'always';
 aiPermUpdateCell: 'never' | 'ask' | 'always';
 aiPermDeleteCell: 'never' | 'ask' | 'always';
 ```
 
-In the `defaultSettings` object, add:
+In `defaultSettings`, add:
 
 ```typescript
 aiPermQueryData: 'ask',
@@ -448,16 +486,24 @@ aiPermUpdateCell: 'ask',
 aiPermDeleteCell: 'ask',
 ```
 
-- [ ] **Step 2: Run tests to verify no regressions**
+- [ ] **Step 3: Run tests to verify no regressions**
 
 ```bash
 cd core/frontend && npx vitest run
 ```
-Expected: all tests pass (new fields have defaults, existing consumers unaffected).
+Expected: all tests pass.
 
-- [ ] **Step 3: Add AI Permissions section to `SettingsModal`**
+- [ ] **Step 4: Read the SettingsModal local state pattern**
 
-In `core/frontend/components/SettingsModal.tsx`, find the end of the modal content (before the closing tag). Add a new section:
+```bash
+grep -n "localSettings\|setLocalSettings\|useState\|localSet" core/frontend/components/SettingsModal.tsx | head -20
+```
+
+Note the local state variable name (it is likely `localSettings` or `draft`).
+
+- [ ] **Step 5: Add AI Permissions section to `SettingsModal`**
+
+In `core/frontend/components/SettingsModal.tsx`, find a section heading (e.g. the AI section or the last section before the close button). Add after it:
 
 ```tsx
 {/* AI Permissions */}
@@ -466,17 +512,19 @@ In `core/frontend/components/SettingsModal.tsx`, find the end of the modal conte
     <div className="space-y-3">
         {(
             [
-                { key: 'aiPermQueryData', label: 'Run queries' },
-                { key: 'aiPermAddCell', label: 'Create cells' },
-                { key: 'aiPermUpdateCell', label: 'Edit cells' },
-                { key: 'aiPermDeleteCell', label: 'Delete cells' },
-            ] as const
+                { key: 'aiPermQueryData' as const, label: 'Run queries' },
+                { key: 'aiPermAddCell' as const, label: 'Create cells' },
+                { key: 'aiPermUpdateCell' as const, label: 'Edit cells' },
+                { key: 'aiPermDeleteCell' as const, label: 'Delete cells' },
+            ]
         ).map(({ key, label }) => (
             <div key={key} className="flex items-center justify-between">
                 <span className="text-xs text-slate-400">{label}</span>
                 <select
                     value={localSettings[key]}
-                    onChange={e => setLocalSettings(s => ({ ...s, [key]: e.target.value as any }))}
+                    onChange={e =>
+                        setLocalSettings(s => ({ ...s, [key]: e.target.value as 'never' | 'ask' | 'always' }))
+                    }
                     className="bg-gray-800 border border-gray-700 text-slate-300 text-xs rounded px-2 py-1"
                 >
                     <option value="ask">Ask every time</option>
@@ -489,175 +537,485 @@ In `core/frontend/components/SettingsModal.tsx`, find the end of the modal conte
 </div>
 ```
 
-> **Note:** Read the top of `SettingsModal.tsx` to confirm the local state variable name (`localSettings` or similar). Adjust the `onChange` accordingly.
+> **Note:** Replace `localSettings` / `setLocalSettings` with the actual local state variable names found in Step 4.
 
-- [ ] **Step 4: Run tests + manual check**
+- [ ] **Step 6: Run tests + visual check**
 
 ```bash
 cd core/frontend && npx vitest run
 ```
 
-Open Settings in the dev server. Verify the AI Permissions section appears with four dropdowns.
+Open Settings in the dev server. Verify the AI Permissions section appears with four dropdowns, each defaulting to "Ask every time".
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add core/frontend/context/SettingsContext.tsx core/frontend/components/SettingsModal.tsx
+git commit -m "feat(chat): add aiPerm* settings fields and AI Permissions section"
+```
+
+---
+
+### Task 4: `ChatTraceView` — collapsible tool trace in message bubbles
+
+**Files:**
+- Create: `core/frontend/components/chat/ChatTraceView.tsx`
+- Create: `core/frontend/tests/chat/chatTraceView.test.ts`
+
+**Context:** Each AI message that involved tool calls shows a collapsible "Thinking…" block above the final text. The block is collapsed by default. When expanded it shows each step: icon, tool name, short description (reason for query_data; action for mutations), row count (for query_data), and duration. A "Show full SQL" toggle per step reveals the full SQL.
+
+The `TraceStep` type is:
+```typescript
+interface TraceStep {
+    tool: string;           // 'query_data' | 'add_cell' | etc.
+    args: Record<string, unknown>;
+    result: string;         // JSON string (parse to get rowCount)
+    durationMs: number;
+    rowCount?: number;      // pre-parsed convenience field
+}
+```
+
+`ChatTraceView` receives `steps: TraceStep[]` and renders the collapsed block.
+
+- [ ] **Step 1: Write failing tests**
+
+Create `core/frontend/tests/chat/chatTraceView.test.ts`:
+
+```typescript
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { ChatTraceView } from '../../components/chat/ChatTraceView';
+import type { TraceStep } from '../../components/chat/ChatTraceView';
+
+const steps: TraceStep[] = [
+    {
+        tool: 'query_data',
+        args: { sql: 'SELECT count(*) FROM GarbageCollection', reason: 'Count GC events', tables: ['GarbageCollection'] },
+        result: JSON.stringify({ columns: ['count'], rows: [[14]], totalRows: 14 }),
+        durationMs: 32,
+        rowCount: 14,
+    },
+    {
+        tool: 'query_data',
+        args: { sql: 'SELECT stackTrace, sum(samples) AS n FROM ExecutionSample GROUP BY stackTrace ORDER BY n DESC LIMIT 20', reason: 'Top CPU methods', tables: ['ExecutionSample'] },
+        result: JSON.stringify({ columns: ['stackTrace', 'n'], rows: [], totalRows: 20 }),
+        durationMs: 118,
+        rowCount: 20,
+    },
+];
+
+describe('ChatTraceView', () => {
+    it('renders collapsed by default with step count', () => {
+        render(<ChatTraceView steps={steps} />);
+        expect(screen.getByText(/Thinking/i)).toBeInTheDocument();
+        expect(screen.getByText(/2 queries/i)).toBeInTheDocument();
+    });
+
+    it('does not show step details when collapsed', () => {
+        render(<ChatTraceView steps={steps} />);
+        expect(screen.queryByText(/Count GC events/i)).not.toBeInTheDocument();
+    });
+
+    it('shows step details after clicking the header', async () => {
+        render(<ChatTraceView steps={steps} />);
+        await userEvent.click(screen.getByText(/Thinking/i));
+        expect(screen.getByText(/Count GC events/i)).toBeInTheDocument();
+        expect(screen.getByText(/Top CPU methods/i)).toBeInTheDocument();
+    });
+
+    it('shows row count for query_data steps', async () => {
+        render(<ChatTraceView steps={steps} />);
+        await userEvent.click(screen.getByText(/Thinking/i));
+        expect(screen.getByText(/14 rows/i)).toBeInTheDocument();
+        expect(screen.getByText(/20 rows/i)).toBeInTheDocument();
+    });
+
+    it('shows total duration in the header', () => {
+        render(<ChatTraceView steps={steps} />);
+        // total = 32 + 118 = 150ms
+        expect(screen.getByText(/150ms/i)).toBeInTheDocument();
+    });
+
+    it('reveals full SQL when "Show SQL" is toggled', async () => {
+        render(<ChatTraceView steps={steps} />);
+        await userEvent.click(screen.getByText(/Thinking/i));
+        const showSqlButtons = screen.getAllByRole('button', { name: /show sql/i });
+        await userEvent.click(showSqlButtons[0]);
+        expect(screen.getByText(/SELECT count\(\*\) FROM GarbageCollection/i)).toBeInTheDocument();
+    });
+});
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+```bash
+cd core/frontend && npx vitest run tests/chat/chatTraceView.test.ts
+```
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement `ChatTraceView`**
+
+Create `core/frontend/components/chat/ChatTraceView.tsx`:
+
+```typescript
+import React, { useState } from 'react';
+
+export interface TraceStep {
+    tool: string;
+    args: Record<string, unknown>;
+    result: string;
+    durationMs: number;
+    rowCount?: number;
+}
+
+interface ChatTraceViewProps {
+    steps: TraceStep[];
+}
+
+export function ChatTraceView({ steps }: ChatTraceViewProps) {
+    const [expanded, setExpanded] = useState(false);
+    const [expandedSql, setExpandedSql] = useState<Set<number>>(new Set());
+
+    const totalMs = steps.reduce((s, t) => s + t.durationMs, 0);
+    const queryCount = steps.filter(s => s.tool === 'query_data').length;
+    const label = queryCount > 0 ? `${queryCount} quer${queryCount === 1 ? 'y' : 'ies'}` : `${steps.length} steps`;
+
+    return (
+        <div className="mb-2 text-xs">
+            <button
+                onClick={() => setExpanded(e => !e)}
+                className="flex items-center gap-1.5 text-slate-500 hover:text-slate-400 cursor-pointer select-none"
+            >
+                <span>{expanded ? '▼' : '▶'}</span>
+                <span className="font-medium">Thinking</span>
+                <span className="text-slate-600">({label} · {totalMs}ms)</span>
+            </button>
+
+            {expanded && (
+                <div className="mt-1 ml-4 border-l border-gray-800 pl-3 space-y-2">
+                    {steps.map((step, i) => (
+                        <div key={i} className="text-slate-500">
+                            <div className="flex items-baseline gap-1.5">
+                                <span>{step.tool === 'query_data' ? '🔍' : '✏️'}</span>
+                                <span className="text-slate-400">
+                                    {step.tool === 'query_data'
+                                        ? String(step.args.reason ?? step.tool)
+                                        : step.tool}
+                                </span>
+                                {step.rowCount !== undefined && (
+                                    <span className="text-slate-600">{step.rowCount} rows</span>
+                                )}
+                                <span className="text-slate-700">{step.durationMs}ms</span>
+                                {step.tool === 'query_data' && step.args.sql && (
+                                    <button
+                                        onClick={() =>
+                                            setExpandedSql(prev => {
+                                                const next = new Set(prev);
+                                                next.has(i) ? next.delete(i) : next.add(i);
+                                                return next;
+                                            })
+                                        }
+                                        className="text-[10px] text-slate-600 hover:text-slate-400 cursor-pointer ml-1"
+                                    >
+                                        {expandedSql.has(i) ? 'hide sql' : 'show sql'}
+                                    </button>
+                                )}
+                            </div>
+                            {expandedSql.has(i) && step.args.sql && (
+                                <pre className="mt-1 text-[10px] text-cyan-300/60 bg-gray-950 rounded p-2 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+                                    {String(step.args.sql)}
+                                </pre>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+```bash
+cd core/frontend && npx vitest run tests/chat/chatTraceView.test.ts
+```
+Expected: all 6 tests pass.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add core/frontend/context/SettingsContext.tsx core/frontend/components/SettingsModal.tsx
-git commit -m "feat(chat): add aiPerm* settings fields and AI Permissions section in Settings"
+git add core/frontend/components/chat/ChatTraceView.tsx core/frontend/tests/chat/chatTraceView.test.ts
+git commit -m "feat(chat): add ChatTraceView collapsible trace block with per-step SQL toggle"
 ```
 
 ---
 
-### Task 4: Wire permission system into `ChatPanel`
+### Task 5: Wire permission system and trace capture into `ChatPanel`
 
 **Files:**
 - Modify: `core/frontend/components/ChatPanel.tsx`
 
-**Context:** `ChatPanel` already handles tool approvals via `ApprovalRecord[]` state and the `chooseProposalKind` / `applyApprovalAction` helpers from `ChatProposalCard`. The `query_data` tool is `kind: 'read'` but must always prompt (it's not a normal auto-read). We need to:
-1. Add session-level permission state (`sessionAllowQueries`, `sessionAllowMutations`)
-2. Check global settings + session state before showing the permission card
-3. Render `ChatPermissionCard` for pending `query_data` approvals (alongside existing `ChatProposalCard` for other tools)
-4. Add "Allow all" handlers that set session state
+**Context:** `ChatPanel` needs to:
+1. Hold session permission state: `sessionQueryPerm: 'ask'|'granted'|'denied'` and `sessionMutatePerm: 'ask'|'granted'|'denied'`
+2. Before each `query_data` tool call, check global setting + session state; show `ChatPermissionCard` on first call only
+3. Capture `TraceStep` for every tool call completion and store in `ChatMessage.meta.trace`
+4. Pass `TraceStep[]` from `message.meta?.trace` to `ChatTraceView` in the message render
 
-- [ ] **Step 1: Add session permission state**
+Read `ChatPanel.tsx` fully before writing any code to understand:
+- How tool calls are processed (the existing `ApprovalRecord` / `chooseProposalKind` / `applyApprovalAction` pattern)
+- Where tool results are received and stored
+- How `ChatMessage` is typed (`meta` field if it exists, or where to add it)
 
-In `ChatPanel.tsx`, add near other `useState` calls:
+- [ ] **Step 1: Read ChatPanel to understand tool call flow**
 
-```typescript
-const [sessionAllowQueries, setSessionAllowQueries] = useState(false);
-const [sessionAllowMutations, setSessionAllowMutations] = useState(false);
+```bash
+wc -l core/frontend/components/ChatPanel.tsx
+grep -n "ApprovalRecord\|chooseProposal\|applyApproval\|toolResult\|ToolResult\|tool_call\|streamChatWithTools\|meta\b" core/frontend/components/ChatPanel.tsx | head -40
 ```
 
-- [ ] **Step 2: Override `chooseProposalKind` for `query_data`**
+Note which function processes completed tool calls and where results are appended to messages.
 
-Find where `chooseProposalKind` is called in `ChatPanel.tsx`. Add a special case before it:
+- [ ] **Step 2: Read ChatMessage type**
+
+```bash
+grep -rn "interface ChatMessage\|type ChatMessage\|ChatMessage\s*=" core/frontend/services/ai/ core/frontend/components/ | head -20
+```
+
+Note whether `meta` already exists on the type. If not, we need to add `meta?: { trace?: TraceStep[] }`.
+
+- [ ] **Step 3: Add `meta.trace` to ChatMessage type**
+
+If `ChatMessage` doesn't already have a `meta` field, add it:
 
 ```typescript
-// query_data is kind='read' but always needs a permission check
-// unless the user has granted session or global permission
-if (tool.name === 'query_data') {
-    const globalPerm = settings.aiPermQueryData;
-    if (globalPerm === 'never') {
-        // Return a 'rejected' record immediately — no card shown
-        return { kind: 'prompt-read' }; // will be shown but auto-denied below
-    }
-    if (globalPerm === 'always' || sessionAllowQueries) {
-        return { kind: 'auto-read' }; // skip the card
-    }
-    return { kind: 'prompt-read' }; // show the permission card
+interface ChatMessage {
+    // ... existing fields
+    meta?: {
+        trace?: import('./chat/ChatTraceView').TraceStep[];
+    };
 }
 ```
 
-> **Note:** Read the surrounding code to understand exactly where `chooseProposalKind` is called and how tool execution is gated. The pattern may differ — adjust to match.
+If `ChatMessage` is in a shared types file, add it there.
 
-- [ ] **Step 3: Render `ChatPermissionCard` for `query_data` pending approvals**
+- [ ] **Step 4: Add session permission state**
 
-Find where `ChatProposalCard` is rendered for pending approvals. Add a parallel render for `query_data`:
+In `ChatPanel.tsx`, near other `useState` calls:
+
+```typescript
+const [sessionQueryPerm, setSessionQueryPerm] = useState<'ask' | 'granted' | 'denied'>('ask');
+const [sessionMutatePerm, setSessionMutatePerm] = useState<'ask' | 'granted' | 'denied'>('ask');
+const [pendingPermission, setPendingPermission] = useState<{
+    tool: string;
+    args: Record<string, unknown>;
+    resolve: (granted: boolean) => void;
+} | null>(null);
+```
+
+- [ ] **Step 5: Add trace accumulator ref**
+
+```typescript
+const traceRef = useRef<import('./chat/ChatTraceView').TraceStep[]>([]);
+```
+
+This ref is reset at the start of each new message exchange and appended to as each tool call completes.
+
+- [ ] **Step 6: Add permission gate before tool execution**
+
+Find where the tool call handler runs a tool (the function that calls `handleQueryData` or dispatches tool calls). Wrap `query_data` calls with permission logic:
+
+```typescript
+async function runToolWithPermission(toolName: string, args: Record<string, unknown>, deps: ToolDeps): Promise<string> {
+    const globalPerm = settings[toolName === 'query_data' ? 'aiPermQueryData' : 'aiPermAddCell'] as 'never' | 'ask' | 'always';
+    const sessionPerm = toolName === 'query_data' ? sessionQueryPerm : sessionMutatePerm;
+
+    if (globalPerm === 'never' || sessionPerm === 'denied') {
+        return JSON.stringify({ error: 'Permission denied by user.' });
+    }
+
+    if (globalPerm === 'always' || sessionPerm === 'granted') {
+        return runTool(toolName, args, deps); // existing dispatch
+    }
+
+    // First call of this type — show permission card and wait
+    const granted = await new Promise<boolean>(resolve => {
+        setPendingPermission({ tool: toolName, args, resolve });
+    });
+
+    if (!granted) {
+        if (toolName === 'query_data') setSessionQueryPerm('denied');
+        else setSessionMutatePerm('denied');
+        return JSON.stringify({ error: 'Permission denied by user.' });
+    }
+    return runTool(toolName, args, deps);
+}
+```
+
+> **Note:** `runTool` is a placeholder for the existing dispatch. Adapt to the actual pattern in `ChatPanel.tsx`. The key point is that `query_data` and mutation tools go through permission checks; other tools (like `set_variable`) do not.
+
+- [ ] **Step 7: Render `ChatPermissionCard` for pending permission**
+
+In the JSX of `ChatPanel`, below the message list, add:
 
 ```tsx
 import { ChatPermissionCard } from './chat/ChatPermissionCard';
 
-// In the message render loop, near where ChatProposalCard renders:
-{approvals
-    .filter(a => a.name === 'query_data' && a.status === 'pending')
-    .map(approval => (
-        <ChatPermissionCard
-            key={approval.id}
-            toolName="query_data"
-            args={approval.args}
-            onAllow={() => {
-                // mark approved — existing applyApprovalAction pattern
-                setApprovals(prev => applyApprovalAction(prev, { type: 'approve', id: approval.id }));
-            }}
-            onAllowAll={() => {
-                setSessionAllowQueries(true);
-                setApprovals(prev => applyApprovalAction(prev, { type: 'approve', id: approval.id }));
-            }}
-            onDeny={() => {
-                setApprovals(prev => applyApprovalAction(prev, { type: 'reject', id: approval.id }));
-            }}
-        />
-    ))
-}
+{pendingPermission && (
+    <ChatPermissionCard
+        toolName={pendingPermission.tool}
+        args={pendingPermission.args}
+        onAllowSession={() => {
+            if (pendingPermission.tool === 'query_data') setSessionQueryPerm('granted');
+            else setSessionMutatePerm('granted');
+            pendingPermission.resolve(true);
+            setPendingPermission(null);
+        }}
+        onAllowAlways={() => {
+            const key = pendingPermission.tool === 'query_data' ? 'aiPermQueryData' : 'aiPermAddCell';
+            updateSettings({ [key]: 'always' });
+            if (pendingPermission.tool === 'query_data') setSessionQueryPerm('granted');
+            else setSessionMutatePerm('granted');
+            pendingPermission.resolve(true);
+            setPendingPermission(null);
+        }}
+        onDeny={() => {
+            if (pendingPermission.tool === 'query_data') setSessionQueryPerm('denied');
+            else setSessionMutatePerm('denied');
+            pendingPermission.resolve(false);
+            setPendingPermission(null);
+        }}
+    />
+)}
 ```
 
-- [ ] **Step 4: Handle `never` permission — auto-deny**
+> **Note:** `updateSettings` is a placeholder for the settings update function from `SettingsContext`. Find the actual function name in `ChatPanel.tsx` (it is likely `setSettings` or `updateSettings` from the context).
 
-When `settings.aiPermQueryData === 'never'` and a `query_data` tool call arrives, auto-reject it before showing a card. In the same area where you check `chooseProposalKind`, if the result is `prompt-read` AND `aiPermQueryData === 'never'`, immediately set status to `'rejected'` and return a denial result to the AI.
+- [ ] **Step 8: Capture trace steps on tool completion**
 
-- [ ] **Step 5: Manual test the permission flow**
+Find where tool results are processed (the callback or handler that receives the result after a tool runs). Add trace capture:
 
-In the dev server, with a provider configured:
-- Send "what are the top allocating classes?" — verify the permission card appears with the SQL, reason, and table names
-- Click Allow — verify the query runs and result appears in the AI response
-- Click Allow all queries — verify subsequent queries skip the card
-- Open Settings → set "Run queries" to Always → reload — verify no card appears
+```typescript
+const startTime = Date.now();
+const result = await runToolWithPermission(toolName, args, deps);
+const durationMs = Date.now() - startTime;
 
-- [ ] **Step 6: Commit**
+let rowCount: number | undefined;
+try {
+    const parsed = JSON.parse(result);
+    if (typeof parsed.totalRows === 'number') rowCount = parsed.totalRows;
+} catch { /* not JSON */ }
+
+traceRef.current.push({ tool: toolName, args, result, durationMs, rowCount });
+```
+
+When the AI's final text message is appended to `messages`, attach the trace:
+
+```typescript
+const newMessage: ChatMessage = {
+    role: 'assistant',
+    content: finalText,
+    meta: traceRef.current.length > 0 ? { trace: [...traceRef.current] } : undefined,
+};
+traceRef.current = []; // reset for next turn
+```
+
+- [ ] **Step 9: Render `ChatTraceView` in message bubbles**
+
+In the message render loop, where AI messages are displayed, add above the markdown text:
+
+```tsx
+import { ChatTraceView } from './chat/ChatTraceView';
+
+{msg.meta?.trace && msg.meta.trace.length > 0 && (
+    <ChatTraceView steps={msg.meta.trace} />
+)}
+```
+
+- [ ] **Step 10: Manual test the full autonomous loop**
+
+In the dev server with a cloud provider configured:
+1. Ask "what are the top allocating classes?" — verify the permission card appears once with reason + tables + SQL
+2. Click "Allow for this session" — verify the query runs, AI iterates, and produces an answer with a trace block
+3. Ask another question — verify no permission card appears (session granted)
+4. Expand the trace block — verify each step shows reason, row count, duration
+5. Click "Show SQL" on a step — verify full SQL appears
+6. Open Settings → set "Run queries" to Always → reload → ask again — verify no card at all
+
+- [ ] **Step 11: Commit**
 
 ```bash
 git add core/frontend/components/ChatPanel.tsx
-git commit -m "feat(chat): wire ChatPermissionCard into ChatPanel with session + global permission state"
+git commit -m "feat(chat): wire upfront permission gate and trace capture into ChatPanel"
 ```
 
 ---
 
-### Task 5: Visibility toggle and Revert button in chat header
+### Task 6: Visibility toggle, revert button, and error retry loop
 
 **Files:**
 - Modify: `core/frontend/components/ChatPanel.tsx`
+- Modify: `core/frontend/components/chat/ChatEmbeddedCell.tsx`
+- Modify: `core/frontend/components/chat/ChatMarkdownView.tsx`
 
-- [ ] **Step 1: Add session visibility state**
+**Context:** Three remaining Phase 2 features: (1) per-session visibility override in the chat header, (2) revert button when AI has mutated the notebook, (3) automatic error feedback loop — when an embedded cell fails, the error is fed back to the AI as a follow-up message and the AI retries up to 2 times.
+
+- [ ] **Step 1: Add session visibility state and toggle**
 
 In `ChatPanel.tsx`, add:
 
 ```typescript
 const [sessionVisibility, setSessionVisibility] = useState<'no-data' | 'sanitized' | 'full' | null>(null);
-// null = use global setting
 const effectiveVisibility = sessionVisibility ?? settings.aiDefaultVisibility;
 ```
 
-- [ ] **Step 2: Replace all references to `settings.aiDefaultVisibility` with `effectiveVisibility`**
+Find every reference to `settings.aiDefaultVisibility` in `ChatPanel.tsx`:
 
 ```bash
 grep -n "aiDefaultVisibility" core/frontend/components/ChatPanel.tsx
 ```
 
-For each hit, replace `settings.aiDefaultVisibility` with `effectiveVisibility`.
+Replace each with `effectiveVisibility`.
 
-- [ ] **Step 3: Add visibility toggle to chat header**
-
-In the header area of ChatPanel (near the model badge added in Phase 1 Task 5), add:
+In the chat header (near the model badge from Phase 1), add the visibility toggle:
 
 ```tsx
-<div className="flex items-center gap-1 text-[10px]">
+<div className="flex items-center gap-1">
     {(['no-data', 'sanitized', 'full'] as const).map(v => (
         <button
             key={v}
             onClick={() => setSessionVisibility(v === effectiveVisibility && sessionVisibility !== null ? null : v)}
-            className={`px-1.5 py-0.5 rounded border cursor-pointer ${
+            className={`px-1.5 py-0.5 text-[10px] rounded border cursor-pointer transition-colors ${
                 effectiveVisibility === v
                     ? 'bg-cyan-700/30 border-cyan-600/40 text-cyan-400'
-                    : 'bg-transparent border-gray-700 text-gray-600 hover:text-gray-400'
+                    : 'bg-transparent border-gray-700/50 text-gray-600 hover:text-gray-400'
             }`}
+            title={`Data visibility: ${v}`}
         >
-            {v === 'no-data' ? '🔒' : v === 'sanitized' ? '~' : '👁'} {v}
+            {v === 'no-data' ? '🔒' : v === 'sanitized' ? '~' : '👁'}{' '}{v.replace('-', ' ')}
         </button>
     ))}
 </div>
 ```
 
-- [ ] **Step 4: Add "Revert last AI action" button**
+- [ ] **Step 2: Add revert button**
 
-Add state to track whether AI has mutated anything this session:
+In `ChatPanel.tsx`, add:
 
 ```typescript
 const [aiHasMutated, setAiHasMutated] = useState(false);
 ```
 
-Whenever an AI mutation tool call completes successfully, set `setAiHasMutated(true)`. Find where tool results are processed (near `applyApprovalAction` with `type: 'complete'`) and add this flag there.
+In the tool completion handler (same place where trace steps are captured), when a mutation tool completes successfully, set:
 
-Then in the header, conditionally render:
+```typescript
+if (['add_cell', 'editCell', 'deleteCell', 'applyPlot', 'moveCell'].includes(toolName)) {
+    setAiHasMutated(true);
+}
+```
+
+In the chat header, add:
 
 ```tsx
 {aiHasMutated && onUndoLastAction && (
@@ -674,34 +1032,9 @@ Then in the header, conditionally render:
 )}
 ```
 
-- [ ] **Step 5: Manual test**
+- [ ] **Step 3: Add `onError` to `ChatEmbeddedCell`**
 
-In the dev server:
-- Verify the three visibility buttons appear in the header
-- Click `👁 full` — verify it overrides global setting for this session
-- Let the AI mutate a cell — verify the Revert button appears
-- Click Revert — verify the cell reverts and the button disappears
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add core/frontend/components/ChatPanel.tsx
-git commit -m "feat(chat): add session visibility toggle and AI revert button to chat header"
-```
-
----
-
-### Task 6: Error feedback loop (automatic retry)
-
-**Files:**
-- Modify: `core/frontend/components/chat/ChatEmbeddedCell.tsx`
-- Modify: `core/frontend/components/ChatPanel.tsx`
-
-**Context:** When `ChatEmbeddedCell` gets a SQL error, it shows the error inline. We need to also feed that error back to the AI automatically (up to 2 retries). `ChatEmbeddedCell` needs an `onError` callback. `ChatPanel` intercepts this and appends a system message then re-invokes the AI.
-
-- [ ] **Step 1: Add `onError` callback to `ChatEmbeddedCell`**
-
-In `core/frontend/components/chat/ChatEmbeddedCell.tsx`, update the props interface:
+In `core/frontend/components/chat/ChatEmbeddedCell.tsx`, update the props:
 
 ```typescript
 interface ChatEmbeddedCellProps {
@@ -710,26 +1043,26 @@ interface ChatEmbeddedCellProps {
     plotConfig?: string;
     onAddToNotebook: () => void;
     onError?: (error: string, sql: string, type: CellFenceType, plotConfig?: string) => void;
-    retryCount?: number;  // shown in header if > 0
+    retryCount?: number;
 }
 ```
 
-In the `useEffect` catch block, after setting state:
+In the query `useEffect` catch block, after setting error state:
 
 ```typescript
 .catch(err => {
-    const message = String(err?.message ?? err);
+    const message = String((err as Error)?.message ?? err);
     setState({ status: 'error', message });
     onError?.(message, sql, type, plotConfig);
 });
 ```
 
-In the error render, show retry count if > 0 and add the "Ask AI to fix" button after 2 retries:
+In the error render, add an "Ask AI to fix" button when retries are exhausted:
 
 ```tsx
 {state.status === 'error' && (
-    <div>
-        <div className="text-xs text-red-400 py-2 px-1 font-mono">{state.message}</div>
+    <div className="px-2 py-1">
+        <div className="text-xs text-red-400 font-mono">{state.message}</div>
         {(retryCount ?? 0) >= 2 && (
             <button
                 onClick={() => onError?.(state.message, sql, type, plotConfig)}
@@ -742,55 +1075,37 @@ In the error render, show retry count if > 0 and add the "Ask AI to fix" button 
 )}
 ```
 
-- [ ] **Step 2: Add retry logic in `ChatPanel`**
+- [ ] **Step 4: Wire error retry in `ChatPanel`**
 
-In `ChatPanel.tsx`, add retry state:
+In `ChatPanel.tsx`, add:
 
 ```typescript
 const cellRetryCount = useRef<Map<string, number>>(new Map());
+
+const handleCellError = useCallback(
+    (error: string, sql: string, type: string, plotConfig?: string) => {
+        const count = (cellRetryCount.current.get(sql) ?? 0) + 1;
+        cellRetryCount.current.set(sql, count);
+        if (count > 2) return;
+
+        // Build the feedback message and re-stream
+        // Use the same mechanism as the send button — append to history and call streamChatWithTools
+        const feedback = `The ${type} cell failed with error: "${error}". The SQL was:\n\`\`\`sql\n${sql}\n\`\`\`\nPlease fix the SQL and try again.`;
+        // find the existing sendMessage/appendAndStream function in ChatPanel and call it here
+        sendMessage(feedback, { role: 'system' });
+    },
+    [],
+);
 ```
 
-Add a `handleCellError` callback:
+> **Note:** Replace `sendMessage` with the actual function found by reading the send button handler in `ChatPanel.tsx`. The key pattern is: append a message to the conversation history and re-invoke `aiService.streamChatWithTools`. Read the existing `handleSend` or equivalent function and replicate the logic.
+
+- [ ] **Step 5: Update `ChatMarkdownView` to accept and pass `onCellError`**
+
+In `ChatMarkdownView.tsx`, add to props interface:
 
 ```typescript
-const handleCellError = useCallback((error: string, sql: string, type: string, plotConfig?: string) => {
-    const key = sql;
-    const count = (cellRetryCount.current.get(key) ?? 0) + 1;
-    cellRetryCount.current.set(key, count);
-
-    if (count > 2) return; // stop after 2 retries
-
-    // Append a system feedback message and re-invoke the AI
-    const feedbackMsg: ToolChatMessage = {
-        role: 'user',
-        content: `The ${type} cell failed to render with this error: "${error}". The SQL was: \`${sql}\`. Please fix the SQL and try again.`,
-    };
-    // Use the existing sendMessage mechanism — append to tool history and re-stream
-    // Find the existing function in ChatPanel that appends to toolHistory and calls streamChatWithTools
-    appendAndStream(feedbackMsg);
-}, [/* existing deps */]);
-```
-
-> **Note:** `appendAndStream` is a placeholder name. Read `ChatPanel.tsx` around the send button handler to find the actual function that appends a message to `toolHistory` and calls `aiService.streamChatWithTools`. Use that pattern directly.
-
-Pass `onError={handleCellError}` to every `ChatEmbeddedCell` rendered via `ChatMarkdownView`:
-
-```tsx
-<ChatMarkdownView
-    text={msg.text}
-    onNavigateRef={onNavigateRef}
-    onAddToNotebook={handleAddCellFromFence}
-    onCellError={handleCellError}
-/>
-```
-
-Update `ChatMarkdownView` props to accept and pass through `onCellError`:
-
-```typescript
-interface ChatMarkdownViewProps {
-    // ... existing
-    onCellError?: (error: string, sql: string, type: CellFenceType, plotConfig?: string) => void;
-}
+onCellError?: (error: string, sql: string, type: CellFenceType, plotConfig?: string) => void;
 ```
 
 Pass it to each `ChatEmbeddedCell`:
@@ -798,29 +1113,32 @@ Pass it to each `ChatEmbeddedCell`:
 ```tsx
 <ChatEmbeddedCell
     // ... existing props
-    onError={onCellError}
-    retryCount={/* track per sql key, or omit for simplicity */}
+    onError={props.onCellError}
+    retryCount={/* track per sql key via a useRef Map in ChatMarkdownView, or pass from ChatPanel */}
 />
 ```
 
-- [ ] **Step 3: Run tests**
+Update `ChatPanel.tsx` to pass `onCellError={handleCellError}` to every `<ChatMarkdownView>`.
+
+- [ ] **Step 6: Run full test suite**
 
 ```bash
 cd core/frontend && npx vitest run
 ```
 Expected: all tests pass.
 
-- [ ] **Step 4: Manual test error retry**
+- [ ] **Step 7: Manual test**
 
-Send a message that produces a `:::cell` with bad SQL (e.g. misspelled table name). Verify:
-- Error appears inline in red
-- AI is automatically re-prompted
-- AI produces a corrected query
-- After 2 failures, "Ask AI to fix →" button appears
+1. Verify visibility toggle changes which data is sent to the AI
+2. Let AI add a cell — verify Revert button appears; click it — verify cell reverts and button disappears
+3. Send a message that produces a `:::cell` with a misspelled table name — verify:
+   - Error shows inline in red
+   - AI is automatically re-prompted
+   - On 3rd failure, "Ask AI to fix →" button appears
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add core/frontend/components/chat/ChatEmbeddedCell.tsx core/frontend/components/chat/ChatMarkdownView.tsx core/frontend/components/ChatPanel.tsx
-git commit -m "feat(chat): add automatic error feedback loop - AI retries failed cells up to 2 times"
+git add core/frontend/components/ChatPanel.tsx core/frontend/components/chat/ChatEmbeddedCell.tsx core/frontend/components/chat/ChatMarkdownView.tsx
+git commit -m "feat(chat): add visibility toggle, revert button, and automatic cell error retry"
 ```

@@ -103,57 +103,87 @@ The full tool call loop is available in chat (already implemented in `AiService.
 
 ## Phase 2 — AI-Initiated Queries + Permission System
 
-### `query_data` tool
+### Permission model: upfront gate, then autonomous execution
 
-New tool added to `services/ai/tools/`:
+Permissions are checked **once per session** (or pre-granted globally), not per tool call. Once the user grants access, the AI runs its full think→query→think→query loop without interruption.
+
+**Permission levels (per action type):**
+- `'ask'` (default): a permission card appears on the *first* tool call of that type in the session. The user approves or denies. If approved, the rest of the session runs without prompting.
+- `'always'` (global setting): no card ever shown — tool calls execute immediately.
+- `'never'` (global setting): tool calls of that type are auto-denied; the AI is told it cannot use them and responds gracefully.
+
+This means: if the user clicked "Allow all queries" once this session, every subsequent `query_data` call in the same session runs silently and autonomously. The AI can call it 10 times in a single response — exploring, refining, iterating — with no user action required.
+
+**First-call permission card for `query_data`:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│ 🔍  Allow AI to query your data?                     │
+│                                                      │
+│  First query: Find top allocating classes            │
+│  Tables: ObjectAllocationInNewTLAB, Thread           │
+│                                                      │
+│  [Allow for this session]  [Always allow]  [Deny]    │
+└─────────────────────────────────────────────────────┘
+```
+
+- **Allow for this session**: runs this and all future `query_data` calls this session without prompting again. Resets on next session.
+- **Always allow**: saves `aiPermQueryData = 'always'` to settings permanently. Never prompts again.
+- **Deny**: auto-denies this and all future `query_data` calls this session. AI responds gracefully.
+
+**First-call permission card for notebook mutations:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│ ✏️  Allow AI to modify your notebook?                 │
+│                                                      │
+│  First action: Add SQL cell after "GC Overview"      │
+│                                                      │
+│  [Allow for this session]  [Always allow]  [Deny]    │
+└─────────────────────────────────────────────────────┘
+```
+
+### Autonomous iteration loop
+
+When `query_data` is permitted, the AI uses the existing `AiService.streamChatWithTools` multi-round loop (already caps at 10 rounds) to:
+
+1. Think about the question
+2. Call `query_data` → get results silently
+3. Inspect the results, decide if it needs more data
+4. Call `query_data` again if needed
+5. Compose a final answer with embedded cells
+
+All of this happens without user interruption. The user sees a progress trace while it's running (see Trace view below).
+
+### Trace view
+
+While the AI is iterating, a collapsible **"Thinking…"** section appears above the final answer in the message bubble:
+
+```
+▶ Thinking  (3 queries · 1.2s)          ← collapsed by default, click to expand
+──────────────────────────────────────
+  🔍 queried GarbageCollection (14 rows)
+  🔍 queried ExecutionSample (500 rows)
+  🔍 queried ObjectAllocationInNewTLAB (200 rows)
+──────────────────────────────────────
+Here is what I found…                   ← final answer
+```
+
+Expanded view shows each tool call: tool name, SQL (truncated), row count returned, and duration. A "Show full trace" button reveals the complete SQL for each call.
+
+The trace is stored on the `ChatMessage` as `meta.trace: TraceStep[]`:
 
 ```typescript
-name: 'query_data',
-description: 'Run a SQL query against the JFR session. Always show the user which tables you will access before running.',
-parameters: {
-  sql: string,        // the SQL to execute
-  reason: string,     // one sentence: why this query answers the question
-  tables: string[],   // list of table names the query accesses (for the permission card)
+interface TraceStep {
+  tool: string;          // 'query_data' | 'add_cell' | etc.
+  args: any;             // full args
+  result: any;           // full result
+  durationMs: number;
+  rowCount?: number;     // for query_data
 }
 ```
 
-This tool is **always gated by the permission system** — it never executes silently.
-
-### Permission card (`ChatPermissionCard`)
-
-`components/chat/ChatPermissionCard.tsx` — appears inline in the chat when the AI emits a `query_data` or notebook-mutation tool call:
-
-```
-┌─────────────────────────────────────────────────────┐
-│ 🔍  Run query?                                       │
-│                                                      │
-│  Reason: Find top allocating classes                 │
-│  Tables accessed: ObjectAllocationInNewTLAB, Thread  │
-│                                                      │
-│  SELECT class_name, sum(alloc_size) AS total         │
-│  FROM ObjectAllocationInNewTLAB                      │
-│  GROUP BY class_name ORDER BY total DESC LIMIT 20    │
-│                                                      │
-│  [Allow]  [Allow all queries]  [Deny]                │
-└─────────────────────────────────────────────────────┘
-```
-
-- **Allow**: runs this query, returns result to AI, continues conversation
-- **Allow all queries**: sets `permissions.queryData = 'always'` in session state only — never prompts again for `query_data` this session, but resets on next session. For a permanent setting, use the AI Permissions panel in Settings.
-- **Deny**: returns a denial result to the AI so it can respond gracefully ("I don't have access to run queries — here's what I know from context instead")
-
-For notebook mutations (`add_cell`, `update_cell`, `delete_cell`):
-
-```
-┌─────────────────────────────────────────────────────┐
-│ ✏️  Modify notebook?                                  │
-│                                                      │
-│  Action: Add SQL cell after "GC Overview"            │
-│  Content: SELECT gc_type, avg(pause_ms)…             │
-│                                                      │
-│  [Allow]  [Allow all edits]  [Deny]                  │
-└─────────────────────────────────────────────────────┘
-```
+The trace is always captured regardless of permission level and shown as a collapsed block. Users who want the full picture can expand it.
 
 ### Global permissions (Settings)
 
@@ -313,9 +343,22 @@ If the local model times out (>30s) or returns an error:
 
 ---
 
+## In-Browser Model Compatibility
+
+`BrowserModelProvider` (the in-process ONNX model) does not support `streamChatWithTools`. Chat with the in-browser model degrades gracefully:
+
+- **No `query_data` tool**: tool calls are suppressed entirely; the system prompt omits the tool instructions section.
+- **Schema-context-only answers**: the AI can reference schema and variable names but cannot query live data.
+- **No `:::cell` fences expected**: the system prompt's few-shot examples are omitted; the AI responds with plain markdown text (possibly including code blocks, but no embedded chart/table cells).
+- **Model badge**: shows `✦ browser · <model-name>` during in-browser inference.
+- **Routing**: `BrowserModelProvider` is always selected if the user's routing preference is `'browser'` (new option), or if no local/cloud provider is configured.
+
+The degraded experience is still useful for schema questions, JFR concept explanations, and general analysis discussion without live data. The user sees a notice in the chat header: `"In-browser mode — data queries unavailable"`.
+
+---
+
 ## Out of Scope
 
-- BrowserModelProvider is not used for chat (offline only, no chat support)
-- No new ONNX model for chat — local chat uses the configured OpenAI-compatible server
+- No new ONNX model for chat — local chat uses the configured OpenAI-compatible server (or existing BrowserModelProvider in degraded mode)
 - No UI for conversation history export
 - No multi-turn context compression (existing truncation behaviour unchanged)

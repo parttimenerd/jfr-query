@@ -853,3 +853,148 @@ Verify:
 cd core/frontend && npx vitest run
 ```
 Expected: all tests pass.
+
+---
+
+### Task 8: In-browser model graceful degradation
+
+**Files:**
+- Modify: `core/frontend/services/ai/routing.ts`
+- Modify: `core/frontend/services/AiService.ts`
+- Modify: `core/frontend/components/ChatPanel.tsx`
+
+**Context:** `BrowserModelProvider` (the in-process ONNX model) does not implement `streamChatWithTools` — it only supports basic completion. When the in-browser model is active, chat must degrade gracefully: no tools, no `:::cell` fences expected, schema-only context, and a header notice. The user can still ask questions about JFR concepts and schema structure.
+
+- [ ] **Step 1: Add browser routing target**
+
+In `core/frontend/services/ai/routing.ts`, update `RouteTarget` to include `'browser'`:
+
+```typescript
+export type RouteTarget = 'local' | 'cloud' | 'browser';
+```
+
+Update `routeMessage` to return `'browser'` when the user's routing preference is `'browser'` or when no local/cloud provider is configured and the browser model is available:
+
+```typescript
+if (userPreference === 'browser') return 'browser';
+if (!hasLocalModel && !hasCloudModel && hasBrowserModel) return 'browser';
+```
+
+The `routeMessage` signature gains two boolean parameters:
+
+```typescript
+export function routeMessage(
+    message: string,
+    tools: Tool[],
+    visibility: VisibilityMode,
+    userPreference: RoutingPreference = 'auto',
+    hasLocalModel = false,
+    hasCloudModel = true,
+    hasBrowserModel = false,
+): RouteTarget
+```
+
+- [ ] **Step 2: Update routing tests for browser target**
+
+In `core/frontend/tests/ai/routing.test.ts`, add:
+
+```typescript
+it('returns browser when preference is browser', () => {
+    expect(routeMessage('hi', [], 'no-data', 'browser', false, true, true)).toBe('browser');
+});
+
+it('returns browser when no other providers configured and browser available', () => {
+    expect(routeMessage('hi', [], 'no-data', 'auto', false, false, true)).toBe('browser');
+});
+```
+
+Run:
+```bash
+cd core/frontend && npx vitest run tests/ai/routing.test.ts
+```
+Expected: all tests pass.
+
+- [ ] **Step 3: Wire browser path in `AiService`**
+
+In `core/frontend/services/AiService.ts`, in the routing block (added in Task 3), handle `route === 'browser'`:
+
+```typescript
+if (route === 'browser') {
+    // BrowserModelProvider doesn't support tool calls or cell fences.
+    // Use basic streamChat with a stripped system prompt (schema only, no tools section).
+    const browserSystemPrompt = buildBrowserSystemPrompt(opts.schema ?? [], opts.variablesForPrompt ?? {});
+    yield* this.browserProvider.streamChat(messages, { systemInstruction: browserSystemPrompt });
+    return;
+}
+```
+
+Add `buildBrowserSystemPrompt` to `chatModes.ts`:
+
+```typescript
+export function buildBrowserSystemPrompt(
+    schema: SchemaTable[],
+    variables: Record<string, unknown>,
+): string {
+    const tableList = schema.map(t => `- ${t.name}(${t.columns.map(c => c.name).join(', ')})`).join('\n');
+    const varList = Object.keys(variables).length > 0
+        ? `Current variables: ${Object.entries(variables).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ')}`
+        : '';
+
+    return `You are a JFR performance analyst. Answer questions about JFR data concepts, schema, and analysis strategies.
+You cannot query data directly in this mode.
+
+Available tables:
+${tableList}
+${varList}
+
+Be concise and helpful. Suggest SQL queries the user can run themselves.`.trim();
+}
+```
+
+- [ ] **Step 4: Add browser notice to chat header in `ChatPanel`**
+
+In `core/frontend/components/ChatPanel.tsx`, detect when the browser model is the active route. Add a notice to the header:
+
+```tsx
+{lastRouteUsed === 'browser' && (
+    <span className="text-[10px] text-amber-400/70 px-2 py-0.5 rounded border border-amber-700/30">
+        In-browser mode — data queries unavailable
+    </span>
+)}
+```
+
+Update the routing preference options in the session toggle (from Task 5) to include `'browser'`:
+
+```tsx
+{(['auto', 'local', 'cloud', 'browser'] as const).map(r => (
+    <button key={r} ...>
+        {r === 'local' ? '⚡' : r === 'cloud' ? '☁' : r === 'browser' ? '🧠' : '⟳'} {r}
+    </button>
+))}
+```
+
+Only show `browser` option when `BrowserModelProvider` is available (check `settings.useLocalModel === true` or equivalent browser model flag — read `SettingsContext` to find the correct field).
+
+- [ ] **Step 5: Run full test suite**
+
+```bash
+cd core/frontend && npx vitest run
+```
+Expected: all tests pass.
+
+- [ ] **Step 6: Manual test with browser model**
+
+Switch routing to `🧠 browser` in the chat header.
+
+Verify:
+- Header shows "In-browser mode — data queries unavailable"
+- Sending a message like "what tables are available?" returns a schema-based answer
+- No `:::cell` fences appear in responses
+- No permission card appears (tools are suppressed)
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add core/frontend/services/ai/routing.ts core/frontend/services/ai/chatModes.ts core/frontend/services/AiService.ts core/frontend/components/ChatPanel.tsx core/frontend/tests/ai/routing.test.ts
+git commit -m "feat(chat): add in-browser model path with graceful degradation - schema-only, no tools"
+```
