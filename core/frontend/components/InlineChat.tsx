@@ -167,6 +167,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
     const [isLoading, setIsLoading] = useState(false);
     const cancelledRef = useRef(false);
     const abortControllerRef = useRef<AbortController | null>(null);
+    const autoCompactRunning = useRef(false);
     // Always-fresh ref so tool closures read the live cell list within a turn.
     const cellsLiveRef = useRef(cells ?? allCells);
     cellsLiveRef.current = cells ?? allCells;
@@ -426,7 +427,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         setMessages(prev => [...prev, aiMessage]);
     };
 
-    const handleSend = async (override?: { text?: string; hiddenUserMessage?: boolean; forceMode?: 'normal' | 'plan' | 'btw' }): Promise<{ ok: boolean; error?: string }> => {
+    const handleSend = async (override?: { text?: string; hiddenUserMessage?: boolean; forceMode?: 'normal' | 'plan' | 'btw' | 'verbose' }): Promise<{ ok: boolean; error?: string }> => {
         const inputText0 = override?.text ?? input;
         if (inputText0.trim() === '' || isLoading) return { ok: false, error: 'empty or already loading' };
 
@@ -441,14 +442,33 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                 return { ok: true };
             }
             if (slashCmd.kind === 'compact') {
-                const summary = messages
-                    .map(m => `${m.sender === MessageSender.User ? 'User' : 'AI'}: ${m.text.slice(0, 120)}`)
-                    .join('\n');
-                setMessages([{
-                    id: Date.now().toString(),
-                    sender: MessageSender.AI,
-                    text: `**Conversation compacted.**\n\n${summary.slice(0, 600)}${summary.length > 600 ? '\n…' : ''}`,
-                }]);
+                if (!autoCompactRunning.current) {
+                    autoCompactRunning.current = true;
+                    const placeholderId = Date.now().toString();
+                    setMessages(prev => [...prev,
+                        { id: placeholderId, sender: MessageSender.AI, text: '_Compacting conversation…_' },
+                    ]);
+                    const conversationText = messages
+                        .map(m => {
+                            const role = m.sender === MessageSender.User ? 'User' : 'Assistant';
+                            return `${role}: ${m.text}${m.code ? `\n\`\`\`sql\n${m.code}\n\`\`\`` : ''}`;
+                        })
+                        .join('\n\n');
+                    aiService.getCompactSummary(conversationText)
+                        .then(summary => {
+                            const summaryText = summary
+                                ? `**Conversation compacted.**\n\n${summary}`
+                                : `**Conversation compacted** (${messages.length} turns summarised).`;
+                            setMessages([{ id: placeholderId, sender: MessageSender.AI, text: summaryText }]);
+                        })
+                        .catch(() => {
+                            const fallback = messages
+                                .map(m => `${m.sender === MessageSender.User ? 'User' : 'AI'}: ${m.text.slice(0, 150)}`)
+                                .join('\n');
+                            setMessages([{ id: placeholderId, sender: MessageSender.AI, text: `**Conversation compacted.**\n\n${fallback.slice(0, 600)}${fallback.length > 600 ? '\n…' : ''}` }]);
+                        })
+                        .finally(() => { autoCompactRunning.current = false; });
+                }
                 return { ok: true };
             }
             if (slashCmd.kind === 'help') {
@@ -461,8 +481,9 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
             if (slashCmd.kind === 'mode') {
                 chatMode.setMode(slashCmd.mode);
                 const label =
-                    slashCmd.mode === 'plan' ? 'Plan mode — I will propose changes without modifying the cell.' :
-                    slashCmd.mode === 'btw'  ? 'BTW mode — you will get "by the way" suggestions after each reply.' :
+                    slashCmd.mode === 'plan'    ? 'Plan mode — I will propose changes without modifying the cell.' :
+                    slashCmd.mode === 'btw'     ? 'BTW mode — you will get "by the way" suggestions after each reply.' :
+                    slashCmd.mode === 'verbose' ? 'Verbose mode — I will show full reasoning, intermediate results, and step-by-step analysis.' :
                     'Normal mode — I may modify the cell directly.';
                 setMessages(prev => [...prev,
                     { id: Date.now().toString(), sender: MessageSender.User, text: `/${slashCmd.mode}` },
@@ -605,14 +626,6 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         const effectiveVisibility = resolveVisibility(useFullContext, chatVisibility);
 
         try {
-            // Browser provider has no tool support; fall back to legacy
-            // single-turn inline suggestion. Same path used when the active
-            // provider isn't tool-capable.
-            if (chatProvider === 'browser') {
-                await handleSendLegacy(inputText, effectiveVisibility);
-                return { ok: true };
-            }
-
             const deps = buildToolDeps();
             const wrappedDeps: ToolDeps = {
                 ...deps,
@@ -665,6 +678,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     modelOverride: chatModel,
                     customSystemPrompt: composeSystemPromptForMode(baseSystemPrompt ?? '', activeMode) || undefined,
                     signal: abortControllerRef.current?.signal,
+                    routingPreference: chatProvider === 'browser' ? 'browser' : undefined,
                 },
             );
 
@@ -702,10 +716,15 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     const parsed = chatMode.parsePlan(trimmed);
                     if (parsed) meta = { plan: parsed, planStatus: 'pending' };
                 }
+                // Extract a code block matching targetType so the "Apply Code" button appears.
+                const codeMatch = trimmed.match(new RegExp('```' + targetType + '\\s*\\n([\\s\\S]*?)\\n```', 'i'));
+                const extractedCode = codeMatch ? codeMatch[1].trim() : undefined;
                 setMessages(prev => [...prev, {
                     id: (Date.now() + 1).toString(),
                     sender: MessageSender.AI,
                     text: trimmed,
+                    code: extractedCode,
+                    isActionable: !!extractedCode,
                     meta,
                 }]);
                 if (activeMode === 'btw') {
@@ -760,10 +779,14 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
 
     const executePlanFor = (messageId: string) => async (plan: ParsedPlan, _opts: { trust: boolean }) => {
         const prompt = planToExecutionPrompt(plan);
+        const existingIds = new Set(proposalsRef.current.map(p => p.id));
         patchMessageMeta(messageId, planMetaStart());
         const result = await handleSend({ text: prompt, hiddenUserMessage: true, forceMode: 'normal' });
         if (result.ok) {
-            patchMessageMeta(messageId, planMetaSuccess(plan.steps.length, Date.now()));
+            const approvedCount = proposalsRef.current.filter(
+                p => !existingIds.has(p.id) && (p.status === 'approved' || p.status === 'done'),
+            ).length;
+            patchMessageMeta(messageId, planMetaSuccess(approvedCount || plan.steps.length, Date.now()));
         } else {
             patchMessageMeta(messageId, planMetaFail(result.error));
         }
@@ -806,7 +829,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                         <option value="full">Full</option>
                     </select>
                     <span className="text-[10px] text-gray-500" title={buildStatusTooltip({ mode: chatMode.state.mode, model: chatModel, provider: chatProvider, visibility: chatVisibility })}>
-                        <span className={chatMode.state.mode === 'plan' ? 'text-amber-400' : chatMode.state.mode === 'btw' ? 'text-cyan-300' : 'text-gray-400'}>
+                        <span className={chatMode.state.mode === 'plan' ? 'text-amber-400' : chatMode.state.mode === 'btw' ? 'text-cyan-300' : chatMode.state.mode === 'verbose' ? 'text-purple-400' : 'text-gray-400'}>
                             /{chatMode.state.mode}
                         </span>
                         <span className="mx-1 text-gray-600">·</span>
@@ -840,7 +863,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                 </div>
             </div>
             {/* ── Messages ── */}
-            <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
+            <div className="space-y-4 max-h-[32rem] overflow-y-auto pr-1">
                 {messages.length === 0 && streamingText === null && (<p className="text-sm text-center text-gray-500 p-4">Ask the AI to modify your {targetType} code. Type <code className="text-cyan-400">/help</code> for commands.</p>)}
                 {messages.filter(m => !m.hidden).map(msg => (
                     <div key={msg.id} className={`flex ${msg.sender === MessageSender.User ? 'justify-end':'justify-start'}`}>
