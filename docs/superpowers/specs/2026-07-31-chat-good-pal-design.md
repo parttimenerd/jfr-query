@@ -236,7 +236,6 @@ A new test file `tests/ai/localModel.test.ts` covers:
   - Contains all table names from schema
   - Contains all variable names
   - Contains at least one `:::cell` example
-  - Is under 1200 tokens (checked via tokenizer estimate)
 - **Few-shot format tests**: the 3 example pairs parse correctly as valid chat turns
 - **Mock server integration test**: spins up a minimal OpenAI-compatible mock server (using `msw` or a simple `http.createServer`), sends a chat message through `LocalAiProvider`, verifies streaming chunks arrive and the full response assembles correctly
 - **Fallback test**: mock server returns 503, verify `AiService` retries with cloud provider and emits the fallback notice message
