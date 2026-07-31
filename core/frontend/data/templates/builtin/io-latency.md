@@ -19,7 +19,7 @@ Where is your application spending time waiting? This notebook covers all blocki
 - Socket I/O by host — network calls that move the most data
 - Thread blocking — parks and sleeps over time
 
-**Required events:** `FileRead`, `FileWrite`, `SocketRead`, `SocketWrite`, `ThreadPark`, `ThreadSleep` (all enabled in the `profile` configuration; `FileRead`/`FileWrite`/`SocketRead`/`SocketWrite` may also need a threshold of 0ms to capture all events).
+**Required events:** `FileRead`, `FileWrite`, `SocketRead`, `SocketWrite`, `ThreadPark`, `ThreadSleep` (all enabled in the `profile` configuration; `FileRead`/`FileWrite`/`SocketRead`/`SocketWrite` may also need a threshold of 0ms to capture all events). The combined latency overview requires all these event types; individual sections show only what's available.
 
 **Interpreting results:** A single event type dominating total wait time is the primary bottleneck. For socket I/O, check whether a single slow host drives the latency. For file I/O, large reads from a single path can indicate missing caching.
 
