@@ -36,7 +36,7 @@ describe('ChatMarkdownView', () => {
         const html = render('Use `SELECT *` here');
         expect(html).toContain('<code');
         expect(html).toContain('SELECT *');
-        expect(html).toContain('text-cyan-300');
+        expect(html).toContain('text-cyan-400');
     });
 
     it('renders bold and italic spans', () => {
