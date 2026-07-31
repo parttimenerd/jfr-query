@@ -296,8 +296,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       const [tablesData, viewsData, macrosData] = await Promise.all([
-        runQuery(`SELECT table_name, column_name, data_type FROM duckdb_columns() WHERE table_name NOT IN (SELECT view_name FROM duckdb_views()) AND NOT regexp_matches(table_name, '^(chunk\\d+_|_idmap_|_stage_)') ORDER BY 1,3;`),
-        runQuery(`SELECT v.view_name, v.sql, v.internal, c.column_name, c.data_type FROM duckdb_views() v JOIN duckdb_columns() c ON v.view_name = c.table_name ORDER BY 1,4;`),
+        runQuery(`SELECT table_name, column_name, data_type FROM duckdb_columns() WHERE schema_name='main' AND table_name NOT IN (SELECT view_name FROM duckdb_views() WHERE schema_name='main') AND NOT regexp_matches(table_name, '^(chunk\\d+_|_idmap_|_stage_|duckdb_|pg_)') ORDER BY 1,3;`),
+        runQuery(`SELECT v.view_name, v.sql, v.internal, c.column_name, c.data_type FROM duckdb_views() v JOIN duckdb_columns() c ON v.view_name = c.table_name AND v.schema_name = c.schema_name WHERE v.schema_name='main' AND NOT regexp_matches(v.view_name, '^(duckdb_|pg_)') ORDER BY 1,4;`),
         runQuery(`SELECT function_name, parameters, return_type, macro_definition AS sql FROM duckdb_functions() WHERE internal=false AND function_type='macro';`)
       ]);
 
