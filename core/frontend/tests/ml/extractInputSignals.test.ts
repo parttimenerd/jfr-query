@@ -35,6 +35,21 @@ describe('extractInputSignals', () => {
             expect(s).not.toContain('sorted');
         });
 
+        it('emits "topN" for GROUP BY + ORDER BY + LIMIT (ranked aggregation → BAR_CHART)', () => {
+            const s = extractInputSignals('SELECT method_name, SUM(samples) AS total FROM t GROUP BY method_name ORDER BY total DESC LIMIT 20', ['method_name', 'total']);
+            expect(s).toContain('topN');
+        });
+
+        it('does NOT emit "topN" without GROUP BY (that is just "ordered")', () => {
+            const s = extractInputSignals('SELECT cause, cnt FROM t ORDER BY cnt DESC LIMIT 10', ['cause', 'cnt']);
+            expect(s).not.toContain('topN');
+        });
+
+        it('does NOT emit "topN" without LIMIT', () => {
+            const s = extractInputSignals('SELECT cause, SUM(dur) FROM t GROUP BY cause ORDER BY 2 DESC', ['cause', 'dur']);
+            expect(s).not.toContain('topN');
+        });
+
         it('emits "cross" for GROUP BY 2+ cols without ORDER BY (HEATMAP discriminator)', () => {
             const s = extractInputSignals('SELECT thread, lockClass, duration FROM t GROUP BY thread, lockClass', ['thread', 'lockClass', 'duration']);
             expect(s).toContain('cross');
@@ -277,6 +292,11 @@ describe('extractInputSignals', () => {
             expect(s).not.toContain('delta');
         });
 
+        it('emits "delta" for change_pct column (percentage delta IS a delta measurement)', () => {
+            const s = extractInputSignals('SELECT snapshot_id, cpu_change_pct FROM cpu_snapshots ORDER BY snapshot_id LIMIT 100', ['snapshot_id', 'cpu_change_pct']);
+            expect(s).toContain('delta');
+        });
+
         it('does NOT emit "delta" for exchange_rate (change embedded mid-word)', () => {
             const s = extractInputSignals('SELECT currency, exchange_rate FROM rates', ['currency', 'exchange_rate']);
             expect(s).not.toContain('delta');
@@ -350,13 +370,14 @@ describe('extractInputSignals', () => {
             expect(s).toContain('gc');
         });
 
-        it('BAR_CHART case: agg + ordered', () => {
+        it('BAR_CHART case: agg + topN (GROUP BY + ORDER BY + LIMIT)', () => {
             const s = extractInputSignals(
                 'SELECT cause, COUNT(*) as cnt FROM GarbageCollections GROUP BY cause ORDER BY cnt DESC LIMIT 10',
                 ['cause', 'cnt'],
             );
             expect(s).toContain('agg');
-            expect(s).toContain('ordered');
+            expect(s).toContain('topN');
+            expect(s).not.toContain('ordered');
         });
 
         it('FLAMEGRAPH case: stack column', () => {

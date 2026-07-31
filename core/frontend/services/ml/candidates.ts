@@ -83,7 +83,8 @@ const SEQ2SEQ_INPUT_V2 = (sql: string, columns: string[] | TypedColumn[], schema
  *   gc       — JFR GC domain (pause, heap, GC*)
  *   alloc    — JFR allocation domain (alloc*, tlab, retained)
  *   cpu      — JFR CPU/thread domain (cpu*, thread*, method*)
- *   delta    — delta/change/diff column name as standalone word (→ WATERFALL; "change_count" does NOT fire)
+ *   topN     — GROUP BY + ORDER BY + LIMIT (ranked aggregation → BAR_CHART; "SELECT col, agg FROM t GROUP BY col ORDER BY agg LIMIT N")
+ *   delta    — delta/change/diff column name as standalone word (→ WATERFALL; "change_count" does NOT fire, "change_pct" DOES)
  *   range    — start+end or low+high column pair (→ RANGE/GANTT likely)
  *   num_range — time col + numeric band cols (minX/maxX/pN percentile) → RANGE (88% cov, 0% GANTT)
  *   gantt_span — cat col + 2 time-named cols (start+end) without numeric band → GANTT
@@ -109,8 +110,10 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     const hasLimit = /\bLIMIT\b/.test(sqlUp);
     const hasGroupBy = /\bGROUP\s+BY\b/.test(sqlUp);
     const hasAggrFn = /\b(?:COUNT|SUM|AVG|MIN|MAX)\s*\(/.test(sqlUp);
-    if (hasOrderBy && hasLimit) tags.push('ordered');
-    else if (hasOrderBy) tags.push('sorted');
+    if (hasOrderBy && hasLimit && !hasGroupBy) tags.push('ordered');
+    else if (hasOrderBy && !hasLimit) tags.push('sorted');
+    // Ranked aggregation: GROUP BY + ORDER BY + LIMIT → typically a top-N BAR chart.
+    if (hasGroupBy && hasOrderBy && hasLimit) tags.push('topN');
 
     // Cross-dimensional aggregation (GROUP BY 2+ cols, no ORDER BY) → HEATMAP.
     // Fires in 100% of HEATMAP training examples and 0% of BAR_CHART.
@@ -162,10 +165,10 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
 
     // Delta/change signal → WATERFALL hint.
     // Fires when a delta-semantic word appears as a whole word segment in any column name,
-    // but NOT when "change" or similar is followed by count/rate/id (indicating it's not a delta value).
-    // E.g.: heap_delta ✓, delta ✓, heap_delta_mb ✓ — but change_count ✗, exchange_rate ✗.
+    // but NOT when "change" or "diff" is followed by count/rate/id/ratio/percent (stable counters).
+    // E.g.: heap_delta ✓, delta ✓, cpu_change_pct ✓ — but change_count ✗, exchange_rate ✗.
     if (names.some(n => /(^|_)(delta|change|diff|decrement|increment)(_|$)/.test(n) &&
-        !/(^|_)(change|diff)_(count|rate|id|pct|ratio|percent|total|num|flag)/.test(n) &&
+        !/(^|_)(change|diff)_(count|rate|id|ratio|percent|total|num|flag)/.test(n) &&
         !/exchange/.test(n))) tags.push('delta');
 
     // Range/interval signal → RANGE or GANTT hint (start+end or low+high columns).

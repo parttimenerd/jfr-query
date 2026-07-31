@@ -52,22 +52,22 @@ describe('LINE_CHART scenarios', () => {
 // ── BAR_CHART ────────────────────────────────────────────────────────────────
 
 describe('BAR_CHART scenarios', () => {
-    it('top-N aggregation → agg ordered cnt_agg duo', () => {
+    it('top-N aggregation → agg topN cnt_agg duo', () => {
         const sql = 'SELECT method_name, sum(samples) AS total_samples FROM method_samples GROUP BY method_name ORDER BY total_samples DESC LIMIT 20';
         const cols = ['method_name', 'total_samples'];
         const s = signals(sql, cols);
         expect(s).toContain('agg');
-        expect(s).toContain('ordered');      // ORDER BY + LIMIT → ranked top-N
+        expect(s).toContain('topN');      // GROUP BY + ORDER BY + LIMIT → ranked top-N
         expect(s).toContain('duo');
-        expect(s).not.toContain('sorted');   // has LIMIT so it's "ordered", not "sorted"
+        expect(s).not.toContain('sorted');   // has LIMIT so it's "topN", not "sorted"
     });
 
-    it('pure count top-N → agg ordered cnt_agg', () => {
+    it('pure count top-N → agg topN cnt_agg', () => {
         const sql = 'SELECT gc_cause, COUNT(*) AS event_count FROM gc_events GROUP BY gc_cause ORDER BY event_count DESC LIMIT 10';
         const cols = ['gc_cause', 'event_count'];
         const s = signals(sql, cols);
         expect(s).toContain('agg');
-        expect(s).toContain('ordered');
+        expect(s).toContain('topN');
         expect(s).toContain('cnt_agg');
         expect(s).toContain('duo');
     });
@@ -195,7 +195,7 @@ describe('FLAMEGRAPH scenarios', () => {
         const cols = ['stack_trace', 'sample_count'];
         const s = signals(sql, cols);
         expect(s).toContain('agg');
-        expect(s).toContain('ordered');
+        expect(s).toContain('topN');
         expect(s).toContain('stack');        // stack_trace column → stack signal
         expect(s).toContain('duo');
     });
@@ -379,10 +379,11 @@ describe('signal regression guards', () => {
         expect(s).not.toContain('ordered');
     });
 
-    it('ORDER BY with LIMIT → ordered, NOT sorted', () => {
+    it('ORDER BY with GROUP BY and LIMIT → topN, NOT sorted or ordered', () => {
         const sql = 'SELECT name, SUM(v) AS total FROM t GROUP BY name ORDER BY total DESC LIMIT 10';
         const s = signals(sql, ['name', 'total']);
-        expect(s).toContain('ordered');
+        expect(s).toContain('topN');
+        expect(s).not.toContain('ordered');
         expect(s).not.toContain('sorted');
     });
 
