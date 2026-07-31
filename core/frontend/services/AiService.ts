@@ -588,6 +588,18 @@ GUIDELINES:
             `  • Tail modifiers (after closing paren): TITLE "string"  LINK_X($start, $end)  PALETTE "tableau10"  AXIS_Y TYPE log\n` +
             `  • Example: BAR_CHART(x: "objectClass", y: ["totalWeight"]) TITLE "Top Classes"\n` +
             `\n` +
+            `BUILT-IN TEMPLATES — tell users about these when their question maps to one; the template gallery (📄 button) loads them:\n` +
+            `  • Recording Overview — adaptive first-look: shows GC, CPU, allocation, contention, I/O, exceptions, leaks, container sections only when relevant events exist\n` +
+            `  • GC Pause Analysis — pause time by cause, phase breakdown, heap over time, allocation rate\n` +
+            `  • CPU Profiling — CPU load over time, top hot methods, flame graph\n` +
+            `  • Heap Allocation — top allocating classes, allocation rate over time\n` +
+            `  • Memory Leak Detection — long-lived objects (OldObjectSample), allocation sites, heap-after-GC trend\n` +
+            `  • Threading & Contention — thread counts, CPU per thread, monitor contention, park/sleep over time, virtual thread pinning\n` +
+            `  • I/O & Latency — combined latency overview, file I/O by path, socket I/O by host\n` +
+            `  • JVM Internals — safepoints, VM operations, JIT deoptimizations, class loading, compiler phases\n` +
+            `  • Container & Cloud — CPU throttling %, memory vs limit, I/O (for Docker/Kubernetes JVMs)\n` +
+            `  • Exceptions & Errors — top thrown exception types\n` +
+            `\n` +
             `${schemaPayload}` +
             (customPrompt ? `\n\nADDITIONAL INSTRUCTIONS FROM USER:\n${customPrompt}` : '');
 
