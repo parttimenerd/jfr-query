@@ -144,6 +144,35 @@ describe('reranker — structuralBoostDelta', () => {
         expect(structuralBoostDelta({ item: tbl, ctx }))
             .toBeGreaterThan(structuralBoostDelta({ item: kw, ctx }));
     });
+
+    it('does NOT boost columns in WHERE value position (after =)', () => {
+        const ctx = makeCtx('SELECT * FROM GarbageCollection WHERE cause = |');
+        const col: Completion = { label: 'duration', type: 'column' };
+        const d = structuralBoostDelta({ item: col, ctx });
+        // In col-pos, would get d=10 (clause:6 + in-scope:4); in value-pos must be 0 or less
+        expect(d).toBeLessThanOrEqual(0);
+    });
+
+    it('does NOT boost columns in WHERE value position (after LIKE)', () => {
+        const ctx = makeCtx('SELECT * FROM GarbageCollection WHERE cause LIKE |');
+        const col: Completion = { label: 'gcId', type: 'column' };
+        const d = structuralBoostDelta({ item: col, ctx });
+        expect(d).toBeLessThanOrEqual(0);
+    });
+
+    it('does NOT boost columns in WHERE value position (after BETWEEN)', () => {
+        const ctx = makeCtx('SELECT * FROM ActiveRecording WHERE duration BETWEEN |');
+        const col: Completion = { label: 'startTime', type: 'column' };
+        const d = structuralBoostDelta({ item: col, ctx });
+        expect(d).toBeLessThanOrEqual(0);
+    });
+
+    it('STILL boosts columns in WHERE after AND (new column position)', () => {
+        const ctx = makeCtx('SELECT * FROM GarbageCollection WHERE gcId = 1 AND |');
+        const col: Completion = { label: 'cause', type: 'column' };
+        const d = structuralBoostDelta({ item: col, ctx });
+        expect(d).toBeGreaterThanOrEqual(6);
+    });
 });
 
 describe('reranker — type-affinity', () => {

@@ -22,6 +22,10 @@ const COLUMN_CONTEXT_CLAUSES = new Set([
 
 const TABLE_CONTEXT_CLAUSES = new Set(['from', 'join']);
 
+// Cursor is after a comparison operator/keyword → expect a value, not a column.
+// E.g.: `WHERE cause = `, `WHERE ts < `, `WHERE name LIKE `, `WHERE ts BETWEEN `.
+const AFTER_EQ_RE = /[=<>!]\s*$|(?:LIKE|IN|BETWEEN|IS)\s*$/i;
+
 const NUMERIC_TYPES = new Set([
     'INTEGER', 'BIGINT', 'DOUBLE', 'FLOAT', 'DECIMAL', 'NUMERIC',
     'SMALLINT', 'TINYINT', 'HUGEINT', 'UBIGINT', 'UINTEGER', 'USMALLINT',
@@ -101,11 +105,17 @@ export function structuralBoostDelta(input: RerankInput): number {
     const clause = ctx.enclosingClause;
     let d = 0;
 
+    // In WHERE, detect value position (cursor after = / LIKE / BETWEEN / IS).
+    // When in value pos, suppress ALL column boosts — the user expects a literal.
+    const inValuePos = clause === 'where' && AFTER_EQ_RE.test(ctx.upTo.slice(-80));
+
     // Clause-shape match.
     if (clause && COLUMN_CONTEXT_CLAUSES.has(clause)) {
-        if (type === 'column') d += 6;
-        else if (type === 'function') d += 3;
-        else if (type === 'keyword') d -= 3;
+        if (!inValuePos) {
+            if (type === 'column') d += 6;
+            else if (type === 'function') d += 3;
+            else if (type === 'keyword') d -= 3;
+        }
     } else if (clause && TABLE_CONTEXT_CLAUSES.has(clause)) {
         if (type === 'class' || type === 'type' || type === 'enum') d += 6;
         else if (type !== 'column' && type !== 'keyword' && type !== 'variable') {
@@ -117,8 +127,8 @@ export function structuralBoostDelta(input: RerankInput): number {
     // cross-scope fallback (handles the outer set-op wrapper case).
     const typeMap = input.columnTypeMap;
 
-    // Column-in-scope.
-    if (type === 'column') {
+    // Column-in-scope: skip when in value position (no column expected there).
+    if (type === 'column' && !inValuePos) {
         const labelLc = item.label.toLowerCase();
         if (typeMap && typeMap.has(labelLc)) {
             d += 4;
