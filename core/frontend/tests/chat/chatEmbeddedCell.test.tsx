@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest';
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { parseCellFence, splitCellFences } from '../../components/chat/ChatEmbeddedCell';
+import { render, waitFor, fireEvent } from '@testing-library/react';
+import React from 'react';
+import { ChatEmbeddedCell } from '../../components/chat/ChatEmbeddedCell';
+import { DataContext } from '../../context/DuckDBContext';
 
 describe('parseCellFence', () => {
     it('parses a chart fence', () => {
@@ -67,5 +72,64 @@ describe('splitCellFences', () => {
         const parts = splitCellFences(text);
         expect(parts[0].kind).toBe('cell');
         expect(parts[1]).toEqual({ kind: 'text', content: '\nAfter' });
+    });
+});
+
+const mockQuery = vi.fn();
+const wrapper = ({ children }: { children: React.ReactNode }) => (
+    React.createElement(DataContext.Provider, { value: { query: mockQuery } as any }, children)
+);
+
+describe('ChatEmbeddedCell', () => {
+    beforeEach(() => {
+        mockQuery.mockResolvedValue([{ bucket: '2024-01-01', avg_pause: 12 }]);
+    });
+
+    it('executes sql on mount', async () => {
+        render(
+            React.createElement(ChatEmbeddedCell, { type: 'table', sql: 'SELECT 1', onAddToNotebook: vi.fn() }),
+            { wrapper },
+        );
+        await waitFor(() => expect(mockQuery).toHaveBeenCalledWith('SELECT 1'));
+    });
+
+    it('shows type badge', () => {
+        const { container } = render(
+            React.createElement(ChatEmbeddedCell, { type: 'table', sql: 'SELECT 1', onAddToNotebook: vi.fn() }),
+            { wrapper },
+        );
+        expect(container.textContent).toContain('TABLE');
+    });
+
+    it('shows truncated sql label', () => {
+        const { container } = render(
+            React.createElement(ChatEmbeddedCell, {
+                type: 'table',
+                sql: 'SELECT bucket FROM gc_events LIMIT 10',
+                onAddToNotebook: vi.fn(),
+            }),
+            { wrapper },
+        );
+        expect(container.textContent).toContain('SELECT bucket FROM gc_events');
+    });
+
+    it('calls onAddToNotebook when button clicked', () => {
+        const onAdd = vi.fn();
+        const { container } = render(
+            React.createElement(ChatEmbeddedCell, { type: 'table', sql: 'SELECT 1', onAddToNotebook: onAdd }),
+            { wrapper },
+        );
+        const button = container.querySelector('button')!;
+        fireEvent.click(button);
+        expect(onAdd).toHaveBeenCalledOnce();
+    });
+
+    it('shows error when query fails', async () => {
+        mockQuery.mockRejectedValue(new Error('Table not found'));
+        const { container } = render(
+            React.createElement(ChatEmbeddedCell, { type: 'table', sql: 'SELECT 1', onAddToNotebook: vi.fn() }),
+            { wrapper },
+        );
+        await waitFor(() => expect(container.textContent).toContain('Table not found'));
     });
 });
