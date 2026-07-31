@@ -31,6 +31,11 @@ plot: LINE_CHART(x: "bucket", y: ["p"])`;
         const fence = `type=chart\nplot: LINE_CHART(x: "x", y: ["y"])`;
         expect(parseCellFence(fence)).toBeNull();
     });
+
+    it('returns null for unknown type', () => {
+        const fence = `type=unknown\nsql: SELECT 1`;
+        expect(parseCellFence(fence)).toBeNull();
+    });
 });
 
 describe('splitCellFences', () => {

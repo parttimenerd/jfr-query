@@ -16,6 +16,7 @@ export type FencePart =
 /** Parse the inner content of a :::cell fence (everything between ::: markers). */
 export function parseCellFence(inner: string): ParsedCellFence | null {
     const lines = inner.split('\n');
+    const VALID_TYPES = new Set(['chart', 'table', 'flamegraph', 'sql']);
     let type: CellFenceType | null = null;
     let sql: string | null = null;
     let plotConfig: string | undefined;
@@ -23,9 +24,10 @@ export function parseCellFence(inner: string): ParsedCellFence | null {
     for (const line of lines) {
         const trimmed = line.trim();
         if (trimmed.startsWith('type=')) {
-            type = trimmed.slice('type='.length).trim() as CellFenceType;
+            const raw = trimmed.slice('type='.length).trim();
+            if (VALID_TYPES.has(raw)) type = raw as CellFenceType;
         } else if (trimmed.startsWith('sql:')) {
-            sql = trimmed.slice('sql:'.length).trim();
+            sql = trimmed.slice('sql:'.length).trim(); // sql must be on a single line in the fence
         } else if (trimmed.startsWith('plot:')) {
             plotConfig = trimmed.slice('plot:'.length).trim();
         }
