@@ -185,13 +185,62 @@ User can override routing per-session via a toggle in the chat header: `[⚡ loc
 
 To make local models as capable as possible:
 
-- **System prompt tuning**: a dedicated `localSystemPrompt` that is shorter and more directive than the cloud one — local models respond better to explicit, structured instructions
-- **Schema injection**: full schema always included (local models benefit more from explicit context than cloud models)
-- **Tool subset**: local models only get `query_data` (read-only) by default — notebook mutations route to cloud. Configurable.
-- **Few-shot examples**: 2–3 short Q→A examples prepended to the system prompt for local models, showing the expected answer format and `:::cell` fence syntax
-- **Temperature**: local requests use `temperature: 0.1` (deterministic, less hallucination)
-- **Streaming**: fully supported via `LocalAiProvider` (already implemented)
+- **Dedicated system prompt** (`localSystemPrompt` in `chatModes.ts`): shorter and more directive than the cloud prompt. Local models degrade with long system prompts — the local variant strips optional fluff and leads with the most critical instructions. Structured as: role → JFR context → output format → `:::cell` fence syntax → tool usage rules.
+- **Schema injection**: full schema always included regardless of visibility setting — local models benefit more from explicit table/column context than cloud models, and schema contains no user data.
+- **Few-shot examples**: 3 concrete Q→A pairs prepended to the system prompt showing: (1) a plain text answer, (2) an answer with an inline `:::cell` chart, (3) an answer that calls `query_data`. Format mirrors expected output exactly so the model can pattern-match reliably.
+- **Tool subset**: local models get `query_data` only by default — notebook mutations (add/edit/delete cell) route to cloud. Rationale: mutations require stronger reasoning about cell ordering and content; small local models hallucinate here. Configurable via `localToolAccess` setting.
+- **Temperature**: local requests use `temperature: 0.1` (deterministic, reduces hallucinated SQL and cell fence syntax errors)
+- **Streaming**: fully supported via existing `LocalAiProvider`
 - **Model badge**: shows `✦ local · <model-name>` during local inference
+
+### Local model system prompt (template)
+
+```
+You are a JFR performance analyst embedded in a notebook tool.
+The user has loaded a Java Flight Recording. Answer questions about it concisely and precisely.
+
+Available tables: {schema}
+Current variables: {variables}
+
+When a chart or table would make the answer clearer, embed it using:
+  :::cell type=chart
+  sql: SELECT ...
+  plot: LINE_CHART(x: "col", y: ["col2"])
+  :::
+or :::cell type=table / :::cell type=flamegraph
+
+To query data you don't have, call the query_data tool with the SQL, a one-sentence reason, and the table names accessed.
+
+--- Examples ---
+Q: What is the average GC pause?
+A: The average GC pause is 14ms. (queried from GarbageCollection.duration)
+
+Q: Show me heap usage over time.
+A: Here is heap usage over the session:
+:::cell type=chart
+sql: SELECT time_bucket('1s', ts) AS t, avg(heapUsed) AS heap_mb FROM gc_heap_summary GROUP BY t ORDER BY t
+plot: LINE_CHART(x: "t", y: ["heap_mb"])
+:::
+Heap peaks at 2.4 GB around the 40s mark.
+
+Q: Which methods are consuming the most CPU?
+A: [calls query_data tool with sql=SELECT stackTrace, sum(samples)... reason="Find hot methods" tables=["ExecutionSample"]]
+```
+
+### Local model testing
+
+A new test file `tests/ai/localModel.test.ts` covers:
+
+- **Routing unit tests**: `routeMessage()` returns correct provider for all combinations of message length, tool list, visibility setting, and user override
+- **System prompt tests**: `buildLocalSystemPrompt(schema, variables)` produces output that:
+  - Contains all table names from schema
+  - Contains all variable names
+  - Contains at least one `:::cell` example
+  - Is under 1200 tokens (checked via tokenizer estimate)
+- **Few-shot format tests**: the 3 example pairs parse correctly as valid chat turns
+- **Mock server integration test**: spins up a minimal OpenAI-compatible mock server (using `msw` or a simple `http.createServer`), sends a chat message through `LocalAiProvider`, verifies streaming chunks arrive and the full response assembles correctly
+- **Fallback test**: mock server returns 503, verify `AiService` retries with cloud provider and emits the fallback notice message
+- **`:::cell` parse round-trip**: generate a response containing cell fences, verify `ChatMarkdownView` parser extracts `type`, `sql`, `plotConfig` correctly
 
 ### Local model settings (Settings panel additions)
 
@@ -219,6 +268,7 @@ If the local model times out (>30s) or returns an error:
 - `components/chat/ChatPermissionCard.tsx` — inline approval card for query/mutation tool calls
 - `services/ai/tools/queryData.ts` — `query_data` tool definition + handler
 - `services/ai/routing.ts` — local vs cloud routing logic
+- `tests/ai/localModel.test.ts` — routing unit tests, system prompt tests, mock server integration, fallback, cell fence parse round-trip
 
 ### Modified files
 - `components/chat/ChatMarkdownView.tsx` — detect + render `:::cell` fences
