@@ -4,6 +4,7 @@
 // network mock.
 
 import { TOOLS, getTool, validateToolArgs, type Tool } from './index';
+import { handleQueryData } from './queryData';
 import { parseComposite } from '../../../utils/plotParser';
 
 export interface ToolDeps {
@@ -113,6 +114,13 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
 
     try {
         switch (name) {
+            case 'query_data': {
+                const result = await handleQueryData(args, deps);
+                const parsed = JSON.parse(result);
+                return 'error' in parsed
+                    ? { ok: false, error: parsed.error }
+                    : { ok: true, data: parsed };
+            }
             case 'runQuery': {
                 const sql: string = args.sql;
                 if (isForbiddenSql(sql)) return { ok: false, error: 'SQL references $ai_providers which contains sensitive credentials and cannot be queried.' };

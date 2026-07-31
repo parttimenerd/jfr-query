@@ -7,6 +7,8 @@
 // read paths the assistant needs to inspect data and the mutate paths it
 // needs to edit a notebook on the user's behalf.
 
+import { QUERY_DATA_TOOL } from './queryData';
+
 export type ToolKind = 'read' | 'mutate';
 
 export interface JsonSchema {
@@ -291,6 +293,7 @@ export const TOOLS: Tool[] = [
             required: ['cellId'],
         },
     },
+    QUERY_DATA_TOOL,
 ];
 
 export function getTool(name: string): Tool | undefined {

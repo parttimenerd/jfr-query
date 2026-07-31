@@ -163,6 +163,7 @@ describe('TOOLS metadata sanity (consumed by ChatPanel)', () => {
             'listVariables',
             'moveCell',
             'previewPlot',
+            'query_data',
             'readCell',
             'recallMemory',
             'rememberFact',

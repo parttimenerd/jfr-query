@@ -543,6 +543,7 @@ GUIDELINES:
             `    • describeTable(name) — column list + types. Cheap; call before writing non-trivial SQL.\n` +
             `    • sampleRows(name, limit?) — a handful of rows to see real values.\n` +
             `    • runQuery(sql, limit?, offset?) — full ad-hoc SQL. Results render inline as a table the user can see; do not re-paste rows in your reply.\n` +
+            `    • query_data(sql, reason, tables) — like runQuery but accepts a reason string (shown to the user) and a tables array (for permission display). Use instead of runQuery when you want the user to understand why you are querying.\n` +
             `  Preview a chart inline (read-only, the user sees the chart and gets a one-click "Add to Notebook"):\n` +
             `    • previewPlot(sql, plotConfig, limit?) — preferred way to PROPOSE a chart. After a successful previewPlot, DO NOT also call addCell for the same chart — the user has a button for that.\n` +
             `    • screenshotPlot(previewId) — capture the rendered chart as a PNG so YOU can see it. Use rarely: only when the visual matters (label readability, layout, color overlap) and you cannot judge it from the DSL alone. Requires chat visibility 'full' and an image-capable provider; otherwise it errors.\n` +
