@@ -3,6 +3,7 @@ title: Comprehensive Feature Test
 description: Tests all major notebook features — variables, multi-query cells, charts, linked axes, scatter plots, and cross-cell references.
 tags: [test, gc, performance, allocation]
 license: MIT
+priority: 99
 variables:
   $limit: "20"
   $min_pause_ms: "5"

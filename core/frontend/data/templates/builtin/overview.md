@@ -3,17 +3,18 @@ title: Recording Overview
 description: Adaptive first-look at a JFR recording — shows only sections relevant to the events present.
 tags: [overview, gc, cpu, memory, io, threads]
 license: MIT
+priority: 1
 cellConditions:
-  gc-section: "SELECT count(*) > 0 FROM GarbageCollection"
-  cpu-section: "SELECT count(*) > 0 FROM CPULoad"
-  hot-methods-section: "SELECT count(*) > 0 FROM ExecutionSample"
-  allocation-section: "SELECT count(*) > 0 FROM ObjectAllocationSample"
-  contention-section: "SELECT count(*) > 0 FROM JavaMonitorEnter"
-  io-section: "SELECT (SELECT count(*) FROM FileRead) + (SELECT count(*) FROM FileWrite) + (SELECT count(*) FROM SocketRead) > 0"
-  exceptions-section: "SELECT count(*) > 0 FROM JavaExceptionThrow"
-  container-section: "SELECT count(*) > 0 FROM ContainerCPUThrottling"
-  leaks-section: "SELECT count(*) > 0 FROM OldObjectSample"
-  threads-section: "SELECT count(*) > 0 FROM JavaThreadStatistics"
+  gc-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GarbageCollection'"
+  cpu-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'CPULoad'"
+  hot-methods-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ExecutionSample'"
+  allocation-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ObjectAllocationSample'"
+  contention-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'JavaMonitorEnter'"
+  io-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('FileRead', 'SocketRead', 'FileWrite')"
+  exceptions-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'JavaExceptionThrow'"
+  container-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ContainerCPUThrottling'"
+  leaks-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'OldObjectSample'"
+  threads-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'JavaThreadStatistics'"
 ---
 
 <!-- @cell name=intro -->
@@ -163,11 +164,29 @@ BAR_CHART(x: "Monitor Class", y: ["Total Wait (ms)"], horizontal: true) TITLE "T
 Combined latency across all blocking event types. Use the **I/O & Latency** template for per-path and per-host breakdown.
 
 ```sql
-SELECT * FROM "latencies-by-type"
+SELECT
+  eventType AS "Event Type",
+  COUNT(*) AS "Count",
+  round(SUM(duration) * 1000, 1) AS "Total (ms)"
+FROM (
+  SELECT 'Monitor Enter' AS eventType, duration FROM JavaMonitorEnter
+  UNION ALL
+  SELECT 'Thread Park' AS eventType, duration FROM ThreadPark
+  UNION ALL
+  SELECT 'Thread Sleep' AS eventType, duration FROM ThreadSleep
+  UNION ALL
+  SELECT 'Socket Read' AS eventType, duration FROM SocketRead
+  UNION ALL
+  SELECT 'File Read' AS eventType, duration FROM FileRead
+  UNION ALL
+  SELECT 'File Write' AS eventType, duration FROM FileWrite
+)
+GROUP BY eventType
+ORDER BY SUM(duration) DESC
 ```
 
 ```plot
-BAR_CHART(x: "Event Type", y: ["Total"], horizontal: true) TITLE "Total Blocking Time by Type"
+BAR_CHART(x: "Event Type", y: ["Total (ms)"], horizontal: true) TITLE "Total Blocking Time by Type (ms)"
 ```
 
 ---

@@ -32,11 +32,35 @@ Where is your application spending time waiting? This notebook covers all blocki
 Total blocking time across all event types. The type with the highest "Total" is your biggest latency bottleneck.
 
 ```sql
-SELECT * FROM "latencies-by-type"
+SELECT
+  eventType AS "Event Type",
+  COUNT(*) AS "Count",
+  round(SUM(duration) * 1000, 1) AS "Total (ms)",
+  round(AVG(duration) * 1000, 2) AS "Avg (ms)",
+  round(MAX(duration) * 1000, 2) AS "Max (ms)"
+FROM (
+  SELECT 'Java Monitor Wait' AS eventType, duration FROM JavaMonitorWait
+  UNION ALL
+  SELECT 'Java Monitor Enter' AS eventType, duration FROM JavaMonitorEnter
+  UNION ALL
+  SELECT 'Thread Park' AS eventType, duration FROM ThreadPark
+  UNION ALL
+  SELECT 'Thread Sleep' AS eventType, duration FROM ThreadSleep
+  UNION ALL
+  SELECT 'Socket Read' AS eventType, duration FROM SocketRead
+  UNION ALL
+  SELECT 'Socket Write' AS eventType, duration FROM SocketWrite
+  UNION ALL
+  SELECT 'File Read' AS eventType, duration FROM FileRead
+  UNION ALL
+  SELECT 'File Write' AS eventType, duration FROM FileWrite
+)
+GROUP BY eventType
+ORDER BY SUM(duration) DESC
 ```
 
 ```plot
-BAR_CHART(x: "Event Type", y: ["Total"], horizontal: true) TITLE "Total Blocking Time by Type"
+BAR_CHART(x: "Event Type", y: ["Total (ms)"], horizontal: true) TITLE "Total Blocking Time by Type (ms)"
 ```
 
 ---

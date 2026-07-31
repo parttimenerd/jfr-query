@@ -13,8 +13,8 @@ export interface TemplateMeta {
     tags: string[];
     source: 'builtin' | 'user';
     license: string | null;
+    priority?: number;
 }
-
 // Vite-resolved at build time; in vitest (node env) this still resolves
 // because vite-node handles glob.
 const rawFiles = import.meta.glob('./builtin/*.md', {
@@ -29,6 +29,7 @@ function parseFrontMatter(body: string, fallbackName: string): TemplateMeta {
     let description: string | null = null;
     let tags: string[] = [];
     let license: string | null = null;
+    let priority = 50;
     if (fm) {
         for (const raw of fm[1].split('\n')) {
             const line = raw.trim();
@@ -48,18 +49,19 @@ function parseFrontMatter(body: string, fallbackName: string): TemplateMeta {
                     }
                     break;
                 }
+                case 'priority': priority = parseInt(value, 10) || 50; break;
                 default: break;
             }
         }
     }
-    return { name: fallbackName, title, description, tags, source: 'builtin', license };
+    return { name: fallbackName, title, description, tags, source: 'builtin', license, priority };
 }
 
 const entries: { meta: TemplateMeta; body: string }[] = Object.entries(rawFiles).map(([path, body]) => {
     const filename = path.split('/').pop() ?? path;
     const name = filename.replace(/\.md$/, '');
     return { meta: parseFrontMatter(body, name), body };
-}).sort((a, b) => a.meta.name.localeCompare(b.meta.name));
+}).sort((a, b) => (a.meta.priority ?? 50) - (b.meta.priority ?? 50) || a.meta.name.localeCompare(b.meta.name));
 
 export const builtinManifest = {
     list(): TemplateMeta[] {
