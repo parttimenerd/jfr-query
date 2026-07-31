@@ -422,7 +422,10 @@ def extract_input_signals(sql: str, columns: list) -> str:
         tags.append('gc')
     if re.search(r'alloc|tlab|retained|live|object|class', all_names): tags.append('alloc')
     if re.search(r'cpu|thread|method|jvm|machine|load|worker', all_names): tags.append('cpu')
-    if re.search(r'delta|change|diff|decrement|increment', all_names): tags.append('delta')
+    if any(re.search(r'(^|_)(delta|change|diff|decrement|increment)(_|$)', n) and
+           not re.search(r'(^|_)(change|diff)_(count|rate|id|pct|ratio|percent|total|num|flag)', n) and
+           not re.search(r'exchange', n)
+           for n in names): tags.append('delta')
     has_range_start = any(
         re.search(r'start|begin|lower', n) or n in ('low',) or
         re.search(r'^min', n) or
@@ -455,6 +458,11 @@ def extract_input_signals(sql: str, columns: list) -> str:
             cat_count += 1
     tags.append(f'num:{min(num_count, 4)}')
     tags.append(f'cat:{min(cat_count, 4)}')
+
+    # GANTT span signal: category col + two time-named cols forming a start+end span, no numeric band.
+    time_named = [n for n in names if re.search(r'time|timestamp|bucket|date|_at$|_ts$|_dt$|^ts$|^dt$|^when$', n)]
+    if not has_numeric_band and has_range_start and has_range_end and len(time_named) >= 2 and cat_count >= 1:
+        tags.append('gantt_span')
 
     return ' '.join(tags)
 

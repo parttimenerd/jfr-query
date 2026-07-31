@@ -83,9 +83,10 @@ const SEQ2SEQ_INPUT_V2 = (sql: string, columns: string[] | TypedColumn[], schema
  *   gc       — JFR GC domain (pause, heap, GC*)
  *   alloc    — JFR allocation domain (alloc*, tlab, retained)
  *   cpu      — JFR CPU/thread domain (cpu*, thread*, method*)
- *   delta    — delta/change/diff column (→ WATERFALL likely)
+ *   delta    — delta/change/diff column name as standalone word (→ WATERFALL; "change_count" does NOT fire)
  *   range    — start+end or low+high column pair (→ RANGE/GANTT likely)
  *   num_range — time col + numeric band cols (minX/maxX/pN percentile) → RANGE (88% cov, 0% GANTT)
+ *   gantt_span — cat col + 2 time-named cols (start+end) without numeric band → GANTT
  *   num:N    — number of numeric columns (0–4, capped)
  *   cat:N    — number of categorical columns (0–4, capped)
  *
@@ -159,8 +160,13 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     if (/alloc|tlab|retained|live|object|class/.test(allNames)) tags.push('alloc');
     if (/cpu|thread|method|jvm|machine|load|worker/.test(allNames)) tags.push('cpu');
 
-    // Delta/change signal → WATERFALL hint
-    if (/delta|change|diff|decrement|increment/.test(allNames)) tags.push('delta');
+    // Delta/change signal → WATERFALL hint.
+    // Fires when a delta-semantic word appears as a whole word segment in any column name,
+    // but NOT when "change" or similar is followed by count/rate/id (indicating it's not a delta value).
+    // E.g.: heap_delta ✓, delta ✓, heap_delta_mb ✓ — but change_count ✗, exchange_rate ✗.
+    if (names.some(n => /(^|_)(delta|change|diff|decrement|increment)(_|$)/.test(n) &&
+        !/(^|_)(change|diff)_(count|rate|id|pct|ratio|percent|total|num|flag)/.test(n) &&
+        !/exchange/.test(n))) tags.push('delta');
 
     // Range/interval signal → RANGE or GANTT hint (start+end or low+high columns).
     // Also catches percentile pairs (p5/p95, p10/p99) and min*/max* name prefixes.
@@ -198,6 +204,11 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     }
     tags.push(`num:${Math.min(numCount, 4)}`);
     tags.push(`cat:${Math.min(catCount, 4)}`);
+
+    // GANTT span signal: category col + two time-named cols forming a start+end span, no numeric band.
+    // Distinguishes GANTT from RANGE in the `sorted wide time range cat:1` fingerprint.
+    const timeNamedCols = names.filter(n => /time|timestamp|bucket|date|_at$|_ts$|_dt$|^ts$|^dt$|^when$/.test(n));
+    if (!hasNumericBand && hasRangeStart && hasRangeEnd && timeNamedCols.length >= 2 && catCount >= 1) tags.push('gantt_span');
 
     return tags.join(' ');
 }

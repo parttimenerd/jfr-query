@@ -271,6 +271,36 @@ describe('extractInputSignals', () => {
             const s = extractInputSignals('SELECT cause, minAlloc, maxAlloc FROM t', ['cause', 'minAlloc', 'maxAlloc']);
             expect(s).not.toContain('num_range');
         });
+
+        it('does NOT emit "delta" for compound column names like change_count', () => {
+            const s = extractInputSignals('SELECT flag_name, change_count FROM metadata GROUP BY flag_name ORDER BY change_count DESC LIMIT 20', ['flag_name', 'change_count']);
+            expect(s).not.toContain('delta');
+        });
+
+        it('does NOT emit "delta" for exchange_rate (change embedded mid-word)', () => {
+            const s = extractInputSignals('SELECT currency, exchange_rate FROM rates', ['currency', 'exchange_rate']);
+            expect(s).not.toContain('delta');
+        });
+
+        it('emits "delta" for heap_delta column name (suffix)', () => {
+            const s = extractInputSignals('SELECT phase, heap_delta FROM gc_phases', ['phase', 'heap_delta']);
+            expect(s).toContain('delta');
+        });
+
+        it('emits "gantt_span" for category + two time-named start/end columns', () => {
+            const s = extractInputSignals('SELECT phase, start_ts, end_ts FROM concurrent_gc_phases ORDER BY start_ts', ['phase', 'start_ts', 'end_ts']);
+            expect(s).toContain('gantt_span');
+        });
+
+        it('emits "gantt_span" for task_name + startTime + endTime columns', () => {
+            const s = extractInputSignals('SELECT task_name, start_time, end_time FROM tasks ORDER BY start_time', ['task_name', 'start_time', 'end_time']);
+            expect(s).toContain('gantt_span');
+        });
+
+        it('does NOT emit "gantt_span" when numeric bands are present (RANGE scenario)', () => {
+            const s = extractInputSignals('SELECT bucket, p5, p95 FROM latency ORDER BY bucket', ['bucket', 'p5', 'p95']);
+            expect(s).not.toContain('gantt_span');
+        });
     });
 
     describe('num/cat counts', () => {
