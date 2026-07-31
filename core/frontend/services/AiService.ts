@@ -553,6 +553,24 @@ GUIDELINES:
             }
         }
 
+        // Browser path: no tool calling available — yield schema context response.
+        const isBrowserRoute = opts.routingPreference === 'browser' || this.settings?.aiProvider === 'browser';
+        if (isBrowserRoute) {
+            const browserSystemPrompt = buildBrowserSystemPrompt(
+                opts.schemaForLocalPrompt ?? [],
+                opts.variablesForPrompt ?? {},
+            );
+            const lastMsg = messages[messages.length - 1];
+            const userText = typeof lastMsg?.content === 'string' ? lastMsg.content : '';
+            // Build a helpful schema-aware response without tool access.
+            yield { kind: 'text', delta: `*In-browser mode — data queries unavailable. Answering from schema only.*\n\n` };
+            yield { kind: 'text', delta: browserSystemPrompt };
+            if (userText) {
+                yield { kind: 'text', delta: `\n\n---\n*Your question: "${userText}"*\n\nBased on the schema above, I can describe the available tables but cannot run SQL queries in browser mode. Please switch to a local or cloud provider to run queries.` };
+            }
+            return;
+        }
+
         let provider: IAiProvider = this.provider;
         if (resolvedProviderOverride && resolvedProviderOverride !== this.settings?.aiProvider && this.settings) {
             const factory = providerFactoryRegistry[resolvedProviderOverride];

@@ -335,7 +335,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
     const [chatVisibility, setChatVisibility] = useState<VisibilityMode>(settings.aiDefaultVisibility);
     // Session routing override — only shown when a local model URL is configured.
-    const [sessionRouting, setSessionRouting] = useState<'auto' | 'local' | 'cloud'>('auto');
+    const [sessionRouting, setSessionRouting] = useState<'auto' | 'local' | 'cloud' | 'browser'>('auto');
     // Track which provider was actually used for the last message.
     const [lastRouteUsed, setLastRouteUsed] = useState<'local' | 'cloud' | null>(null);
 
@@ -1252,7 +1252,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         </span>
                         {settings.localBaseUrl && settings.aiProvider === 'local' && (
                             <div className="flex items-center gap-0.5 text-[10px]">
-                                {(['auto', 'local', 'cloud'] as const).map(r => (
+                                {(['auto', 'local', 'cloud', 'browser'] as const).map(r => (
                                     <button
                                         key={r}
                                         onClick={() => setSessionRouting(r)}
@@ -1261,12 +1261,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                                 ? 'bg-violet-700/30 border-violet-600/40 text-violet-400'
                                                 : 'bg-transparent border-gray-700 text-gray-600 hover:text-gray-400'
                                         }`}
-                                        title={r === 'auto' ? 'Auto-route (local for simple, cloud for complex)' : r === 'local' ? 'Force local model' : 'Force cloud model'}
+                                        title={r === 'auto' ? 'Auto-route (local for simple, cloud for complex)' : r === 'local' ? 'Force local model' : r === 'cloud' ? 'Force cloud model' : 'Browser-only (no data queries)'}
                                     >
-                                        {r === 'local' ? '⚡' : r === 'cloud' ? '☁' : '⟳'} {r}
+                                        {r === 'local' ? '⚡' : r === 'cloud' ? '☁' : r === 'browser' ? '🧠' : '⟳'} {r}
                                     </button>
                                 ))}
                             </div>
+                        )}
+                        {sessionRouting === 'browser' && (
+                            <span className="text-[10px] text-amber-400/70 px-2 py-0.5 rounded border border-amber-700/30">
+                                In-browser mode — data queries unavailable
+                            </span>
                         )}
                         <button onClick={() => addChannel()} title="New chat channel" aria-label="New chat channel" className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-md"><PlusIcon className="w-4 h-4"/></button>
                         <button onClick={handleReset} title="Reset Conversation" aria-label="Reset Conversation" className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-md"><ArrowCounterclockwiseIcon className="w-4 h-4"/></button>

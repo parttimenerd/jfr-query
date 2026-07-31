@@ -43,4 +43,12 @@ describe('routeMessage', () => {
         expect(routeMessage('hi', [], 'no-data', 'auto')).toBe('local');
         expect(routeMessage('hi', [], 'full', 'auto')).toBe('cloud');
     });
+
+    it('returns browser when preference is browser', () => {
+        expect(routeMessage('hi', [], 'no-data', 'browser', false, true, true)).toBe('browser');
+    });
+
+    it('returns browser when no other providers configured and browser available', () => {
+        expect(routeMessage('hi', [], 'no-data', 'auto', false, false, true)).toBe('browser');
+    });
 });
