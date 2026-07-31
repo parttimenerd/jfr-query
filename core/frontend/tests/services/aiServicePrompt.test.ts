@@ -77,4 +77,25 @@ describe('AiService tool-using system prompt', () => {
     it('reminds the model to stop when done (anti-loop)', () => {
         expect(block).toMatch(/stop calling tools|do not loop|don'?t loop/i);
     });
+
+    it('instructs model to call readCell before editCell to preserve cell structure', () => {
+        expect(block).toMatch(/editCell[\s\S]{0,100}readCell/);
+    });
+});
+
+describe('AiService customSystemPrompt injection', () => {
+    it('injects custom prompt with ADDITIONAL INSTRUCTIONS header when truthy', () => {
+        // Verify the injection pattern exists in AiService.ts source
+        expect(aiServiceSrc).toContain('ADDITIONAL INSTRUCTIONS FROM USER');
+        expect(aiServiceSrc).toContain('customSystemPrompt');
+    });
+
+    it('injection uses conditional guard (only adds when truthy)', () => {
+        // The source must have a conditional — not an unconditional append
+        const injectionIdx = aiServiceSrc.indexOf('ADDITIONAL INSTRUCTIONS FROM USER');
+        expect(injectionIdx).toBeGreaterThan(-1);
+        // Slice 200 chars before to see the surrounding conditional
+        const surrounding = aiServiceSrc.slice(Math.max(0, injectionIdx - 200), injectionIdx + 100);
+        expect(surrounding).toMatch(/if\s*\(|&&|\?\?/);
+    });
 });
