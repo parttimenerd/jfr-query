@@ -56,7 +56,7 @@ export const providerFactoryRegistry: Record<AiProviderType, ProviderFactory> = 
         s.localBaseUrl,
         s.localMaxTokens,
     ),
-    browser: (s) => new BrowserModelProvider(s.browserModelId),
+    browser: (s) => new BrowserModelProvider(s.browserModelId, s.browserChatModelId),
 };
 
 // Backward-compat: existing call sites construct directly with `new ProviderClass(apiKey)`.
@@ -419,6 +419,47 @@ Return the fixed SQL only.`;
         }
     }
 
+    /**
+     * Summarise a conversation into a compact context block that an LLM can use
+     * as a replacement for the full history. SQL queries are preserved verbatim
+     * so the model knows they can be re-executed; raw result rows are dropped.
+     */
+    async getCompactSummary(conversationText: string): Promise<string | null> {
+        if (!this.settings) return null;
+        const model = this.getModelFor('basic');
+        const systemInstruction = `You are a conversation summariser for a data-analysis chat assistant.
+Produce a concise summary (≤400 words) of the conversation below so the assistant can continue with full context.
+
+Rules:
+- Preserve every SQL query verbatim in a \`\`\`sql block so it can be re-run.
+- For query results, keep only the key findings (totals, counts, notable values). Drop raw row data entirely.
+- Keep the user's original questions and the assistant's final conclusions.
+- Omit pleasantries, filler text, and redundant explanations.
+- Use bullet points where possible to save space.
+
+Output format:
+**Summary**
+<concise bullets>
+
+**SQL queries used**
+\`\`\`sql
+-- <description>
+<query>
+\`\`\`
+(repeat for each distinct query)`;
+        try {
+            const resp = await this.handleApiCall(() =>
+                this.provider!.getInlineSuggestion(systemInstruction, conversationText, model)
+            );
+            const text = (resp && typeof resp === 'object' && 'text' in resp && typeof (resp as any).text === 'string')
+                ? (resp as any).text as string
+                : '';
+            return text.trim() || null;
+        } catch {
+            return null;
+        }
+    }
+
     async getAiSuggestPlot(sql: string, customPromptOverride?: string, context?: PlotSuggestContext, tier: AiTier = 'basic'): Promise<string | null> {
         if (!this.settings) throw new Error("AI Service not initialized with settings.");
         this.assertOfflineAllowed('plotSuggest');
@@ -507,6 +548,8 @@ GUIDELINES:
             schemaForLocalPrompt?: SchemaTable[];
             /** Variables for injecting into local model system prompt. */
             variablesForPrompt?: Record<string, unknown>;
+            /** Progress callback (0–1) while the browser model is downloading/loading. */
+            onBrowserLoadProgress?: (progress: number) => void;
         },
     ): AsyncIterable<ToolStreamChunk> {
         if (!this.provider) throw new Error('AI Service not initialized — configure an API key in ⚙ Settings first.');
@@ -553,20 +596,30 @@ GUIDELINES:
             }
         }
 
-        // Browser path: no tool calling available — yield schema context response.
+        // Browser path: use in-browser LLM for real chat inference.
+        // No tool calling — the model answers from schema context only.
         const isBrowserRoute = opts.routingPreference === 'browser' || this.settings?.aiProvider === 'browser';
         if (isBrowserRoute) {
             const browserSystemPrompt = buildBrowserSystemPrompt(
                 opts.schemaForLocalPrompt ?? [],
                 opts.variablesForPrompt ?? {},
             );
-            const lastMsg = messages[messages.length - 1];
-            const userText = typeof lastMsg?.content === 'string' ? lastMsg.content : '';
-            // Build a helpful schema-aware response without tool access.
-            yield { kind: 'text', delta: `*In-browser mode — data queries unavailable. Answering from schema only.*\n\n` };
-            yield { kind: 'text', delta: browserSystemPrompt };
-            if (userText) {
-                yield { kind: 'text', delta: `\n\n---\n*Your question: "${userText}"*\n\nBased on the schema above, I can describe the available tables but cannot run SQL queries in browser mode. Please switch to a local or cloud provider to run queries.` };
+
+            // Build a provider that can stream from the in-browser model.
+            const browserProvider = this.settings?.aiProvider === 'browser'
+                ? this.provider  // already a BrowserModelProvider
+                : new (await import('./ai/BrowserModelProvider').then(m => m.BrowserModelProvider))(this.settings?.browserModelId, this.settings?.browserChatModelId);
+
+            if (browserProvider?.streamChatWithTools) {
+                yield* browserProvider.streamChatWithTools(messages, [], {
+                    systemInstruction: browserSystemPrompt,
+                    signal: opts.signal,
+                    ...(opts.onBrowserLoadProgress
+                        ? { onLoadProgress: opts.onBrowserLoadProgress }
+                        : {}),
+                });
+            } else {
+                yield { kind: 'text', delta: '*Browser chat unavailable — no in-browser model loaded.*' };
             }
             return;
         }
@@ -620,7 +673,7 @@ GUIDELINES:
             `    • listVariables() — current notebook variables (name → string).\n` +
             `  Modify the notebook (require user approval per call):\n` +
             `    • addCell(type, content, afterCellId?) — create sql / plot / markdown cell.\n` +
-            `    • editCell(cellId, content) — replace cell content.\n` +
+            `    • editCell(cellId, content) — replace cell content. ALWAYS call readCell(cellId) first to get the current content; preserve existing structure (headings, SQL blocks, plot blocks) and only change what the user asked for.\n` +
             `    • applyPlot(cellId, plotConfig, plotBlockIndex?) — replace a plot block inside an existing cell.\n` +
             `    • deleteCell(cellId), moveCell(cellId, targetCellId, position).\n` +
             `    • setVariable(name, value), deleteVariable(name).\n` +
@@ -631,14 +684,15 @@ GUIDELINES:
             `\n` +
             `WORKING RULES:\n` +
             `  1. Explore before you act: describeTable → maybe sampleRows → runQuery. Do not invent columns; if unsure, call describeTable first.\n` +
-            `  2. Proposing a chart? Use previewPlot, then stop and let the user decide. Skip addCell for that chart.\n` +
-            `  3. Mutations need user approval — batch related changes into the smallest set of calls that makes sense; don't spam approvals.\n` +
-            `  4. Once you have answered the user's question, stop calling tools. Don't loop "just to double-check".\n` +
-            `  5. Visibility modes affect what you can see and do:\n` +
+            `  2. Answering a question that involves SQL? Use runQuery — show the result inline. NEVER use addCell(sql) just to answer a question. addCell is only for when the user explicitly asks to "add to notebook", "save this query", or "create a cell".\n` +
+            `  3. Proposing a chart? Use previewPlot, then stop and let the user decide. Skip addCell for that chart.\n` +
+            `  4. Mutations need user approval — batch related changes into the smallest set of calls that makes sense; don't spam approvals.\n` +
+            `  5. Once you have answered the user's question, stop calling tools. Don't loop "just to double-check".\n` +
+            `  6. Visibility modes affect what you can see and do:\n` +
             `     • 'no-data' — runQuery / sampleRows / previewPlot results are returned to you redacted or refused; you must rely on schema + describeTable. previewPlot is disabled and will error.\n` +
             `     • 'sanitized' — row values are sanitized in the payload you see; screenshotPlot still refuses.\n` +
             `     • 'full' — you see real values; screenshotPlot is allowed.\n` +
-            `  6. Be concise in your text replies — the inline tables/plots already show the data, so summarize the finding rather than repeating numbers.\n` +
+            `  7. Be concise in your text replies — the inline tables/plots already show the data, so summarize the finding rather than repeating numbers.\n` +
             `\n` +
             `SQL RULES:\n` +
             `  • DuckDB syntax. Quote identifiers with double quotes ("My Column"), strings with single quotes.\n` +
