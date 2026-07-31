@@ -28,13 +28,13 @@ describe('chooseProposalKind', () => {
         expect(kind.kind).toBe('auto-read');
     });
 
-    it('returns prompt-read for a read tool when visibility is no-data', () => {
+    it('returns auto-read for a read tool regardless of visibility', () => {
         const tool = getTool('describeTable')!;
         const kind = chooseProposalKind(tool, { name: 'GarbageCollection' }, { visibility: 'no-data', approveAllReads: false });
-        expect(kind.kind).toBe('prompt-read');
+        expect(kind.kind).toBe('auto-read');
     });
 
-    it('returns auto-read even at no-data when approveAllReads is set', () => {
+    it('returns auto-read for a read tool even when approveAllReads is set', () => {
         const tool = getTool('sampleRows')!;
         const kind = chooseProposalKind(tool, { name: 'GC' }, { visibility: 'no-data', approveAllReads: true });
         expect(kind.kind).toBe('auto-read');
@@ -126,7 +126,7 @@ describe('formatToolHeader', () => {
     });
 
     it('emits the addCell type', () => {
-        expect(formatToolHeader('addCell', { type: 'plot', content: 'X' })).toBe('addCell("plot")');
+        expect(formatToolHeader('addCell', { type: 'plot', content: 'X' })).toBe('Add plot cell to notebook');
     });
 
     it('renders listPlots without args', () => {

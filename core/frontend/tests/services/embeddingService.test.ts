@@ -5,6 +5,15 @@
 // without touching @huggingface/transformers at all.
 
 import { describe, it, expect, vi } from 'vitest';
+
+// Mock the heavy transformer so ensureLoaded never hangs waiting for a download.
+vi.mock('@huggingface/transformers', () => ({
+    pipeline: vi.fn().mockResolvedValue(
+        vi.fn().mockResolvedValue({ data: new Float32Array(384).fill(0) }),
+    ),
+    env: { allowLocalModels: false, useBrowserCache: false },
+}));
+
 import { rankCandidates, isReady } from '../../services/ml/EmbeddingService';
 
 describe('EmbeddingService — short-circuit paths', () => {
