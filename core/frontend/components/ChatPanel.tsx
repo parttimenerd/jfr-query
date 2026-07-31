@@ -300,15 +300,31 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         setChannels(prev => prev.map(c => c.id === activeChannelId ? { ...c, messages: updater(c.messages) } : c));
     }, [activeChannelId]);
 
+    const switchChannel = useCallback((id: string) => {
+        setActiveChannelId(id);
+        // Clear per-request UI state so stale cards from the previous channel
+        // don't bleed into the newly-active one.
+        setProposals([]);
+        approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
+        approvalResolvers.current.clear();
+        setIsLoading(false);
+        setStreamingText(null);
+        setSessionQueryPerm('ask');
+        sessionQueryPermRef.current = 'ask';
+        setShowQueryPermBanner(false);
+        sessionQueryPermResolverRef.current = null;
+    }, []);
+
     const addChannel = useCallback((label?: string, initial?: ChatMessage[], id?: string) => {
         const newId = id ?? `channel-${Date.now()}`;
         setChannels(prev => {
             const channelLabel = label ?? `Channel ${prev.length + 1}`;
             return [...prev, { id: newId, label: channelLabel, messages: initial ?? initialConversation, model: defaultModelRef.current, fromInline: !!id }];
         });
-        setActiveChannelId(newId);
+        // Use switchChannel so stale proposal cards from the previous channel are cleared.
+        switchChannel(newId);
         return newId;
-    }, []);
+    }, [switchChannel]);
 
     const removeChannel = useCallback((id: string) => {
         setChannels(prev => {
@@ -351,7 +367,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
             if (prev.some(c => c.id === incomingChannel.channelId)) return prev;
             return [...prev, { id: incomingChannel.channelId, label: incomingChannel.label, messages: incomingChannel.messages, fromInline: true }];
         });
-        setActiveChannelId(incomingChannel.channelId);
+        switchChannel(incomingChannel.channelId);
         if (incomingChannel.draftInput) setInput(incomingChannel.draftInput);
         onIncomingChannelConsumed?.();
     }, [incomingChannel, onIncomingChannelConsumed]);
@@ -1344,11 +1360,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     // and uses the latest handleSend.
     const executePlanFor = (messageId: string) => async (plan: ParsedPlan, _opts: { trust: boolean }) => {
         const prompt = planToExecutionPrompt(plan);
+        // Snapshot existing IDs so we only count proposals created by this execution.
+        const existingIds = new Set(proposalsRef.current.map(p => p.id));
         patchMessageMeta(messageId, planMetaStart());
         const result = await handleSend({ text: prompt, hiddenUserMessage: true, forceMode: 'normal' });
         if (result.ok) {
-            // Count only approved/done steps; rejected ones don't count as executed.
-            const approvedCount = proposalsRef.current.filter(p => p.status === 'approved' || p.status === 'done').length;
+            // Count only approved/done steps produced during this execution.
+            const approvedCount = proposalsRef.current.filter(
+                p => !existingIds.has(p.id) && (p.status === 'approved' || p.status === 'done'),
+            ).length;
             const stepCount = approvedCount || plan.steps.length;
             patchMessageMeta(messageId, planMetaSuccess(stepCount, Date.now()));
         } else {
@@ -1452,7 +1472,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                         />
                                     ) : (
                                         <button
-                                            onClick={() => setActiveChannelId(ch.id)}
+                                            onClick={() => switchChannel(ch.id)}
                                             onDoubleClick={() => { setRenamingChannelId(ch.id); setRenameDraft(ch.label); }}
                                             className="max-w-[100px] truncate"
                                             title={`${ch.label} (double-click to rename)`}

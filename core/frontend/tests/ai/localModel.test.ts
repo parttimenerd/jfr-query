@@ -103,6 +103,28 @@ describe('LocalAiProvider streaming — cell fence detection', () => {
         expect(parsed?.type).toBe('table');
         expect(parsed?.sql).toBe('SELECT 1 AS n');
     });
+
+    it('parseCellFence handles multi-line sql via indented block', () => {
+        const inner = 'type=chart\nplot: LINE_CHART(x: "t", y: ["v"])\nsql:\n  SELECT t, v\n  FROM foo\n  ORDER BY t';
+        const parsed = parseCellFence(inner);
+        expect(parsed?.type).toBe('chart');
+        expect(parsed?.sql).toContain('SELECT t, v');
+        expect(parsed?.sql).toContain('FROM foo');
+        expect(parsed?.plotConfig).toBe('LINE_CHART(x: "t", y: ["v"])');
+    });
+
+    it('parseCellFence handles ```sql fence inside cell', () => {
+        const inner = 'type=table\nsql:\n```sql\nSELECT * FROM bar\n```';
+        const parsed = parseCellFence(inner);
+        expect(parsed?.type).toBe('table');
+        expect(parsed?.sql).toBe('SELECT * FROM bar');
+    });
+
+    it('splitCellFences matches :::cell with no space (newline only)', () => {
+        const text = 'text\n:::cell\ntype=table\nsql: SELECT 1\n:::\nend';
+        const parts = splitCellFences(text);
+        expect(parts.filter(p => p.kind === 'cell')).toHaveLength(1);
+    });
 });
 
 describe('LocalAiProvider — 503 fallback detection', () => {

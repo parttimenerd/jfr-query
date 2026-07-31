@@ -17,24 +17,49 @@ export type FencePart =
     | { kind: 'text'; content: string }
     | { kind: 'cell'; content: string };
 
-/** Parse the inner content of a :::cell fence (everything between ::: markers). */
+/** Parse the inner content of a :::cell fence (everything between ::: markers).
+ *  Supports multi-line SQL via an indented block after `sql:` or a ```sql fence.
+ */
 export function parseCellFence(inner: string): ParsedCellFence | null {
-    const lines = inner.split('\n');
     const VALID_TYPES = new Set(['chart', 'table', 'flamegraph', 'sql']);
     let type: CellFenceType | null = null;
     let sql: string | null = null;
     let plotConfig: string | undefined;
 
-    for (const line of lines) {
-        const trimmed = line.trim();
+    // Try ```sql ... ``` block first (model sometimes emits this)
+    const sqlFence = inner.match(/```sql\s*\n([\s\S]*?)```/i);
+    if (sqlFence) sql = sqlFence[1].trim();
+
+    const lines = inner.split('\n');
+    let i = 0;
+    while (i < lines.length) {
+        const trimmed = lines[i].trim();
         if (trimmed.startsWith('type=')) {
             const raw = trimmed.slice('type='.length).trim();
             if (VALID_TYPES.has(raw)) type = raw as CellFenceType;
-        } else if (trimmed.startsWith('sql:')) {
-            sql = trimmed.slice('sql:'.length).trim(); // sql must be on a single line in the fence
         } else if (trimmed.startsWith('plot:')) {
             plotConfig = trimmed.slice('plot:'.length).trim();
+        } else if (trimmed.startsWith('sql:')) {
+            const inline = trimmed.slice('sql:'.length).trim();
+            if (inline) {
+                // Inline single-line SQL
+                if (!sql) sql = inline;
+            } else {
+                // Multi-line: collect indented lines until a non-indented line or EOF
+                const sqlLines: string[] = [];
+                i++;
+                while (i < lines.length) {
+                    const l = lines[i];
+                    // Stop at the next key= / plot: / type= line or a blank+non-indented line
+                    if (/^\s*(?:type=|sql:|plot:)/.test(l)) break;
+                    sqlLines.push(l.replace(/^  /, '')); // strip leading 2-space indent
+                    i++;
+                }
+                if (!sql) sql = sqlLines.join('\n').trim();
+                continue; // i already advanced
+            }
         }
+        i++;
     }
 
     if (!type || !sql) return null;
@@ -43,7 +68,7 @@ export function parseCellFence(inner: string): ParsedCellFence | null {
 
 /** Split a markdown string into alternating text and cell-fence parts. */
 export function splitCellFences(text: string): FencePart[] {
-    const FENCE_RE = /:::cell[ \t]+([\s\S]*?):::/g;
+    const FENCE_RE = /:::cell[ \t\n]+([\s\S]*?):::/g;
     const parts: FencePart[] = [];
     let lastIndex = 0;
     let match: RegExpExecArray | null;
@@ -99,7 +124,7 @@ export function ChatEmbeddedCell({ type, sql, plotConfig, onAddToNotebook, onErr
                 setState({ status: 'error', message });
                 onError?.(message, sql, type, plotConfig);
             });
-    }, [sql, query]);
+    }, [sql, query, retryCount]);
 
     const truncatedSql = sql.length > 60 ? sql.slice(0, 60) + '…' : sql;
 
@@ -172,7 +197,12 @@ function ChartEmbed({ data, plotConfig }: { data: any[]; plotConfig: string }) {
 }
 
 function FlameEmbed({ data }: { data: any[] }) {
-    const defaultConfig = 'FLAMEGRAPH(frames: "frame", value: "value")';
+    // Detect frame (string) and value (numeric) columns from actual data.
+    const sample = data[0] ?? {};
+    const cols = Object.keys(sample);
+    const frameCol = cols.find(c => typeof sample[c] === 'string') ?? cols[0] ?? 'frame';
+    const valueCol = cols.find(c => typeof sample[c] === 'number') ?? cols[1] ?? 'value';
+    const defaultConfig = `FLAMEGRAPH(frames: "${frameCol}", value: "${valueCol}")`;
     try {
         const config = flameGraphPlot.parseConfig(defaultConfig, data);
         const FlameComponent = flameGraphPlot.component;
