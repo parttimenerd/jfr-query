@@ -28,7 +28,8 @@ import {
 import { parseSlashCommand, commandCompletions, STATIC_COMMANDS } from '../utils/slashCommands';
 import { SkillContext } from '../context/SkillContext';
 import { builtinSkillManifest } from '../data/skills/skills-manifest';
-import { renderMarkdown } from './chat/ChatMarkdownView';
+import { ChatMarkdownView, renderMarkdown } from './chat/ChatMarkdownView';
+import type { CellFenceType } from './chat/ChatEmbeddedCell';
 import { BtwSuggestionCard } from './chat/BtwSuggestionCard';
 import { PromptSuggester, type PromptSuggestion } from '../services/ml/PromptSuggester';
 import { ChatPlanCard } from './chat/ChatPlanCard';
@@ -1120,6 +1121,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
 
     const getCellContent = useCallback((cellId: string) => cellById.get(cellId)?.content, [cellById]);
 
+    const handleAddCellFromFence = useCallback((sql: string, type: CellFenceType, plotConfig?: string) => {
+        const title = type === 'flamegraph' ? 'Flame Graph' : type === 'chart' ? 'Chart' : 'Query Result';
+        onAddCellFromAI(sql, plotConfig ?? '', title, '');
+    }, [onAddCellFromAI]);
+
     /** Apply a meta patch to a specific message by id (no-op if not found). */
     const patchMessageMeta = useCallback((id: string, patch: Partial<ChatMessageMeta>) => {
         setMessages(prev => prev.map(m => m.id === id ? { ...m, meta: { ...(m.meta ?? {}), ...patch } } : m));
@@ -1310,7 +1316,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                         <div className={`flex ${msg.sender === MessageSender.User ? 'justify-end' : 'justify-start'}`}>
                                             <div className={`relative group/msg max-w-[85%] rounded-lg p-3 ${msg.sender === MessageSender.User ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
                                                 <div className="text-sm leading-relaxed">
-                                                    {msg.sender === MessageSender.AI ? renderMarkdown(msg.text, onNavigateRef) : <span className="whitespace-pre-wrap">{msg.text}</span>}
+                                                {msg.sender === MessageSender.AI ? <ChatMarkdownView text={msg.text} onNavigateRef={onNavigateRef} onAddToNotebook={handleAddCellFromFence} /> : <span className="whitespace-pre-wrap">{msg.text}</span>}
                                                 </div>
                                                 {msg.meta?.plan && (<ChatPlanCard plan={msg.meta.plan} meta={msg.meta} getCellContent={getCellContent} onExecute={executePlanFor(msg.id)} onDiscard={discardPlanFor(msg.id)}/>)}
                                                 {msg.code && <ChatPanelCodeBlock code={msg.code}/>}
