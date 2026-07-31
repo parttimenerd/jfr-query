@@ -105,9 +105,9 @@ export function structuralBoostDelta(input: RerankInput): number {
     const clause = ctx.enclosingClause;
     let d = 0;
 
-    // In WHERE, detect value position (cursor after = / LIKE / BETWEEN / IS).
+    // In WHERE/HAVING, detect value position (cursor after = / LIKE / BETWEEN / IS).
     // When in value pos, suppress ALL column boosts — the user expects a literal.
-    const inValuePos = clause === 'where' && AFTER_EQ_RE.test(ctx.upTo.slice(-80));
+    const inValuePos = (clause === 'where' || clause === 'having') && AFTER_EQ_RE.test(ctx.upTo.slice(-80));
 
     // Clause-shape match.
     if (clause && COLUMN_CONTEXT_CLAUSES.has(clause)) {
