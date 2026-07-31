@@ -133,3 +133,55 @@ describe('ChatEmbeddedCell', () => {
         await waitFor(() => expect(container.textContent).toContain('Table not found'));
     });
 });
+
+import { ChatMarkdownView } from '../../components/chat/ChatMarkdownView';
+
+describe('ChatMarkdownView with cell fences', () => {
+    beforeEach(() => {
+        mockQuery.mockResolvedValue([{ n: 1 }]);
+    });
+
+    it('renders plain text without cell fences unchanged', () => {
+        const { container } = render(
+            React.createElement(ChatMarkdownView, { text: 'Hello world' }),
+        );
+        expect(container.textContent).toContain('Hello world');
+    });
+
+    it('renders a :::cell fence as ChatEmbeddedCell (shows TABLE badge)', async () => {
+        const text = 'Here:\n:::cell type=table\nsql: SELECT 1\n:::\nDone.';
+        const { container } = render(
+            React.createElement(ChatMarkdownView, { text }),
+            { wrapper },
+        );
+        await waitFor(() => expect(container.textContent).toContain('TABLE'));
+    });
+
+    it('calls onAddToNotebook with correct args when button clicked', async () => {
+        const onAdd = vi.fn();
+        const text = ':::cell type=table\nsql: SELECT 42\n:::';
+        const { container } = render(
+            React.createElement(ChatMarkdownView, { text, onAddToNotebook: onAdd }),
+            { wrapper },
+        );
+        await waitFor(() => expect(container.textContent).toContain('TABLE'));
+        // Find the first button in the embedded cell area
+        const buttons = container.querySelectorAll('button');
+        const addBtn = Array.from(buttons).find(b => b.textContent?.includes('Add'));
+        if (addBtn) {
+            fireEvent.click(addBtn);
+        }
+        expect(onAdd).toHaveBeenCalledWith('SELECT 42', 'table', undefined);
+    });
+
+    it('renders text before and after a fence', async () => {
+        const text = 'Before\n:::cell type=table\nsql: SELECT 1\n:::\nAfter';
+        const { container } = render(
+            React.createElement(ChatMarkdownView, { text }),
+            { wrapper },
+        );
+        expect(container.textContent).toContain('Before');
+        expect(container.textContent).toContain('After');
+        await waitFor(() => expect(container.textContent).toContain('TABLE'));
+    });
+});

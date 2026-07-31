@@ -7,18 +7,40 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { splitCellFences, parseCellFence, ChatEmbeddedCell, type CellFenceType } from './ChatEmbeddedCell';
 
 interface ChatMarkdownViewProps {
     text: string;
     onNavigateRef?: (ref: string) => void;
+    onAddToNotebook?: (sql: string, type: CellFenceType, plotConfig?: string) => void;
     /** Extra class on the wrapper. Defaults to `text-sm leading-relaxed`. */
     className?: string;
 }
 
-export const ChatMarkdownView: React.FC<ChatMarkdownViewProps> = ({ text, onNavigateRef, className }) => {
+export const ChatMarkdownView: React.FC<ChatMarkdownViewProps> = ({ text, onNavigateRef, onAddToNotebook, className }) => {
+    const parts = splitCellFences(text);
     return (
         <div className={className ?? 'text-sm leading-relaxed'}>
-            {renderMarkdown(text, onNavigateRef)}
+            {parts.map((part, i) => {
+                if (part.kind === 'text') {
+                    return (
+                        <React.Fragment key={i}>
+                            {renderMarkdown(part.content, onNavigateRef)}
+                        </React.Fragment>
+                    );
+                }
+                const parsed = parseCellFence(part.content);
+                if (!parsed) return null;
+                return (
+                    <ChatEmbeddedCell
+                        key={i}
+                        type={parsed.type}
+                        sql={parsed.sql}
+                        plotConfig={parsed.plotConfig}
+                        onAddToNotebook={() => onAddToNotebook?.(parsed.sql, parsed.type, parsed.plotConfig)}
+                    />
+                );
+            })}
         </div>
     );
 };
