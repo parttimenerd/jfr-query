@@ -1159,12 +1159,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     };
 
     return (
-        <div className="w-full h-full flex flex-col bg-gray-900 border-l border-gray-700">
+        <div className="w-full h-full flex flex-col bg-[#0f1117] border-l border-gray-800">
             {/* ── Header ── */}
-            <div className="p-3 border-b border-gray-700 flex-shrink-0 flex flex-col gap-2">
+            <div className="p-3 border-b border-[#1e2433] flex-shrink-0 flex flex-col gap-2">
                 <div className="flex justify-between items-center gap-2">
                     <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2"><SparklesIcon className="w-5 h-5 text-yellow-400"/>AI Assistant</h2>
                     <div className="flex items-center gap-1">
+                        <span className="bg-[#1e2433] text-cyan-400 text-[10px] px-2 py-0.5 rounded-full border border-cyan-400/20">
+                            {settings.aiProvider} ✦ {settings.localBaseUrl ? 'local' : 'cloud'}
+                        </span>
                         <button onClick={() => addChannel()} title="New chat channel" aria-label="New chat channel" className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-md"><PlusIcon className="w-4 h-4"/></button>
                         <button onClick={handleReset} title="Reset Conversation" aria-label="Reset Conversation" className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-md"><ArrowCounterclockwiseIcon className="w-4 h-4"/></button>
                     </div>
@@ -1313,8 +1316,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                 const originalIdx = messages.indexOf(msg);
                                 return (
                                     <React.Fragment key={msg.id}>
-                                        <div className={`flex ${msg.sender === MessageSender.User ? 'justify-end' : 'justify-start'}`}>
-                                            <div className={`relative group/msg max-w-[85%] rounded-lg p-3 ${msg.sender === MessageSender.User ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
+                                        <div className={`flex ${msg.sender === MessageSender.User ? 'justify-end' : 'justify-start gap-2 items-start'}`}>
+                                            {msg.sender === MessageSender.AI && (
+                                                <div className="w-[22px] h-[22px] rounded-full bg-gradient-to-br from-violet-600 to-cyan-400 flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white mt-0.5">
+                                                    AI
+                                                </div>
+                                            )}
+                                            <div className={`relative group/msg max-w-[85%] p-3 ${
+                                                msg.sender === MessageSender.User
+                                                    ? 'rounded-tl-xl rounded-tr-sm rounded-br-xl rounded-bl-xl bg-[#1e3a4a] border border-cyan-700/30 text-slate-100'
+                                                    : 'rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-xl bg-[#161b27] border border-[#1e2d3d] text-slate-300'
+                                            }`}>
                                                 <div className="text-sm leading-relaxed">
                                                 {msg.sender === MessageSender.AI ? <ChatMarkdownView text={msg.text} onNavigateRef={onNavigateRef} onAddToNotebook={handleAddCellFromFence} /> : <span className="whitespace-pre-wrap">{msg.text}</span>}
                                                 </div>
@@ -1619,7 +1631,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         <p className="px-3 py-0.5 text-[10px] text-gray-600">Tab/Enter to insert · Esc to dismiss</p>
                     </div>
                 )}
-                <div className="relative">
+                <div className="relative bg-[#161b27] border border-[#1e2d3d] rounded-xl px-3 py-2">
                     <textarea
                         ref={inputRef}
                         rows={1}
@@ -1685,7 +1697,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         }}
                         placeholder={`Ask for a query… or type / for commands, @ to mention a cell`}
                         aria-label="Chat message"
-                        className="w-full bg-gray-800 border border-gray-600 rounded-lg py-2 pl-4 pr-20 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200 resize-none overflow-hidden"
+                        className="w-full bg-transparent border-none outline-none text-slate-200 text-sm resize-none overflow-hidden placeholder-gray-600"
                         style={{ minHeight: '38px' }}
                         disabled={isLoading || !schema}
                     />
