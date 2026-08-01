@@ -125,6 +125,13 @@ describe('formatToolHeader', () => {
         expect(out).toContain('...');
     });
 
+    it('does not truncate short SQL in runQuery', () => {
+        const sql = 'SELECT 1';
+        const out = formatToolHeader('runQuery', { sql });
+        expect(out).toBe('runQuery("SELECT 1")');
+        expect(out).not.toContain('...');
+    });
+
     it('emits the addCell type', () => {
         expect(formatToolHeader('addCell', { type: 'plot', content: 'X' })).toBe('Add plot cell to notebook');
     });
@@ -135,6 +142,34 @@ describe('formatToolHeader', () => {
 
     it('falls back to <name>(...) for unknown tools', () => {
         expect(formatToolHeader('mysteryTool', { foo: 1 })).toBe('mysteryTool(...)');
+    });
+
+    it('renders editCell as "Edit cell"', () => {
+        expect(formatToolHeader('editCell', { cellId: 'c1', content: 'new' })).toBe('Edit cell');
+    });
+
+    it('renders deleteCell as "Delete cell"', () => {
+        expect(formatToolHeader('deleteCell', { cellId: 'c1' })).toBe('Delete cell');
+    });
+
+    it('renders applyPlot as "Apply plot config"', () => {
+        expect(formatToolHeader('applyPlot', { cellId: 'c1', plotConfig: 'BAR_CHART()' })).toBe('Apply plot config');
+    });
+
+    it('renders moveCell as "Move cell"', () => {
+        expect(formatToolHeader('moveCell', { cellId: 'c1', direction: 'up' })).toBe('Move cell');
+    });
+
+    it('renders sampleRows with table name', () => {
+        expect(formatToolHeader('sampleRows', { name: 'events' })).toBe('sampleRows("events")');
+    });
+
+    it('returns name() when args is null', () => {
+        expect(formatToolHeader('runQuery', null)).toBe('runQuery()');
+    });
+
+    it('returns name() when args is a string', () => {
+        expect(formatToolHeader('runQuery', 'sql')).toBe('runQuery()');
     });
 });
 
