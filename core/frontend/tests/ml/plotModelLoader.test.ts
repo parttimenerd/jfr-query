@@ -6,7 +6,7 @@ import {
     IN_TREE_ARTIFACT_DIR,
     IN_TREE_EVAL_PATH,
     type PlotEvalMetrics,
-} from '../../services/ml/PlotModelLoader';
+} from '../../services/ml/plotModelLoader';
 import { CANDIDATES } from '../../services/ml/candidates';
 
 // We mock 'node:fs/promises' so the loader doesn't touch disk in tests.

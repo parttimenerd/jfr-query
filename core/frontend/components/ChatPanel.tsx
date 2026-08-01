@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useContext, useMemo, useCallback } from 'react';
 import { aiService, providerMetadataRegistry } from '../services/AiService';
 import type { VisibilityMode, AiTier, SchemaTable } from '../services/AiService';
-import { SettingsContext } from '../context/SettingsContext';
+import { SettingsContext, type Settings } from '../context/SettingsContext';
 import { validatePlotConfig } from '../utils/plotValidator';
 import type { ChatMessage, NotebookMetadata, NotebookCellData } from '../types';
 import { MessageSender } from '../types';
@@ -216,7 +216,7 @@ export function defaultModelForProvider(provider: AiProviderType, tier: AiTier =
 export function defaultModelForProviderWithSettings(
     provider: AiProviderType,
     tier: AiTier = 'advanced',
-    settings?: { [key: string]: unknown },
+    settings?: Settings,
 ): string {
     if (settings) {
         const key = `${provider}${tier === 'basic' ? 'Basic' : tier === 'tiny' ? 'Tiny' : 'Good'}Model`;

@@ -15,6 +15,12 @@ const W: Weights = {
     isKeyword: 0.2,
     isColumn: 0.5,
     isFunction: 0.1,
+    prefixDepth: 0.5,
+    jfrHint: 0.3,
+    exactMatch: 1.5,
+    isTable: 0.2,
+    aggContext: 0.2,
+    inValuePos: 0,
 };
 
 describe('extractCursorWord', () => {
