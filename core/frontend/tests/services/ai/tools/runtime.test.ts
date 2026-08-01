@@ -610,3 +610,56 @@ describe('executeTool — suggestPlot', () => {
         if (!result.ok) expect(result.error).toContain('$ai_providers');
     });
 });
+
+// ── query_data (legacy alias) ─────────────────────────────────────────────────
+
+describe('executeTool — query_data (legacy alias)', () => {
+    it('runs the query and returns columns + rows', async () => {
+        const mockRows = [{ id: 1 }, { id: 2 }];
+        const deps = mockDeps({
+            duckdbQuery: vi.fn(async () => ({
+                columns: [{ name: 'id', type: 'INTEGER' }],
+                rows: mockRows,
+            })),
+        });
+        const result = await executeTool(
+            'query_data',
+            { sql: 'SELECT id FROM events', reason: 'find ids', tables: ['events'] },
+            deps,
+        );
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+            expect(result.data.columns).toEqual(['id']);
+            expect(result.data.rows).toEqual(mockRows);
+        }
+    });
+
+    it('returns ok:false when duckdbQuery throws', async () => {
+        const deps = mockDeps({
+            duckdbQuery: vi.fn(async () => { throw new Error('table not found'); }),
+        });
+        const result = await executeTool(
+            'query_data',
+            { sql: 'SELECT 1', reason: 'test', tables: [] },
+            deps,
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('table not found');
+    });
+
+    it('calls checkQueryPermission when provided', async () => {
+        const checkQueryPermission = vi.fn(async () => {});
+        const deps = mockDeps({
+            checkQueryPermission,
+            duckdbQuery: vi.fn(async () => ({ columns: [], rows: [] })),
+        });
+        await executeTool(
+            'query_data',
+            { sql: 'SELECT 1', reason: 'test', tables: ['t'] },
+            deps,
+        );
+        expect(checkQueryPermission).toHaveBeenCalledWith(
+            expect.objectContaining({ sql: 'SELECT 1', tables: ['t'] }),
+        );
+    });
+});

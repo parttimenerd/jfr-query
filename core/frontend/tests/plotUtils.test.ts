@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildParserSpec, generateSignature, findColumn, findColumns, getTimeValue, buildSmartTemplate } from '../utils/plotUtils';
+import { buildParserSpec, generateSignature, findColumn, findColumns, getTimeValue, buildSmartTemplate, getPaletteColors, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds } from '../utils/plotUtils';
 import type { PlotParameter } from '../components/plots/plotTypes';
 
 // ---------------------------------------------------------------------------
@@ -366,5 +366,117 @@ describe('buildSmartTemplate', () => {
 
     it('returns null for unknown plot type', () => {
         expect(buildSmartTemplate('UNKNOWN_PLOT', cols, sampleRow)).toBeNull();
+    });
+});
+
+// ── getPaletteColors ──────────────────────────────────────────────────────────
+
+const fallbackColors = ['#aaa', '#bbb', '#ccc'];
+
+describe('getPaletteColors', () => {
+    it('returns fallback when palette is undefined', () => {
+        expect(getPaletteColors(undefined, fallbackColors)).toBe(fallbackColors);
+    });
+
+    it('returns fallback when palette name is unrecognized', () => {
+        expect(getPaletteColors('nonexistent', fallbackColors)).toBe(fallbackColors);
+    });
+
+    it('returns category10 palette colors', () => {
+        const result = getPaletteColors('category10', fallbackColors);
+        expect(result.length).toBe(10);
+        expect(result).not.toBe(fallbackColors);
+    });
+
+    it('is case-insensitive for palette names', () => {
+        const lower = getPaletteColors('tableau10', fallbackColors);
+        const upper = getPaletteColors('TABLEAU10', fallbackColors);
+        expect(lower).toEqual(upper);
+    });
+
+    it('returns all named palettes without fallback', () => {
+        for (const name of ['category10', 'tableau10', 'pastel1', 'dark2', 'set2']) {
+            const result = getPaletteColors(name, fallbackColors);
+            expect(result).not.toBe(fallbackColors);
+            expect(result.length).toBeGreaterThan(0);
+        }
+    });
+});
+
+// ── isDurationColumnName ──────────────────────────────────────────────────────
+
+describe('isDurationColumnName', () => {
+    it('returns true for "duration"', () => expect(isDurationColumnName('duration')).toBe(true));
+    it('returns true for "pause_ms" (contains "pause")', () => expect(isDurationColumnName('pause_ms')).toBe(true));
+    it('returns true for "latency"', () => expect(isDurationColumnName('latency')).toBe(true));
+    it('returns true for "_ns" suffix', () => expect(isDurationColumnName('cpu_ns')).toBe(true));
+    it('returns true for "elapsed"', () => expect(isDurationColumnName('elapsed')).toBe(true));
+    it('returns false for "count"', () => expect(isDurationColumnName('count')).toBe(false));
+    it('returns false for "name"', () => expect(isDurationColumnName('name')).toBe(false));
+    it('is case-insensitive', () => expect(isDurationColumnName('Latency')).toBe(true));
+});
+
+// ── formatDurationNs ──────────────────────────────────────────────────────────
+
+describe('formatDurationNs', () => {
+    it('formats nanoseconds below 1µs', () => {
+        expect(formatDurationNs(500)).toBe('500ns');
+    });
+
+    it('formats microseconds (≥1000ns, <1ms)', () => {
+        expect(formatDurationNs(1500)).toBe('1.5µs');
+    });
+
+    it('formats milliseconds (≥1ms, <1s)', () => {
+        expect(formatDurationNs(2_500_000)).toBe('2.5ms');
+    });
+
+    it('formats seconds (≥1s)', () => {
+        expect(formatDurationNs(1_500_000_000)).toBe('1.5s');
+    });
+
+    it('returns non-finite input as string', () => {
+        expect(formatDurationNs(NaN)).toBe('NaN');
+        expect(formatDurationNs(Infinity)).toBe('Infinity');
+    });
+
+    it('handles string numbers', () => {
+        expect(formatDurationNs('1000000')).toBe('1ms');
+    });
+
+    it('handles zero', () => {
+        expect(formatDurationNs(0)).toBe('0ns');
+    });
+});
+
+// ── sampleLooksLikeNanoseconds ────────────────────────────────────────────────
+
+describe('sampleLooksLikeNanoseconds', () => {
+    it('returns false for empty data', () => {
+        expect(sampleLooksLikeNanoseconds([], ['duration'])).toBe(false);
+    });
+
+    it('returns false for empty cols', () => {
+        expect(sampleLooksLikeNanoseconds([{ duration: 2e9 }], [])).toBe(false);
+    });
+
+    it('returns true when values are > 1ms in nanoseconds', () => {
+        const data = [{ duration: 5_000_000 }]; // 5ms in ns
+        expect(sampleLooksLikeNanoseconds(data, ['duration'])).toBe(true);
+    });
+
+    it('returns false when values are < 1ms (likely already ms)', () => {
+        const data = [{ duration: 5 }]; // 5ms in ms — below 1e6 threshold
+        expect(sampleLooksLikeNanoseconds(data, ['duration'])).toBe(false);
+    });
+
+    it('returns false when col values are null/undefined', () => {
+        const data = [{ duration: null }];
+        expect(sampleLooksLikeNanoseconds(data, ['duration'])).toBe(false);
+    });
+
+    it('checks all listed columns — returns false if any is small', () => {
+        const data = [{ big: 5_000_000, small: 5 }];
+        expect(sampleLooksLikeNanoseconds(data, ['big', 'small'])).toBe(false);
     });
 });
