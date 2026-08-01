@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeNode, makeHole, walk, cursorNode, findEnclosing, findEnclosingAny, markCursorPath, type Node } from '../../components/editor/sql/ast';
+import { makeNode, makeHole, walk, cursorNode, findEnclosing, findEnclosingAny, markCursorPath, parseDollar, isBrushRef, isTupleIndexRef, type Node } from '../../components/editor/sql/ast';
 import { tokenizeSignificant } from '../../components/editor/sql/tokens';
 
 function leaf(kind: Node['kind'], from: number, to: number, source: string): Node {
@@ -161,5 +161,129 @@ describe('findEnclosing', () => {
         const q = makeNode('query', null, [where], src);
         expect(findEnclosingAny(id, ['fromClause', 'whereClause'])).toBe(where);
         expect(findEnclosingAny(id, ['groupByClause', 'query'])).toBe(q);
+    });
+});
+
+// ─── parseDollar ──────────────────────────────────────────────────────────────
+
+describe('parseDollar', () => {
+    it('classifies a simple $name as variableRef', () => {
+        const r = parseDollar('$limit');
+        expect(r.kind).toBe('variableRef');
+        expect(r.name).toBe('limit');
+        expect(r.path).toEqual([]);
+        expect(r.raw).toBe('$limit');
+    });
+
+    it('classifies $$ as doubleDollarRef with empty name', () => {
+        const r = parseDollar('$$');
+        expect(r.kind).toBe('doubleDollarRef');
+        expect(r.name).toBe('');
+    });
+
+    it('classifies $$name as doubleDollarRef', () => {
+        const r = parseDollar('$$threshold_ms');
+        expect(r.kind).toBe('doubleDollarRef');
+        expect(r.name).toBe('threshold_ms');
+        expect(r.path).toEqual([]);
+    });
+
+    it('strips trailing dot from $$name.', () => {
+        const r = parseDollar('$$foo.');
+        expect(r.kind).toBe('doubleDollarRef');
+        expect(r.name).toBe('foo');
+    });
+
+    it('classifies $cell.brush as crossCellRef', () => {
+        const r = parseDollar('$plot.brush');
+        expect(r.kind).toBe('crossCellRef');
+        expect(r.name).toBe('plot');
+        expect(r.path).toEqual(['brush']);
+    });
+
+    it('classifies multi-segment path', () => {
+        const r = parseDollar('$gc.range.0');
+        expect(r.kind).toBe('crossCellRef');
+        expect(r.name).toBe('gc');
+        expect(r.path).toEqual(['range', '0']);
+    });
+
+    it('classifies $name.bar as crossCellRef', () => {
+        const r = parseDollar('$Overview.start');
+        expect(r.kind).toBe('crossCellRef');
+        expect(r.name).toBe('Overview');
+        expect(r.path).toEqual(['start']);
+    });
+
+    it('handles just $ (bare dollar)', () => {
+        const r = parseDollar('$');
+        expect(r.kind).toBe('variableRef');
+        expect(r.name).toBe('');
+    });
+
+    it('handles $name. (trailing dot, no path)', () => {
+        const r = parseDollar('$foo.');
+        // dot present → crossCellRef with empty path filtered out
+        expect(r.kind).toBe('crossCellRef');
+        expect(r.name).toBe('foo');
+        expect(r.path).toEqual([]);
+    });
+
+    it('non-dollar string is treated as variableRef with name=raw', () => {
+        const r = parseDollar('plain');
+        expect(r.kind).toBe('variableRef');
+        expect(r.name).toBe('plain');
+    });
+});
+
+// ─── isBrushRef ───────────────────────────────────────────────────────────────
+
+describe('isBrushRef', () => {
+    it('returns true for $plot.brush', () => {
+        expect(isBrushRef(parseDollar('$plot.brush'))).toBe(true);
+    });
+
+    it('returns true for multi-segment path starting with brush', () => {
+        expect(isBrushRef(parseDollar('$plot.brush.lo'))).toBe(true);
+    });
+
+    it('returns false for $limit (variableRef)', () => {
+        expect(isBrushRef(parseDollar('$limit'))).toBe(false);
+    });
+
+    it('returns false for $cell.start (not brush)', () => {
+        expect(isBrushRef(parseDollar('$cell.start'))).toBe(false);
+    });
+
+    it('returns false for $$brushy (doubleDollarRef)', () => {
+        expect(isBrushRef(parseDollar('$$brush'))).toBe(false);
+    });
+});
+
+// ─── isTupleIndexRef ──────────────────────────────────────────────────────────
+
+describe('isTupleIndexRef', () => {
+    it('returns true when last path segment is a digit', () => {
+        expect(isTupleIndexRef(parseDollar('$gc.range.0'))).toBe(true);
+    });
+
+    it('returns true for multi-digit index', () => {
+        expect(isTupleIndexRef(parseDollar('$gc.range.12'))).toBe(true);
+    });
+
+    it('returns false when last segment is not numeric', () => {
+        expect(isTupleIndexRef(parseDollar('$plot.brush'))).toBe(false);
+    });
+
+    it('returns false for variableRef', () => {
+        expect(isTupleIndexRef(parseDollar('$limit'))).toBe(false);
+    });
+
+    it('returns false for doubleDollarRef', () => {
+        expect(isTupleIndexRef(parseDollar('$$x'))).toBe(false);
+    });
+
+    it('returns false for crossCellRef with no path', () => {
+        expect(isTupleIndexRef(parseDollar('$foo.'))).toBe(false);
     });
 });
