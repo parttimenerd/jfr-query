@@ -116,26 +116,7 @@ export interface InlineChatSnapshot {
 }
 
 const initialConversation: ChatMessage[] = [
-    { id: '1', sender: MessageSender.AI, text: `Hello! I can help you analyze your JFR recording. Here are some things you can ask:
-
-**GC & memory**
-- *"Show GC pause time by cause"*
-- *"Plot heap usage over time"*
-- *"What is my allocation rate?"*
-
-**CPU & hotspots**
-- *"Show a CPU flame graph"*
-- *"Which methods are consuming the most CPU?"*
-
-**Threads & locks**
-- *"Show thread contention hotspots"*
-- *"Are there any virtual thread pinning events?"*
-
-**Getting started**
-- *"What JFR events are in this recording?"*
-- *"Summarize this recording in a few sentences"*
-
-Type \`/help\` to see available commands, or just ask a question.` },
+    { id: '1', sender: MessageSender.AI, text: `Hello! I can help you analyze your JFR recording — writing SQL queries, suggesting plots, and explaining results.\n\nType \`/help\` to see available commands, or pick a topic below.` },
 ];
 
 /** A named conversation channel shown as a tab in the panel header. */
@@ -541,6 +522,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         sessionQueryPermRef.current = 'ask';
         setShowQueryPermBanner(false);
         sessionQueryPermResolverRef.current = null;
+        setLastRouteUsed(null);
     };
 
     /**
@@ -1068,9 +1050,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         approveAllReadsRef.current = false;
         approvalResolvers.current.clear();
 
-        // Browser provider: use streaming browser inference instead of tool-calling path.
-        // Force routingPreference to 'browser' so AiService routes to the in-browser model.
-        const effectiveRouting = chatProvider === 'browser' ? 'browser' : sessionRouting;
+        // Browser-only provider can't do chat — give an actionable message and bail.
+        if (chatProvider === 'browser') {
+            setIsLoading(false);
+            setMessages(prev => [...prev, {
+                id: (Date.now() + 1).toString(),
+                sender: MessageSender.AI,
+                text: `AI chat requires a configured provider. To get started:\n\n• **Local (free, offline)** — install [Ollama](https://ollama.com) and add \`http://localhost:11434\` in ⚙ Settings → Local model URL\n• **Anthropic Claude** — add your API key in ⚙ Settings\n• **Google Gemini** — add your API key in ⚙ Settings\n\nThe "browser" provider handles SQL autocomplete and plot suggestions only.`,
+            }]);
+            return { ok: true };
+        }
+
+        // Route: prefer local when local provider is configured.
+        const effectiveRouting = sessionRouting;
 
         // Build tool message history. Trim large SQL result blobs from AI messages
         // so they don't bloat context on every turn — the model can re-run the query.
@@ -1217,7 +1209,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
             }
         } finally {
             // Update route badge to reflect what was actually used this turn.
-            setLastRouteUsed(settings.localBaseUrl && settings.aiProvider === 'local' && effectiveRouting !== 'cloud' ? 'local' : 'cloud');
+            setLastRouteUsed(
+                settings.aiProvider === 'browser' ? null :
+                settings.localBaseUrl && settings.aiProvider === 'local' && effectiveRouting !== 'cloud' ? 'local' : 'cloud'
+            );
             setStreamingText(null);
             const trimmed = assistantBuf.trim();
             if (trimmed && !cancelledRef.current) {
@@ -1564,6 +1559,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     </div>
                 )}
             </div>
+            {/* ── Messages + Input (hidden for browser-only provider) ── */}
+            {chatProvider === 'browser' ? (
+                <div className="flex-grow flex flex-col items-center justify-center p-6 text-center gap-3">
+                    <p className="text-sm text-gray-400">Chat requires a configured AI provider.</p>
+                    <p className="text-xs text-gray-600">Open <strong className="text-gray-500">⚙ Settings</strong> to add an Anthropic, Google, or local Ollama key.</p>
+                </div>
+            ) : (<>
             {/* ── Messages ── */}
             <div className="flex-grow p-4 overflow-y-auto space-y-4">
                 {/* "Add to Notebook" button: legacy non-tool-calling AI path returns
@@ -1574,12 +1576,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     const visibleMsgs = messages.filter(m => !m.hidden);
                     const onlyGreeting = visibleMsgs.length === 1 && visibleMsgs[0].id === '1';
                     const lastUserIdx = [...visibleMsgs].map((m, i) => m.sender === MessageSender.User ? i : -1).filter(i => i !== -1).pop() ?? -1;
-                    const QUICK_STARTS = [
-                        'What GC events are in this recording?',
-                        'Show me the longest GC pauses',
-                        'Which threads are using the most CPU?',
-                        'Summarize memory allocation hotspots',
+                    // Data-aware starters: pick up to 4 based on tables present
+                    const tableNames = new Set((schema?.tables ?? []).concat(schema?.views ?? []).map(t => t.name.toLowerCase()));
+                    const ALL_STARTERS = [
+                        { match: (t: Set<string>) => t.has('garbagecollection') || t.has('gcphasepause'), label: '📈 GC pauses', prompt: 'Show me GC pause time by cause, the longest pauses, and heap usage before and after each collection.' },
+                        { match: (t: Set<string>) => t.has('executionsample') || t.has('cpuload'), label: '🔥 CPU hotspots', prompt: 'Which methods are consuming the most CPU? Show a top-methods breakdown.' },
+                        { match: (t: Set<string>) => t.has('objectallocationinnewtlab') || t.has('objectallocationoutsidetlab') || t.has('objectallocationsample'), label: '💾 Allocation hotspots', prompt: 'Show the top allocation sites by class — which code paths are allocating the most heap?' },
+                        { match: (t: Set<string>) => t.has('javamonitorenter') || t.has('threadpark') || t.has('javasynchronizedmonitorenter'), label: '🔒 Thread contention', prompt: 'Show me the top monitor contention hotspots — which locks are blocking threads the most?' },
+                        { match: (t: Set<string>) => t.has('fileread') || t.has('filewrite') || t.has('socketread') || t.has('socketwrite'), label: '🌐 I/O latency', prompt: 'Show file and socket I/O latency, the slowest operations, and total blocking time.' },
+                        { match: (t: Set<string>) => t.has('oldobjectsample'), label: '🔍 Memory leaks', prompt: 'Show long-lived objects by class and which allocation sites created them.' },
+                        { match: () => true, label: '🔍 What\'s in this recording?', prompt: 'What JFR event types are present? Give me a summary of what analysis is possible.' },
                     ];
+                    const starters = ALL_STARTERS.filter(s => s.match(tableNames)).slice(0, 4);
                     return (
                         <>
                             {visibleMsgs.map((msg, msgIdx) => {
@@ -1650,12 +1658,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                                     </React.Fragment>
                                 );
                             })}
-                            {onlyGreeting && !isLoading && (
+                            {onlyGreeting && !isLoading && starters.length > 0 && (
                                 <div className="flex flex-wrap gap-2 justify-center pt-1">
-                                    {QUICK_STARTS.map(q => (
-                                        <button key={q} onClick={() => handleSend({ text: q })}
+                                    {starters.map(s => (
+                                        <button key={s.label} onClick={() => handleSend({ text: s.prompt })}
                                             className="text-xs px-3 py-1.5 rounded-full bg-gray-800 border border-gray-600 text-gray-400 hover:border-cyan-600/60 hover:text-cyan-300 transition-colors">
-                                            {q}
+                                            {s.label}
                                         </button>
                                     ))}
                                 </div>
@@ -1664,8 +1672,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     );
                 })()}
                 {streamingText !== null && (
-                    <div className="flex justify-start">
-                        <div className="max-w-[85%] rounded-lg p-3 bg-gray-700 text-gray-200">
+                    <div className="flex justify-start gap-2 items-start">
+                        <div className="w-[22px] h-[22px] rounded-full bg-gradient-to-br from-violet-600 to-cyan-400 flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white mt-0.5">
+                            AI
+                        </div>
+                        <div className="max-w-[85%] rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-xl p-3 bg-[#161b27] border border-[#1e2d3d] text-slate-300">
                             <div className="text-sm leading-relaxed">{renderMarkdown(streamingText, onNavigateRef)}<span className="inline-block w-1.5 h-3.5 bg-cyan-400 ml-0.5 animate-pulse" style={{verticalAlign:'text-bottom'}}/></div>
                         </div>
                     </div>
@@ -1780,35 +1791,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                         </div>
                     </div>
                 )}
-                {isLoading && streamingText === null && (<div className="flex justify-start"><div className="bg-gray-700 rounded-lg p-3 inline-flex items-center space-x-2"><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-0"></span><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-150"></span><span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse delay-300"></span></div></div>)}
-                {/* Symptom-based starter chips — shown only on fresh conversations */}
-                {messages.length === 1 && !isLoading && (
-                    <div className="mt-2 space-y-2">
-                        <p className="text-[10px] uppercase tracking-wider text-gray-500">Start with a symptom</p>
-                        <div className="flex flex-wrap gap-1.5">
-                            {[
-                                { label: '🐢 App is slow', prompt: 'My app seems slow. Can you give me an overview of where time is being spent — GC, CPU hotspots, I/O, and thread contention?' },
-                                { label: '📈 High GC overhead', prompt: 'Show me GC pause time by cause, the longest pauses, and whether heap is growing after each GC.' },
-                                { label: '💾 Memory leak?', prompt: 'I suspect a memory leak. Show me long-lived objects by class and which allocation sites created them.' },
-                                { label: '🔥 CPU hotspot', prompt: 'Which methods are consuming the most CPU? Show a top-methods table and explain what to look for.' },
-                                { label: '🔒 Thread contention', prompt: 'Show me the top monitor contention hotspots — which locks are blocking threads the most.' },
-                                { label: '🌐 Slow I/O', prompt: 'Show me file and socket I/O latency, the slowest paths and hosts, and total blocking time by event type.' },
-                                { label: '📦 Container throttled', prompt: 'Is this JVM being CPU-throttled by container limits? Show throttle percentage over time.' },
-                                { label: '🔍 What events are here?', prompt: 'What JFR event types are present in this recording? Give me a summary of what analysis is possible.' },
-                            ].map(({ label, prompt }) => (
-                                <button
-                                    key={label}
-                                    onMouseDown={e => {
-                                        e.preventDefault();
-                                        setInput(prompt);
-                                        setTimeout(() => inputRef.current?.focus(), 0);
-                                    }}
-                                    className="inline-flex items-center px-2.5 py-1 rounded-full border border-gray-600 bg-gray-800/60 text-xs text-gray-300 hover:bg-gray-700/60 hover:border-gray-500 hover:text-gray-100 transition-colors"
-                                    title={prompt}
-                                >
-                                    {label}
-                                </button>
-                            ))}
+                {isLoading && streamingText === null && (
+                    <div className="flex justify-start gap-2 items-start">
+                        <div className="w-[22px] h-[22px] rounded-full bg-gradient-to-br from-violet-600 to-cyan-400 flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white mt-0.5">
+                            AI
+                        </div>
+                        <div className="rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-xl p-3 bg-[#161b27] border border-[#1e2d3d] inline-flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{animationDelay:'0ms'}}/>
+                            <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{animationDelay:'150ms'}}/>
+                            <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{animationDelay:'300ms'}}/>
                         </div>
                     </div>
                 )}
@@ -1994,6 +1985,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     }
                 </div>
             </div>
+            </>)}
         </div>
     );
 };

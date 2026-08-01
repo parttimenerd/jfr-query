@@ -749,7 +749,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
                         >
                             <option value="auto">Auto (local if available, else cloud tiny)</option>
-                            <option value="local-trained">Local trained model</option>
+                            <option value="local-trained">Built-in ONNX model (offline, no API key)</option>
                             <option value="cloud-tiny">Cloud tiny</option>
                             <option value="cloud-basic">Cloud basic</option>
                         </select>

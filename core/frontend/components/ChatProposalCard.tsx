@@ -36,8 +36,9 @@ export function chooseProposalKind(
     },
 ): ProposalKind {
     if (tool.kind === 'read') {
-        if (opts.approveAllReads) return { kind: 'auto-read' };
-        if (opts.visibility === 'no-data') return { kind: 'prompt-read' };
+        // Read tools always run silently — the session-level banner (aiPermQueryData='ask')
+        // or the global setting ('never'/'always') gates data access; we don't need a
+        // per-call Approve/Reject card on top of that.
         return { kind: 'auto-read' };
     }
     // mutate — always prompt. Include before/after for cell-edit kinds.
@@ -88,6 +89,7 @@ export function applyApprovalAction(
 /**
  * Pretty-print tool args for the card body. Keeps strings short (single line)
  * but pretty-prints nested objects.
+ * @deprecated Use renderProposalBody for new UI — only used in ToolCallLine expanded view.
  */
 export function formatToolArgs(args: any): string {
     try {
@@ -98,9 +100,7 @@ export function formatToolArgs(args: any): string {
 }
 
 /**
- * Format a one-line summary of a tool_call for the card header, e.g.
- *   describeTable("GarbageCollection")
- *   runQuery("SELECT * FROM ...")
+ * Format a one-line summary of a tool_call for the card header.
  */
 export function formatToolHeader(name: string, args: any): string {
     if (!args || typeof args !== 'object') return `${name}()`;
@@ -112,11 +112,73 @@ export function formatToolHeader(name: string, args: any): string {
         const head = sql.length > 60 ? sql.slice(0, 57).replace(/\s+/g, ' ') + '...' : sql.replace(/\s+/g, ' ');
         return `runQuery(${JSON.stringify(head)})`;
     }
-    if (name === 'addCell') return `addCell(${JSON.stringify(args.type ?? '')})`;
-    if (name === 'editCell') return `editCell(${JSON.stringify(args.cellId ?? '')})`;
-    if (name === 'applyPlot') return `applyPlot(${JSON.stringify(args.cellId ?? '')})`;
+    if (name === 'addCell') {
+        const type: string = args.type ?? '';
+        return `Add ${type} cell to notebook`;
+    }
+    if (name === 'editCell') return `Edit cell`;
+    if (name === 'deleteCell') return `Delete cell`;
+    if (name === 'applyPlot') return `Apply plot config`;
+    if (name === 'moveCell') return `Move cell`;
     if (name === 'listPlots') return 'listPlots()';
     return `${name}(...)`;
+}
+
+/**
+ * Render the body of a proposal card — shows the meaningful content without raw JSON.
+ * Returns a React element (or null if nothing to show).
+ */
+function renderProposalBody(name: string, args: any): React.ReactNode {
+    if (!args) return null;
+
+    // SQL-bearing tools — show the SQL directly
+    const sql: string | undefined = args.sql ?? (name === 'addCell' && args.type === 'sql' ? args.content : undefined);
+    if (sql) {
+        return (
+            <pre className="bg-gray-900 rounded p-2 font-mono text-[11px] overflow-x-auto mb-2 text-cyan-200 whitespace-pre-wrap">
+                {sql}
+            </pre>
+        );
+    }
+
+    // Plot DSL — show content/plotConfig
+    const dsl: string | undefined = args.plotConfig ?? (name === 'addCell' && args.type === 'plot' ? args.content : undefined);
+    if (dsl) {
+        return (
+            <pre className="bg-gray-900 rounded p-2 font-mono text-[11px] overflow-x-auto mb-2 text-purple-300 whitespace-pre-wrap">
+                {dsl}
+            </pre>
+        );
+    }
+
+    // Markdown content
+    if (name === 'addCell' && args.type === 'markdown' && args.content) {
+        return (
+            <pre className="bg-gray-900 rounded p-2 font-mono text-[11px] overflow-x-auto mb-2 text-slate-300 whitespace-pre-wrap">
+                {String(args.content).slice(0, 400)}
+            </pre>
+        );
+    }
+
+    // editCell — show new content
+    if (name === 'editCell' && args.content) {
+        return (
+            <pre className="bg-gray-900 rounded p-2 font-mono text-[11px] overflow-x-auto mb-2 text-cyan-200 whitespace-pre-wrap">
+                {String(args.content).slice(0, 400)}
+            </pre>
+        );
+    }
+
+    // deleteCell — show cell id
+    if (name === 'deleteCell' && args.cellId) {
+        return (
+            <div className="text-xs text-slate-400 mb-2">
+                Cell: <code className="text-slate-300">{args.cellId}</code>
+            </div>
+        );
+    }
+
+    return null;
 }
 
 interface CardProps {
@@ -128,7 +190,7 @@ interface CardProps {
 }
 
 const STATUS_LABEL: Record<ApprovalRecord['status'], string> = {
-    pending: 'Awaiting approval',
+    pending: 'Queued',
     approved: 'Running...',
     rejected: 'Rejected',
     done: 'Done',
@@ -141,8 +203,8 @@ export const ChatProposalCard: React.FC<CardProps> = ({ record, kind, onApprove,
     return (
         <div className="my-2 p-3 bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-200" data-testid={`tool-card-${record.id}`}>
             <div className="flex items-center gap-2 mb-2">
-                <span className="text-yellow-400">{isMutate ? '*' : 'T'}</span>
-                <span className="font-mono text-cyan-300">{formatToolHeader(record.name, record.args)}</span>
+                <span className="text-yellow-400">{isMutate ? '✏️' : 'T'}</span>
+                <span className="font-mono text-cyan-300 text-xs">{formatToolHeader(record.name, record.args)}</span>
                 <span className="ml-auto text-[10px] text-gray-500 uppercase tracking-wider">{STATUS_LABEL[record.status]}</span>
             </div>
             {!isReadAuto && diff && (
@@ -151,9 +213,7 @@ export const ChatProposalCard: React.FC<CardProps> = ({ record, kind, onApprove,
                     <div className="bg-green-900/30 border border-green-800/50 rounded p-1 overflow-x-auto"><div className="text-[10px] text-green-300 mb-0.5">after</div><pre className="whitespace-pre-wrap break-all">{diff.after || '(empty)'}</pre></div>
                 </div>
             )}
-            {!isReadAuto && !diff && (
-                <pre className="bg-gray-900 rounded p-2 font-mono text-[11px] overflow-x-auto mb-2">{formatToolArgs(record.args)}</pre>
-            )}
+            {!isReadAuto && !diff && renderProposalBody(record.name, record.args)}
             {record.status === 'pending' && !isReadAuto && (
                 <div className="flex items-center gap-2">
                     <button onClick={onApprove} className="px-2 py-1 bg-green-700 hover:bg-green-600 rounded text-white">Approve</button>

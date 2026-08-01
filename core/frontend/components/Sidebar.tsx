@@ -380,7 +380,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
         {isLoadingPreview ? (
              <div className="text-center text-gray-500 text-xs p-2">Running...</div>
         ) : previewQueryResults && previewQueryResults.length > 0 ? (
-            <DataTable data={previewQueryResults} showSearch={isPreviewSearchVisible} />
+            <DataTable data={previewQueryResults} showSearch={isPreviewSearchVisible} compact />
         ) : (
             <div className="text-center text-gray-500 text-xs p-2">{previewError || 'Select an item or edit query to preview.'}</div>
         )}
@@ -416,7 +416,6 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
                 className="w-full bg-gray-800/50 border border-gray-700 rounded-md py-1.5 pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
         </div>
-        <p className="text-[11px] text-gray-600">Click a table to preview it · double-click to copy its name</p>
         {/* Analysis guide */}
         <div className="border-t border-gray-800 pt-1.5">
             <button

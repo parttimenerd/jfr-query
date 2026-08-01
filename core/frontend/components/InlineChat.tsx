@@ -165,6 +165,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [browserLoadProgress, setBrowserLoadProgress] = useState<number | null>(null);
     const cancelledRef = useRef(false);
     const abortControllerRef = useRef<AbortController | null>(null);
     const autoCompactRunning = useRef(false);
@@ -679,6 +680,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     customSystemPrompt: composeSystemPromptForMode(baseSystemPrompt ?? '', activeMode) || undefined,
                     signal: abortControllerRef.current?.signal,
                     routingPreference: chatProvider === 'browser' ? 'browser' : undefined,
+                    onBrowserLoadProgress: (p: number) => setBrowserLoadProgress(p < 1 ? p : null),
                 },
             );
 
@@ -915,9 +917,20 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                 {isLoading && streamingText === null && (
                     <div className="flex justify-start">
                         <div className="bg-gray-700/50 rounded-lg p-3 inline-flex items-center space-x-2">
-                            <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></span>
-                            <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-150"></span>
-                            <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-300"></span>
+                            {browserLoadProgress !== null ? (
+                                <>
+                                    <span className="text-[10px] text-gray-400">Downloading model… {Math.round(browserLoadProgress * 100)}%</span>
+                                    <div className="w-24 h-1 bg-gray-600 rounded-full overflow-hidden">
+                                        <div className="h-full bg-cyan-500 rounded-full transition-all duration-300" style={{ width: `${Math.round(browserLoadProgress * 100)}%` }} />
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></span>
+                                    <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-150"></span>
+                                    <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-300"></span>
+                                </>
+                            )}
                         </div>
                     </div>
                 )}
