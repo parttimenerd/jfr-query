@@ -55,6 +55,27 @@ describe('InlinePreview', () => {
             const html = render({ toolName: 'runQuery', args, result });
             expect(html).not.toContain('Add to Notebook');
         });
+
+        it('shows truncation indicator when result.truncated is true', () => {
+            const html = render({
+                toolName: 'runQuery',
+                args,
+                result: { ...result, truncated: true, limit: 50 },
+                onAddToNotebook: () => {},
+            });
+            expect(html).toContain('truncated');
+            expect(html).toContain('50');
+        });
+
+        it('does not show truncation indicator when result.truncated is false', () => {
+            const html = render({
+                toolName: 'runQuery',
+                args,
+                result: { ...result, truncated: false },
+                onAddToNotebook: () => {},
+            });
+            expect(html).not.toContain('truncated');
+        });
     });
 
     describe('previewPlot branch', () => {
@@ -100,6 +121,16 @@ describe('InlinePreview', () => {
             });
             expect(html).toContain('data-preview-id="preview-xyz"');
             expect(html).toContain('BAR_CHART');
+        });
+
+        it('shows truncation indicator when previewPlot result is truncated', () => {
+            const html = render({
+                toolName: 'previewPlot',
+                args,
+                result: { ...result, truncated: true, limit: 100 },
+                onAddToNotebook: () => {},
+            });
+            expect(html).toContain('limited to 100');
         });
 
         it('returns null for unknown tool names', () => {
