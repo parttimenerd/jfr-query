@@ -49,6 +49,31 @@ describe('splitInlineExprs', () => {
             { type: 'text', value: '${SELECT 1 no close' },
         ]);
     });
+
+    it('ignores ${...} inside a double-backtick code span', () => {
+        const r = splitInlineExprs('see ``${SELECT 1}`` inline');
+        expect(r).toHaveLength(1);
+        expect(r[0]).toEqual({ type: 'text', value: 'see ``${SELECT 1}`` inline' });
+    });
+
+    it('returns [] for empty string input', () => {
+        expect(splitInlineExprs('')).toEqual([]);
+    });
+
+    it('handles multiple adjacent expressions with no text between', () => {
+        const r = splitInlineExprs('${SELECT 1}${SELECT 2}');
+        expect(r).toHaveLength(2);
+        expect(r[0]).toMatchObject({ type: 'expr', sql: 'SELECT 1' });
+        expect(r[1]).toMatchObject({ type: 'expr', sql: 'SELECT 2' });
+    });
+
+    it('accepts all known format hints', () => {
+        const formats = ['duration_ms', 'duration_ns', 'bytes', 'pct', 'int', 'float', 'time', 'raw'];
+        for (const fmt of formats) {
+            const r = splitInlineExprs(`\${SELECT 1 | ${fmt}}`);
+            expect(r[0]).toMatchObject({ type: 'expr', format: fmt });
+        }
+    });
 });
 
 describe('tokenizeCellContent — `{if ...}` fences', () => {
