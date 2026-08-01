@@ -110,4 +110,12 @@ export interface NotebookMetadata {
   tags?: string[];
   /** SPDX identifier or free-text license note. */
   license?: string;
+  /** Preferred AI provider for this notebook (overrides global setting when set). */
+  aiProvider?: string;
+  /** Preferred AI model name for this notebook (overrides global setting when set). */
+  aiModel?: string;
+  /** Embedded query result snapshots for offline rendering.
+   *  Key: `"${cellId}:${blockIndex}"`. Value: rows array (≤500) or null on query error.
+   *  Populated by "Export with data"; absent in normal notebooks. */
+  resultSnapshots?: Record<string, any[] | null>;
 }

@@ -241,6 +241,16 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
     (result.macros || []).forEach(m => { if (m.sql?.startsWith('\n')) m.sql = m.sql.substring(1); });
     if(result.customSystemPrompt?.startsWith('\n')) result.customSystemPrompt = result.customSystemPrompt.substring(1);
 
+    // Decode resultSnapshots from the base64-encoded JSON scalar written by stringifyFrontMatter.
+    const rawSnaps = (result as any).resultSnapshots;
+    if (typeof rawSnaps === 'string' && rawSnaps.length > 0) {
+        try {
+            result.resultSnapshots = JSON.parse(decodeURIComponent(escape(atob(rawSnaps))));
+        } catch {
+            delete (result as any).resultSnapshots;
+        }
+    }
+
     return result;
 }
 
@@ -268,6 +278,12 @@ const stringifyFrontMatter = (metadata: NotebookMetadata): string => {
     }
     if ((metadata as any).license) {
         parts.push(`license: '${String((metadata as any).license).replace(/'/g, "''")}'`);
+    }
+    if (metadata.aiProvider) {
+        parts.push(`aiProvider: '${metadata.aiProvider.replace(/'/g, "''")}'`);
+    }
+    if (metadata.aiModel) {
+        parts.push(`aiModel: '${metadata.aiModel.replace(/'/g, "''")}'`);
     }
 
     if (metadata.views && metadata.views.length > 0) {
@@ -326,7 +342,7 @@ const stringifyFrontMatter = (metadata: NotebookMetadata): string => {
     }
 
     // Serialize unknown string/number fields
-    const knownKeys = new Set(['customSystemPrompt', 'timeFormat', 'decimalPlaces', 'views', 'macros', 'variables', 'cellConditions', 'tags', 'title', 'description', 'license']);
+    const knownKeys = new Set(['customSystemPrompt', 'timeFormat', 'decimalPlaces', 'views', 'macros', 'variables', 'cellConditions', 'tags', 'title', 'description', 'license', 'aiProvider', 'aiModel', 'resultSnapshots']);
     for (const [key, val] of Object.entries(metadata)) {
         if (!knownKeys.has(key) && val !== undefined && val !== null && typeof val !== 'object') {
             const strVal = String(val);
@@ -334,6 +350,14 @@ const stringifyFrontMatter = (metadata: NotebookMetadata): string => {
                 ? `${key}: |\n${strVal.split('\n').map(line => `  ${line}`).join('\n')}`
                 : `${key}: '${strVal.replace(/'/g, "''")}'`);
         }
+    }
+
+    // resultSnapshots: base64-encoded JSON so the hand-rolled YAML parser sees a
+    // plain scalar string (base64 alphabet has no YAML-special characters).
+    if (metadata.resultSnapshots && Object.keys(metadata.resultSnapshots).length > 0) {
+        if (parts.length > 0) parts.push('');
+        const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(metadata.resultSnapshots))));
+        parts.push(`resultSnapshots: '${b64}'`);
     }
 
     // tags: string[]
