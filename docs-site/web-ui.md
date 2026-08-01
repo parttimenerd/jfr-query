@@ -49,7 +49,35 @@ The left-sidebar AI chat panel lets you explore a recording conversationally.
 
 - Type a question or choose a contextual starter prompt (the toolbar shows data-aware chips based on which JFR event types are present — GC, CPU, allocations, contention, I/O, or memory leaks).
 - The AI can run SQL queries, preview charts, and propose cells to add to your notebook.
-- Use `/model` to switch AI providers or models. The in-browser provider requires no API key and runs entirely offline.
+- Mutations (adding or editing cells) always require explicit approval before they take effect.
+
+### Slash commands
+
+| Command | Effect |
+|---------|--------|
+| `/normal` | Default chat mode — all tools available, mutations require approval. |
+| `/plan` | Propose-only mode — the AI drafts a structured plan without modifying the notebook. Approve individual steps from the plan card. |
+| `/btw` | Normal chat plus "by the way" suggestion cards after each reply. |
+| `/verbose` | Show full reasoning — intermediate query results, hypotheses, and step-by-step analysis before conclusions. |
+| `/compact` | Summarise and compress the conversation history to free up context window. |
+| `/model [name]` | Show or switch the current model. |
+| `/provider [name]` | Show or switch the AI provider (anthropic, openai, local, browser). |
+| `/skills` | List available skills. |
+| `/skill-name` | Activate a skill (e.g. `/gc-analysis`). |
+| `/skill-name off` | Deactivate a skill. |
+| `/help` | Show all available commands. |
+
+### Multi-channel chat
+
+Open multiple chat channels (the `+` button in the chat header) to keep independent analyses separate. Each channel has its own conversation history, mode, and model. Switch between them at any time — the notebook shared across all channels.
+
+### Data visibility
+
+The AI's access to your data is controlled by the visibility mode (shown in the chat header):
+
+- **No data** — the AI sees only the schema (table and column names). Queries can still be run with user approval.
+- **Sanitized** — the AI sees recent rows with string values redacted.
+- **Full** — the AI sees recent rows in full. Use for analyses that require inspecting actual values.
 
 ## Sharing notebooks with embedded data
 
