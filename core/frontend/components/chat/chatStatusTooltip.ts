@@ -12,9 +12,10 @@ interface StatusTooltipInput {
 }
 
 const MODE_DESCRIPTIONS: Record<ChatMode, string> = {
-    normal: 'chat normally, mutations require approval',
-    plan:   'propose a structured plan; do not modify the notebook',
-    btw:    'normal chat plus "by the way" suggestion cards',
+    normal:  'chat normally, mutations require approval',
+    plan:    'propose a structured plan; do not modify the notebook',
+    btw:     'normal chat plus "by the way" suggestion cards',
+    verbose: 'full reasoning — intermediate results, hypotheses, step-by-step analysis',
 };
 
 const VISIBILITY_DESCRIPTIONS: Record<VisibilityMode, string> = {
@@ -36,7 +37,7 @@ export function buildStatusTooltip(input: StatusTooltipInput): string {
 
 /** Per-chip tooltip for the mode segment (e.g. `/normal`). */
 export function buildModeTooltip(mode: ChatMode): string {
-    return `Mode: /${mode} — ${MODE_DESCRIPTIONS[mode]}\nSwitch with /normal, /plan, or /btw.`;
+    return `Mode: /${mode} — ${MODE_DESCRIPTIONS[mode]}\nSwitch with /normal, /plan, /btw, or /verbose.`;
 }
 
 /** Per-chip tooltip for the model segment (e.g. `claude-sonnet-4-6`). */

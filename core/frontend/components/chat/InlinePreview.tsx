@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState, useCallback } from 'react';
 import DataTable from '../DataTable';
 import PlotRenderer from '../PlotRenderer';
 import { PlotErrorBoundary } from './PlotErrorBoundary';
@@ -22,10 +22,30 @@ interface InlinePreviewProps {
     metadata?: NotebookMetadata;
 }
 
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+    const copy = useCallback(() => {
+        navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        });
+    }, [text]);
+    return (
+        <button
+            type="button"
+            onClick={copy}
+            className="px-2 py-0.5 text-[10px] text-gray-400 hover:text-gray-200 rounded"
+            title="Copy SQL to clipboard"
+        >
+            {copied ? 'Copied!' : 'Copy SQL'}
+        </button>
+    );
+}
+
 /**
  * Renders the result of a completed *read* tool call inline in the chat.
- * For runQuery: SQL + DataTable preview of the rows.
- * For previewPlot: SQL + PlotRenderer chart with a one-click promote.
+ * For runQuery: collapsible SQL + full-height DataTable with truncation indicator.
+ * For previewPlot: SQL + taller PlotRenderer chart with a one-click promote.
  * For other reads: returns null (handled elsewhere in the UI).
  */
 export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, result, onAddToNotebook, metadata }) => {
@@ -62,30 +82,47 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
         const headers: string[] | undefined = Array.isArray(data?.columns)
             ? data.columns.map((c: any) => c.name)
             : undefined;
+        const truncated: boolean = !!data?.truncated;
+        const limit: number = data?.limit ?? 100;
 
         // Don't show an inline preview for empty results — these are usually
         // exploratory schema-discovery queries the user doesn't need to see.
         if (rows.length === 0) return null;
 
+        const rowLabel = truncated
+            ? `${rows.length} rows shown (limited to ${limit} — use offset to page)`
+            : `${rows.length} row${rows.length === 1 ? '' : 's'}`;
+
         return (
             <div className="my-2 border border-gray-700 rounded bg-gray-800/60">
                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-700 text-[10px] uppercase tracking-wider text-gray-500">
-                    <span>SQL preview · {rows.length} row{rows.length === 1 ? '' : 's'}</span>
-                    {onAddToNotebook && (
-                        <button
-                            type="button"
-                            onClick={() => onAddToNotebook('sql', sql)}
-                            className="px-2 py-0.5 text-[10px] bg-cyan-700/40 hover:bg-cyan-700/70 text-cyan-200 rounded"
-                            title="Add this SQL as a new notebook cell"
-                            aria-label="Add this SQL as a new notebook cell"
-                        >
-                            Add to Notebook
-                        </button>
-                    )}
+                    <span className={truncated ? 'text-amber-400' : ''}>
+                        {rowLabel}
+                        {truncated && <span className="ml-1 normal-case text-amber-400/70">(truncated)</span>}
+                    </span>
+                    <div className="flex items-center gap-1">
+                        <CopyButton text={sql} />
+                        {onAddToNotebook && (
+                            <button
+                                type="button"
+                                onClick={() => onAddToNotebook('sql', sql)}
+                                className="px-2 py-0.5 text-[10px] bg-cyan-700/40 hover:bg-cyan-700/70 text-cyan-200 rounded"
+                                title="Add this SQL as a new notebook cell"
+                                aria-label="Add this SQL as a new notebook cell"
+                            >
+                                Add to Notebook
+                            </button>
+                        )}
+                    </div>
                 </div>
-                <pre className="px-3 py-2 text-[11px] text-gray-300 whitespace-pre-wrap font-mono border-b border-gray-700 max-h-32 overflow-auto">{sql}</pre>
-                <div className="max-h-56 overflow-auto">
-                    <DataTable data={rows} headers={headers} showSearch={false} />
+                <details className="border-b border-gray-700">
+                    <summary className="px-3 py-1 text-[10px] text-gray-500 cursor-pointer select-none hover:text-gray-300">
+                        Show SQL
+                    </summary>
+                    <pre className="px-3 py-2 text-[11px] text-gray-300 whitespace-pre-wrap font-mono max-h-40 overflow-auto">{sql}</pre>
+                </details>
+                <div className="max-h-96 overflow-auto">
+                    <DataTable data={rows} headers={headers} showSearch={rows.length > 10} />
                 </div>
             </div>
         );
@@ -94,8 +131,14 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
     if (toolName === 'previewPlot') {
         const sql = plotSql;
         const rows: any[] = Array.isArray(plotBranchData?.rows) ? plotBranchData.rows : [];
+        const truncated: boolean = !!plotBranchData?.truncated;
+        const limit: number = plotBranchData?.limit ?? 200;
         const combinedContent = '```sql\n' + sql + '\n```\n\n```plot\n' + plotConfig + '\n```';
         const fallbackMetadata: NotebookMetadata = metadata ?? { views: [], macros: [] };
+
+        const rowLabel = truncated
+            ? `${rows.length} rows (limited to ${limit})`
+            : `${rows.length} row${rows.length === 1 ? '' : 's'}`;
 
         return (
             <div
@@ -103,24 +146,29 @@ export const InlinePreview: React.FC<InlinePreviewProps> = ({ toolName, args, re
                 data-preview-id={plotPreviewId}
             >
                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-700 text-[10px] uppercase tracking-wider text-gray-500">
-                    <span>Plot preview · {rows.length} row{rows.length === 1 ? '' : 's'}</span>
-                    {onAddToNotebook && (
-                        <button
-                            type="button"
-                            onClick={() => onAddToNotebook('combined', combinedContent, plotConfig)}
-                            className="px-2 py-0.5 text-[10px] bg-cyan-700/40 hover:bg-cyan-700/70 text-cyan-200 rounded"
-                            title="Add this SQL + plot as a new notebook cell"
-                            aria-label="Add this SQL and plot as a new notebook cell"
-                        >
-                            Add to Notebook
-                        </button>
-                    )}
+                    <span className={truncated ? 'text-amber-400/80' : ''}>
+                        Plot · {rowLabel}
+                    </span>
+                    <div className="flex items-center gap-1">
+                        <CopyButton text={sql} />
+                        {onAddToNotebook && (
+                            <button
+                                type="button"
+                                onClick={() => onAddToNotebook('combined', combinedContent, plotConfig)}
+                                className="px-2 py-0.5 text-[10px] bg-cyan-700/40 hover:bg-cyan-700/70 text-cyan-200 rounded"
+                                title="Add this SQL + plot as a new notebook cell"
+                                aria-label="Add this SQL and plot as a new notebook cell"
+                            >
+                                Add to Notebook
+                            </button>
+                        )}
+                    </div>
                 </div>
                 <details className="border-b border-gray-700">
-                    <summary className="px-3 py-1 text-[10px] text-gray-500 cursor-pointer hover:text-gray-300">Show SQL / DSL</summary>
-                    <pre className="px-3 py-2 text-[11px] text-gray-300 whitespace-pre-wrap font-mono max-h-32 overflow-auto">{sql}{'\n\n'}{plotConfig}</pre>
+                    <summary className="px-3 py-1 text-[10px] text-gray-500 cursor-pointer select-none hover:text-gray-300">Show SQL / DSL</summary>
+                    <pre className="px-3 py-2 text-[11px] text-gray-300 whitespace-pre-wrap font-mono max-h-40 overflow-auto">{sql}{'\n\n'}{plotConfig}</pre>
                 </details>
-                <div className="px-2 py-2 h-[250px] overflow-hidden">
+                <div className="px-2 py-2 h-[360px] overflow-hidden">
                     <PlotErrorBoundary
                         resetKey={plotConfig}
                         fallback={

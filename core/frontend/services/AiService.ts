@@ -661,9 +661,9 @@ GUIDELINES:
             `    • sampleRows(name, limit?) — a handful of rows to see real values.\n` +
             `    • runQuery(sql, limit?, offset?) — full ad-hoc SQL. Results render inline as a table the user can see; do not re-paste rows in your reply.\n` +
             `    • query_data(sql, reason, tables) — like runQuery but accepts a reason string (shown to the user) and a tables array (for permission display). Use instead of runQuery when you want the user to understand why you are querying.\n` +
-            `  Preview a chart inline (read-only, the user sees the chart and gets a one-click "Add to Notebook"):\n` +
-            `    • previewPlot(sql, plotConfig, limit?) — preferred way to PROPOSE a chart. After a successful previewPlot, DO NOT also call addCell for the same chart — the user has a button for that.\n` +
-            `    • screenshotPlot(previewId) — capture the rendered chart as a PNG so YOU can see it. Use rarely: only when the visual matters (label readability, layout, color overlap) and you cannot judge it from the DSL alone. Requires chat visibility 'full' and an image-capable provider; otherwise it errors.\n` +
+            `  Show a chart inline in chat (read-only; user gets a one-click "Add to Notebook" that saves SQL+plot as one cell):\n` +
+            `    • previewPlot(sql, plotConfig, limit?) — renders the chart live in the chat thread. Use for ALL charts — during exploration AND when proposing notebook content. Do NOT also call addCell for the same chart; the "Add to Notebook" button handles that. Chain multiple previewPlot calls in one turn to show a full analysis sweep.\n` +
+            `    • screenshotPlot(previewId) — capture a PNG of a previewed chart so YOU can see it. Use only when visual layout matters and you cannot judge from the DSL alone. Requires visibility 'full'.\n` +
             `  Inspect the notebook (read-only):\n` +
             `    • listCells() — id, type, content preview for every cell.\n` +
             `    • readCell(cellId) — full content of one cell.\n` +
@@ -683,16 +683,29 @@ GUIDELINES:
             `    • updateTaskList(tasks) — show a task checklist to the user. Pass [] to clear. Use at start of multi-step work.\n` +
             `\n` +
             `WORKING RULES:\n` +
-            `  1. Explore before you act: describeTable → maybe sampleRows → runQuery. Do not invent columns; if unsure, call describeTable first.\n` +
-            `  2. Answering a question that involves SQL? Use runQuery — show the result inline. NEVER use addCell(sql) just to answer a question. addCell is only for when the user explicitly asks to "add to notebook", "save this query", or "create a cell".\n` +
-            `  3. Proposing a chart? Use previewPlot, then stop and let the user decide. Skip addCell for that chart.\n` +
-            `  4. Mutations need user approval — batch related changes into the smallest set of calls that makes sense; don't spam approvals.\n` +
-            `  5. Once you have answered the user's question, stop calling tools. Don't loop "just to double-check".\n` +
-            `  6. Visibility modes affect what you can see and do:\n` +
-            `     • 'no-data' — runQuery / sampleRows / previewPlot results are returned to you redacted or refused; you must rely on schema + describeTable. previewPlot is disabled and will error.\n` +
-            `     • 'sanitized' — row values are sanitized in the payload you see; screenshotPlot still refuses.\n` +
-            `     • 'full' — you see real values; screenshotPlot is allowed.\n` +
-            `  7. Be concise in your text replies — the inline tables/plots already show the data, so summarize the finding rather than repeating numbers.\n` +
+            `\n` +
+            `  CORE PHILOSOPHY — two phases, keep them separate:\n` +
+            `    Phase 1 — Explore in chat. The chat thread IS the analysis workspace. Run queries, show full scrollable tables, render charts — all inline, nothing written to the notebook yet. The user sees everything live and can steer the analysis without touching the notebook at all.\n` +
+            `    Phase 2 — Promote to notebook. Only when the user says "add to notebook", "save this", "make a dashboard", or similar do you touch the notebook. Every inline chart has an "Add to Notebook" button the user clicks to promote it — you don't need to recreate cells.\n` +
+            `\n` +
+            `  SPECIFIC RULES:\n` +
+            `  1. Explore before you write SQL: describeTable → sampleRows if needed → then write the query. Don't invent columns.\n` +
+            `  2. Answering a question with data? Use runQuery — the result renders as a full scrollable table the user can read, filter, and sort directly in the chat. NEVER use addCell(sql) just to answer a question. For large result sets use limit + offset to page; tell the user if results were truncated.\n` +
+            `  3. Showing a chart? ALWAYS use previewPlot. Never addCell(sql) + addCell(plot) separately — that forces two approvals and splits the cell. previewPlot renders the chart live inline at full height; the user promotes it with one click. Chain multiple previewPlot calls in one reply to deliver a full analysis sweep.\n` +
+            `  4. Full analysis workflow: When asked to analyse a topic (e.g. "analyse GC", "show me what's interesting"), do a COMPLETE sweep in one turn:\n` +
+            `     (a) runQuery for key aggregate metrics — show them as inline tables.\n` +
+            `     (b) previewPlot for each meaningful chart — show them all inline.\n` +
+            `     (c) End with 3-5 bullet findings summarising what you found. Don't narrate what the tables/charts show — the user can see them. Focus on the insight ("GC pauses spike after 14:32 — correlates with peak allocation rate").\n` +
+            `     The chat IS the analysis workspace. Give the user a complete, self-contained analysis they can explore without touching the notebook.\n` +
+            `  5. Making a dashboard: When asked to create a dashboard or "add the important views to the notebook", do this in order: (a) call previewPlot for each key view you haven't already shown — this renders them inline so the user can review; (b) write a short text summary listing which views you showed and recommending which ones to add; (c) add a markdown section header via addCell(markdown) if the user confirms; (d) remind the user to click "Add to Notebook" on each inline chart they want to keep — that creates the combined SQL+plot cell. Do NOT try to reconstruct previously-shown plots via addCell — the inline "Add to Notebook" button is the correct path for combined cells.\n` +
+            `  6. Don't run the same SQL twice. If you already called runQuery for a dataset, reuse that SQL in previewPlot — don't re-fetch.\n` +
+            `  7. Once you've answered the question, stop calling tools. Don't loop to double-check.\n` +
+            `  8. Visibility modes:\n` +
+            `     • 'no-data' — query results are redacted; previewPlot is disabled. Work from schema only.\n` +
+            `     • 'sanitized' — values sanitized in the payload you see.\n` +
+            `     • 'full' — real values visible; screenshotPlot allowed.\n` +
+            `  9. Text replies: be concise. The inline tables and charts already show the data — don't repeat numbers. Do write insight bullets (what it MEANS, not what it shows).\n` +
+            `  10. When the user asks "what can I explore here?" or "what's interesting?", do a full sweep (rule 4) and end by listing 3 suggested follow-up questions they could ask.\n` +
             `\n` +
             `SQL RULES:\n` +
             `  • DuckDB syntax. Quote identifiers with double quotes ("My Column"), strings with single quotes.\n` +

@@ -95,9 +95,10 @@ interface DataTableProps {
     headers?: string[];
     columnWidths?: (string | number | undefined)[];
     csvFilename?: string;
+    compact?: boolean;
 }
 
-const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers, columnWidths, csvFilename = 'data.csv' }) => {
+const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers, columnWidths, csvFilename = 'data.csv', compact = false }) => {
   const displaySettings = useDisplaySettings();
   const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const [filterTerm, setFilterTerm] = useState('');
@@ -272,7 +273,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
         </div>
       )}
       <div className="overflow-auto flex-grow">
-        <table ref={tableRef} className="w-full text-sm" style={{tableLayout:widths.length>0?'fixed':'auto'}}>
+        <table ref={tableRef} className={`w-full ${compact ? 'text-xs' : 'text-sm'}`} style={{tableLayout:widths.length>0?'fixed':'auto'}}>
           <thead className="sticky top-0 bg-gray-700 z-10">
             <tr>
               {finalHeaders.map((h,i) => {

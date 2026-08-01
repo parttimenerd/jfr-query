@@ -81,7 +81,7 @@ export const TOOLS: Tool[] = [
     {
         name: 'previewPlot',
         kind: 'read',
-        description: 'Render a plot inline in the chat by running a SQL query and applying a plot DSL config. The user sees the chart in chat and can promote it to the notebook with one click. Use this to PROPOSE a plot without modifying the notebook — do not also call addCell for the same chart. plotConfig MUST be a DSL string like BAR_CHART(x: "col", y: ["col2"]) TITLE "Title". Disabled when chat visibility is "no-data".',
+        description: 'Render a plot inline in the chat by running a SQL query and applying a plot DSL config. The user sees the chart in chat and can promote it to the notebook with ONE CLICK — this creates the SQL + plot as a single combined cell. Use previewPlot instead of addCell(sql)+addCell(plot) to propose charts — previewPlot is always preferred because it shows the result before committing and requires only one user action to add to notebook. Do not also call addCell for the same chart after previewPlot. plotConfig MUST be a DSL string like BAR_CHART(x: "col", y: ["col2"]) TITLE "Title". Disabled when chat visibility is "no-data".',
         inputSchema: {
             type: 'object',
             properties: {
@@ -107,7 +107,7 @@ export const TOOLS: Tool[] = [
     {
         name: 'addCell',
         kind: 'mutate',
-        description: 'Add a new cell to the notebook. Cell type must be one of sql, plot, or markdown. For plot cells, content MUST be a plot DSL string such as: BAR_CHART(x: "col", y: ["col2"]) TITLE "Title" — NOT JSON or Observable Plot syntax.',
+        description: 'Add a new cell to the notebook. type must be "sql", "plot", or "markdown". NOTE: to add a combined SQL+plot cell (recommended for analysis views), use previewPlot instead — its "Add to Notebook" button creates the combined cell in one click. Use addCell(sql) when the user wants a standalone query cell, addCell(markdown) for section headers or text, and addCell(plot) only to add a standalone plot DSL cell.',
         inputSchema: {
             type: 'object',
             properties: {

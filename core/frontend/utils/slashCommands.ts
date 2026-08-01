@@ -14,7 +14,7 @@ export type SlashCommandResult =
     | { kind: 'help'; text: string }
     | { kind: 'model'; query: string }
     | { kind: 'provider'; query: string }
-    | { kind: 'mode'; mode: 'normal' | 'plan' | 'btw' }
+    | { kind: 'mode'; mode: 'normal' | 'plan' | 'btw' | 'verbose' }
     | { kind: 'skill-activate'; skillName: string }
     | { kind: 'skill-deactivate'; skillName: string }
     | { kind: 'skill-sub'; skillName: string; subCommand: string; args: string }
@@ -47,6 +47,7 @@ export function parseSlashCommand(input: string, availableSkillNames?: string[])
                     '- `/normal` — chat in normal mode (default)',
                     '- `/plan` — propose changes as a structured plan without modifying the notebook',
                     '- `/btw` — receive "by the way" suggestion cards after each reply',
+                    '- `/verbose` — show full reasoning: intermediate results, hypotheses, step-by-step analysis',
                     '- `/skills` — list all available skills',
                     '- `/skill-name` — activate a skill (e.g. `/gc-analysis`)',
                     '- `/skill-name off` — deactivate a skill',
@@ -68,7 +69,8 @@ export function parseSlashCommand(input: string, availableSkillNames?: string[])
         case 'normal':
         case 'plan':
         case 'btw':
-            return { kind: 'mode', mode: cmdLower as 'normal' | 'plan' | 'btw' };
+        case 'verbose':
+            return { kind: 'mode', mode: cmdLower as 'normal' | 'plan' | 'btw' | 'verbose' };
         case 'skills':
             return { kind: 'skills-list' };
         default: {
@@ -85,7 +87,7 @@ export function parseSlashCommand(input: string, availableSkillNames?: string[])
 }
 
 /** All static commands (no skill names — those are dynamic). */
-export const STATIC_COMMANDS = ['/help', '/clear', '/compact', '/model', '/provider', '/normal', '/plan', '/btw', '/skills'] as const;
+export const STATIC_COMMANDS = ['/help', '/clear', '/compact', '/model', '/provider', '/normal', '/plan', '/btw', '/verbose', '/skills'] as const;
 
 /** Build the complete command list including dynamic skill names. */
 export function buildAllCommands(skillNames: string[]): string[] {

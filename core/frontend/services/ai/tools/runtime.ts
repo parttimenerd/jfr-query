@@ -130,6 +130,9 @@ export async function executeTool(name: string, args: any, deps: ToolDeps): Prom
             case 'runQuery': {
                 const sql: string = args.sql;
                 if (isForbiddenSql(sql)) return { ok: false, error: 'SQL references $ai_providers which contains sensitive credentials and cannot be queried.' };
+                if (deps.checkQueryPermission) {
+                    await deps.checkQueryPermission({ sql, reason: args.reason ?? 'Run query', tables: args.tables ?? [] });
+                }
                 const pageSize = typeof args.limit === 'number' ? Math.min(Math.max(args.limit, 1), 500) : 100;
                 const offset = typeof args.offset === 'number' ? Math.max(args.offset, 0) : 0;
                 // Ask the dep for pageSize + offset rows; the dep is allowed to
