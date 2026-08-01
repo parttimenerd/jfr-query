@@ -266,3 +266,135 @@ describe('executeTool — previewPlot', () => {
         if (!result.ok) expect(result.error).toContain('no-data');
     });
 });
+
+// ── deleteCell ────────────────────────────────────────────────────────────────
+
+describe('executeTool — deleteCell', () => {
+    it('calls mutateCells with delete op and returns cellId', async () => {
+        const deps = mockDeps();
+        const result = await executeTool('deleteCell', { cellId: 'c1' }, deps);
+        expect(result.ok).toBe(true);
+        expect(deps.mutateCells).toHaveBeenCalledWith({ kind: 'delete', cellId: 'c1' });
+        if (result.ok) expect(result.data.cellId).toBe('c1');
+    });
+
+    it('requires approval', async () => {
+        const deps = mockDeps();
+        await executeTool('deleteCell', { cellId: 'c1' }, deps);
+        expect(deps.requireApproval).toHaveBeenCalledWith('deleteCell', { cellId: 'c1' });
+    });
+});
+
+// ── moveCell ──────────────────────────────────────────────────────────────────
+
+describe('executeTool — moveCell', () => {
+    it('calls mutateCells with move op', async () => {
+        const deps = mockDeps();
+        const result = await executeTool('moveCell', {
+            cellId: 'c1',
+            targetCellId: 'c2',
+            position: 'after',
+        }, deps);
+        expect(result.ok).toBe(true);
+        expect(deps.mutateCells).toHaveBeenCalledWith({
+            kind: 'move',
+            cellId: 'c1',
+            targetCellId: 'c2',
+            position: 'after',
+        });
+    });
+
+    it('returns error for invalid position', async () => {
+        const deps = mockDeps();
+        const result = await executeTool('moveCell', {
+            cellId: 'c1',
+            targetCellId: 'c2',
+            position: 'sideways',
+        }, deps);
+        expect(result.ok).toBe(false);
+    });
+});
+
+// ── rememberFact / recallMemory ───────────────────────────────────────────────
+
+describe('executeTool — rememberFact', () => {
+    it('calls setMemory and returns stored key', async () => {
+        const deps = mockDeps();
+        const result = await executeTool('rememberFact', { key: 'cpu_count', value: '8' }, deps);
+        expect(result.ok).toBe(true);
+        expect(deps.setMemory).toHaveBeenCalledWith('cpu_count', '8');
+        if (result.ok) expect(result.data.stored).toBe('cpu_count');
+    });
+
+    it('returns error when setMemory not provided', async () => {
+        const deps = mockDeps({ setMemory: undefined });
+        const result = await executeTool('rememberFact', { key: 'k', value: 'v' }, deps);
+        expect(result.ok).toBe(false);
+    });
+});
+
+describe('executeTool — recallMemory', () => {
+    it('returns current memory facts', async () => {
+        const deps = mockDeps({ getMemory: vi.fn(() => ({ cpu_count: '8', gc_target: 'G1' })) });
+        const result = await executeTool('recallMemory', {}, deps);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+            expect(result.data).toEqual({ cpu_count: '8', gc_target: 'G1' });
+        }
+    });
+
+    it('returns error when getMemory not provided', async () => {
+        const deps = mockDeps({ getMemory: undefined });
+        const result = await executeTool('recallMemory', {}, deps);
+        expect(result.ok).toBe(false);
+    });
+});
+
+// ── updateTaskList ────────────────────────────────────────────────────────────
+
+describe('executeTool — updateTaskList', () => {
+    it('calls setTaskList and returns updated count', async () => {
+        const tasks = [{ id: '1', text: 'Run query', done: false }];
+        const deps = mockDeps();
+        const result = await executeTool('updateTaskList', { tasks }, deps);
+        expect(result.ok).toBe(true);
+        expect(deps.setTaskList).toHaveBeenCalledWith(tasks);
+        if (result.ok) expect(result.data.updated).toBe(1);
+    });
+
+    it('accepts empty tasks array to clear list', async () => {
+        const deps = mockDeps();
+        const result = await executeTool('updateTaskList', { tasks: [] }, deps);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.data.updated).toBe(0);
+    });
+
+    it('returns error when setTaskList not provided', async () => {
+        const deps = mockDeps({ setTaskList: undefined });
+        const result = await executeTool('updateTaskList', { tasks: [] }, deps);
+        expect(result.ok).toBe(false);
+    });
+});
+
+// ── deleteVariable ────────────────────────────────────────────────────────────
+
+describe('executeTool — deleteVariable', () => {
+    it('removes the variable and returns success', async () => {
+        const deps = mockDeps({
+            getVariables: vi.fn(() => ({ limit: '100', offset: '0' })),
+            setVariables: vi.fn(async () => ({ ok: true as const })),
+        });
+        const result = await executeTool('deleteVariable', { name: 'limit' }, deps);
+        expect(result.ok).toBe(true);
+        expect(deps.setVariables).toHaveBeenCalledWith({ offset: '0' });
+    });
+
+    it('is a no-op when variable does not exist', async () => {
+        const deps = mockDeps({
+            getVariables: vi.fn(() => ({ offset: '0' })),
+            setVariables: vi.fn(async () => ({ ok: true as const })),
+        });
+        const result = await executeTool('deleteVariable', { name: 'nonexistent' }, deps);
+        expect(result.ok).toBe(true);
+    });
+});
