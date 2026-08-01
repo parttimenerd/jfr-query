@@ -17,7 +17,7 @@ cd "${REPO_ROOT}"
 
 CHECKPOINT="${1:-checkpoints/t5-small-latest}"
 ONNX_OUT="onnx/t5-small-q8-arm"
-EVAL_DATA="${EVAL_DATA:-data/plot_eval_v29.jsonl}"
+EVAL_DATA="${EVAL_DATA:-data/plot_eval_v31.jsonl}"
 IN_TREE_DIR="core/frontend/services/ml/models/plot-suggester-v2"
 
 PLOT_SHAPE_THRESHOLD=0.75

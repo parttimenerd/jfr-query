@@ -23,12 +23,17 @@ from typing import NamedTuple
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # ---------------------------------------------------------------------------
-# Signal extraction (v12 logic — mirrors candidates.ts extractInputSignals)
+# Signal extraction (v15 logic — mirrors candidates.ts extractInputSignals)
+# Changes from v14:
+#   - sorted: only fires when ORDER BY without LIMIT (not also when topN)
+#   - sum_agg: new signal for SUM() with GROUP BY (→ TREEMAP; distinguishes from cnt_agg/PIE)
+#   - num heuristic: young/old/meta/young_mb/old_mb treated as numeric (JFR heap generation names)
 # ---------------------------------------------------------------------------
 
 NUM_PAT = re.compile(
     r'(?:count|size|ms|mb|kb|rate|pct|load|pause|duration|alloc|heap|cpu|ticks|samples'
-    r'|total|avg|max|overhead|throughput|latency|weight|score|p\d+|%$)',
+    r'|total|avg|max|overhead|throughput|latency|weight|score|p\d+|%$'
+    r'|^young$|^old$|^meta$|^eden$|^survivor$)',
     re.I
 )
 
@@ -46,10 +51,13 @@ def extract_signals(sql: str, columns: list[str]) -> str:
 
     if has_group_by:
         tags.append('agg')
-    if has_order_by and has_limit:
+    if has_order_by and has_limit and not has_group_by:
         tags.append('ordered')
-    elif has_order_by:
+    elif has_order_by and not has_limit:
         tags.append('sorted')
+    # Ranked aggregation: GROUP BY + ORDER BY + LIMIT → top-N BAR chart pattern
+    if has_group_by and has_order_by and has_limit:
+        tags.append('topN')
 
     gb_match = re.search(r'\bGROUP\s+BY\b(.+?)(?:\bHAVING\b|\bORDER\b|\bLIMIT\b|$)', sql, re.I | re.S)
     if gb_match and not has_order_by and ',' in gb_match.group(1):
@@ -63,6 +71,8 @@ def extract_signals(sql: str, columns: list[str]) -> str:
         tags.append('having')
     if has_group_by and re.search(r'\bCOUNT\s*\(', sql_up):
         tags.append('cnt_agg')
+    if has_group_by and re.search(r'\bSUM\s*\(', sql_up):
+        tags.append('sum_agg')
 
     n = len(columns)
     if n == 1:
@@ -86,7 +96,12 @@ def extract_signals(sql: str, columns: list[str]) -> str:
         tags.append('alloc')
     if re.search(r'cpu|thread|method|jvm|machine|load|worker', all_names):
         tags.append('cpu')
-    if re.search(r'delta|change|diff|decrement|increment', all_names):
+
+    # v14: removed 'pct' from delta exclusion — cpu_change_pct SHOULD fire delta
+    if any(re.search(r'(^|_)(delta|change|diff|decrement|increment)(_|$)', nm) and
+           not re.search(r'(^|_)(change|diff)_(count|rate|id|ratio|percent|total|num|flag)', nm) and
+           not re.search(r'exchange', nm)
+           for nm in names):
         tags.append('delta')
 
     has_range_start = any(
@@ -111,6 +126,11 @@ def extract_signals(sql: str, columns: list[str]) -> str:
                     and not re.search(r'time|stamp|date|bucket|_at$|_ts$|_dt$|^ts$|^dt$', nm))
     tags.append(f'num:{min(num_count, 4)}')
     tags.append(f'cat:{min(cat_count, 4)}')
+
+    # v13 new: gantt_span signal
+    time_named = [nm for nm in names if re.search(r'time|timestamp|bucket|date|_at$|_ts$|_dt$|^ts$|^dt$|^when$', nm)]
+    if not has_numeric_band and has_range_start and has_range_end and len(time_named) >= 2 and cat_count >= 1:
+        tags.append('gantt_span')
 
     return ' '.join(tags)
 
