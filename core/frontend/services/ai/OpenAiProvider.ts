@@ -9,7 +9,7 @@ import { Settings } from "../../context/SettingsContext";
  * Keeps tool_calls / tool messages intact so multi-round tool loops stay
  * coherent across calls.
  */
-function openAiMessagesFromTool(messages: ToolChatMessage[], systemInstruction?: string): any[] {
+export function openAiMessagesFromTool(messages: ToolChatMessage[], systemInstruction?: string): any[] {
     const out: any[] = [];
     if (systemInstruction) out.push({ role: 'system', content: systemInstruction });
     for (const m of messages) {

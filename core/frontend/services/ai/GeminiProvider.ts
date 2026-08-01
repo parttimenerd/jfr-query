@@ -10,7 +10,7 @@ import { Settings } from "../../context/SettingsContext";
  * function responses. Gemini uses role 'model' for assistant; tool_results
  * are sent as role 'user' with functionResponse parts.
  */
-function geminiContentsFromTool(messages: ToolChatMessage[]): Content[] {
+export function geminiContentsFromTool(messages: ToolChatMessage[]): Content[] {
     const out: Content[] = [];
     for (const m of messages) {
         if (m.role === 'system') continue; // system goes into config.systemInstruction
