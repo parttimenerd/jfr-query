@@ -29,7 +29,7 @@ describe('InlinePreview', () => {
 
         it('renders the SQL + row count + a DataTable with the row values', () => {
             const html = render({ toolName: 'runQuery', args, result, onAddToNotebook: () => {} });
-            expect(html).toContain('SQL preview');
+            expect(html).toContain('Show SQL');
             expect(html).toContain('3 rows');
             expect(html).toContain('SELECT gc_id');
             // DataTable column headers come from result.columns.
@@ -84,7 +84,7 @@ describe('InlinePreview', () => {
                 result,
                 onAddToNotebook: () => {},
             });
-            expect(html).toContain('Plot preview');
+            expect(html).toContain('Plot ·');
             expect(html).toContain('2 rows');
             expect(html).toContain('data-preview-id="preview-abc"');
             expect(html).toContain('Show SQL / DSL');
