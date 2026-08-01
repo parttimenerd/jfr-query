@@ -42,7 +42,7 @@ describe('notebookParser — resultSnapshots round-trip', () => {
     it('does not double-emit resultSnapshots key alongside other metadata', () => {
         const snapshots = { 'cell-0:0': [{ x: 1 }] };
         const source = reconstructNotebook({
-            metadata: { title: 'My NB', resultSnapshots: snapshots } as NotebookMetadata,
+            metadata: { title: 'My NB', resultSnapshots: snapshots } as unknown as NotebookMetadata,
             content: '# Body\n',
         });
         const occurrences = (source.match(/resultSnapshots/g) ?? []).length;
@@ -55,7 +55,7 @@ describe('notebookParser — resultSnapshots round-trip', () => {
             title: 'Perf analysis',
             description: 'GC pause investigation',
             resultSnapshots: snapshots,
-        } as Partial<NotebookMetadata>);
+        });
         expect(rt.title).toBe('Perf analysis');
         expect(rt.description).toBe('GC pause investigation');
         expect(rt.resultSnapshots).toEqual(snapshots);
