@@ -1,14 +1,14 @@
 {
   "accuracy": 0.8515,
-  "plotShapeAccuracy": 0.9146,
-  "columnMatchAccuracy": 0.9454,
+  "plotShapeAccuracy": 0.9142,
+  "columnMatchAccuracy": 0.9499,
   "sampledAt": "2026-07-29T00:00:00.000Z",
   "sampleSize": 761,
   "modelVersion": "t5-small-jfr-v5",
   "trainingData": "plot_pairs_v24.jsonl",
   "evalData": "plot_eval_v24.jsonl",
   "notes": "v5: trained on v24 data (12,404 examples, 22 signals, 13 plot types). Best checkpoint epoch 15/15, eval_loss=0.2188 (vs v4 0.3178). New: RANGE 100%, WATERFALL 100%, GANTT 100%, PIE 100%, TREEMAP 100%. Gaps: LINE_CHART/AREA_CHART/FLAMEGRAPH/BOX_PLOT still weak due to training data gaps. Fix: retrain on v25 (14,154 examples, adds AREA_CHART + agg+sorted+time LINE_CHART pattern).",
-  "trainedOn": "data/plot_pairs_v30.jsonl",
-  "evalOn": "data/plot_eval_v30.jsonl",
+  "trainedOn": "data/plot_pairs_v31.jsonl",
+  "evalOn": "data/plot_eval_v31.jsonl",
   "checkpoint": "checkpoints/t5-small-latest"
 }
