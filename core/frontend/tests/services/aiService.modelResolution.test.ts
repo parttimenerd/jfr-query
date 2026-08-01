@@ -18,6 +18,7 @@ import {
     aiService,
     AiOfflineEnforcedError,
     providerMetadataRegistry,
+    providerFactoryRegistry,
 } from '../../services/AiService';
 // Access the static method via the class constructor (AiService is not exported).
 const getEffectiveApiKey: (provider: any, settings: any) => string =
@@ -408,6 +409,69 @@ describe('AiService.getEffectiveApiKey', () => {
             expect(getEffectiveApiKey('openai', emptySettings)).toBe('env-fallback-key');
         } finally {
             process.env.OPENAI_API_KEY = origEnv;
+        }
+    });
+});
+
+// ── providerMetadataRegistry — structural integrity ────────────────────────────
+
+describe('providerMetadataRegistry', () => {
+    const EXPECTED_PROVIDERS: AiProviderType[] = ['google', 'openai', 'anthropic', 'gardener', 'local', 'browser'];
+
+    it('contains an entry for every expected provider', () => {
+        for (const p of EXPECTED_PROVIDERS) {
+            expect(providerMetadataRegistry).toHaveProperty(p);
+        }
+    });
+
+    it('every entry has a non-empty id and name', () => {
+        for (const [key, meta] of Object.entries(providerMetadataRegistry)) {
+            expect(typeof meta.id).toBe('string');
+            expect(meta.id.length).toBeGreaterThan(0);
+            expect(typeof meta.name).toBe('string');
+            expect(meta.name.length).toBeGreaterThan(0);
+        }
+    });
+
+    it('every entry has defaultModels with tiny/basic/advanced strings', () => {
+        for (const [key, meta] of Object.entries(providerMetadataRegistry)) {
+            expect(typeof meta.defaultModels.tiny).toBe('string');
+            expect(typeof meta.defaultModels.basic).toBe('string');
+            expect(typeof meta.defaultModels.advanced).toBe('string');
+        }
+    });
+
+    it('every entry has a non-empty models array', () => {
+        for (const [key, meta] of Object.entries(providerMetadataRegistry)) {
+            expect(Array.isArray(meta.models)).toBe(true);
+            expect(meta.models.length).toBeGreaterThan(0);
+        }
+    });
+
+    it('every model entry has id and name strings', () => {
+        for (const [key, meta] of Object.entries(providerMetadataRegistry)) {
+            for (const model of meta.models) {
+                expect(typeof model.id).toBe('string');
+                expect(typeof model.name).toBe('string');
+            }
+        }
+    });
+
+    it('isConfigured is a function', () => {
+        for (const [key, meta] of Object.entries(providerMetadataRegistry)) {
+            expect(typeof meta.isConfigured).toBe('function');
+        }
+    });
+});
+
+// ── providerFactoryRegistry — structural integrity ────────────────────────────
+
+describe('providerFactoryRegistry', () => {
+    const EXPECTED_PROVIDERS: AiProviderType[] = ['google', 'openai', 'anthropic', 'gardener', 'local', 'browser'];
+
+    it('contains a factory function for every expected provider', () => {
+        for (const p of EXPECTED_PROVIDERS) {
+            expect(typeof providerFactoryRegistry[p]).toBe('function');
         }
     });
 });
