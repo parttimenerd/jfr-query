@@ -119,6 +119,27 @@ describe('extractInputSignals', () => {
             const s = extractInputSignals('SELECT cause, SUM(duration) FROM t GROUP BY cause', ['cause', 'duration']);
             expect(s).not.toContain('cnt_agg');
         });
+
+        it('emits "sum_agg" for SUM() with GROUP BY (TREEMAP discriminator)', () => {
+            const s = extractInputSignals('SELECT class_name, SUM(alloc_mb) AS total FROM alloc_events GROUP BY class_name', ['class_name', 'total']);
+            expect(s).toContain('sum_agg');
+        });
+
+        it('does NOT emit "sum_agg" for COUNT with GROUP BY', () => {
+            const s = extractInputSignals('SELECT cause, COUNT(*) FROM t GROUP BY cause', ['cause', 'count']);
+            expect(s).not.toContain('sum_agg');
+        });
+
+        it('does NOT emit "sum_agg" without GROUP BY', () => {
+            const s = extractInputSignals('SELECT SUM(duration) as total FROM t', ['total']);
+            expect(s).not.toContain('sum_agg');
+        });
+
+        it('does NOT emit "sorted" for GROUP BY + ORDER BY + LIMIT (that is "topN", not "sorted")', () => {
+            const s = extractInputSignals('SELECT method_name, SUM(samples) AS total FROM t GROUP BY method_name ORDER BY total DESC LIMIT 20', ['method_name', 'total']);
+            expect(s).toContain('topN');
+            expect(s).not.toContain('sorted');
+        });
     });
 
     describe('column count signals', () => {
@@ -327,6 +348,15 @@ describe('extractInputSignals', () => {
         it('counts numeric columns by name heuristic', () => {
             const s = extractInputSignals('SELECT pauseMs, heapUsed FROM t', ['pauseMs', 'heapUsed']);
             expect(s).toContain('num:2');
+        });
+
+        it('counts JFR heap generation names (young/old/meta/eden/survivor) as numeric', () => {
+            const s = extractInputSignals(
+                "SELECT time_bucket('1s', ts) AS bucket, avg(young) AS young, avg(old) AS old, avg(meta) AS meta FROM heap_regions GROUP BY bucket ORDER BY bucket",
+                ['bucket', 'young', 'old', 'meta'],
+            );
+            expect(s).toContain('num:3');
+            expect(s).not.toContain('cat:3');
         });
 
         it('counts categorical columns', () => {

@@ -75,6 +75,7 @@ const SEQ2SEQ_INPUT_V2 = (sql: string, columns: string[] | TypedColumn[], schema
  *   scalar   — aggregate fn (COUNT/SUM/etc.) without GROUP BY (single-row → TABLE)
  *   having   — has HAVING clause
  *   cnt_agg  — has COUNT() aggregate (→ PIE likely: 84% PIE when agg+duo+cnt_agg without order)
+ *   sum_agg  — has SUM() aggregate with GROUP BY (→ TREEMAP likely: distinguishes from cnt_agg/PIE in duo)
  *   time     — timestamp/time-named column (→ LINE_CHART/AREA_CHART likely)
  *   wide     — 3+ result columns
  *   solo     — exactly 1 result column (→ HISTOGRAM: 98% coverage, 0% BAR/PIE/LINE)
@@ -133,6 +134,10 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     // Count-aggregate signal: COUNT() in SQL, with GROUP BY → PIE_CHART indicator.
     // In agg+duo+cnt_agg (no ORDER): 84% PIE, 16% TREEMAP (vs 52/48 split without it).
     if (hasGroupBy && /\bCOUNT\s*\(/.test(sqlUp)) tags.push('cnt_agg');
+
+    // Sum-aggregate signal: SUM() in SQL, with GROUP BY → TREEMAP indicator.
+    // Distinguishes TREEMAP (sum over domain) from PIE (count over domain) in duo case.
+    if (hasGroupBy && /\bSUM\s*\(/.test(sqlUp)) tags.push('sum_agg');
 
     // Column count — exact-count signals complement the wide (3+) tag.
     // solo: exactly 1 col fires 98% HISTOGRAM, 0% BAR/PIE/LINE/HEATMAP.
@@ -199,7 +204,7 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     for (let i = 0; i < typed.length; i++) {
         const t = types[i] ?? '';
         const n = names[i] ?? '';
-        if (NUM_TYPES.has(t) || (t === '' && /(?:count|size|ms|mb|kb|rate|pct|load|pause|duration|alloc|heap|cpu|ticks|samples|total|avg|max|overhead|throughput|latency|weight|score|p\d+|%$)/i.test(n))) {
+        if (NUM_TYPES.has(t) || (t === '' && /(?:count|size|ms|mb|kb|rate|pct|load|pause|duration|alloc|heap|cpu|ticks|samples|total|avg|max|overhead|throughput|latency|weight|score|p\d+|%$|^young$|^old$|^meta$|^eden$|^survivor$)/i.test(n))) {
             numCount++;
         } else if (t === 'VARCHAR' || t === 'TEXT' || t === 'STRING' || (t === '' && !/time|stamp|date|bucket|_at$|_ts$|_dt$/.test(n))) {
             catCount++;
