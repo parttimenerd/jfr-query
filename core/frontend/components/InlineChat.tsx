@@ -189,7 +189,7 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         return { ...metadata.variables, ...cellVars };
     }, [metadata.variables, cellContext.content]);
 
-    // --- Per-cell chat mode (normal / plan / btw) ---
+    // --- Per-cell chat mode (normal / plan / btw / verbose) ---
     const inlineChannelId = `inline-${cellContext.id}-${targetType}`;
     const persistStorage = typeof window !== 'undefined' ? window.localStorage : null;
     const dedupStorage   = typeof window !== 'undefined' ? window.sessionStorage : null;

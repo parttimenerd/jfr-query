@@ -1,5 +1,5 @@
-// Three-segment pill toggle for chat modes: normal / plan / btw.
-// Pure presentational component — state lives in useChatMode.
+// Three-segment pill toggle for normal / plan / btw chat modes.
+// verbose mode is activated via the /verbose slash command (not this toggle).
 
 import React from 'react';
 import type { ChatMode } from '../../services/ai/chatModes';

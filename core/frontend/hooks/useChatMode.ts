@@ -1,5 +1,5 @@
-// useChatMode — per-channel state hook for the three chat modes
-// (normal / plan / btw). Composes:
+// useChatMode — per-channel state hook for the four chat modes
+// (normal / plan / btw / verbose). Composes:
 //   - channelReducer (pure)
 //   - persistence (localStorage)
 //   - btwOrchestrator (gates + analyzer + LLM call + cross-channel dedup)

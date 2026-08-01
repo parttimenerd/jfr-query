@@ -350,7 +350,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         onIncomingChannelConsumed?.();
     }, [incomingChannel, onIncomingChannelConsumed]);
 
-    // --- Per-channel chat mode (normal / plan / btw) ---
+    // --- Per-channel chat mode (normal / plan / btw / verbose) ---
     // Storage is the real localStorage/sessionStorage in the browser; useChatMode
     // gracefully handles unavailable storage so tests still work.
     const persistStorage = typeof window !== 'undefined' ? window.localStorage : null;
