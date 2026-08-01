@@ -30,6 +30,7 @@ import { substituteVariables, findRemainingVariables, toSqlVariables } from './u
 import { expandBrushOperator } from './services/variableExpander';
 import { computeSessionVariables } from './components/SessionDateChip';
 import SessionDateChip from './components/SessionDateChip';
+import { buildResultSnapshots } from './utils/snapshotExport';
 
 import { ArrowUturnLeftIcon } from './components/icons/ArrowUturnLeftIcon';
 import { ArrowUturnRightIcon } from './components/icons/ArrowUturnRightIcon';
@@ -241,11 +242,30 @@ const App: React.FC = () => {
 
     const loadNotebook = useCallback((source: string) => {
         resetNotebookHistory(source);
-        setResults({});
         setQueryTimings({});
         savedMarkdownRef.current = source;
         // Mark active tab as saved at this content.
         tabMarkdownRef.current[activeTabId] = source;
+        // Pre-populate results from embedded snapshots so plots/tables render immediately
+        // without needing a live DB connection.
+        const { metadata: loadedMeta } = parseNotebook(source);
+        const snaps = loadedMeta.resultSnapshots;
+        if (snaps && Object.keys(snaps).length > 0) {
+            const preloaded: Record<string, (any[] | null)[]> = {};
+            for (const [key, rows] of Object.entries(snaps)) {
+                const sep = key.lastIndexOf(':');
+                if (sep === -1) continue;
+                const cellId = key.slice(0, sep);
+                const blockIndex = parseInt(key.slice(sep + 1), 10);
+                if (isNaN(blockIndex)) continue;
+                if (!preloaded[cellId]) preloaded[cellId] = [];
+                while (preloaded[cellId].length <= blockIndex) preloaded[cellId].push(null);
+                preloaded[cellId][blockIndex] = rows;
+            }
+            setResults(preloaded);
+        } else {
+            setResults({});
+        }
     }, [resetNotebookHistory, activeTabId]);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = usePersistentState('jfr-ui-sidebarCollapsed', false);
     const [isChatPanelCollapsed, setIsChatPanelCollapsed] = usePersistentState('jfr-ui-chatPanelCollapsed', true);
@@ -331,6 +351,40 @@ const App: React.FC = () => {
         savedMarkdownRef.current = notebookMarkdown;
         tabMarkdownRef.current[activeTabId] = notebookMarkdown;
     };
+
+    const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
+    const [exportToast, setExportToast] = useState<string | null>(null);
+
+    const handleExportWithData = useCallback(async () => {
+        if (exportProgress !== null) return;
+        setExportProgress({ done: 0, total: 0 });
+        try {
+            const snapshots = await buildResultSnapshots(
+                cellsRef.current,
+                query,
+                metadataRef.current.variables ?? {},
+                (p) => setExportProgress(p),
+            );
+            const enriched = reconstructNotebook({
+                metadata: { ...metadataRef.current, resultSnapshots: snapshots },
+                content: cellsContentRef.current,
+            });
+            const blob = new Blob([enriched], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'notebook-shared.md';
+            a.click();
+            URL.revokeObjectURL(url);
+            const count = Object.values(snapshots).filter(v => v !== null).length;
+            setExportToast(`Exported with ${count} result snapshot${count !== 1 ? 's' : ''}.`);
+        } catch (err) {
+            console.error('Export with data failed:', err);
+            setExportToast('Export failed — check console for details.');
+        } finally {
+            setExportProgress(null);
+        }
+    }, [exportProgress, query, reconstructNotebook]);
 
     // Drag-and-drop .md anywhere in the app loads it as the notebook.
     // JFR/duckdb drops anywhere in the app reload the database.
@@ -1250,7 +1304,12 @@ const App: React.FC = () => {
         void refreshSchemaRef.current();
     }, [recordingStart, recordingEnd, sessionStartMissing, sessionEndMissing]);
 
-    if (dbState !== DBState.READY) {
+    // When a snapshot notebook is loaded but no live DB exists, bypass the
+    // drop-zone landing screen so the notebook UI renders from embedded data.
+    const hasSnapshotData = !!(metadata.resultSnapshots &&
+        Object.keys(metadata.resultSnapshots).length > 0);
+
+    if (dbState !== DBState.READY && !hasSnapshotData) {
         // Show the drop zone during initial probe (mode still null) so the user sees the UI immediately
         // instead of a blank screen while we wait for the server probe to time out.
         const showDropZone = mode === 'wasm' || (mode === null && dbState === DBState.SCHEMA_LOADING);
@@ -1335,6 +1394,7 @@ const App: React.FC = () => {
             />
             <CommandPalette isOpen={isCmdPaletteOpen} onClose={handleCloseCommandPalette} actions={cmdActions} cells={cmdCells} onRunQuery={cmdRunQuery} onAiAddCell={cmdAiAddCell} onAddSqlCell={cmdAddSqlCell} isAiAvailable={isAiFeatureActive} />
             {aiFailureMessage && <ToastNotification title="AI Assistant Alert" message={aiFailureMessage} onClose={() => setAiFailureMessage(null)} action={{ label: 'Open Settings →', onClick: () => setIsSettingsModalOpen(true) }} />}
+            {exportToast && <ToastNotification title="Export" message={exportToast} onClose={() => setExportToast(null)} duration={6000} />}
             {serverProbeError && !probeToastDismissed && <ToastNotification title="Running in WASM mode" message={`Server probe failed: ${serverProbeError}. Drop a .jfr or .duckdb file to get started.`} onClose={() => setProbeToastDismissed(true)} duration={5000} />}
             {invalidFileToast && <ToastNotification title="Unsupported file" message={invalidFileToast} onClose={() => setInvalidFileToast(null)} duration={5000} />}
 
@@ -1365,6 +1425,20 @@ const App: React.FC = () => {
                             title={sourceType === 'jfr' ? 'JFR recording' : 'DuckDB database'}
                         >
                             {sourceType === 'jfr' ? 'JFR' : 'DuckDB'}
+                        </span>
+                    )}
+                    {hasSnapshotData && (
+                        <span
+                            className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${
+                                dbState !== DBState.READY
+                                    ? 'border-amber-600/60 text-amber-400 bg-amber-900/20'
+                                    : 'border-gray-600/60 text-gray-500'
+                            }`}
+                            title={dbState !== DBState.READY
+                                ? 'Viewing embedded data snapshots — load a JFR file to run live queries'
+                                : 'This notebook contains embedded data snapshots'}
+                        >
+                            Snapshot
                         </span>
                     )}
                     {recordingStart != null && (
@@ -1421,6 +1495,19 @@ const App: React.FC = () => {
                     <button onClick={() => setIsTemplateGalleryOpen(true)} data-tour="template-gallery" className="p-1.5 rounded-md text-gray-400 hover:text-cyan-300" title="New from template" aria-label="New from template"><DocumentTextIcon className="w-4 h-4"/></button>
                     <button onClick={() => loadNotebook(gcAnalysisNotebook)} className="p-1.5 rounded-md text-gray-400 hover:text-emerald-400" title="New GC Analysis Notebook" aria-label="New GC Analysis Notebook"><BeakerIcon className="w-4 h-4"/></button>
                     <button onClick={handleSaveNotebook} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Save Notebook (⌘S)" aria-label="Save Notebook"><ArrowDownTrayIcon className="w-4 h-4"/></button>
+                    <button
+                        onClick={() => { void handleExportWithData(); }}
+                        disabled={exportProgress !== null || dbState !== DBState.READY}
+                        className="p-1.5 rounded-md text-gray-400 hover:text-cyan-300 disabled:opacity-40"
+                        title="Export with data — embeds query results so recipients can view charts without a JFR file"
+                        aria-label="Export with data"
+                    >
+                        {exportProgress !== null
+                            ? <span className="text-[10px] text-cyan-400 font-mono tabular-nums leading-none">
+                                  {exportProgress.total > 0 ? `${exportProgress.done}/${exportProgress.total}` : '…'}
+                              </span>
+                            : <ArrowUpTrayIcon className="w-4 h-4" />}
+                    </button>
                     <button onClick={() => setIsMarkdownMode(!isMarkdownMode)} className={`p-1.5 rounded-md ${isMarkdownMode ? 'text-cyan-300' : 'text-gray-400'} hover:text-cyan-300`} title={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown (split preview)"} aria-label={isMarkdownMode ? "Switch to Notebook View" : "Edit Raw Markdown"}><CodeBracketIcon className="w-4 h-4"/></button>
                     {isAiAvailable && (
                         <button onClick={() => setIsAiEnabled(!isAiEnabled)} className={`p-1.5 rounded-md ${isAiEnabled ? 'text-yellow-400' : 'text-gray-400'}`} title={isAiEnabled ? "Disable AI Features" : "Enable AI Features"} aria-label={isAiEnabled ? "Disable AI Features" : "Enable AI Features"}>
