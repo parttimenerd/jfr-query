@@ -18,6 +18,7 @@ import {
     initialChannelState,
     incPlanParseLayer,
     PLAN_MODE_SYSTEM_SUFFIX,
+    VERBOSE_MODE_SYSTEM_SUFFIX,
     type ParsedPlan,
     type BtwHint,
     type PlanStep,
@@ -46,6 +47,11 @@ describe('filterToolsForMode', () => {
 
     it('returns all tools in btw mode', () => {
         const out = filterToolsForMode(TOOLS_FIXTURE, 'btw');
+        expect(out.length).toBe(TOOLS_FIXTURE.length);
+    });
+
+    it('returns all tools in verbose mode (same as normal — no tool restrictions)', () => {
+        const out = filterToolsForMode(TOOLS_FIXTURE, 'verbose');
         expect(out.length).toBe(TOOLS_FIXTURE.length);
     });
 
@@ -82,6 +88,17 @@ describe('composeSystemPromptForMode', () => {
 
     it('returns base unchanged for btw mode', () => {
         expect(composeSystemPromptForMode('base', 'btw')).toBe('base');
+    });
+
+    it('appends verbose suffix for verbose mode', () => {
+        const out = composeSystemPromptForMode('base prompt', 'verbose');
+        expect(out.startsWith('base prompt')).toBe(true);
+        expect(out).toContain('VERBOSE MODE');
+        expect(out).toBe('base prompt' + VERBOSE_MODE_SYSTEM_SUFFIX);
+    });
+
+    it('verbose suffix starts with VERBOSE_MODE_SYSTEM_SUFFIX on empty base', () => {
+        expect(composeSystemPromptForMode('', 'verbose')).toBe(VERBOSE_MODE_SYSTEM_SUFFIX);
     });
 
     it('handles empty/null base safely', () => {
