@@ -398,3 +398,215 @@ describe('executeTool — deleteVariable', () => {
         expect(result.ok).toBe(true);
     });
 });
+
+// ── describeTable ─────────────────────────────────────────────────────────────
+
+describe('executeTool — describeTable', () => {
+    it('calls duckdbQuery with DESCRIBE and returns columns', async () => {
+        const deps = mockDeps({
+            duckdbQuery: vi.fn(async () => ({
+                columns: [{ name: 'column_name', type: 'VARCHAR' }, { name: 'column_type', type: 'VARCHAR' }],
+                rows: [{ column_name: 'ts', column_type: 'BIGINT' }],
+            })),
+        });
+        const result = await executeTool('describeTable', { name: 'events' }, deps);
+        expect(result.ok).toBe(true);
+        expect((deps.duckdbQuery as any).mock.calls[0][0]).toContain('DESCRIBE');
+        if (result.ok) expect(Array.isArray(result.data.columns)).toBe(true);
+    });
+
+    it('rejects table names containing $ai_providers', async () => {
+        const deps = mockDeps();
+        const result = await executeTool('describeTable', { name: '$ai_providers' }, deps);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('$ai_providers');
+    });
+});
+
+// ── sampleRows ────────────────────────────────────────────────────────────────
+
+describe('executeTool — sampleRows', () => {
+    it('queries the table and returns columns and rows', async () => {
+        const deps = mockDeps({
+            duckdbQuery: vi.fn(async () => ({
+                columns: [{ name: 'ts', type: 'BIGINT' }],
+                rows: [{ ts: 1000 }],
+            })),
+        });
+        const result = await executeTool('sampleRows', { name: 'events' }, deps);
+        expect(result.ok).toBe(true);
+        expect((deps.duckdbQuery as any).mock.calls[0][0]).toContain('SELECT *');
+        if (result.ok) {
+            expect(result.data.columns).toBeDefined();
+            expect(result.data.rows).toBeDefined();
+        }
+    });
+
+    it('uses default limit 10 when no limit provided', async () => {
+        const deps = mockDeps();
+        const result = await executeTool('sampleRows', { name: 'events' }, deps);
+        expect(result.ok).toBe(true);
+        const sql: string = (deps.duckdbQuery as any).mock.calls[0][0];
+        expect(sql).toContain('LIMIT 10');
+    });
+
+    it('rejects table names containing $ai_providers', async () => {
+        const result = await executeTool('sampleRows', { name: '$ai_providers' }, mockDeps());
+        expect(result.ok).toBe(false);
+    });
+});
+
+// ── applyPlot ─────────────────────────────────────────────────────────────────
+
+describe('executeTool — applyPlot', () => {
+    it('calls mutateCells with applyPlot op and returns cellId', async () => {
+        const deps = mockDeps();
+        const result = await executeTool('applyPlot', {
+            cellId: 'c1',
+            plotConfig: 'BAR_CHART(x: "ts", y: ["n"])',
+        }, deps);
+        expect(result.ok).toBe(true);
+        expect(deps.mutateCells).toHaveBeenCalledWith(expect.objectContaining({
+            kind: 'applyPlot',
+            cellId: 'c1',
+        }));
+        if (result.ok) expect(result.data.cellId).toBe('c1');
+    });
+
+    it('uses plotBlockIndex 0 as default', async () => {
+        const deps = mockDeps();
+        await executeTool('applyPlot', { cellId: 'c1', plotConfig: 'TABLE()' }, deps);
+        expect(deps.mutateCells).toHaveBeenCalledWith(expect.objectContaining({
+            plotBlockIndex: 0,
+        }));
+    });
+});
+
+// ── screenshotPlot ────────────────────────────────────────────────────────────
+
+describe('executeTool — screenshotPlot', () => {
+    it('returns error when screenshotPreview not provided', async () => {
+        const result = await executeTool('screenshotPlot', { previewId: 'p1' }, mockDeps());
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('not supported');
+    });
+
+    it('returns error when provider does not support images', async () => {
+        const deps = mockDeps({
+            screenshotPreview: vi.fn(async () => 'data:image/png;base64,...'),
+            providerSupportsImages: vi.fn(() => false),
+        });
+        const result = await executeTool('screenshotPlot', { previewId: 'p1' }, deps);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('not supported by the current AI provider');
+    });
+
+    it('returns error when visibility is not full', async () => {
+        const deps = mockDeps({
+            screenshotPreview: vi.fn(async () => 'data:image/png;base64,...'),
+            providerSupportsImages: vi.fn(() => true),
+            getVisibility: vi.fn(() => 'sanitized' as const),
+        });
+        const result = await executeTool('screenshotPlot', { previewId: 'p1' }, deps);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain("full");
+    });
+
+    it('returns image data when all conditions are met', async () => {
+        const deps = mockDeps({
+            screenshotPreview: vi.fn(async () => 'data:image/png;base64,abc123'),
+            providerSupportsImages: vi.fn(() => true),
+            getVisibility: vi.fn(() => 'full' as const),
+        });
+        const result = await executeTool('screenshotPlot', { previewId: 'p1' }, deps);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.data.image.dataUrl).toBe('data:image/png;base64,abc123');
+    });
+
+    it('returns error when no preview found for given id', async () => {
+        const deps = mockDeps({
+            screenshotPreview: vi.fn(async () => null),
+            providerSupportsImages: vi.fn(() => true),
+        });
+        const result = await executeTool('screenshotPlot', { previewId: 'missing' }, deps);
+        expect(result.ok).toBe(false);
+    });
+});
+
+// ── explainCell ───────────────────────────────────────────────────────────────
+
+describe('executeTool — explainCell', () => {
+    it('returns cell content and instruction for a sql cell', async () => {
+        const deps = mockDeps({
+            listCells: vi.fn(() => [{ id: 'c1', type: 'sql' as const, content: 'SELECT * FROM events' }]),
+        });
+        const result = await executeTool('explainCell', { cellId: 'c1' }, deps);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+            expect(result.data.content).toBe('SELECT * FROM events');
+            expect(result.data.cellType).toBe('sql');
+            expect(typeof result.data.instruction).toBe('string');
+        }
+    });
+
+    it('returns appropriate instruction for a markdown cell', async () => {
+        const deps = mockDeps({
+            listCells: vi.fn(() => [{ id: 'md1', type: 'markdown' as const, content: '# Header' }]),
+        });
+        const result = await executeTool('explainCell', { cellId: 'md1' }, deps);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.data.cellType).toBe('markdown');
+    });
+
+    it('returns error when cell not found', async () => {
+        const deps = mockDeps({ listCells: vi.fn(() => []) });
+        const result = await executeTool('explainCell', { cellId: 'missing' }, deps);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('not found');
+    });
+});
+
+// ── suggestPlot ───────────────────────────────────────────────────────────────
+
+describe('executeTool — suggestPlot', () => {
+    it('returns column info string and instruction for a sql cell', async () => {
+        const deps = mockDeps({
+            listCells: vi.fn(() => [{ id: 'c1', type: 'sql' as const, content: 'SELECT ts, n FROM events' }]),
+            duckdbQuery: vi.fn(async () => ({
+                columns: [{ name: 'ts', type: 'BIGINT' }, { name: 'n', type: 'INTEGER' }],
+                rows: [],
+            })),
+        });
+        const result = await executeTool('suggestPlot', { cellId: 'c1' }, deps);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+            expect(result.data.cellId).toBe('c1');
+            expect(typeof result.data.columns).toBe('string');
+            expect(typeof result.data.instruction).toBe('string');
+        }
+    });
+
+    it('returns error for a non-sql cell', async () => {
+        const deps = mockDeps({
+            listCells: vi.fn(() => [{ id: 'md1', type: 'markdown' as const, content: '# Header' }]),
+        });
+        const result = await executeTool('suggestPlot', { cellId: 'md1' }, deps);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('not a SQL cell');
+    });
+
+    it('returns error when cell not found', async () => {
+        const deps = mockDeps({ listCells: vi.fn(() => []) });
+        const result = await executeTool('suggestPlot', { cellId: 'missing' }, deps);
+        expect(result.ok).toBe(false);
+    });
+
+    it('rejects sql containing $ai_providers', async () => {
+        const deps = mockDeps({
+            listCells: vi.fn(() => [{ id: 'c1', type: 'sql' as const, content: 'SELECT * FROM $ai_providers' }]),
+        });
+        const result = await executeTool('suggestPlot', { cellId: 'c1' }, deps);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('$ai_providers');
+    });
+});
