@@ -22,8 +22,8 @@ import { cleanPlotConfig } from '../ml/candidates';
 //    reject it. Instead requests JSON in the system prompt and parses the
 //    response defensively (strips ```json fences, finds first balanced {…}).
 //  - Caps `max_tokens` to bound generation time on slow CPUs.
-//  - Emits `chat_template_kwargs.enable_thinking=false` (llama-server extension
-//    that suppresses Qwen3 chain-of-thought; ignored by other servers).
+//  - Emits `chat_template_kwargs.enable_thinking=false` only for localhost URLs
+//    (llama-server/Ollama extension — external APIs reject unknown fields with 400).
 //  - Retries on 429/503 with exponential backoff.
 
 const DEFAULT_BASE_URL = 'http://localhost:8080';
@@ -41,6 +41,10 @@ export class LocalAiProvider implements IAiProvider {
     private readonly baseUrl: string;
     private readonly apiKey: string;
     private readonly maxTokens: number;
+    // Only send llama-server/Ollama-specific extensions (chat_template_kwargs) when
+    // the base URL points to a true local server.  External APIs (SAP proxy, LiteLLM
+    // gateways, etc.) reject unknown fields with 400.
+    private readonly sendThinkingExt: boolean;
 
     constructor(apiKey: string, baseUrl?: string, maxTokens?: number) {
         // Empty API key is OK for local servers. The factory in AiService passes
@@ -48,6 +52,7 @@ export class LocalAiProvider implements IAiProvider {
         this.apiKey = apiKey || '';
         this.baseUrl = stripTrailingSlash(baseUrl || DEFAULT_BASE_URL);
         this.maxTokens = maxTokens && maxTokens > 0 ? maxTokens : DEFAULT_MAX_TOKENS;
+        this.sendThinkingExt = isLocalhostUrl(this.baseUrl);
     }
 
     public static getMetadata(): ProviderMetadata {
@@ -88,8 +93,9 @@ export class LocalAiProvider implements IAiProvider {
             max_tokens: this.maxTokens,
             temperature: opts?.temperature ?? 0,
             // llama-server extension to suppress Qwen3 chain-of-thought (~2× speedup).
-            // Unknown to other backends, which ignore unrecognized fields.
-            chat_template_kwargs: { enable_thinking: false },
+            // Only sent for localhost servers — external APIs (SAP proxy, LiteLLM, etc.)
+            // reject unknown fields with 400.
+            ...(this.sendThinkingExt ? { chat_template_kwargs: { enable_thinking: false } } : {}),
         };
     }
 
@@ -159,7 +165,10 @@ export class LocalAiProvider implements IAiProvider {
                 if (parsed?.error?.message) msg = parsed.error.message;
                 else if (typeof parsed?.error === 'string') msg = parsed.error;
             } catch { /* not JSON, stick with status */ }
-            if (response.status === 401) throw new Error('Local AI server rejected the API key (401).');
+            if (response.status === 401) {
+                if (this.apiKey) throw new Error('Local AI server rejected the API key (401).');
+                throw new Error('Local AI server requires an API key (401). Set one in ⚙ Settings → Local OpenAI-compatible → API Key.');
+            }
             if (response.status === 404) throw new Error(`Local AI endpoint not found (404). Check the base URL and that the server exposes /v1/chat/completions: ${this.baseUrl}`);
             throw new Error(msg);
         }
@@ -268,7 +277,7 @@ export class LocalAiProvider implements IAiProvider {
             stream: true,
             max_tokens: this.maxTokens,
             temperature: 0,
-            chat_template_kwargs: { enable_thinking: false },
+            ...(this.sendThinkingExt ? { chat_template_kwargs: { enable_thinking: false } } : {}),
         };
         if (tools.length > 0) body.tools = toolsToLocal(tools);
 
@@ -303,7 +312,10 @@ export class LocalAiProvider implements IAiProvider {
                 if (parsed?.error?.message) msg = parsed.error.message;
                 else if (typeof parsed?.error === 'string') msg = parsed.error;
             } catch { /* not JSON */ }
-            if (response.status === 401) throw new Error('Local AI server rejected the API key (401).');
+            if (response.status === 401) {
+                if (this.apiKey) throw new Error('Local AI server rejected the API key (401).');
+                throw new Error('Local AI server requires an API key (401). Set one in ⚙ Settings → Local OpenAI-compatible → API Key.');
+            }
             if (response.status === 404) throw new Error(`Local AI endpoint not found (404). Check the base URL: ${this.baseUrl}`);
             throw new Error(msg);
         }
@@ -389,6 +401,11 @@ export class LocalAiProvider implements IAiProvider {
         // Probe /v1/models — every OpenAI-compatible server exposes it. Avoids
         // running an actual chat completion (which would download/load the
         // model and take seconds-to-minutes).
+        //
+        // When the base URL is a direct cross-origin URL (e.g. http://localhost:6655),
+        // the browser blocks the preflight with a CORS error even if the server is up.
+        // In that case we assume the server is reachable and return true — the first
+        // actual chat call will surface any real auth/config errors.
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 10000);
         let response: Response;
@@ -399,12 +416,22 @@ export class LocalAiProvider implements IAiProvider {
             });
         } catch (e: any) {
             if (e.name === 'AbortError') throw new Error(`Could not reach ${this.baseUrl} within 10s. Is the server running?`);
+            // CORS / network errors on cross-origin URLs: assume server is configured
+            // (the Vite dev proxy or a CORS-enabled server will make actual calls work).
+            // Don't block AI availability — the first chat call will reveal real errors.
+            if (e instanceof TypeError) return true;
             throw new Error(`Cannot reach ${this.baseUrl}: ${e.message ?? e}`);
         } finally {
             clearTimeout(timer);
         }
         if (!response.ok) {
-            if (response.status === 401) throw new Error('API key rejected by local server.');
+            if (response.status === 401) {
+                // 401 with no API key configured means the server requires auth but we
+                // haven't set a key yet — the server is reachable, so don't block AI.
+                // 401 when we DID supply a key means the key is wrong.
+                if (this.apiKey) throw new Error('API key rejected by local server.');
+                return true;
+            }
             if (response.status === 404) throw new Error(`${this.baseUrl}/v1/models not found — is this an OpenAI-compatible server?`);
             throw new Error(`Local server returned ${response.status} on /v1/models.`);
         }
@@ -414,4 +441,13 @@ export class LocalAiProvider implements IAiProvider {
 
 function stripTrailingSlash(url: string): string {
     return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+function isLocalhostUrl(url: string): boolean {
+    try {
+        const host = new URL(url).hostname;
+        return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    } catch {
+        return false;
+    }
 }

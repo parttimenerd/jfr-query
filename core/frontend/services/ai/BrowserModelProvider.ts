@@ -6,6 +6,9 @@ import {
     AIPlotFixResponse,
     ProviderMetadata,
     PlotSuggestContext,
+    type ToolChatMessage,
+    type ToolStreamChunk,
+    type StreamChatWithToolsOpts,
 } from './IAiProvider';
 import { BrowserIcon } from '../../components/icons/BrowserIcon';
 import { heuristicPlot } from '../ml/heuristicPlot';
@@ -14,6 +17,7 @@ import * as PlotGenerationService from '../ml/PlotGenerationService';
 import { CANDIDATES, DEFAULT_MODEL_ID } from '../ml/candidates';
 import { suggestNaiveSql, extractPrefix, extractSchema } from './browserSqlRules';
 import { generateSqlCompletion, isSqlModelReady } from '../ml/SqlGenerationService';
+import { streamBrowserChat, ensureBrowserChatLoaded, DEFAULT_BROWSER_CHAT_MODEL_ID, BROWSER_CHAT_MODELS, type BrowserChatMessage } from './BrowserChatService';
 
 const SQL_MODEL_DISABLED_KEY = 'jfr.sql-model.disabled';
 
@@ -32,11 +36,20 @@ const NOT_SUPPORTED = () =>
     );
 
 export class BrowserModelProvider implements IAiProvider {
-    constructor(private modelId = DEFAULT_MODEL_ID) {}
+    constructor(
+        private modelId = DEFAULT_MODEL_ID,
+        private chatModelId = DEFAULT_BROWSER_CHAT_MODEL_ID,
+    ) {}
 
     static getMetadata(): ProviderMetadata {
-        const modelLabels = Object.values(CANDIDATES)
-            .map(c => ({ id: c.id, name: c.label, description: `~${c.approxSizeMb}MB download`, group: 'Browser' }));
+        // Chat models shown first so the dropdown defaults to a useful choice
+        const chatModelLabels = Object.values(BROWSER_CHAT_MODELS)
+            .map(c => ({ id: c.id, name: c.label, description: `~${c.approxSizeMb}MB download`, group: 'Chat' }));
+        const chatModelIds = new Set(Object.keys(BROWSER_CHAT_MODELS));
+        // Exclude plot models that share IDs with chat models to avoid duplicate keys
+        const plotModelLabels = Object.values(CANDIDATES)
+            .filter(c => !chatModelIds.has(c.id))
+            .map(c => ({ id: c.id, name: c.label, description: `~${c.approxSizeMb}MB download`, group: 'Plot suggester' }));
 
         return {
             id: 'browser',
@@ -44,11 +57,11 @@ export class BrowserModelProvider implements IAiProvider {
             description: 'Runs in your browser — no API key required. First use downloads the model.',
             icon: BrowserIcon,
             isConfigured: () => true,
-            models: modelLabels,
+            models: [...chatModelLabels, ...plotModelLabels],
             defaultModels: {
-                tiny: DEFAULT_MODEL_ID,
-                basic: DEFAULT_MODEL_ID,
-                advanced: DEFAULT_MODEL_ID,
+                tiny: DEFAULT_BROWSER_CHAT_MODEL_ID,
+                basic: DEFAULT_BROWSER_CHAT_MODEL_ID,
+                advanced: DEFAULT_BROWSER_CHAT_MODEL_ID,
             },
         };
     }
@@ -132,12 +145,45 @@ export class BrowserModelProvider implements IAiProvider {
     getCodeFormat: IAiProvider['getCodeFormat'] = NOT_SUPPORTED as any;
     getPlotFixSuggestion: IAiProvider['getPlotFixSuggestion'] = NOT_SUPPORTED as any;
 
-    // streamChatWithTools intentionally omitted — browser-side models can't
-    // run multi-round tool loops; AiService will throw a clear error if the
-    // user tries to chat against this provider.
+    /**
+     * Streaming chat using the in-browser causal-LM (Qwen2.5-0.5B-Instruct).
+     * No tool calls — yields only text deltas. The AiService browser path
+     * already guards against tool dispatch before reaching this method.
+     */
+    async *streamChatWithTools(
+        messages: ToolChatMessage[],
+        _tools: any[],
+        opts?: StreamChatWithToolsOpts & { onLoadProgress?: (p: number) => void },
+    ): AsyncIterable<ToolStreamChunk> {
+        const signal = opts?.signal;
+
+        // Convert ToolChatMessage[] → BrowserChatMessage[], injecting the
+        // system prompt from opts if present (replaces any existing system msg).
+        const chatMessages: BrowserChatMessage[] = [];
+        if (opts?.systemInstruction) {
+            chatMessages.push({ role: 'system', content: opts.systemInstruction });
+        }
+        for (const m of messages) {
+            if (m.role === 'system' && opts?.systemInstruction) continue; // already injected
+            if (m.role === 'tool') continue; // no tool results in browser mode
+            if (m.role === 'user' || m.role === 'assistant' || m.role === 'system') {
+                chatMessages.push({ role: m.role, content: m.content ?? '' });
+            }
+        }
+
+        // Ensure at least one user message exists.
+        if (!chatMessages.some(m => m.role === 'user')) return;
+
+        // Respect model override if it names a known chat model; otherwise use the configured chat model.
+        const effectiveChatModelId = (opts?.model && opts.model in BROWSER_CHAT_MODELS)
+            ? opts.model
+            : this.chatModelId;
+        for await (const delta of streamBrowserChat(chatMessages, opts?.onLoadProgress, signal, effectiveChatModelId)) {
+            yield { kind: 'text', delta };
+        }
+    }
 
     async verifyCredentials(): Promise<boolean> {
-        // Always "configured" — no credentials needed.
         return true;
     }
 }

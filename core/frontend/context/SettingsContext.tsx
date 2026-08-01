@@ -31,6 +31,7 @@ export interface Settings {
     localTinyModel: string;
     browserTinyModel: string;
     browserModelId: string;
+    browserChatModelId: string;
     customSystemPrompt: string;
     timeFormat: string;
     decimalPlaces: number;
@@ -91,7 +92,7 @@ const defaultSettings: Settings = {
     gardenerApiKey: process.env.GARDENER_API_KEY || '',
     localApiKey: process.env.LOCAL_AI_API_KEY || '',
     localBaseUrl: process.env.LOCAL_AI_BASE_URL || 'http://localhost:8080',
-    localMaxTokens: 2048,
+    localMaxTokens: 16384,
     googleBasicModel: providerMetadataRegistry.google.defaultModels.basic,
     googleGoodModel: providerMetadataRegistry.google.defaultModels.advanced,
     googleTinyModel: providerMetadataRegistry.google.defaultModels.tiny,
@@ -109,6 +110,7 @@ const defaultSettings: Settings = {
     localTinyModel: providerMetadataRegistry.local.defaultModels.tiny,
     browserTinyModel: providerMetadataRegistry.browser.defaultModels.tiny,
     browserModelId: DEFAULT_MODEL_ID,
+    browserChatModelId: 'qwen2.5-0.5b',
     customSystemPrompt: '',
     timeFormat: 'HH:mm:ss.SS',
     decimalPlaces: 6,
@@ -116,18 +118,18 @@ const defaultSettings: Settings = {
     autocompleteCustomModel: '',
     plotSuggestModelOverride: 'tiny',
     plotSuggestCustomModel: '',
-    plotSuggestSource: 'auto',
+    plotSuggestSource: 'local-trained',
     autocompleteOfflineOnly: false,
     plotSuggestOfflineOnly: false,
     aiDefaultVisibility: 'no-data',
     visibilityFullRowLimit: 50,
-    aiAutocompleteModel: 'off',
+    aiAutocompleteModel: 'browser',
     plotAiAutocompleteEnabled: false,
     plotAiAutocompleteDebounceMs: 250,
     autoPlotSuggestionEnabled: true,
     plotSchemaDiscoveryEnabled: true,
     suppressDeprecationWarnings: false,
-    aiPermQueryData: 'ask',
+    aiPermQueryData: 'always',
     aiPermAddCell: 'ask',
     aiPermUpdateCell: 'ask',
     aiPermDeleteCell: 'ask',

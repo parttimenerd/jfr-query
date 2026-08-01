@@ -19,6 +19,14 @@ export default defineConfig(({ mode }) => {
             target: `http://localhost:${env.JFR_SERVER_PORT || '4244'}`,
             changeOrigin: true,
           },
+          // Forward /local-ai-proxy/* to a local AI server (avoids CORS on localhost endpoints)
+          ...(env.LOCAL_AI_BASE_URL ? {
+            '/local-ai-proxy': {
+              target: env.LOCAL_AI_BASE_URL.replace(/\/$/, ''),
+              changeOrigin: true,
+              rewrite: (path: string) => path.replace(/^\/local-ai-proxy/, ''),
+            },
+          } : {}),
           // Forward /anthropic-proxy/* to the local Anthropic proxy (avoids COEP/CORS)
           ...(env.ANTHROPIC_BASE_URL ? {
             '/anthropic-proxy': {
@@ -47,6 +55,11 @@ export default defineConfig(({ mode }) => {
         // fetches same-origin (no CORS/COEP issue). The Vite dev proxy forwards it.
         'process.env.ANTHROPIC_BASE_URL': JSON.stringify(
           env.ANTHROPIC_BASE_URL ? '/anthropic-proxy' : ''
+        ),
+        // When LOCAL_AI_BASE_URL is set, rewrite to /local-ai-proxy so the browser
+        // fetches same-origin (no CORS issue). The Vite dev proxy forwards it.
+        'process.env.LOCAL_AI_BASE_URL': JSON.stringify(
+          env.LOCAL_AI_BASE_URL ? '/local-ai-proxy' : ''
         ),
         // Default to enabling local ML in dev mode; set VITE_USE_LOCAL_ML=false to opt out
         'import.meta.env.VITE_USE_LOCAL_ML': JSON.stringify(
