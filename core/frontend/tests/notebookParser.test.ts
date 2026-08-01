@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tokenizeCellContent, reconstructCellContent, parseCellContent, parseNotebook, reconstructNotebook } from '../utils/notebookParser';
+import { tokenizeCellContent, reconstructCellContent, parseCellContent, parseNotebook, reconstructNotebook, parseCellDirective, stripCellDirective } from '../utils/notebookParser';
 
 describe('Notebook Parser', () => {
     it('tokenizes mixed content correctly', () => {
@@ -231,5 +231,94 @@ views:
             const reparsed = parseCellContent(tokenizeCellContent(rebuilt));
             expect(reparsed.standalonePlots[0]).toBe('TABLE() DATASET GarbageCollection');
         });
+    });
+});
+
+// ─── parseCellDirective ───────────────────────────────────────────────────────
+
+describe('parseCellDirective', () => {
+    it('returns null for content without a directive', () => {
+        expect(parseCellDirective('# Header\nSome text')).toBeNull();
+    });
+
+    it('returns null for empty string', () => {
+        expect(parseCellDirective('')).toBeNull();
+    });
+
+    it('parses a name attribute', () => {
+        const result = parseCellDirective('<!-- @cell name="gc-summary" -->\n# Header');
+        expect(result).not.toBeNull();
+        expect(result!.name).toBe('gc-summary');
+    });
+
+    it('parses a collapsed attribute (true)', () => {
+        const result = parseCellDirective('<!-- @cell collapsed="true" -->\nSQL');
+        expect(result!.collapsed).toBe(true);
+    });
+
+    it('parses a collapsed attribute (false)', () => {
+        const result = parseCellDirective('<!-- @cell collapsed="false" -->\nSQL');
+        expect(result!.collapsed).toBe(false);
+    });
+
+    it('parses both name and collapsed', () => {
+        const result = parseCellDirective('<!-- @cell name="foo" collapsed="true" -->\nSQL');
+        expect(result!.name).toBe('foo');
+        expect(result!.collapsed).toBe(true);
+    });
+
+    it('puts unknown key-value pairs into rest', () => {
+        const result = parseCellDirective('<!-- @cell name="x" custom="hello" -->\nSQL');
+        expect(result!.rest).toEqual({ custom: 'hello' });
+    });
+
+    it('parses single-quoted attribute values', () => {
+        const result = parseCellDirective("<!-- @cell name='my-cell' -->\nSQL");
+        expect(result!.name).toBe('my-cell');
+    });
+
+    it('returns the raw directive text', () => {
+        const result = parseCellDirective('<!-- @cell name="x" -->\nSQL');
+        expect(result!.raw).toBe('<!-- @cell name="x" -->');
+    });
+
+    it('matchLength covers directive line including newline', () => {
+        const directive = '<!-- @cell name="x" -->\n';
+        const result = parseCellDirective(directive + 'body');
+        expect(result!.matchLength).toBe(directive.length);
+    });
+
+    it('handles leading whitespace before directive', () => {
+        const result = parseCellDirective('\n<!-- @cell name="x" -->\n# H');
+        expect(result).not.toBeNull();
+        expect(result!.name).toBe('x');
+    });
+});
+
+// ─── stripCellDirective ───────────────────────────────────────────────────────
+
+describe('stripCellDirective', () => {
+    it('returns null directive and original body when no directive', () => {
+        const result = stripCellDirective('# Header\nSome content');
+        expect(result.directive).toBeNull();
+        expect(result.body).toBe('# Header\nSome content');
+    });
+
+    it('strips directive line and returns remaining body', () => {
+        const result = stripCellDirective('<!-- @cell name="gc" -->\n# Header\nContent');
+        expect(result.directive).not.toBeNull();
+        expect(result.directive!.name).toBe('gc');
+        expect(result.body).toBe('# Header\nContent');
+    });
+
+    it('body is byte-identical after stripping', () => {
+        const body = '```sql\nSELECT 1\n```\n\nBAR_CHART';
+        const input = `<!-- @cell name="q" -->\n${body}`;
+        expect(stripCellDirective(input).body).toBe(body);
+    });
+
+    it('returns empty body when directive is the entire content', () => {
+        const result = stripCellDirective('<!-- @cell name="x" -->\n');
+        expect(result.body).toBe('');
     });
 });
