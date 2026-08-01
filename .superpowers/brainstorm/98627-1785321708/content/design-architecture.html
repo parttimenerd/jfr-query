@@ -1,0 +1,49 @@
+<h2>Design: Architecture Overview</h2>
+<p class="subtitle">Four independent work streams, each self-contained. Does this structure look right?</p>
+
+<div class="section">
+  <h3>Stream 1 — Contextual editor help</h3>
+  <p>Two additions to CodeMirror 6 extensions in <code>core/frontend/components/editor/plot/</code>:</p>
+  <ul>
+    <li><strong>hover.ts extension:</strong> When cursor hovers a plot keyword (BRUSH, LINK_X, AXIS_Y, …), look up <code>plotClauseDocs.ts</code> and render the clause signature + description in a CodeMirror tooltip. SQL hover already does this pattern; plot hover mirrors it.</li>
+    <li><strong>lint.ts extension (new diagnostics):</strong> Extend the existing plot linter with error-range annotations. Unknown shape names → "Did you mean LINE_CHART?" Unknown clause keyword → suggest nearest match. Renders as red underline + tooltip at the error position.</li>
+  </ul>
+  <p class="label">Files touched: <code>editor/plot/hover.ts</code> (new), <code>editor/plot/lint.ts</code> (extend)</p>
+</div>
+
+<div class="section">
+  <h3>Stream 2 — AI Settings tab polish</h3>
+  <p>Extend <code>SettingsPanel.tsx</code> AI tab:</p>
+  <ul>
+    <li>Add a "Mode" section: three labelled cards (Ghost-text / Inline chat / Command palette AI) with one-line descriptions and keyboard shortcut reminders. Active mode highlighted.</li>
+    <li>Add a "Test connection" button: sends a minimal ping prompt to the configured provider and shows ✓ / ✗ with latency or error message.</li>
+    <li>Show active model name next to provider selector.</li>
+  </ul>
+  <p class="label">Files touched: <code>SettingsPanel.tsx</code>, <code>AiService.ts</code> (ping method)</p>
+</div>
+
+<div class="section">
+  <h3>Stream 3 — AI tool quality</h3>
+  <ul>
+    <li><strong>Column-aware completions:</strong> The ghost-text and autocomplete contexts already receive <code>cellResultSchema</code>. Tighten the prompt so the model is explicitly instructed to prefer actual column names over invented ones. Add a column-name validation pass that rejects completions containing unknown identifiers.</li>
+    <li><strong>"Fix with AI" button:</strong> When a plot cell shows a render error, display a small "Fix with AI" button below the error message. Clicking it calls inline-chat with a pre-filled prompt: the current DSL + error text → ask model for corrected DSL.</li>
+    <li><strong><code>explainCell</code> tool:</strong> New agent tool. Takes a cell ID, reads its SQL + results + plot config, asks the model to explain what the data shows. JFR-aware: recognises GC pause patterns, flamegraph hotspots, thread contention signatures.</li>
+    <li><strong><code>suggestPlot</code> tool:</strong> New agent tool. Takes column names + types, asks the model to pick the best plot shape + minimal config. Returns a ready-to-paste DSL snippet.</li>
+  </ul>
+  <p class="label">Files touched: <code>AiService.ts</code>, <code>editor/plot/aiPlotContext.ts</code>, <code>editor/aiGhostText.ts</code>, <code>components/plots/PlotRenderer.tsx</code></p>
+</div>
+
+<div class="section">
+  <h3>Stream 4 — Help content</h3>
+  <ul>
+    <li><strong>PlotHelpModal search:</strong> Add a search input at the top of the modal. Filters shape cards and clause entries by name/keyword in real time. One-click "Insert example" button on each example pastes the snippet into the active cell editor.</li>
+    <li><strong>Cheat sheet tab:</strong> New tab in PlotHelpModal: a compact two-column table — clause name on left, one-line description + signature on right. Scannable at a glance.</li>
+    <li><strong>Onboarding cell:</strong> When a fresh (empty) notebook is detected on load, prepend a dismissable TemplatedMarkdown cell containing: "Load a JFR file → write a SELECT query → add a PLOT cell." Auto-dismissed when user adds their own cell. Never shown again once dismissed (persisted in localStorage).</li>
+  </ul>
+  <p class="label">Files touched: <code>PlotHelpModal.tsx</code>, <code>NotebookCell.tsx</code> or <code>App.tsx</code> (onboarding injection)</p>
+</div>
+
+<div class="section" style="background:#1f2937;border:1px solid #374151;border-radius:6px;padding:12px">
+  <h3 style="margin-top:0">Does this structure look right?</h3>
+  <p>Each stream is independent — they can be implemented in any order without blocking each other. No shared state changes, no new context providers needed.</p>
+</div>

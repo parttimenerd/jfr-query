@@ -1,0 +1,32 @@
+<h2>Design: Data Flow & Key Decisions</h2>
+<p class="subtitle">The non-obvious wiring between streams. Let me know if anything looks wrong.</p>
+
+<div class="section">
+  <h3>Stream 1 — How hover and lint connect to the editor</h3>
+  <p>CodeMirror 6 extensions are registered once in the plot editor factory. The new <code>plotHoverExtension</code> is a <code>hoverTooltip()</code> provider — it receives the token under the cursor and does a keyed lookup in <code>plotClauseDocs</code>. The lint extension already runs on every parse; we extend it with a <strong>levenshtein-distance "did you mean" pass</strong> against the known shape and clause name lists. No network calls — everything is local and synchronous.</p>
+  <p class="label">Data: <code>plotClauseDocs.ts</code> → hover tooltip DOM. Known shape/clause lists → lint diagnostics.</p>
+</div>
+
+<div class="section">
+  <h3>Stream 2 — Test connection ping</h3>
+  <p><code>AiService.pingProvider()</code> sends a single-token completion request ("hello") to the configured endpoint and measures round-trip time. The Settings tab shows a spinner while pending, then ✓ green / ✗ red with the error message or latency. Result is <strong>not cached</strong> — each button press re-tests. This avoids stale "connected" indicators after network changes.</p>
+  <p class="label">No new state context. Result held in local component state inside <code>SettingsPanel</code>.</p>
+</div>
+
+<div class="section">
+  <h3>Stream 3 — "Fix with AI" trigger point</h3>
+  <p>When <code>PlotRenderer</code> catches a render error, it already renders an error message div. We add a "Fix with AI" button there. On click it calls <code>inlineChatRef.open({ prefill: ... })</code> — the same mechanism used by the existing "Ask AI" shortcut — with the current cell DSL and error text pre-filled. No new state paths; reuses the existing <code>InlineChat</code> open API.</p>
+  <p>For <code>explainCell</code> and <code>suggestPlot</code>: both are registered in <code>AiService</code>'s tool registry alongside existing tools (<code>describeTable</code>, <code>runQuery</code>, etc.). They follow the exact same tool-call/response pattern — no architectural change, just two new entries.</p>
+  <p class="label">Column-name validation: post-process ghost-text completions — strip suggestions where an identifier token doesn't appear in <code>cellResultSchema.columns</code>. Applied client-side, no model round-trip.</p>
+</div>
+
+<div class="section">
+  <h3>Stream 4 — Onboarding cell lifecycle</h3>
+  <p>On notebook load, <code>App.tsx</code> checks: <code>cells.length === 0 &amp;&amp; !localStorage.getItem('jfrq:onboarding-dismissed')</code>. If true, it prepends a synthetic TemplatedMarkdown cell flagged as <code>isOnboarding: true</code>. The cell renders a "Getting started" panel with a dismiss button. On dismiss: set localStorage key + remove the cell. The cell is never persisted to the notebook file — it's ephemeral UI state only.</p>
+  <p class="label">No new context. Flag lives on the cell object, cleared on dismiss.</p>
+</div>
+
+<div class="section">
+  <h3>Stream 4 — PlotHelpModal search + Insert example</h3>
+  <p>Search is client-side: a single <code>filterTerm</code> state string, matched against shape names, clause names, and description text. "Insert example" calls <code>editorRef.dispatch(insertText(example.code))</code> — the same mechanism used by autocomplete snippet insertion. Requires the modal to receive the active editor ref, which it already does via <code>NotebookCell</code> context.</p>
+</div>

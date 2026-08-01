@@ -1,0 +1,40 @@
+<h2>D — Help content & discoverability</h2>
+<p class="subtitle">How should we make the notebook easier to learn and explore?</p>
+
+<div class="options">
+  <div class="option" data-choice="modal-polish" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>PlotHelpModal polish + search</h3>
+      <p>Add full-text search to the PlotHelpModal, make examples copy-paste ready (one-click "Insert example" button), and add a "Cheat sheet" tab with a dense reference table of all clauses. No new surfaces.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Improves what users already open</li><li>Low complexity</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Still requires knowing to open the modal</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="onboarding" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Guided onboarding for new notebooks</h3>
+      <p>When a blank notebook is opened, show a dismissable "Getting started" cell with a short walkthrough: load a JFR file → write a query → add a plot. Uses the existing TemplatedMarkdown cell type. No new infrastructure needed.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Closes the cold-start gap</li><li>Reuses existing primitives</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Only seen once; power users find it annoying</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="both-help" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Both: modal polish + onboarding <span style="font-size:0.75em;color:#4CAF50">★ recommended</span></h3>
+      <p>PlotHelpModal gets search + cheat sheet tab + insert-example buttons. New notebooks get a dismissable getting-started cell. Together they cover discovery at both the "I'm new" and "I need to look something up" stages.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Covers both cold-start and day-to-day reference needs</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>More work, but both pieces are individually contained</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

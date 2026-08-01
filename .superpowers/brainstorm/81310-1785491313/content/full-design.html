@@ -1,0 +1,71 @@
+<h2>Full design — three phases</h2>
+<p class="subtitle">Click each phase to expand. All three together = "the good pal".</p>
+
+<div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+
+  <!-- Phase 1 -->
+  <div style="background:#161b27;border:1px solid #1e2d3d;border-radius:10px;overflow:hidden">
+    <div style="background:#0a0f1a;padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #1e2d3d">
+      <span style="background:#06b6d430;color:#06b6d4;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700">PHASE 1</span>
+      <span style="color:#e2e8f0;font-weight:600">Visual refresh + embedded cells</span>
+    </div>
+    <div style="padding:12px 14px;color:#94a3b8;font-size:12px;line-height:1.7">
+      <ul style="margin:0;padding-left:16px;display:flex;flex-direction:column;gap:4px">
+        <li>Redesigned message bubbles — darker bg, avatar dot, asymmetric radii, code pills</li>
+        <li>AI can embed <strong style="color:#cbd5e1">any cell type inline</strong>: mini chart, full chart, flame graph, data table, SQL results</li>
+        <li>Each embedded cell has a cell header (type + query) + <strong style="color:#06b6d4">↗ Add to notebook</strong> button</li>
+        <li>Multiple cells per message, text flows above and below each</li>
+        <li>Model badge in header showing active provider + local/cloud indicator</li>
+        <li>Improved input area — unified rounded card</li>
+        <li><strong style="color:#cbd5e1">Variables fully in scope</strong>: AI sees current variable state, can reference vars in generated SQL, tool calls can update vars</li>
+      </ul>
+      <div style="margin-top:10px;background:#0d1420;border-radius:6px;padding:8px 10px;font-size:11px;color:#475569">
+        <span style="color:#64748b;font-weight:600">How cells embed:</span> AI response contains a special <code style="color:#06b6d4">:::cell</code> markdown fence with type + SQL + plot config. ChatMarkdownView detects it, renders the live cell component (reusing PlotRenderer / DataTable). "Add to notebook" promotes it via the existing <code style="color:#06b6d4">onAddCell</code> callback.
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 2 -->
+  <div style="background:#161b27;border:1px solid #1e2d3d;border-radius:10px;overflow:hidden">
+    <div style="background:#0a0f1a;padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #1e2d3d">
+      <span style="background:#6c5ce730;color:#a78bfa;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700">PHASE 2</span>
+      <span style="color:#e2e8f0;font-weight:600">AI-decides visualization + data access</span>
+    </div>
+    <div style="padding:12px 14px;color:#94a3b8;font-size:12px;line-height:1.7">
+      <ul style="margin:0;padding-left:16px;display:flex;flex-direction:column;gap:4px">
+        <li><strong style="color:#cbd5e1">AI decides when to visualize</strong> — no explicit trigger needed. System prompt instructs it to embed cells when data would be clearer as a chart or table</li>
+        <li><strong style="color:#cbd5e1">AI can run its own queries</strong> — new <code style="color:#a78bfa">query_data</code> tool: AI writes DuckDB SQL, gets results back, can embed them or just use values in its answer</li>
+        <li>Uses <strong style="color:#cbd5e1">current cell results as context</strong> automatically (existing visibility system: no-data / sanitized / full)</li>
+        <li>Variable values included in context — AI can reference <code style="color:#a78bfa">$threshold</code>, write SQL with <code style="color:#a78bfa">WHERE pause_ms > $threshold</code></li>
+        <li>Schema always available — AI knows table names and column types</li>
+      </ul>
+      <div style="margin-top:10px;background:#0d1420;border-radius:6px;padding:8px 10px;font-size:11px;color:#475569">
+        <span style="color:#64748b;font-weight:600">Data sharing setting:</span> Existing <code style="color:#a78bfa">aiDefaultVisibility</code> ('no-data' | 'sanitized' | 'full') already controls this. Phase 2 makes it prominent in the UI and adds a per-session override toggle in the chat header.
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 3 -->
+  <div style="background:#161b27;border:1px solid #1e2d3d;border-radius:10px;overflow:hidden">
+    <div style="background:#0a0f1a;padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #1e2d3d">
+      <span style="background:#f59e0b30;color:#fbbf24;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700">PHASE 3</span>
+      <span style="color:#e2e8f0;font-weight:600">Local model routing</span>
+    </div>
+    <div style="padding:12px 14px;color:#94a3b8;font-size:12px;line-height:1.7">
+      <ul style="margin:0;padding-left:16px;display:flex;flex-direction:column;gap:4px">
+        <li><strong style="color:#cbd5e1">LocalAiProvider already exists</strong> — OpenAI-compatible (Ollama, llama.cpp, LM Studio). Phase 3 wires it into chat properly</li>
+        <li><strong style="color:#cbd5e1">Routing logic</strong>: when a local model is configured, simple questions (schema lookup, short SQL, variable reads) go local; complex reasoning + visualization goes cloud</li>
+        <li>Local model is the <strong style="color:#cbd5e1">privacy-safe default</strong> — no data leaves the machine unless the user opts in via the visibility setting</li>
+        <li>Model badge in header shows <code style="color:#fbbf24">local</code> vs <code style="color:#06b6d4">cloud</code> for the current message being processed</li>
+        <li>Settings panel: local model URL, model name, routing threshold toggle ("prefer local when possible")</li>
+        <li>Graceful fallback: if local model is slow or unavailable, routes to cloud with a notice</li>
+      </ul>
+      <div style="margin-top:10px;background:#0d1420;border-radius:6px;padding:8px 10px;font-size:11px;color:#475569">
+        <span style="color:#64748b;font-weight:600">Routing heuristic:</span> message length + tool count + data visibility. Short message + no tools + no-data visibility → local. Any tool call or full visibility → cloud. User can override per-session.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:14px">Does this match what you're after? Any phase you'd expand, cut, or reorder? Tell me in the terminal.</p>

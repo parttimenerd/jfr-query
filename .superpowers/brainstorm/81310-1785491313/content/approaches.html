@@ -1,0 +1,49 @@
+<h2>Three approaches to the "good pal" chat upgrade</h2>
+<p class="subtitle">All three deliver: inline charts (A+B), local model routing, data-sharing setting, better visuals. They differ in scope and order.</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Layered (recommended)</h3>
+      <p>Three separate implementation phases, each shippable on its own:</p>
+      <ol style="margin:6px 0 0 16px;font-size:13px;line-height:1.7">
+        <li><strong>Phase 1</strong> — Visual refresh: new message bubble design, better typography, markdown polish, cleaner input area</li>
+        <li><strong>Phase 2</strong> — Viz-in-chat: AI can emit chart configs inline (A-style) or as cards (B-style), rendered by existing PlotRenderer</li>
+        <li><strong>Phase 3</strong> — Local model + data routing: add <code>LocalChatProvider</code>, data-sharing toggle in settings, routing logic</li>
+      </ol>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>Shippable incrementally</li><li>Each phase is testable</li><li>Lower risk</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>3 implementation cycles</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Big Bang</h3>
+      <p>One spec covering everything: redesigned ChatPanel, viz rendering, local model routing, data-sharing setting, all at once.</p>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>Consistent design from day 1</li><li>No intermediate states</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Large single PR</li><li>Hard to test mid-way</li><li>Riskier</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Viz-first</h3>
+      <p>Skip the visual refresh for now. Focus only on the two high-value missing features: viz-in-chat + local model routing. Polish comes later.</p>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>Fastest path to useful features</li><li>Tight scope</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Still looks rough while you're using it</li><li>Visual debt to pay later</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px">Click to select, then tell me in the terminal.</p>

@@ -1,0 +1,40 @@
+<h2>A — Contextual help in the editor</h2>
+<p class="subtitle">How should we surface help while typing? Pick the approach you prefer.</p>
+
+<div class="options">
+  <div class="option" data-choice="hover-only" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Hover docs only <span style="font-size:0.75em;color:#8b949e">(minimal)</span></h3>
+      <p>Extend the existing CodeMirror hover provider: show clause signatures and descriptions when hovering over any plot keyword (BRUSH, LINK_X, AXIS_Y, etc.). Uses the <code>plotClauseDocs.ts</code> data already in place. No new UI surfaces.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Very low complexity</li><li>Already half-done (SQL hover exists)</li><li>Non-intrusive</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>No error guidance</li><li>User must hover to discover</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="hover-plus-errors" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Hover docs + inline error hints <span style="font-size:0.75em;color:#4CAF50">★ recommended</span></h3>
+      <p>Hover docs (A) plus: when a plot cell has a parse error, show a CodeMirror diagnostic with a short "fix suggestion" tooltip at the error location. E.g. unknown shape <code>line_chart</code> → "Did you mean <code>LINE_CHART</code>?"</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Fixes the most painful UX gap (silent parse failures)</li><li>Reuses existing lint infrastructure</li><li>Discoverable without opening Help</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Requires small linter extension</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="full-inline" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Full inline help panel</h3>
+      <p>A collapsible side-panel inside each plot cell showing the relevant clause doc for whatever keyword the cursor is on — updates as you type. Think "mini PlotHelpModal" always open beside the editor.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Most discoverable</li><li>No hover required</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Takes up significant vertical space</li><li>High implementation complexity</li><li>Duplicates PlotHelpModal</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

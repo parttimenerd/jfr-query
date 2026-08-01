@@ -1,0 +1,32 @@
+[
+  {
+    "step": 1,
+    "name": "App loads",
+    "status": "PASS",
+    "detail": "title=\"JFR SQL Notebook\", body starts with: \"JFR SQL Notebook\n\nQuery JFR recordings with SQL, visualize results as charts.\n\nD\""
+  },
+  {
+    "step": 2,
+    "name": "Load demo",
+    "status": "PASS",
+    "detail": "6 editors; body=\"JFR Query Notebook\nWASM\nJFR\n$session_start\nMar 15, 10:00 AM\n$session_end\nMar 15,\""
+  },
+  {
+    "step": 3,
+    "name": "PromptSuggester chips",
+    "status": "FAIL",
+    "detail": "No textarea found"
+  },
+  {
+    "step": 4,
+    "name": "Plot suggester",
+    "status": "PASS",
+    "detail": "GC data in DOM: true; plotChips: 4"
+  },
+  {
+    "step": 5,
+    "name": "Model selector",
+    "status": "FAIL",
+    "detail": "selects: 0, modelText lines: 0: "
+  }
+]

@@ -1,0 +1,40 @@
+<h2>C — AI tool quality & coverage</h2>
+<p class="subtitle">Where should we invest in making the AI smarter and more capable?</p>
+
+<div class="options">
+  <div class="option" data-choice="completions" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Schema-aware completions & plot-fix</h3>
+      <p>Ghost-text and autocomplete become column-aware: the AI sees the actual column names from the current query result and uses them in suggestions. When a plot fails to render, an inline "Fix with AI" button appears that sends the error + DSL to the model for a corrected version.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Directly reduces "wrong column name" errors</li><li>Plot-fix closes the most frustrating loop</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Completions already get schema — this is a quality tuning effort</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="agent-tools" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Richer agent tool repertoire <span style="font-size:0.75em;color:#4CAF50">★ recommended</span></h3>
+      <p>Add two high-value agent tools: <code>explainCell</code> (AI explains what a cell does and what its results mean, including flamegraph/GC pattern recognition) and <code>suggestPlot</code> (given column names + types, AI proposes the best plot type + config). Both callable from inline-chat.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Closes the "what am I looking at?" gap for JFR newcomers</li><li>suggestPlot surfaces the right chart for unfamiliar data shapes</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Two new tools = two new system-prompt entries + tests</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="system-prompt" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>System prompt & context quality improvements</h3>
+      <p>Audit and rewrite the AI system prompts: fix the <code>generatePlottingDocsPrompt</code> overflow risk (it can exceed model context on large registries), add JFR domain knowledge (event types, common patterns), tighten the plot DSL spec the model sees so completions are less hallucinated.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Improves all AI features at once</li><li>No new UI work needed</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Quality gains are hard to measure objectively</li><li>Less visible to users</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

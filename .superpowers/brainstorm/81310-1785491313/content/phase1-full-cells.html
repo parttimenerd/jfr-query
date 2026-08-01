@@ -1,0 +1,149 @@
+<h2>Full cells embedded in chat messages</h2>
+<p class="subtitle">A chat message can contain a complete interactive cell — flame graph, data table, complex chart — with Add to Notebook. Scrollable if tall.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Chat — full embedded cells</div>
+  <div class="mockup-body" style="background:#0f1117;padding:14px;font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;display:flex;flex-direction:column;gap:12px;min-height:600px">
+
+    <!-- header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid #1e2433">
+      <span style="color:#e2e8f0;font-weight:600;font-size:13px">Chat</span>
+      <span style="background:#1e2433;color:#06b6d4;font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid #06b6d430">claude-sonnet ✦ local</span>
+    </div>
+
+    <!-- user -->
+    <div style="display:flex;justify-content:flex-end">
+      <div style="max-width:80%;background:#1e3a4a;border:1px solid #0891b250;border-radius:12px 4px 12px 12px;padding:10px 12px;color:#e2e8f0;line-height:1.5">
+        show me where CPU time is spent
+      </div>
+    </div>
+
+    <!-- AI message with embedded flame graph cell -->
+    <div style="display:flex;gap:8px;align-items:flex-start">
+      <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#6c5ce7,#06b6d4);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:white;font-weight:700;margin-top:2px">AI</div>
+      <div style="background:#161b27;border:1px solid #1e2d3d;border-radius:4px 12px 12px 12px;padding:12px 14px;color:#cbd5e1;line-height:1.7;flex:1">
+        <div style="margin-bottom:10px">Here's a flame graph of CPU execution samples from your session. The hot path is clearly in <code style="background:#0f1117;color:#06b6d4;padding:1px 5px;border-radius:3px;font-size:11px">GC::doGC</code> → <code style="background:#0f1117;color:#06b6d4;padding:1px 5px;border-radius:3px;font-size:11px">ParallelScavenge</code>.</div>
+
+        <!-- embedded cell -->
+        <div style="background:#0d1420;border:1px solid #1e2d3d;border-radius:8px;overflow:hidden;margin-bottom:10px">
+          <!-- cell header bar -->
+          <div style="background:#0a0f1a;border-bottom:1px solid #1e2d3d;padding:6px 10px;display:flex;align-items:center;justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="color:#64748b;font-size:10px;font-weight:600;letter-spacing:0.05em">FLAME GRAPH</span>
+              <span style="color:#374151;font-size:10px">·</span>
+              <span style="color:#475569;font-size:10px;font-family:monospace">ExecutionSample GROUP BY stackTrace</span>
+            </div>
+            <button style="background:#1e2d3d;border:1px solid #06b6d430;color:#06b6d4;font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer">↗ Add to notebook</button>
+          </div>
+          <!-- flame graph body -->
+          <div style="padding:10px;position:relative">
+            <!-- fake flame graph rows -->
+            <div style="display:flex;flex-direction:column;gap:2px;font-size:9px;font-family:monospace">
+              <div style="height:16px;background:#ef4444;border-radius:2px;width:100%;display:flex;align-items:center;padding:0 6px;color:white;overflow:hidden">main (100%)</div>
+              <div style="height:16px;background:#f97316;border-radius:2px;width:88%;display:flex;align-items:center;padding:0 6px;color:white;overflow:hidden">Thread::run (88%)</div>
+              <div style="display:flex;gap:2px">
+                <div style="height:16px;background:#f59e0b;border-radius:2px;width:62%;display:flex;align-items:center;padding:0 6px;color:white;overflow:hidden">GC::doGC (62%)</div>
+                <div style="height:16px;background:#84cc16;border-radius:2px;flex:1;display:flex;align-items:center;padding:0 6px;color:white;overflow:hidden;font-size:8px">app (26%)</div>
+              </div>
+              <div style="display:flex;gap:2px">
+                <div style="height:16px;background:#f59e0b;border-radius:2px;width:55%;display:flex;align-items:center;padding:0 6px;color:white;overflow:hidden;opacity:0.9">ParallelScavenge (55%)</div>
+                <div style="height:16px;background:#22c55e;border-radius:2px;width:20%;display:flex;align-items:center;padding:0 6px;color:white;overflow:hidden;font-size:8px">HashMap (20%)</div>
+                <div style="height:16px;background:#14b8a6;border-radius:2px;flex:1;display:flex;align-items:center;padding:0 4px;color:white;overflow:hidden;font-size:8px">IO (6%)</div>
+              </div>
+              <div style="display:flex;gap:2px">
+                <div style="height:16px;background:#eab308;border-radius:2px;width:30%;display:flex;align-items:center;padding:0 6px;color:white;overflow:hidden;font-size:8px">copyTo (30%)</div>
+                <div style="height:16px;background:#eab308;border-radius:2px;width:24%;display:flex;align-items:center;padding:0 6px;color:white;overflow:hidden;font-size:8px;opacity:0.8">scanObj (24%)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>GC dominates at 62% of CPU time. The <code style="background:#0f1117;color:#f59e0b;padding:1px 5px;border-radius:3px;font-size:11px">ParallelScavenge</code> phase is doing heavy object copying — consistent with the heap growth we saw earlier. Want the top allocating call stacks?</div>
+      </div>
+    </div>
+
+    <!-- user -->
+    <div style="display:flex;justify-content:flex-end">
+      <div style="max-width:80%;background:#1e3a4a;border:1px solid #0891b250;border-radius:12px 4px 12px 12px;padding:10px 12px;color:#e2e8f0;line-height:1.5">
+        yes, and show me the raw events too
+      </div>
+    </div>
+
+    <!-- AI with two embedded cells: table + chart -->
+    <div style="display:flex;gap:8px;align-items:flex-start">
+      <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#6c5ce7,#06b6d4);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:white;font-weight:700;margin-top:2px">AI</div>
+      <div style="background:#161b27;border:1px solid #1e2d3d;border-radius:4px 12px 12px 12px;padding:12px 14px;color:#cbd5e1;line-height:1.7;flex:1">
+        <div style="margin-bottom:10px">Top allocating stacks and first 100 raw events:</div>
+
+        <!-- embedded table cell -->
+        <div style="background:#0d1420;border:1px solid #1e2d3d;border-radius:8px;overflow:hidden;margin-bottom:8px">
+          <div style="background:#0a0f1a;border-bottom:1px solid #1e2d3d;padding:6px 10px;display:flex;align-items:center;justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="color:#64748b;font-size:10px;font-weight:600;letter-spacing:0.05em">TABLE</span>
+              <span style="color:#374151;font-size:10px">·</span>
+              <span style="color:#475569;font-size:10px;font-family:monospace">top allocators by stack</span>
+            </div>
+            <button style="background:#1e2d3d;border:1px solid #06b6d430;color:#06b6d4;font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer">↗ Add to notebook</button>
+          </div>
+          <div style="overflow-x:auto;max-height:100px;overflow-y:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:10px;font-family:monospace">
+              <thead>
+                <tr style="background:#0a0f1a">
+                  <th style="padding:5px 8px;text-align:left;color:#475569;border-bottom:1px solid #1e2d3d">method</th>
+                  <th style="padding:5px 8px;text-align:right;color:#475569;border-bottom:1px solid #1e2d3d">alloc_mb</th>
+                  <th style="padding:5px 8px;text-align:right;color:#475569;border-bottom:1px solid #1e2d3d">count</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="border-bottom:1px solid #1a2030"><td style="padding:4px 8px;color:#cbd5e1">ParallelScavenge::copyTo</td><td style="padding:4px 8px;text-align:right;color:#f87171">312</td><td style="padding:4px 8px;text-align:right;color:#94a3b8">48,201</td></tr>
+                <tr style="border-bottom:1px solid #1a2030;background:#0d1420"><td style="padding:4px 8px;color:#cbd5e1">HashMap::resize</td><td style="padding:4px 8px;text-align:right;color:#f87171">191</td><td style="padding:4px 8px;text-align:right;color:#94a3b8">12,044</td></tr>
+                <tr style="border-bottom:1px solid #1a2030"><td style="padding:4px 8px;color:#cbd5e1">String::intern</td><td style="padding:4px 8px;text-align:right;color:#fb923c">85</td><td style="padding:4px 8px;text-align:right;color:#94a3b8">9,871</td></tr>
+                <tr style="background:#0d1420"><td style="padding:4px 8px;color:#cbd5e1">Object[]::clone</td><td style="padding:4px 8px;text-align:right;color:#fbbf24">49</td><td style="padding:4px 8px;text-align:right;color:#94a3b8">3,210</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- embedded SQL+results cell (collapsed sql, showing results) -->
+        <div style="background:#0d1420;border:1px solid #1e2d3d;border-radius:8px;overflow:hidden;margin-bottom:10px">
+          <div style="background:#0a0f1a;border-bottom:1px solid #1e2d3d;padding:6px 10px;display:flex;align-items:center;justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="color:#64748b;font-size:10px;font-weight:600;letter-spacing:0.05em">SQL</span>
+              <span style="color:#374151;font-size:10px">·</span>
+              <span style="color:#475569;font-size:10px;font-family:monospace">ObjectAllocationInNewTLAB LIMIT 100</span>
+            </div>
+            <button style="background:#1e2d3d;border:1px solid #06b6d430;color:#06b6d4;font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer">↗ Add to notebook</button>
+          </div>
+          <div style="overflow-x:auto;max-height:90px;overflow-y:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:10px;font-family:monospace">
+              <thead>
+                <tr style="background:#0a0f1a">
+                  <th style="padding:5px 8px;text-align:left;color:#475569;border-bottom:1px solid #1e2d3d">startTime</th>
+                  <th style="padding:5px 8px;text-align:left;color:#475569;border-bottom:1px solid #1e2d3d">objectClass</th>
+                  <th style="padding:5px 8px;text-align:right;color:#475569;border-bottom:1px solid #1e2d3d">allocationSize</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="border-bottom:1px solid #1a2030"><td style="padding:4px 8px;color:#64748b">10:42:01.012</td><td style="padding:4px 8px;color:#cbd5e1">byte[]</td><td style="padding:4px 8px;text-align:right;color:#94a3b8">8,192</td></tr>
+                <tr style="border-bottom:1px solid #1a2030;background:#0d1420"><td style="padding:4px 8px;color:#64748b">10:42:01.013</td><td style="padding:4px 8px;color:#cbd5e1">char[]</td><td style="padding:4px 8px;text-align:right;color:#94a3b8">4,096</td></tr>
+                <tr style="border-bottom:1px solid #1a2030"><td style="padding:4px 8px;color:#64748b">10:42:01.015</td><td style="padding:4px 8px;color:#cbd5e1">HashMap$Entry</td><td style="padding:4px 8px;text-align:right;color:#94a3b8">48</td></tr>
+                <tr style="background:#0d1420"><td style="padding:4px 8px;color:#64748b">10:42:01.018</td><td style="padding:4px 8px;color:#cbd5e1">String</td><td style="padding:4px 8px;text-align:right;color:#94a3b8">32</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="padding:4px 8px;color:#374151;font-size:9px;border-top:1px solid #1a2030">showing 4 of 100 rows</div>
+        </div>
+
+        <div>The raw events confirm it — <code style="background:#0f1117;color:#06b6d4;padding:1px 5px;border-radius:3px;font-size:11px">byte[]</code> and <code style="background:#0f1117;color:#06b6d4;padding:1px 5px;border-radius:3px;font-size:11px">char[]</code> are allocated in tight bursts. This is classic string internment under load. Want me to identify the call site?</div>
+      </div>
+    </div>
+
+    <!-- input -->
+    <div style="margin-top:auto;background:#161b27;border:1px solid #1e2d3d;border-radius:10px;padding:8px 10px;display:flex;gap:6px;align-items:center">
+      <input style="flex:1;background:transparent;border:none;outline:none;color:#e2e8f0;font-size:12px" placeholder="Ask about your JFR session…" />
+      <button style="background:linear-gradient(135deg,#0891b2,#6c5ce7);color:white;border:none;border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer">⏎</button>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:12px">Each embedded cell has: type badge, SQL label, scrollable results, "↗ Add to notebook" button. Text flows above and below. Multiple cells per message. Does this capture it?</p>

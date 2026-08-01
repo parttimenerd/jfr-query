@@ -1,0 +1,36 @@
+<h2>Help & AI Improvements — Where should we focus?</h2>
+<p class="subtitle">Select the areas that matter most to you (you can pick multiple)</p>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="contextual-help" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Contextual help in the editor</h3>
+      <p>Hover docs for plot clauses while typing; inline error hints with fix suggestions; "Did you mean X?" when a plot fails to parse. Currently you must open the Help modal separately.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="ai-ux" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>AI UX & transparency</h3>
+      <p>Make AI visibility modes (ghost-text, inline-chat, command-palette AI) more discoverable; show which model/provider is active; surface token usage; explain why a suggestion was made.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="ai-tools" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>AI tool quality & coverage</h3>
+      <p>Improve what the AI agent can do: better plot-fix suggestions, smarter column-aware completions, multi-step "explain this flamegraph" workflows, schema-aware SQL generation.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="help-content" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>Help content & discoverability</h3>
+      <p>Richer PlotHelpModal (more examples, searchable, copy-paste snippets); quick-reference card; guided onboarding tour for new users; keyboard shortcut polish.</p>
+    </div>
+  </div>
+</div>

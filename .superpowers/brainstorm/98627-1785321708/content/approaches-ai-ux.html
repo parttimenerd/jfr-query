@@ -1,0 +1,40 @@
+<h2>B — AI UX & transparency</h2>
+<p class="subtitle">How should we surface model/provider status and AI feature discoverability?</p>
+
+<div class="options">
+  <div class="option" data-choice="status-bar" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Status indicator in toolbar</h3>
+      <p>A small pill/badge in the notebook toolbar showing the active provider + model (e.g. "Gemini 1.5 Flash"). Clicking it opens the Settings panel directly to the AI tab. Ghost-text and inline-chat modes shown as icons that toggle on/off.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Always visible, zero hunt</li><li>One click to change model</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Adds toolbar clutter for non-AI users</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="settings-polish" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Richer Settings AI tab <span style="font-size:0.75em;color:#4CAF50">★ recommended</span></h3>
+      <p>Keep toolbar minimal but make the Settings AI tab much clearer: show which mode is active (ghost-text / inline-chat / command-palette), add short descriptions of each mode, show token budget and last-used model. Add a "Test connection" button that runs a quick ping.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>No toolbar clutter</li><li>Educates about all three AI entry points</li><li>Test connection catches misconfigured keys immediately</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Requires opening Settings to see status</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="both" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Both: compact toolbar pill + richer Settings</h3>
+      <p>A minimal read-only pill in the toolbar (provider name + colored dot for connection status: green/yellow/red), combined with the full Settings AI tab polish from option B.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Best discoverability and depth</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Most work; toolbar pill may feel noisy</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
