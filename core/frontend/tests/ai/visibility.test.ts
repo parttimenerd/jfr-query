@@ -200,7 +200,7 @@ describe('buildContextPayload — schema description', () => {
     it('lists views when present', () => {
         const withViews: SchemaBundle = {
             tables: [],
-            views: [{ name: 'heap_summary' }],
+            views: [{ name: 'heap_summary', query: 'SELECT 1', columns: [] }],
             macros: [],
         };
         const out = buildContextPayload('no-data', withViews, null);
@@ -212,7 +212,7 @@ describe('buildContextPayload — schema description', () => {
         const withMacros: SchemaBundle = {
             tables: [],
             views: [],
-            macros: [{ name: 'topN', parameters: ['n', 'col'] }],
+            macros: [{ name: 'topN', parameters: ['n', 'col'], sql: 'SELECT ...', returnType: 'TABLE' }],
         };
         const out = buildContextPayload('no-data', withMacros, null);
         expect(out).toContain('topN(n, col)');

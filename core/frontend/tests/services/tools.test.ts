@@ -815,7 +815,7 @@ describe('rememberFact / recallMemory tools', () => {
         const deps = makeDeps();
         const res = await executeTool('rememberFact', { key: 'k', value: 'v' }, deps);
         expect(res.ok).toBe(false);
-        if (!res.ok) expect(res.error).toMatch(/memory not supported/i);
+        if (!res.ok) expect((res as { ok: false; error: string }).error).toMatch(/memory not supported/i);
     });
 
     it('recallMemory returns the full memory map', async () => {
@@ -833,7 +833,7 @@ describe('rememberFact / recallMemory tools', () => {
         const deps = makeDeps();
         const res = await executeTool('recallMemory', {}, deps);
         expect(res.ok).toBe(false);
-        if (!res.ok) expect(res.error).toMatch(/memory not supported/i);
+        if (!res.ok) expect((res as { ok: false; error: string }).error).toMatch(/memory not supported/i);
     });
 });
 
@@ -862,6 +862,6 @@ describe('updateTaskList tool', () => {
         const deps = makeDeps();
         const res = await executeTool('updateTaskList', { tasks: [] }, deps);
         expect(res.ok).toBe(false);
-        if (!res.ok) expect(res.error).toMatch(/task list not supported/i);
+        if (!res.ok) expect((res as { ok: false; error: string }).error).toMatch(/task list not supported/i);
     });
 });
