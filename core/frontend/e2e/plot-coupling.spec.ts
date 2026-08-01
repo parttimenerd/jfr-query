@@ -87,11 +87,18 @@ test.describe.serial('Plot coupling and completions', () => {
   test('WIDTH and HEIGHT appear in tail-key completions for a plot cell', async () => {
     // Find a plot-mode editor and type `LINE_CHART(x: "ts") ` followed by
     // a partial tail key to verify WIDTH/HEIGHT are suggested.
-    const editors = page.locator('.cm-jfr-editor .cm-editor');
-    const count = await editors.count();
-    if (count < 1) { test.skip(); return; }
+    const plotIndices: number[] = await page.evaluate(() => {
+      const eds = document.querySelectorAll('.cm-jfr-editor .cm-editor');
+      const result: number[] = [];
+      eds.forEach((ed, i) => {
+        if (ed.querySelector('.cm-content[data-language="plot"]')) result.push(i);
+      });
+      return result;
+    });
+    if (plotIndices.length === 0) { test.skip(); return; }
 
-    const editor = editors.first();
+    const editor = page.locator('.cm-jfr-editor .cm-editor').nth(plotIndices[0]);
+    await editor.scrollIntoViewIfNeeded();
     await editor.waitFor({ state: 'visible' });
 
     const content = editor.locator('.cm-content').first();
@@ -100,8 +107,8 @@ test.describe.serial('Plot coupling and completions', () => {
     const isMac = process.platform === 'darwin';
     const modKey = isMac ? 'Meta' : 'Control';
     await page.keyboard.press(`${modKey}+a`);
-    await page.keyboard.press('Delete');
-
+    // Use insertText (not Delete) to atomically replace content — deleting a
+    // plot editor's content removes its segment from the notebook.
     // Type a minimal valid plot then a space to enter tail-key position.
     await page.keyboard.insertText('LINE_CHART(x: "ts") W');
     await page.waitForTimeout(200);
@@ -119,9 +126,6 @@ test.describe.serial('Plot coupling and completions', () => {
       await page.keyboard.press('Escape');
     }
 
-    // Clean up
-    await page.keyboard.press(`${modKey}+a`);
-    await page.keyboard.press('Delete');
   });
 });
 

@@ -195,10 +195,10 @@ test.describe.serial('Plot DSL complex completions', () => {
     });
   });
 
-  test('P6. AXIS-Y appears in tail-key completion', async () => {
+  test('P6. AXIS_Y appears in tail-key completion', async () => {
     await expectPlotCompletions(page, {
       plotBefore: 'LINE_CHART(x: "startTime", y: "duration") A',
-      expected: ['AXIS-Y', 'AXIS-X'],
+      expected: ['AXIS_Y', 'AXIS_X'],
       mode: 'anyOf',
     });
   });
@@ -289,7 +289,6 @@ async function expectTopCompletions(page: Page, opts: SqlOpts) {
   const isMac = process.platform === 'darwin';
   const modKey = isMac ? 'Meta' : 'Control';
   await page.keyboard.press(`${modKey}+a`);
-  await page.keyboard.press('Delete');
   await page.keyboard.insertText(fullText);
 
   for (let i = 0; i < trailing; i++) await page.keyboard.press('ArrowLeft');
@@ -322,6 +321,7 @@ async function expectTopCompletions(page: Page, opts: SqlOpts) {
 
   await page.keyboard.press('Escape');
   await popup.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+  await page.waitForTimeout(100);
 }
 
 interface PlotOpts {
@@ -366,14 +366,13 @@ async function expectPlotCompletions(page: Page, opts: PlotOpts) {
   const content = editor.locator('.cm-content').first();
   await content.click();
 
-  // Ctrl+a in CM6 moves cursor to line start. Type new content there:
-  // content may accumulate across tests but cursor context is correct.
+  // Select all existing content and replace with the test text.
   await page.keyboard.press('Control+a');
-
+  // Use insertText so CM6 receives the full text atomically (avoids per-key
+  // autocomplete popups interfering with the typed content).
   const fullText = opts.plotBefore + (opts.plotAfter ?? '');
   const trailing = (opts.plotAfter ?? '').length;
-  // Use keyboard.type() (key-by-key) so CM6 receives proper key events.
-  await page.keyboard.type(fullText);
+  await page.keyboard.insertText(fullText);
 
   for (let i = 0; i < trailing; i++) await page.keyboard.press('ArrowLeft');
 

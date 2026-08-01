@@ -427,10 +427,10 @@ test.describe.serial('Plot: FLAMEGRAPH click-to-zoom', () => {
     const sqlEd = await getLastSqlEditor(page);
     if (!sqlEd) { test.skip(); return; }
 
+    // FLAMEGRAPH expects a `frames` column with semicolon-separated stack frame strings
+    // and a `value` column for sample weight.
     await setCmContent(page, sqlEd,
-      `SELECT 'root' AS name, 100 AS value, '' AS parent
-       UNION ALL SELECT 'child_a', 60, 'root'
-       UNION ALL SELECT 'child_b', 40, 'root'`);
+      `SELECT 'root;child_a' AS frames, 60 AS value UNION ALL SELECT 'root;child_b', 40`);
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -438,16 +438,18 @@ test.describe.serial('Plot: FLAMEGRAPH click-to-zoom', () => {
     if (!plotEd) { test.skip(); return; }
 
     await setCmContent(page, plotEd,
-      'FLAMEGRAPH(name: "name", value: "value", parent: "parent")');
+      'FLAMEGRAPH(frames: "frames", value: "value")');
     await pressRun(page);
     await page.waitForTimeout(2000);
 
-    const container = page.locator('div[id^="result-container-"]').first();
+    const container = page.locator('div[id^="result-container-"]').last();
     await expect(container).toBeVisible({ timeout: 10_000 });
   });
 
   test('P10. Clicking a non-root flamegraph frame triggers zoom (no error thrown)', async () => {
-    const childFrame = page.locator('[title*="child_a"], [title*="child_b"]').first();
+    const lastContainer = page.locator('div[id^="result-container-"]').last();
+    // Flamegraph frame divs have title attribute containing the frame name
+    const childFrame = lastContainer.locator('[title*="child_a"], [title*="child_b"]').first();
     const exists = await childFrame.isVisible().catch(() => false);
     if (!exists) { test.skip(); return; }
 
@@ -1453,9 +1455,12 @@ test.describe.serial('Plot: GANTT color column', () => {
 
     const sqlEd = await getLastSqlEditor(page);
     if (!sqlEd) { test.skip(); return; }
-    await setCmContent(page, sqlEd,
-      `SELECT startTime, startTime + (duration * INTERVAL '1 second') AS endTime, cause AS lane, cause AS color_col
-       FROM GarbageCollection ORDER BY startTime LIMIT 8`);
+    await setCmContent(page, sqlEd, [
+      `SELECT epoch_ms(startTime) AS startTime,`,
+      `  epoch_ms(startTime) + (duration * 1000) AS endTime,`,
+      `  cause AS lane, cause AS color_col`,
+      `FROM GarbageCollection ORDER BY startTime LIMIT 8`,
+    ].join('\n'));
     await pressRun(page);
     await page.waitForTimeout(1500);
 
@@ -1468,11 +1473,14 @@ test.describe.serial('Plot: GANTT color column', () => {
 
     const container = page.locator('div[id^="result-container-"]').last();
     await expect(container).toBeVisible({ timeout: 10_000 });
-    await expect(container.locator('text=GANTT Color')).toBeVisible({ timeout: 5_000 });
+
     const hasError = await page.evaluate(() =>
       [...document.querySelectorAll('*')].some(el => el.textContent === 'Plot render error')
     );
     expect(hasError).toBe(false);
+
+    // Chart title confirms correct render
+    await expect(container.locator('text=GANTT Color')).toBeVisible({ timeout: 5_000 });
   });
 });
 

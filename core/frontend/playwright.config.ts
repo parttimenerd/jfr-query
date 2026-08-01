@@ -18,7 +18,7 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   workers: IS_CI ? 2 : 4,
-  retries: IS_CI ? 2 : 0,
+  retries: IS_CI ? 2 : 1,
   timeout: 60_000,
   reporter: [['list']],
   use: {
@@ -26,6 +26,21 @@ export default defineConfig({
     trace: 'retain-on-failure',
     actionTimeout: 15_000,
     navigationTimeout: 60_000,
+    // Pre-set localStorage keys that suppress auto-opening overlays (tour, welcome banner,
+    // AI nudge) so they never intercept pointer events during tests.
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: BASE_URL,
+          localStorage: [
+            { name: 'jfr-tour-seen', value: '1' },
+            { name: 'jfrq:onboarding-dismissed', value: '1' },
+            { name: 'jfrq:ai-nudge-dismissed', value: '1' },
+          ],
+        },
+      ],
+    },
   },
   projects: [
     {

@@ -200,14 +200,12 @@ async function expectTopCompletions(page: Page, opts: ExpectOpts) {
   const content = editor.locator('.cm-content').first();
   await content.click();
 
-  // Select all + delete to clear the cell.
+  // Select all, then atomically replace with new content via insertText.
+  // Using insertText (rather than Delete + insertText) avoids edge cases where
+  // the editor is left in an intermediate empty state.
   const isMac = process.platform === 'darwin';
   const modKey = isMac ? 'Meta' : 'Control';
   await page.keyboard.press(`${modKey}+a`);
-  await page.keyboard.press('Delete');
-
-  // Type the full text. `delay: 0` is fast; we use no delay because CM6
-  // handles input events synchronously.
   await page.keyboard.insertText(fullText);
 
   // Move cursor left by the length of the trailing text so the caret sits
@@ -271,4 +269,7 @@ async function expectTopCompletions(page: Page, opts: ExpectOpts) {
 
   await page.keyboard.press('Escape');
   await popup.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+  // Brief settle so async callbacks (e.g. onDistinctValuesReady) don't fire
+  // into the next test's editor setup.
+  await page.waitForTimeout(100);
 }

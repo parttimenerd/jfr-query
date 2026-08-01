@@ -300,7 +300,7 @@ test.describe.serial('V3: Transitive global variable chain', () => {
 
   test.afterAll(async () => page.close());
 
-  test('V3. SQL using $$a resolves through $$a=$$b, $$b="G1 Old Gen" without error', async () => {
+  test("V3. SQL using $$a resolves through $$a=$$b, $$b=\"'G1 Old Gen'\" without error", async () => {
     // Expand the Notebook Settings panel and Notebook Variables section.
     // expandNotebookVariables throws if it can't find/open the panel,
     // so we guard with a try/catch to skip gracefully.
@@ -311,7 +311,7 @@ test.describe.serial('V3: Transitive global variable chain', () => {
       return;
     }
 
-    await addGlobalVar(page, '$$b', 'G1 Old Gen');
+    await addGlobalVar(page, '$$b', "'G1 Old Gen'");
     await addGlobalVar(page, '$$a', '$$b');
 
     // Add a new cell to test the transitive reference
@@ -436,12 +436,16 @@ test.describe.serial('V4: Cell-local variable overrides global', () => {
     await addCellVarBtn.click();
     await page.waitForTimeout(400);
 
-    // Variables CollapsibleBlock starts collapsed — click the cursor-pointer header row to expand.
-    const varToggleRow2 = lastCell.locator('div.cursor-pointer.w-full').filter({ hasText: /Variables/ });
-    const varToggleVisible2 = await varToggleRow2.isVisible().catch(() => false);
-    if (varToggleVisible2) {
-      await varToggleRow2.click();
-      await page.waitForTimeout(300);
+    // Variables CollapsibleBlock may be collapsed — expand it only if inputs aren't already visible.
+    const nameInputCheck = lastCell.locator('input.w-1\\/3').first();
+    const alreadyExpandedCell = await nameInputCheck.isVisible().catch(() => false);
+    if (!alreadyExpandedCell) {
+      const varToggleRow2 = lastCell.locator('div.cursor-pointer.w-full').filter({ hasText: /Variables/ });
+      const varToggleVisible2 = await varToggleRow2.isVisible().catch(() => false);
+      if (varToggleVisible2) {
+        await varToggleRow2.click();
+        await page.waitForTimeout(300);
+      }
     }
 
     // Set cell variable name to $lim
@@ -550,12 +554,16 @@ test.describe.serial('V5: Save notebook contains variable', () => {
     await addVarBtn.click();
     await page.waitForTimeout(400);
 
-    // Variables CollapsibleBlock starts collapsed — click the cursor-pointer header row to expand.
-    const varToggleRow5 = lastCell.locator('div.cursor-pointer.w-full').filter({ hasText: /Variables/ });
-    const varToggleVisible5 = await varToggleRow5.isVisible().catch(() => false);
-    if (varToggleVisible5) {
-      await varToggleRow5.click();
-      await page.waitForTimeout(300);
+    // Variables CollapsibleBlock may be collapsed — expand it only if inputs aren't already visible.
+    const nameInputCheck5 = lastCell.locator('input.w-1\\/3').first();
+    const alreadyExpandedCell5 = await nameInputCheck5.isVisible().catch(() => false);
+    if (!alreadyExpandedCell5) {
+      const varToggleRow5 = lastCell.locator('div.cursor-pointer.w-full').filter({ hasText: /Variables/ });
+      const varToggleVisible5 = await varToggleRow5.isVisible().catch(() => false);
+      if (varToggleVisible5) {
+        await varToggleRow5.click();
+        await page.waitForTimeout(300);
+      }
     }
 
     const nameInput = lastCell.locator('input.w-1\\/3').first();
