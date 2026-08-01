@@ -19,6 +19,9 @@ import {
     AiOfflineEnforcedError,
     providerMetadataRegistry,
 } from '../../services/AiService';
+// Access the static method via the class constructor (AiService is not exported).
+const getEffectiveApiKey: (provider: any, settings: any) => string =
+    (aiService as any).constructor.getEffectiveApiKey;
 import type { AiProviderType } from '../../services/ai/IAiProvider';
 
 // Type-only — we redefine the shape we need locally to avoid pulling
@@ -343,5 +346,68 @@ describe('AiService.streamChatWithTools — per-call provider/model overrides', 
         );
         for await (const _ of stream) { /* drain */ }
         expect(observedModel).toBe(providerMetadataRegistry.google.defaultModels.advanced);
+    });
+});
+
+// ── AiService.getEffectiveApiKey ──────────────────────────────────────────────
+
+describe('AiService.getEffectiveApiKey', () => {
+    const emptySettings: Settings = {
+        googleApiKey: '', openaiApiKey: '', anthropicApiKey: '',
+        gardenerApiKey: '', localApiKey: '',
+    };
+
+    it('returns settings key when set for google', () => {
+        const s = { ...emptySettings, googleApiKey: 'my-google-key' };
+        expect(getEffectiveApiKey('google', s)).toBe('my-google-key');
+    });
+
+    it('returns settings key when set for openai', () => {
+        const s = { ...emptySettings, openaiApiKey: 'my-openai-key' };
+        expect(getEffectiveApiKey('openai', s)).toBe('my-openai-key');
+    });
+
+    it('returns settings key when set for anthropic', () => {
+        const s = { ...emptySettings, anthropicApiKey: 'my-anthropic-key' };
+        expect(getEffectiveApiKey('anthropic', s)).toBe('my-anthropic-key');
+    });
+
+    it('returns settings key when set for gardener', () => {
+        const s = { ...emptySettings, gardenerApiKey: 'my-gardener-key' };
+        expect(getEffectiveApiKey('gardener', s)).toBe('my-gardener-key');
+    });
+
+    it('returns settings key when set for local', () => {
+        const s = { ...emptySettings, localApiKey: 'my-local-key' };
+        expect(getEffectiveApiKey('local', s)).toBe('my-local-key');
+    });
+
+    it('returns empty string for browser provider (no API key)', () => {
+        expect(getEffectiveApiKey('browser', emptySettings)).toBe('');
+    });
+
+    it('returns empty string when settings key is empty and no env var', () => {
+        expect(getEffectiveApiKey('openai', emptySettings)).toBe('');
+    });
+
+    it('settings key takes precedence over env var', () => {
+        const origEnv = process.env.OPENAI_API_KEY;
+        process.env.OPENAI_API_KEY = 'env-key';
+        try {
+            const s = { ...emptySettings, openaiApiKey: 'settings-key' };
+            expect(getEffectiveApiKey('openai', s)).toBe('settings-key');
+        } finally {
+            process.env.OPENAI_API_KEY = origEnv;
+        }
+    });
+
+    it('falls back to env var when settings key is empty', () => {
+        const origEnv = process.env.OPENAI_API_KEY;
+        process.env.OPENAI_API_KEY = 'env-fallback-key';
+        try {
+            expect(getEffectiveApiKey('openai', emptySettings)).toBe('env-fallback-key');
+        } finally {
+            process.env.OPENAI_API_KEY = origEnv;
+        }
     });
 });
