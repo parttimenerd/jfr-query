@@ -30,7 +30,7 @@ import { substituteVariables, findRemainingVariables, toSqlVariables } from './u
 import { expandBrushOperator } from './services/variableExpander';
 import { computeSessionVariables } from './components/SessionDateChip';
 import SessionDateChip from './components/SessionDateChip';
-import { buildResultSnapshots } from './utils/snapshotExport';
+import { buildResultSnapshots, type ExportProgress } from './utils/snapshotExport';
 
 import { ArrowUturnLeftIcon } from './components/icons/ArrowUturnLeftIcon';
 import { ArrowUturnRightIcon } from './components/icons/ArrowUturnRightIcon';
@@ -352,7 +352,7 @@ const App: React.FC = () => {
         tabMarkdownRef.current[activeTabId] = notebookMarkdown;
     };
 
-    const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
+    const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
     const [exportToast, setExportToast] = useState<string | null>(null);
 
     const handleExportWithData = useCallback(async () => {
@@ -384,7 +384,7 @@ const App: React.FC = () => {
         } finally {
             setExportProgress(null);
         }
-    }, [exportProgress, query, reconstructNotebook]);
+    }, [exportProgress, query]);
 
     // Drag-and-drop .md anywhere in the app loads it as the notebook.
     // JFR/duckdb drops anywhere in the app reload the database.
