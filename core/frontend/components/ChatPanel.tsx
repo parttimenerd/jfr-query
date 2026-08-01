@@ -26,6 +26,9 @@ import {
     type ProposalKind,
 } from './ChatProposalCard';
 import { parseSlashCommand, commandCompletions, STATIC_COMMANDS } from '../utils/slashCommands';
+import { getDataAwareStarters } from '../utils/starterPrompts';
+export { getDataAwareStarters } from '../utils/starterPrompts';
+export type { StarterPrompt } from '../utils/starterPrompts';
 import { SkillContext } from '../context/SkillContext';
 import { builtinSkillManifest } from '../data/skills/skills-manifest';
 import { ChatMarkdownView, renderMarkdown } from './chat/ChatMarkdownView';
@@ -226,12 +229,6 @@ export function defaultModelForProviderWithSettings(
     return defaultModelForProvider(provider, tier);
 }
 
-/**
- * C4 — Map a notebook cell to its primary type for tool-runtime consumption.
- * If a cell has only markdown, it's a markdown cell. If it contains any sql
- * block, it's an sql cell; if it contains a plot block (and no sql), it's a
- * plot cell. Pure helper; exported for tests.
- */
 export function cellPrimaryType(content: string): 'sql' | 'plot' | 'markdown' {
     const segs = tokenizeCellContent(content);
     if (segs.some(s => s.type === 'sql')) return 'sql';
@@ -1578,16 +1575,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     const lastUserIdx = [...visibleMsgs].map((m, i) => m.sender === MessageSender.User ? i : -1).filter(i => i !== -1).pop() ?? -1;
                     // Data-aware starters: pick up to 4 based on tables present
                     const tableNames = new Set((schema?.tables ?? []).concat(schema?.views ?? []).map(t => t.name.toLowerCase()));
-                    const ALL_STARTERS = [
-                        { match: (t: Set<string>) => t.has('garbagecollection') || t.has('gcphasepause'), label: '📈 GC pauses', prompt: 'Show me GC pause time by cause, the longest pauses, and heap usage before and after each collection.' },
-                        { match: (t: Set<string>) => t.has('executionsample') || t.has('cpuload'), label: '🔥 CPU hotspots', prompt: 'Which methods are consuming the most CPU? Show a top-methods breakdown.' },
-                        { match: (t: Set<string>) => t.has('objectallocationinnewtlab') || t.has('objectallocationoutsidetlab') || t.has('objectallocationsample'), label: '💾 Allocation hotspots', prompt: 'Show the top allocation sites by class — which code paths are allocating the most heap?' },
-                        { match: (t: Set<string>) => t.has('javamonitorenter') || t.has('threadpark') || t.has('javasynchronizedmonitorenter'), label: '🔒 Thread contention', prompt: 'Show me the top monitor contention hotspots — which locks are blocking threads the most?' },
-                        { match: (t: Set<string>) => t.has('fileread') || t.has('filewrite') || t.has('socketread') || t.has('socketwrite'), label: '🌐 I/O latency', prompt: 'Show file and socket I/O latency, the slowest operations, and total blocking time.' },
-                        { match: (t: Set<string>) => t.has('oldobjectsample'), label: '🔍 Memory leaks', prompt: 'Show long-lived objects by class and which allocation sites created them.' },
-                        { match: () => true, label: '🔍 What\'s in this recording?', prompt: 'What JFR event types are present? Give me a summary of what analysis is possible.' },
-                    ];
-                    const starters = ALL_STARTERS.filter(s => s.match(tableNames)).slice(0, 4);
+                    const starters = getDataAwareStarters(tableNames);
                     return (
                         <>
                             {visibleMsgs.map((msg, msgIdx) => {

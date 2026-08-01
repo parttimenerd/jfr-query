@@ -207,6 +207,39 @@ describe('LocalAiProvider — error paths', () => {
     });
 });
 
+describe('LocalAiProvider — isLocalhostUrl guard for chat_template_kwargs', () => {
+    let originalFetch: typeof fetch;
+    beforeEach(() => { originalFetch = globalThis.fetch; });
+    afterEach(() => { globalThis.fetch = originalFetch; });
+
+    it('does NOT send chat_template_kwargs to an external URL (e.g. SAP proxy)', async () => {
+        const fetchMock = mockChat('{"text":"hi","code":null,"plotConfig":null}');
+        globalThis.fetch = fetchMock as any;
+        const p = new LocalAiProvider('sk-key', 'https://api.example.com');
+        await p.getAgentResponse([], 'system');
+        const reqBody = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+        expect(reqBody).not.toHaveProperty('chat_template_kwargs');
+    });
+
+    it('does NOT send chat_template_kwargs to a non-standard port on a remote host', async () => {
+        const fetchMock = mockChat('{"text":"hi","code":null,"plotConfig":null}');
+        globalThis.fetch = fetchMock as any;
+        const p = new LocalAiProvider('', 'http://192.168.1.50:11434');
+        await p.getAgentResponse([], 'system');
+        const reqBody = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+        expect(reqBody).not.toHaveProperty('chat_template_kwargs');
+    });
+
+    it('sends chat_template_kwargs to 127.0.0.1', async () => {
+        const fetchMock = mockChat('{"text":"hi","code":null,"plotConfig":null}');
+        globalThis.fetch = fetchMock as any;
+        const p = new LocalAiProvider('', 'http://127.0.0.1:8080');
+        await p.getAgentResponse([], 'system');
+        const reqBody = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+        expect(reqBody.chat_template_kwargs).toEqual({ enable_thinking: false });
+    });
+});
+
 describe('LocalAiProvider — verifyCredentials probes /v1/models', () => {
     let originalFetch: typeof fetch;
     beforeEach(() => { originalFetch = globalThis.fetch; });
