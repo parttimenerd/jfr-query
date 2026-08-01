@@ -58,5 +58,6 @@ The web app runs the same Java importer compiled to WebAssembly via GraalVM, so 
 | [Plot DSL](plot-dsl.md) | All chart types with examples |
 | [Variables](variables.md) | Variable scoping and controls |
 | [Built-in Views & Macros](views-macros.md) | SQL library reference |
+| [AI Providers](ai-providers.md) | Anthropic, OpenAI, local models, in-browser inference |
 | [JFR to DuckDB Mapping](jfr-to-duckdb.md) | How JFR becomes tables |
 | [Browser Architecture](browser-architecture.md) | WASM pipeline internals |

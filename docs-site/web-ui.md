@@ -51,3 +51,4 @@ For complete reference material see:
 - [Plot DSL](plot-dsl.md) — all plot types, inner arguments, tail clauses, composite plots, query references.
 - [Variables](variables.md) — cell-local and notebook-level variables, substitution rules, live coupling.
 - [Built-in Views & Macros](views-macros.md) — every canned view and macro shipped with jfr-query.
+- [AI Providers](ai-providers.md) — configure Anthropic, OpenAI, local models (Ollama, llama.cpp, SAP proxy), or in-browser inference.

@@ -67,3 +67,9 @@ core/frontend/test-complex*.md
 
 # MkDocs generated site
 /site/
+
+# Playwright test artifacts and screenshots dumped at repo root
+/live-playwright-test/
+/*.png
+core/frontend/test-results/
+.playwright-mcp/
