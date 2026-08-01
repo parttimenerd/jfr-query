@@ -399,3 +399,45 @@ describe('lintPlot — mid-typing guard with cursorPos (B-169)', () => {
         expect(w).toBeTruthy();
     });
 });
+
+// ---------------------------------------------------------------------------
+// closestMatch — Levenshtein-based fuzzy match
+// ---------------------------------------------------------------------------
+import { closestMatch } from '../../components/editor/plot/lint';
+
+describe('closestMatch', () => {
+    it('returns undefined for empty candidates', () => {
+        expect(closestMatch('LINE_CHART', [])).toBeUndefined();
+    });
+
+    it('returns exact match immediately (case-insensitive)', () => {
+        expect(closestMatch('line_chart', ['LINE_CHART', 'BAR_CHART'])).toBe('LINE_CHART');
+    });
+
+    it('returns closest typo match within edit distance', () => {
+        // "LIN_CHART" vs "LINE_CHART" — 1 edit
+        expect(closestMatch('LIN_CHART', ['LINE_CHART', 'BAR_CHART'])).toBe('LINE_CHART');
+    });
+
+    it('returns undefined when distance exceeds threshold', () => {
+        // "ABCXYZ" is far from everything in the list
+        expect(closestMatch('ABCXYZ', ['LINE_CHART', 'BAR_CHART', 'PIE_CHART'])).toBeUndefined();
+    });
+
+    it('picks the closest of two near candidates', () => {
+        // "BAR_CHARTS" — 1 edit from BAR_CHART, 3+ from LINE_CHART
+        expect(closestMatch('BAR_CHARTS', ['LINE_CHART', 'BAR_CHART'])).toBe('BAR_CHART');
+    });
+
+    it('is case-insensitive for typo matching', () => {
+        expect(closestMatch('bar_chrt', ['BAR_CHART', 'LINE_CHART'])).toBe('BAR_CHART');
+    });
+
+    it('single-character needle does not spuriously match long candidates', () => {
+        // Max dist for single-char needle = max(2, floor(1/5)) = 2
+        // But "LINE_CHART" (10 chars) is many edits away from "L" — should not match
+        const result = closestMatch('L', ['LINE_CHART', 'BAR_CHART', 'X']);
+        // 'X' is 1 edit from 'L'; LINE_CHART is 9 edits away
+        expect(result).toBe('X');
+    });
+});

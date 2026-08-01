@@ -331,3 +331,46 @@ describe('plot parser — rich hole hints (P1)', () => {
         expect(h).not.toBeNull();
     });
 });
+
+// ---------------------------------------------------------------------------
+// setParents
+// ---------------------------------------------------------------------------
+import { setParents, makeNode } from '../../components/editor/plot/ast';
+
+describe('setParents', () => {
+    function buildTree() {
+        const child1 = makeNode('ident', 4, 7, 'BAR');
+        const child2 = makeNode('ident', 8, 11, 'baz');
+        const root = makeNode('call', 0, 12, 'BAR(baz)', { children: [child1, child2] });
+        return { root, child1, child2 };
+    }
+
+    it('sets parent to undefined for root node', () => {
+        const { root } = buildTree();
+        setParents(root);
+        expect(root.parent).toBeUndefined();
+    });
+
+    it('sets parent of direct children to root', () => {
+        const { root, child1, child2 } = buildTree();
+        setParents(root);
+        expect(child1.parent).toBe(root);
+        expect(child2.parent).toBe(root);
+    });
+
+    it('sets parents recursively for nested children', () => {
+        const grandchild = makeNode('ident', 5, 6, 'x');
+        const child = makeNode('call', 4, 7, 'f(x)', { children: [grandchild] });
+        const root = makeNode('call', 0, 8, 'g(f(x))', { children: [child] });
+        setParents(root);
+        expect(grandchild.parent).toBe(child);
+        expect(child.parent).toBe(root);
+    });
+
+    it('is idempotent — calling twice gives same result', () => {
+        const { root, child1 } = buildTree();
+        setParents(root);
+        setParents(root);
+        expect(child1.parent).toBe(root);
+    });
+});

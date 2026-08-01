@@ -138,3 +138,45 @@ describe('lintSql', () => {
         expect(errors[0].message).toMatch(/Unknown column 'bogus'/);
     });
 });
+
+// ---------------------------------------------------------------------------
+// hasHoleAncestor
+// ---------------------------------------------------------------------------
+import { hasHoleAncestor } from '../../components/editor/sql/lint';
+import type { Node } from '../../components/editor/sql/ast';
+
+function mkNode(kind: string, parent?: Node): Node {
+    return { kind: kind as any, from: 0, to: 0, src: '', children: [], parent } as Node;
+}
+
+describe('hasHoleAncestor', () => {
+    it('returns false for a node with no parent and kind != hole', () => {
+        const node = mkNode('ident');
+        expect(hasHoleAncestor(node)).toBe(false);
+    });
+
+    it('returns true when the node itself is a hole', () => {
+        const node = mkNode('hole');
+        expect(hasHoleAncestor(node)).toBe(true);
+    });
+
+    it('returns true when a direct parent is a hole', () => {
+        const parent = mkNode('hole');
+        const child = mkNode('ident', parent);
+        expect(hasHoleAncestor(child)).toBe(true);
+    });
+
+    it('returns true when a grandparent is a hole', () => {
+        const grandparent = mkNode('hole');
+        const parent = mkNode('call', grandparent);
+        const child = mkNode('ident', parent);
+        expect(hasHoleAncestor(child)).toBe(true);
+    });
+
+    it('returns false when no ancestor is a hole', () => {
+        const grandparent = mkNode('select');
+        const parent = mkNode('call', grandparent);
+        const child = mkNode('ident', parent);
+        expect(hasHoleAncestor(child)).toBe(false);
+    });
+});

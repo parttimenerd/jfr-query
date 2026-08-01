@@ -709,6 +709,23 @@ describe('channelReducer', () => {
         const s2 = channelReducer(s1, { type: 'reset' });
         expect(s2).toEqual(initialChannelState);
     });
+
+    it('reset-to sets mode and hints, clearing other state', () => {
+        const hints: BtwHint[] = [{ id: 'h1', text: 'Try this', source: 'analyzer' }];
+        const s = channelReducer(
+            { ...initialChannelState, lastBtwCallAt: 99999 },
+            { type: 'reset-to', mode: 'plan', hints },
+        );
+        expect(s.mode).toBe('plan');
+        expect(s.btwHints).toEqual(hints);
+        expect(s.lastBtwCallAt).toBeNull();
+    });
+
+    it('reset-to with empty hints sets empty btwHints', () => {
+        const s = channelReducer(initialChannelState, { type: 'reset-to', mode: 'verbose', hints: [] });
+        expect(s.mode).toBe('verbose');
+        expect(s.btwHints).toEqual([]);
+    });
 });
 
 describe('plan-meta state machine', () => {
