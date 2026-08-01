@@ -9,13 +9,11 @@ import type { Tool, ToolKind } from '../services/ai/tools';
  * Resolved tool intent for a pending tool_call chunk emitted by
  * `aiService.streamChatWithTools`. The orchestrator distinguishes reads from
  * mutations because the UI policy differs:
- *   - read in no-data visibility → must prompt
- *   - read in sanitized/full     → auto-approve (or honor "approve-all")
- *   - mutate                     → always prompt, show diff where applicable
+ *   - read  → auto-approve (data access is gated at the session level)
+ *   - mutate → always prompt, show diff where applicable
  */
 export type ProposalKind =
-    | { kind: 'auto-read' }                                // read tool, no-data not set → run silently
-    | { kind: 'prompt-read' }                              // read tool, but visibility=no-data → ask
+    | { kind: 'auto-read' }
     | { kind: 'prompt-mutate'; diff?: { before: string; after: string } };
 
 export type Visibility = 'no-data' | 'sanitized' | 'full';
@@ -31,7 +29,6 @@ export function chooseProposalKind(
     args: any,
     opts: {
         visibility: Visibility;
-        approveAllReads: boolean;
         existingCellContent?: string;
     },
 ): ProposalKind {
@@ -186,7 +183,6 @@ interface CardProps {
     kind: ProposalKind;
     onApprove: () => void;
     onReject: () => void;
-    onApproveAllReads?: () => void;
 }
 
 const STATUS_LABEL: Record<ApprovalRecord['status'], string> = {
@@ -196,7 +192,7 @@ const STATUS_LABEL: Record<ApprovalRecord['status'], string> = {
     done: 'Done',
 };
 
-export const ChatProposalCard: React.FC<CardProps> = ({ record, kind, onApprove, onReject, onApproveAllReads }) => {
+export const ChatProposalCard: React.FC<CardProps> = ({ record, kind, onApprove, onReject }) => {
     const isReadAuto = kind.kind === 'auto-read';
     const isMutate = kind.kind === 'prompt-mutate';
     const diff = isMutate ? kind.diff : undefined;
@@ -218,9 +214,6 @@ export const ChatProposalCard: React.FC<CardProps> = ({ record, kind, onApprove,
                 <div className="flex items-center gap-2">
                     <button onClick={onApprove} className="px-2 py-1 bg-green-700 hover:bg-green-600 rounded text-white">Approve</button>
                     <button onClick={onReject} className="px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-white">Reject</button>
-                    {kind.kind === 'prompt-read' && onApproveAllReads && (
-                        <button onClick={onApproveAllReads} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-200">Approve all reads this turn</button>
-                    )}
                 </div>
             )}
         </div>

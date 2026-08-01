@@ -24,25 +24,25 @@ import { TOOLS, getTool } from '../services/ai/tools';
 describe('chooseProposalKind', () => {
     it('returns auto-read for a read tool when visibility is sanitized', () => {
         const tool = getTool('runQuery')!;
-        const kind = chooseProposalKind(tool, { sql: 'SELECT 1' }, { visibility: 'sanitized', approveAllReads: false });
+        const kind = chooseProposalKind(tool, { sql: 'SELECT 1' }, { visibility: 'sanitized' });
         expect(kind.kind).toBe('auto-read');
     });
 
     it('returns auto-read for a read tool regardless of visibility', () => {
         const tool = getTool('describeTable')!;
-        const kind = chooseProposalKind(tool, { name: 'GarbageCollection' }, { visibility: 'no-data', approveAllReads: false });
+        const kind = chooseProposalKind(tool, { name: 'GarbageCollection' }, { visibility: 'no-data' });
         expect(kind.kind).toBe('auto-read');
     });
 
-    it('returns auto-read for a read tool even when approveAllReads is set', () => {
+    it('returns auto-read for any read tool regardless of visibility or args', () => {
         const tool = getTool('sampleRows')!;
-        const kind = chooseProposalKind(tool, { name: 'GC' }, { visibility: 'no-data', approveAllReads: true });
+        const kind = chooseProposalKind(tool, { name: 'GC' }, { visibility: 'no-data' });
         expect(kind.kind).toBe('auto-read');
     });
 
     it('returns prompt-mutate for addCell regardless of visibility', () => {
         const tool = getTool('addCell')!;
-        const kind = chooseProposalKind(tool, { type: 'sql', content: 'SELECT 1' }, { visibility: 'full', approveAllReads: true });
+        const kind = chooseProposalKind(tool, { type: 'sql', content: 'SELECT 1' }, { visibility: 'full' });
         expect(kind.kind).toBe('prompt-mutate');
     });
 
@@ -51,7 +51,7 @@ describe('chooseProposalKind', () => {
         const kind = chooseProposalKind(
             tool,
             { cellId: 'cell-0', content: 'after-content' },
-            { visibility: 'full', approveAllReads: false, existingCellContent: 'before-content' },
+            { visibility: 'full', existingCellContent: 'before-content' },
         );
         expect(kind.kind).toBe('prompt-mutate');
         if (kind.kind === 'prompt-mutate') {
@@ -65,7 +65,7 @@ describe('chooseProposalKind', () => {
         const kind = chooseProposalKind(
             tool,
             { cellId: 'p1', plotConfig: 'LINE_CHART(x: t, y: v)' },
-            { visibility: 'full', approveAllReads: false, existingCellContent: 'TABLE()' },
+            { visibility: 'full', existingCellContent: 'TABLE()' },
         );
         if (kind.kind !== 'prompt-mutate') throw new Error('expected mutate');
         expect(kind.diff?.before).toBe('TABLE()');

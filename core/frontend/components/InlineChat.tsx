@@ -214,9 +214,6 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
     const [proposals, setProposals] = useState<ApprovalRecord[]>([]);
     const proposalsRef = useRef<ApprovalRecord[]>([]);
     proposalsRef.current = proposals;
-    const [approveAllReads, setApproveAllReads] = useState(false);
-    const approveAllReadsRef = useRef(false);
-    approveAllReadsRef.current = approveAllReads;
     const approvalResolvers = useRef<Map<string, { resolve: () => void; reject: (e: Error) => void }>>(new Map());
 
     // Auto-scroll to bottom whenever messages or streaming text change.
@@ -250,25 +247,6 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         const resolver = approvalResolvers.current.get(id);
         resolver?.reject(new Error('rejected by user'));
         approvalResolvers.current.delete(id);
-    }, []);
-
-    const approveAllReadsHandler = useCallback(() => {
-        setApproveAllReads(true);
-        approveAllReadsRef.current = true;
-        const readIds: string[] = [];
-        for (const p of proposalsRef.current) {
-            if (p.status !== 'pending') continue;
-            const tool = TOOLS.find(t => t.name === p.name);
-            if (tool?.kind === 'read') {
-                readIds.push(p.id);
-                const r = approvalResolvers.current.get(p.id);
-                r?.resolve();
-                approvalResolvers.current.delete(p.id);
-            }
-        }
-        if (readIds.length) {
-            setProposals(prev => applyApprovalAction(prev, { type: 'approve-all-reads', readIds }));
-        }
     }, []);
 
     /**
@@ -373,7 +351,6 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         setMessages([]);
         setStreamingText(null);
         setProposals([]);
-        setApproveAllReads(false);
         approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
         approvalResolvers.current.clear();
         cancelledRef.current = true;
@@ -618,8 +595,6 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
         abortControllerRef.current = new AbortController();
         setProposals([]);
         proposalsRef.current = [];
-        setApproveAllReads(false);
-        approveAllReadsRef.current = false;
         // Reject any pending resolvers before clearing so they don't leak or hang.
         approvalResolvers.current.forEach(r => r.reject(new Error('cancelled')));
         approvalResolvers.current.clear();
@@ -698,7 +673,6 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     if (tool?.kind === 'read') {
                         const proposal = chooseProposalKind(tool, chunk.args, {
                             visibility: effectiveVisibility,
-                            approveAllReads: approveAllReadsRef.current,
                             existingCellContent: undefined,
                         });
                         if (proposal.kind === 'auto-read') {
@@ -900,7 +874,6 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                     const existing = (record.name === 'editCell' || record.name === 'applyPlot') ? cellById.get(record.args?.cellId)?.content : undefined;
                     const kind: ProposalKind = chooseProposalKind(tool, record.args, {
                         visibility: chatVisibility,
-                        approveAllReads,
                         existingCellContent: existing,
                     });
                     return (
@@ -910,7 +883,6 @@ const InlineChat: React.FC<InlineChatProps> = ({ targetType, targetValue, cellCo
                             kind={kind}
                             onApprove={() => approveProposal(record.id)}
                             onReject={() => rejectProposal(record.id)}
-                            onApproveAllReads={tool.kind === 'read' ? approveAllReadsHandler : undefined}
                         />
                     );
                 })}

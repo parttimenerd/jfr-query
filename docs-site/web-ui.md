@@ -43,6 +43,28 @@ Interactive plots write back to variables:
 
 When a variable changes, dependent SQL cells re-run automatically, and their plots re-render.
 
+## AI chat
+
+The left-sidebar AI chat panel lets you explore a recording conversationally.
+
+- Type a question or choose a contextual starter prompt (the toolbar shows data-aware chips based on which JFR event types are present — GC, CPU, allocations, contention, I/O, or memory leaks).
+- The AI can run SQL queries, preview charts, and propose cells to add to your notebook.
+- Use `/model` to switch AI providers or models. The in-browser provider requires no API key and runs entirely offline.
+
+## Sharing notebooks with embedded data
+
+Notebooks are plain Markdown files. By default they contain only SQL and plot config — opening them requires the original `.jfr` file.
+
+To share results without the JFR file:
+
+1. With a JFR loaded, click the **Export with data** button (↑ icon) in the notebook toolbar.
+2. jfr-query re-runs every SQL cell and embeds the results as a base64 blob in the front matter.
+3. Share the downloaded `notebook-shared.md` file.
+
+Recipients open the file in jfr-query without loading a JFR. A **Snapshot** badge appears in the header to indicate embedded data is being displayed. Live queries are not available until a JFR file is loaded.
+
+Row counts are capped at 500 per SQL block to keep file sizes reasonable.
+
 ## Reference documentation
 
 For complete reference material see:

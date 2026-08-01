@@ -450,16 +450,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
     const providerMeta = providerMetadataRegistry[chatProvider];
     const isFreeFormModel = chatProvider === 'local' || chatProvider === 'browser';
 
-    // --- C4 tool-call records (per current turn). approveAllReads is a
-    // per-turn flag reset whenever a new user message starts. ---
+    // --- C4 tool-call records (per current turn). ---
     const [proposals, setProposals] = useState<ApprovalRecord[]>([]);
     const proposalsRef = useRef<ApprovalRecord[]>([]);
     proposalsRef.current = proposals;
-    const [approveAllReads, setApproveAllReads] = useState(false);
-    const approveAllReadsRef = useRef(false);
-    approveAllReadsRef.current = approveAllReads;
 
-    // resolver registry for pending requireApproval promises
     const approvalResolvers = useRef<Map<string, { resolve: () => void; reject: (e: Error) => void }>>(new Map());
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -509,7 +504,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         setMessages(() => initialConversation);
         setStreamingText(null);
         setProposals([]);
-        setApproveAllReads(false);
         approvalResolvers.current.clear();
         setIsLoading(false);
         cancelledRef.current = false;
@@ -578,7 +572,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         }
         setStreamingText(null);
         setProposals([]);
-        setApproveAllReads(false);
         setMessages(prev => prev.slice(0, keepUpToOriginalIdx + 1));
     }, [isLoading, setMessages]);
 
@@ -605,26 +598,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         const resolver = approvalResolvers.current.get(id);
         resolver?.reject(new Error('rejected by user'));
         approvalResolvers.current.delete(id);
-    }, []);
-
-    const approveAllReadsHandler = useCallback(() => {
-        setApproveAllReads(true);
-        approveAllReadsRef.current = true;
-        // Auto-resolve any currently-pending read proposals.
-        const readIds: string[] = [];
-        for (const p of proposalsRef.current) {
-            if (p.status !== 'pending') continue;
-            const tool = TOOLS.find(t => t.name === p.name);
-            if (tool?.kind === 'read') {
-                readIds.push(p.id);
-                const r = approvalResolvers.current.get(p.id);
-                r?.resolve();
-                approvalResolvers.current.delete(p.id);
-            }
-        }
-        if (readIds.length) {
-            setProposals(prev => applyApprovalAction(prev, { type: 'approve-all-reads', readIds }));
-        }
     }, []);
 
     // --- Build tool deps that the runtime will call. ---
@@ -1043,8 +1016,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
         // Reset per-turn approval state.
         setProposals([]);
         proposalsRef.current = [];
-        setApproveAllReads(false);
-        approveAllReadsRef.current = false;
         approvalResolvers.current.clear();
 
         // Browser-only provider can't do chat — give an actionable message and bail.
@@ -1166,10 +1137,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     proposalsRef.current = [...proposalsRef.current, record];
 
                     if (tool?.kind === 'read') {
-                        // Visibility / approve-all logic.
                         const proposal = chooseProposalKind(tool, chunk.args, {
                             visibility: chatVisibility,
-                            approveAllReads: approveAllReadsRef.current,
                             existingCellContent: undefined,
                         });
                         if (proposal.kind === 'auto-read') {
@@ -1754,7 +1723,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                     const existing = (record.name === 'editCell' || record.name === 'applyPlot') ? cellById.get(record.args?.cellId)?.content : undefined;
                     const kind: ProposalKind = chooseProposalKind(tool, record.args, {
                         visibility: chatVisibility,
-                        approveAllReads,
                         existingCellContent: existing,
                     });
                     return (
@@ -1764,7 +1732,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ metadata, onAddCellFromAI, cells,
                             kind={kind}
                             onApprove={() => approveProposal(record.id)}
                             onReject={() => rejectProposal(record.id)}
-                            onApproveAllReads={tool.kind === 'read' ? approveAllReadsHandler : undefined}
                         />
                     );
                 })}
