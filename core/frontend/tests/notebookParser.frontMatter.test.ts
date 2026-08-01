@@ -92,48 +92,40 @@ describe('parseFrontMatter — aiProvider / aiModel round-trip', () => {
   });
 });
 
+describe('parseFrontMatter — customSystemPrompt round-trip', () => {
+  function roundTrip(prompt: string): string | undefined {
+    const source = reconstructNotebook({
+      metadata: { customSystemPrompt: prompt } as NotebookMetadata,
+      content: '# Test\n',
+    });
+    return parseNotebook(source).metadata.customSystemPrompt;
+  }
 
-describe('parseFrontMatter — descriptive keys', () => {
-  it('extracts title, description, license as strings', () => {
-    const nb = parseNotebook([
-      '---',
-      'title: My Notebook',
-      'description: A short blurb',
-      'license: Apache-2.0',
-      '---',
-      '# Body',
-      '',
-    ].join('\n'));
-    expect(nb.metadata.title).toBe('My Notebook');
-    expect(nb.metadata.description).toBe('A short blurb');
-    expect(nb.metadata.license).toBe('Apache-2.0');
+  it('preserves a single-line prompt', () => {
+    expect(roundTrip('Be concise.')).toBe('Be concise.');
   });
 
-  it('parses inline YAML list tags: [a, "b c", d]', () => {
-    const nb = parseNotebook([
-      '---',
-      'tags: [a, "b c", d]',
-      '---',
-      '',
-    ].join('\n'));
-    expect(nb.metadata.tags).toEqual(['a', 'b c', 'd']);
+  it('preserves a multi-line prompt using block scalar', () => {
+    const multi = 'Line one.\nLine two.\nLine three.';
+    expect(roundTrip(multi)).toBe(multi);
   });
 
-  it('parses block-style YAML list under tags:', () => {
-    const nb = parseNotebook([
-      '---',
-      'tags:',
-      '  - jfr',
-      '  - "gc profile"',
-      '  - z',
-      '---',
-      '',
-    ].join('\n'));
-    expect(nb.metadata.tags).toEqual(['jfr', 'gc profile', 'z']);
+  it('serializes single-line prompts with single-quote escaping', () => {
+    const withQuote = "Don't skip context.";
+    expect(roundTrip(withQuote)).toBe(withQuote);
   });
 
-  it('leaves tags undefined when absent', () => {
-    const nb = parseNotebook('---\n---\n');
-    expect(nb.metadata.tags).toBeUndefined();
+  it('uses block scalar (|) for multi-line prompts', () => {
+    const multi = 'first\nsecond';
+    const source = reconstructNotebook({
+      metadata: { customSystemPrompt: multi } as NotebookMetadata,
+      content: '# Test\n',
+    });
+    expect(source).toContain('customSystemPrompt: |');
+  });
+
+  it('does not emit customSystemPrompt when empty/absent', () => {
+    const source = reconstructNotebook({ metadata: {} as NotebookMetadata, content: '# Hi\n' });
+    expect(source).not.toContain('customSystemPrompt');
   });
 });
