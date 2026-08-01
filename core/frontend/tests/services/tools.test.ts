@@ -786,3 +786,82 @@ describe('previewPlot — additional coverage', () => {
         expect(a.data.previewId).not.toBe(b.data.previewId);
     });
 });
+
+describe('rememberFact / recallMemory tools', () => {
+    it('rememberFact stores a key-value pair via setMemory', async () => {
+        const memory: Record<string, string> = {};
+        const deps = makeDeps({
+            setMemory: (key, value) => { memory[key] = value; },
+            getMemory: () => memory,
+        });
+        const res = await executeTool('rememberFact', { key: 'last_table', value: 'GarbageCollection' }, deps);
+        expect(res.ok).toBe(true);
+        if (res.ok) expect(res.data.stored).toBe('last_table');
+        expect(memory['last_table']).toBe('GarbageCollection');
+    });
+
+    it('rememberFact truncates values longer than 200 chars', async () => {
+        const memory: Record<string, string> = {};
+        const deps = makeDeps({
+            setMemory: (key, value) => { memory[key] = value; },
+            getMemory: () => memory,
+        });
+        const longValue = 'x'.repeat(500);
+        await executeTool('rememberFact', { key: 'k', value: longValue }, deps);
+        expect(memory['k'].length).toBe(200);
+    });
+
+    it('rememberFact returns error when setMemory not wired', async () => {
+        const deps = makeDeps();
+        const res = await executeTool('rememberFact', { key: 'k', value: 'v' }, deps);
+        expect(res.ok).toBe(false);
+        if (!res.ok) expect(res.error).toMatch(/memory not supported/i);
+    });
+
+    it('recallMemory returns the full memory map', async () => {
+        const memory: Record<string, string> = { table: 'GC', query: 'SELECT 1' };
+        const deps = makeDeps({ getMemory: () => memory });
+        const res = await executeTool('recallMemory', {}, deps);
+        expect(res.ok).toBe(true);
+        if (res.ok) {
+            expect(res.data.table).toBe('GC');
+            expect(res.data.query).toBe('SELECT 1');
+        }
+    });
+
+    it('recallMemory returns error when getMemory not wired', async () => {
+        const deps = makeDeps();
+        const res = await executeTool('recallMemory', {}, deps);
+        expect(res.ok).toBe(false);
+        if (!res.ok) expect(res.error).toMatch(/memory not supported/i);
+    });
+});
+
+describe('updateTaskList tool', () => {
+    it('calls setTaskList with the provided tasks array', async () => {
+        const captured: any[] = [];
+        const deps = makeDeps({ setTaskList: (tasks) => { captured.push(...tasks); } });
+        const tasks = [{ id: '1', text: 'Write SQL query', done: false }];
+        const res = await executeTool('updateTaskList', { tasks }, deps);
+        expect(res.ok).toBe(true);
+        if (res.ok) expect(res.data.updated).toBe(1);
+        expect(captured).toHaveLength(1);
+        expect(captured[0].text).toBe('Write SQL query');
+    });
+
+    it('updates with an empty array to clear the task list', async () => {
+        let stored: any[] = [{ id: '1', text: 'old', done: false }];
+        const deps = makeDeps({ setTaskList: (tasks) => { stored = tasks; } });
+        const res = await executeTool('updateTaskList', { tasks: [] }, deps);
+        expect(res.ok).toBe(true);
+        if (res.ok) expect(res.data.updated).toBe(0);
+        expect(stored).toHaveLength(0);
+    });
+
+    it('returns error when setTaskList not wired', async () => {
+        const deps = makeDeps();
+        const res = await executeTool('updateTaskList', { tasks: [] }, deps);
+        expect(res.ok).toBe(false);
+        if (!res.ok) expect(res.error).toMatch(/task list not supported/i);
+    });
+});

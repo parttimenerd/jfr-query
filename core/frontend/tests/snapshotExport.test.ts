@@ -118,4 +118,20 @@ describe('buildResultSnapshots', () => {
         expect(result).toEqual({});
         expect(query).not.toHaveBeenCalled();
     });
+
+    it('cell-level variables override notebook-level variables in the SQL', async () => {
+        // Cell has its own `myVar = cell-value` in a Variables block, which should
+        // take precedence over the `myVar = notebook-value` passed as the third arg.
+        const content = '```sql\nSELECT $myVar\n```\n\n```variables\nmyVar=cell-value\n```';
+        const query = vi.fn().mockResolvedValue([]);
+        await buildResultSnapshots(
+            [cell('cell-0', content)],
+            query,
+            { myVar: 'notebook-value' },
+        );
+        expect(query).toHaveBeenCalledOnce();
+        const calledSql: string = query.mock.calls[0][0];
+        expect(calledSql).toContain('cell-value');
+        expect(calledSql).not.toContain('notebook-value');
+    });
 });
