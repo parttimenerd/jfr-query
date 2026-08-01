@@ -71,7 +71,7 @@ export function loadPersistedState(storage: StorageLike): PersistedState {
     const channels: PersistedChannel[] = [];
     for (const c of parsed.channels) {
         if (!c || typeof c.id !== 'string') continue;
-        if (c.mode !== 'normal' && c.mode !== 'plan' && c.mode !== 'btw') continue;
+        if (c.mode !== 'normal' && c.mode !== 'plan' && c.mode !== 'btw' && c.mode !== 'verbose') continue;
         const hints = Array.isArray(c.hints)
             ? c.hints.filter((h: any) => h && typeof h.text === 'string').slice(0, MAX_HINTS_PER_CHANNEL)
             : [];

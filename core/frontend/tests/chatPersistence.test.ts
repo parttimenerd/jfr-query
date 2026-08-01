@@ -64,6 +64,16 @@ describe('loadPersistedState', () => {
         }));
         expect(loadPersistedState(s).channels).toEqual([]);
     });
+
+    it('accepts "verbose" as a valid mode (regression: was rejected before fix)', () => {
+        s.setItem(__internals.STORAGE_KEY, JSON.stringify({
+            version: 1,
+            channels: [{ id: 'ch1', mode: 'verbose', hints: [], updatedAt: 1000 }],
+        }));
+        const loaded = loadPersistedState(s);
+        expect(loaded.channels).toHaveLength(1);
+        expect(loaded.channels[0].mode).toBe('verbose');
+    });
 });
 
 describe('saveChannel', () => {
