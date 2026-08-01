@@ -19,6 +19,8 @@ import {
     incPlanParseLayer,
     PLAN_MODE_SYSTEM_SUFFIX,
     VERBOSE_MODE_SYSTEM_SUFFIX,
+    buildLocalSystemPrompt,
+    buildBrowserSystemPrompt,
     type ParsedPlan,
     type BtwHint,
     type PlanStep,
@@ -786,5 +788,85 @@ describe('plan-meta state machine', () => {
         // success will overwrite it via the spread, and the UI only reads
         // it when status === 'failed'.
         expect(meta.planLastError).toBe('network blip');
+    });
+});
+
+// ── buildLocalSystemPrompt ────────────────────────────────────────────────────
+
+describe('buildLocalSystemPrompt', () => {
+    it('includes table schema in output', () => {
+        const schema = [
+            { name: 'events', columns: [{ name: 'ts', type: 'TIMESTAMP' }, { name: 'cpu', type: 'DOUBLE' }] },
+        ];
+        const result = buildLocalSystemPrompt(schema, {});
+        expect(result).toContain('events(ts TIMESTAMP, cpu DOUBLE)');
+    });
+
+    it('shows "(no tables loaded yet)" when schema is empty', () => {
+        const result = buildLocalSystemPrompt([], {});
+        expect(result).toContain('(no tables loaded yet)');
+    });
+
+    it('shows variables in $name = value format', () => {
+        const result = buildLocalSystemPrompt([], { threshold: 100, label: 'foo' });
+        expect(result).toContain('$threshold = 100');
+        expect(result).toContain('$label = "foo"');
+    });
+
+    it('shows "(none)" when no variables', () => {
+        const result = buildLocalSystemPrompt([], {});
+        expect(result).toContain('(none)');
+    });
+
+    it('omits column type when type is missing', () => {
+        const schema = [
+            { name: 't', columns: [{ name: 'id' }] },
+        ];
+        const result = buildLocalSystemPrompt(schema as any, {});
+        expect(result).toContain('t(id)');
+        expect(result).not.toContain('undefined');
+    });
+
+    it('returns a non-empty string', () => {
+        const result = buildLocalSystemPrompt([], {});
+        expect(result.length).toBeGreaterThan(0);
+    });
+});
+
+// ── buildBrowserSystemPrompt ──────────────────────────────────────────────────
+
+describe('buildBrowserSystemPrompt', () => {
+    it('lists table names and column names', () => {
+        const schema = [
+            { name: 'gc', columns: [{ name: 'pause_ms' }, { name: 'cause' }] },
+        ];
+        const result = buildBrowserSystemPrompt(schema as any, {});
+        expect(result).toContain('gc(pause_ms, cause)');
+    });
+
+    it('shows "(no tables loaded yet)" when schema is empty', () => {
+        const result = buildBrowserSystemPrompt([], {});
+        expect(result).toContain('(no tables loaded yet)');
+    });
+
+    it('includes variable list when variables present', () => {
+        const result = buildBrowserSystemPrompt([], { minPause: 5 });
+        expect(result).toContain('minPause=5');
+    });
+
+    it('omits variable line when no variables', () => {
+        const result = buildBrowserSystemPrompt([], {});
+        expect(result).not.toContain('Current variables:');
+    });
+
+    it('says the model cannot query data directly', () => {
+        const result = buildBrowserSystemPrompt([], {});
+        expect(result).toContain('cannot query data directly');
+    });
+
+    it('returns a non-empty trimmed string', () => {
+        const result = buildBrowserSystemPrompt([], {});
+        expect(result.length).toBeGreaterThan(0);
+        expect(result).toBe(result.trim());
     });
 });
