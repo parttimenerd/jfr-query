@@ -76,6 +76,28 @@ describe('InlinePreview', () => {
             });
             expect(html).not.toContain('truncated');
         });
+
+        it('renders "1 row" (singular) when exactly one row is returned', () => {
+            const html = render({
+                toolName: 'runQuery',
+                args,
+                result: { columns: result.columns, rows: [result.rows[0]] },
+                onAddToNotebook: () => {},
+            });
+            expect(html).toContain('1 row');
+            expect(html).not.toContain('1 rows');
+        });
+
+        it('unwraps the ToolResult { ok, data } wrapper shape from the runtime', () => {
+            const html = render({
+                toolName: 'runQuery',
+                args,
+                result: { ok: true, data: result },
+                onAddToNotebook: () => {},
+            });
+            expect(html).toContain('3 rows');
+            expect(html).toContain('12.4');
+        });
     });
 
     describe('previewPlot branch', () => {

@@ -20,6 +20,12 @@ describe('buildStatusTooltip', () => {
         expect(t).toContain('by the way');
     });
 
+    it('mentions verbose mode and its description', () => {
+        const t = buildStatusTooltip({ mode: 'verbose', model: 'm', provider: 'p', visibility: 'full' });
+        expect(t).toContain('/verbose');
+        expect(t).toContain('full reasoning');
+    });
+
     it('renders the model with the provider in parentheses when both are given', () => {
         const t = buildStatusTooltip({ mode: 'normal', model: 'claude-sonnet-4-6', provider: 'anthropic', visibility: 'no-data' });
         expect(t).toContain('Model: claude-sonnet-4-6 (anthropic)');
@@ -68,6 +74,11 @@ describe('buildModeTooltip', () => {
     it('handles plan and btw', () => {
         expect(buildModeTooltip('plan')).toContain('do not modify');
         expect(buildModeTooltip('btw')).toContain('by the way');
+    });
+
+    it('handles verbose mode', () => {
+        expect(buildModeTooltip('verbose')).toContain('full reasoning');
+        expect(buildModeTooltip('verbose')).toContain('/verbose');
     });
 });
 
