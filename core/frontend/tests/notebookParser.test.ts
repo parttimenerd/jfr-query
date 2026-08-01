@@ -322,3 +322,50 @@ describe('stripCellDirective', () => {
         expect(result.body).toBe('');
     });
 });
+
+// ─── resultSnapshots roundtrip ────────────────────────────────────────────────
+
+describe('resultSnapshots — front matter roundtrip', () => {
+    it('serializes and deserializes resultSnapshots', () => {
+        const snapshots: Record<string, any[] | null> = {
+            'cell-0:0': [{ time: 1, duration: 100 }],
+            'cell-1:0': [{ cause: 'G1 GC' }],
+            'cell-2:0': null,
+        };
+        const nb = reconstructNotebook({ metadata: { resultSnapshots: snapshots } as any, content: '# Body\n' });
+        expect(nb).toContain("resultSnapshots: '");
+        const parsed = parseNotebook(nb);
+        expect(parsed.metadata.resultSnapshots).toEqual(snapshots);
+    });
+
+    it('empty resultSnapshots map is not serialized', () => {
+        const nb = reconstructNotebook({ metadata: { resultSnapshots: {} } as any, content: '# Body\n' });
+        expect(nb).not.toContain('resultSnapshots');
+    });
+
+    it('absent resultSnapshots does not appear in output', () => {
+        const nb = reconstructNotebook({ metadata: {} as any, content: '# Body\n' });
+        expect(nb).not.toContain('resultSnapshots');
+    });
+
+    it('notebook without resultSnapshots has no resultSnapshots in parsed metadata', () => {
+        const nb = '---\ntitle: "test"\n---\n\n# Body\n';
+        const parsed = parseNotebook(nb);
+        expect(parsed.metadata.resultSnapshots).toBeUndefined();
+    });
+
+    it('survives unicode values in snapshots', () => {
+        const snapshots = { 'c:0': [{ name: 'java.lang.String — GC root' }] };
+        const nb = reconstructNotebook({ metadata: { resultSnapshots: snapshots } as any, content: '' });
+        const parsed = parseNotebook(nb);
+        expect(parsed.metadata.resultSnapshots?.['c:0']?.[0]?.name).toBe('java.lang.String — GC root');
+    });
+
+    it('round-trips large snapshot without data loss', () => {
+        const rows = Array.from({ length: 20 }, (_, i) => ({ idx: i, val: `row-${i}` }));
+        const snapshots = { 'cell-0:0': rows };
+        const nb = reconstructNotebook({ metadata: { resultSnapshots: snapshots } as any, content: '' });
+        const parsed = parseNotebook(nb);
+        expect(parsed.metadata.resultSnapshots?.['cell-0:0']).toHaveLength(20);
+    });
+});
