@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Generate (sql, columns) → plot_config training pairs using Claude Haiku.
-Expanded: ~4500 pairs covering all 9 plot types with advanced DSL features.
+Expanded: ~5300 pairs covering all 13 plot types with advanced DSL features.
 
 Usage:
     export ANTHROPIC_API_KEY=...
@@ -78,6 +78,23 @@ GANTT(start: "col", end: "col", lane: "col", color: "col", task: "col")
 
 RANGE(x: "col", low: "col", high: "col", center: "col")
   Required: x, low, high. Use for: confidence intervals, min/max bands, percentile ranges.
+
+VIOLIN_PLOT(value: "col", category: "col", bins: N)
+  Required: value (numeric). Optional: category (for grouped violins), bins (default 20).
+  Use for: showing distribution shape (KDE) of a numeric column, especially across categories.
+
+SUNBURST(path: ["col1", "col2"], value: "col", delimiter: "/")
+  Required: path (one or more hierarchy columns, or single delimited column), value (numeric weight).
+  Use for: hierarchical proportions (package → class, folder tree, call paths).
+
+SANKEY(source: "col", target: "col", value: "col")
+  Required: source (from-node), target (to-node), value (numeric flow weight).
+  Use for: flow diagrams — how values pass from sources through targets (call graphs, memory flow).
+
+CROSSTAB(row: "col", col: "col", value: "col", agg: "SUM"|"AVG"|"COUNT"|"MAX"|"MIN")
+  Required: row (row category), col (column category), value (numeric).
+  Optional: agg (aggregation function, default SUM).
+  Use for: pivot tables — cross-tabulation of two categorical dimensions with a numeric metric.
 
 Optional suffix: TITLE "..." or LINK_X($start, $end)
 
@@ -290,6 +307,55 @@ def make_range_inputs():
     sql = f'SELECT {", ".join(chr(34)+c+chr(34) for c in cols)} FROM {view} ORDER BY "{x}"'
     return sql, cols
 
+def make_violin_inputs():
+    val = random.choice(JFR_NUMERIC_COLS + GENERIC_NUMERIC)
+    view = random.choice(JFR_VIEWS)
+    if random.random() < 0.5:
+        cat = random.choice(JFR_CAT_COLS + GENERIC_CAT)
+        sql = f'SELECT "{val}", "{cat}" FROM {view} LIMIT 10000'
+        return sql, [val, cat]
+    sql = f'SELECT "{val}" FROM {view} LIMIT 10000'
+    return sql, [val]
+
+def make_sunburst_inputs():
+    view = random.choice(JFR_VIEWS)
+    val = random.choice(JFR_NUMERIC_COLS + GENERIC_NUMERIC)
+    style = random.random()
+    if style < 0.4:
+        # Two-level hierarchy
+        p1, p2 = random.sample(JFR_CAT_COLS, 2)
+        sql = f'SELECT "{p1}", "{p2}", sum("{val}") AS "{val}" FROM {view} GROUP BY "{p1}", "{p2}"'
+        return sql, [p1, p2, val]
+    elif style < 0.7:
+        # Single path column (slash-delimited)
+        path_col = random.choice(["callPath", "packagePath", "className", "methodPath", "stackPath"])
+        sql = f'SELECT "{path_col}", sum("{val}") AS "{val}" FROM {view} GROUP BY "{path_col}"'
+        return sql, [path_col, val]
+    else:
+        # Three-level hierarchy
+        p1, p2, p3 = random.sample(JFR_CAT_COLS, 3)
+        sql = f'SELECT "{p1}", "{p2}", "{p3}", sum("{val}") AS "{val}" FROM {view} GROUP BY "{p1}", "{p2}", "{p3}"'
+        return sql, [p1, p2, p3, val]
+
+def make_sankey_inputs():
+    view = random.choice(JFR_VIEWS)
+    val = random.choice(JFR_NUMERIC_COLS + GENERIC_NUMERIC)
+    source_cols = ["caller", "source", "from_method", "thread", "package", "sourceClass"]
+    target_cols = ["callee", "target", "to_method", "lock", "sink", "targetClass"]
+    src = random.choice(source_cols)
+    tgt = random.choice(target_cols)
+    sql = f'SELECT "{src}", "{tgt}", sum("{val}") AS "{val}" FROM {view} GROUP BY "{src}", "{tgt}" ORDER BY "{val}" DESC LIMIT 50'
+    return sql, [src, tgt, val]
+
+def make_crosstab_inputs():
+    view = random.choice(JFR_VIEWS)
+    row = random.choice(JFR_CAT_COLS + GENERIC_CAT)
+    col = random.choice([c for c in JFR_CAT_COLS + GENERIC_CAT if c != row])
+    val = random.choice(JFR_NUMERIC_COLS + GENERIC_NUMERIC)
+    agg = random.choice(["SUM", "AVG", "COUNT", "MAX", "MIN"])
+    sql = f'SELECT "{row}", "{col}", {agg}("{val}") AS "{val}" FROM {view} GROUP BY "{row}", "{col}"'
+    return sql, [row, col, val]
+
 GENERATORS = [
     ("LINE_CHART",   make_line_inputs,       700),
     ("BAR_CHART",    make_bar_inputs,        700),
@@ -305,6 +371,10 @@ GENERATORS = [
     ("AREA_CHART",   make_area_chart_inputs, 200),
     ("GANTT",        make_gantt_inputs,      150),
     ("RANGE",        make_range_inputs,      150),
+    ("VIOLIN_PLOT",  make_violin_inputs,     150),
+    ("SUNBURST",     make_sunburst_inputs,   150),
+    ("SANKEY",       make_sankey_inputs,     150),
+    ("CROSSTAB",     make_crosstab_inputs,   150),
 ]
 
 # ── Haiku calls ────────────────────────────────────────────────────────────────
@@ -361,6 +431,7 @@ def is_valid(config: str) -> bool:
     known = {"LINE_CHART", "BAR_CHART", "PIE_CHART", "SCATTER_PLOT",
              "HISTOGRAM", "HEATMAP", "BOX_PLOT", "FLAMEGRAPH", "TABLE",
              "WATERFALL", "TREEMAP", "GANTT", "RANGE", "AREA_CHART",
+             "VIOLIN_PLOT", "SUNBURST", "SANKEY", "CROSSTAB",
              "GANTT_CHART", "RANGE_PLOT"}  # legacy aliases
     if fn not in known:
         return False

@@ -1,11 +1,11 @@
-// Locks in the showcase's 14-plot inventory. If any of these names disappear or
+// Locks in the showcase's 18-plot inventory. If any of these names disappear or
 // fail to register, the test fails — preventing silent regressions where a
 // plot's React component exists in the tree but isn't reachable from the parser.
 
 import { describe, it, expect } from 'vitest';
 import { plotRegistry } from '../../components/plots/plotRegistry';
 
-describe('plotRegistry — showcase 14-plot coverage', () => {
+describe('plotRegistry — showcase 18-plot coverage', () => {
     // Showcase canon: GANTT and RANGE (not GANTT_CHART / RANGE_PLOT).
     const expectedKeys = [
         'TABLE',
@@ -22,6 +22,10 @@ describe('plotRegistry — showcase 14-plot coverage', () => {
         'RANGE',
         'TREEMAP',
         'WATERFALL',
+        'VIOLIN_PLOT',
+        'SUNBURST',
+        'SANKEY',
+        'CROSSTAB',
     ];
 
     // Aliases that point at one of the canonical plots; allowed in the registry
@@ -34,7 +38,7 @@ describe('plotRegistry — showcase 14-plot coverage', () => {
         expect(plotRegistry[name].parseConfig).toBeDefined();
     });
 
-    it('has exactly 14 canonical registered plots (aliases allowed)', () => {
+    it('has exactly 18 canonical registered plots (aliases allowed)', () => {
         const actual = Object.keys(plotRegistry).filter(k => !aliasKeys.includes(k)).sort();
         expect(actual).toEqual([...expectedKeys].sort());
     });

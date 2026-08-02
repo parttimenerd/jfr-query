@@ -2,7 +2,7 @@
 """
 Comprehensive completion scenario tests for the plot suggester ONNX model.
 
-Tests 100+ real-world JFR query patterns across all 14 plot types.
+Tests 116+ real-world JFR query patterns across all 18 plot types.
 For each scenario, verifies the model predicts the correct plot type.
 
 Usage:
@@ -458,6 +458,62 @@ SCENARIOS: list[Scenario] = [
     Scenario("edge_scatter_category", "SCATTER_PLOT",
              "SELECT cpu_pct, alloc_rate, thread_name FROM thread_stats LIMIT 2000",
              ["cpu_pct", "alloc_rate", "thread_name"], "Scatter with category (wide+num:2+cat:1)"),
+
+    # ── VIOLIN_PLOT ───────────────────────────────────────────────────────────
+    Scenario("violin_pause_distribution", "VIOLIN_PLOT",
+             "SELECT pause_ms FROM gc_events LIMIT 10000",
+             ["pause_ms"], "Single numeric distribution — violin"),
+    Scenario("violin_pause_by_gc_type", "VIOLIN_PLOT",
+             "SELECT pause_ms, gc_type FROM gc_events LIMIT 10000",
+             ["pause_ms", "gc_type"], "Pause distribution split by GC type"),
+    Scenario("violin_alloc_by_class", "VIOLIN_PLOT",
+             "SELECT alloc_size_kb, class_name FROM alloc_events LIMIT 5000",
+             ["alloc_size_kb", "class_name"], "Allocation size by class — violin"),
+    Scenario("violin_duration_by_thread", "VIOLIN_PLOT",
+             "SELECT duration_ms, thread_name FROM method_events LIMIT 5000",
+             ["duration_ms", "thread_name"], "Method duration per thread — violin"),
+
+    # ── SUNBURST ──────────────────────────────────────────────────────────────
+    Scenario("sunburst_package_class_samples", "SUNBURST",
+             "SELECT package_name, class_name, sum(samples) AS samples FROM cpu_samples GROUP BY package_name, class_name",
+             ["package_name", "class_name", "samples"], "Two-level package/class sunburst"),
+    Scenario("sunburst_alloc_hierarchy", "SUNBURST",
+             "SELECT module_name, class_name, sum(alloc_mb) AS alloc_mb FROM alloc_events GROUP BY module_name, class_name",
+             ["module_name", "class_name", "alloc_mb"], "Module → class allocation sunburst"),
+    Scenario("sunburst_call_path", "SUNBURST",
+             "SELECT call_path, sum(duration_ms) AS total_ms FROM profiling_events GROUP BY call_path",
+             ["call_path", "total_ms"], "Slash-delimited call path sunburst"),
+    Scenario("sunburst_three_level", "SUNBURST",
+             "SELECT module_name, package_name, class_name, sum(cpu_ms) AS cpu_ms FROM cpu_samples GROUP BY module_name, package_name, class_name",
+             ["module_name", "package_name", "class_name", "cpu_ms"], "Three-level hierarchy sunburst"),
+
+    # ── SANKEY ────────────────────────────────────────────────────────────────
+    Scenario("sankey_method_call_flow", "SANKEY",
+             "SELECT caller, callee, sum(samples) AS samples FROM call_graph GROUP BY caller, callee ORDER BY samples DESC LIMIT 50",
+             ["caller", "callee", "samples"], "Method call flow diagram"),
+    Scenario("sankey_thread_lock_flow", "SANKEY",
+             "SELECT thread_name, lock_class, sum(wait_ms) AS wait_ms FROM lock_events GROUP BY thread_name, lock_class ORDER BY wait_ms DESC LIMIT 30",
+             ["thread_name", "lock_class", "wait_ms"], "Thread → lock wait flow"),
+    Scenario("sankey_alloc_class_flow", "SANKEY",
+             "SELECT source_class, target_class, sum(alloc_size_mb) AS alloc_mb FROM alloc_graph GROUP BY source_class, target_class ORDER BY alloc_mb DESC LIMIT 40",
+             ["source_class", "target_class", "alloc_mb"], "Allocation flow between classes"),
+    Scenario("sankey_cpu_package_flow", "SANKEY",
+             "SELECT from_package, to_package, sum(cpu_ticks) AS cpu_ticks FROM call_edges GROUP BY from_package, to_package ORDER BY cpu_ticks DESC LIMIT 50",
+             ["from_package", "to_package", "cpu_ticks"], "CPU flow between packages"),
+
+    # ── CROSSTAB ──────────────────────────────────────────────────────────────
+    Scenario("crosstab_gc_cause_phase", "CROSSTAB",
+             "SELECT gc_cause, phase, avg(pause_ms) AS avg_pause FROM gc_events GROUP BY gc_cause, phase",
+             ["gc_cause", "phase", "avg_pause"], "GC cause × phase pivot (AVG)"),
+    Scenario("crosstab_thread_state_count", "CROSSTAB",
+             "SELECT thread_type, thread_state, count(*) AS n FROM thread_events GROUP BY thread_type, thread_state",
+             ["thread_type", "thread_state", "n"], "Thread type × state count pivot"),
+    Scenario("crosstab_class_gc_alloc", "CROSSTAB",
+             "SELECT class_name, gc_type, sum(alloc_size_mb) AS total_alloc FROM alloc_events GROUP BY class_name, gc_type",
+             ["class_name", "gc_type", "total_alloc"], "Class × GC type allocation pivot"),
+    Scenario("crosstab_method_thread_duration", "CROSSTAB",
+             "SELECT method_name, thread_name, sum(duration_ms) AS total_ms FROM method_events GROUP BY method_name, thread_name",
+             ["method_name", "thread_name", "total_ms"], "Method × thread duration pivot"),
 ]
 
 

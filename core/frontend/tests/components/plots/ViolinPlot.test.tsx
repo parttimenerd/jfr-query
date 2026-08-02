@@ -1,4 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// Mock SettingsContext to break the circular import chain
+// (SettingsContext → AiService → plotRegistry → ViolinPlot)
+vi.mock('../../../context/SettingsContext', () => ({
+    SettingsContext: { Consumer: ({ children }: any) => children({}), Provider: ({ children }: any) => children },
+    useContext: () => ({}),
+}));
+vi.mock('../../../services/AiService', () => ({ providerMetadataRegistry: {} }));
+
 import { violinPlot, computeKde } from '../../../components/plots/ViolinPlot';
 
 // ── registration ──────────────────────────────────────────────────────────────

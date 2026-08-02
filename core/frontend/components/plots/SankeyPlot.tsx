@@ -99,7 +99,7 @@ const SankeyComponent: React.FC<{
         [filteredRows, sourceCol, targetCol, valueCol]
     );
 
-    const handleNodeClick = useCallback((item: any, type: string) => {
+    const handleNodeClick = useCallback((item: any, type: string, _e?: unknown) => {
         if (type !== 'node' || !item?.name) return;
         const newFocus = item.name as string;
         setFocus(newFocus);
@@ -176,7 +176,7 @@ const SankeyComponent: React.FC<{
                     nodePadding={8}
                     nodeWidth={10}
                     margin={{ top: 8, right: 120, bottom: 8, left: 8 }}
-                    onClick={handleNodeClick}
+                    onClick={handleNodeClick as any}
                 >
                     <Tooltip
                         formatter={(v: number) => v.toLocaleString()}

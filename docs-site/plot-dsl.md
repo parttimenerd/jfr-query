@@ -33,6 +33,12 @@ A plot expression consists of:
 | `AREA_CHART` | `AREA` | Stacked / overlaid filled areas. |
 | `GANTT` | — | Gantt bars with `start`, `end`, and `lane` (row category). Optional `task` (bar label). |
 | `RANGE` | — | Range/interval band with `x`, `low`, `high`. Optional `center` line and `color`. |
+| `TREEMAP` | — | Hierarchical treemap with `path` (one or more columns) and `value` (numeric weight). |
+| `WATERFALL` | — | Waterfall/bridge chart with `category` and `value`; positive segments go up, negative down. |
+| `VIOLIN_PLOT` | — | Kernel-density distribution shape with optional `category` split and configurable `bins`. |
+| `SUNBURST` | — | Sunburst drill-down chart with `path` (one or more columns, or a delimited single column) and `value`. |
+| `SANKEY` | — | Sankey flow diagram with `source`, `target`, and `value` columns. |
+| `CROSSTAB` | — | Pivot table with heat-map cell coloring. Aggregates `value` by two categorical dimensions (`row` / `col`). |
 
 Aliases are accepted anywhere the canonical name is. `LINE(x=t, y=v)` is equivalent to `LINE_CHART(x=t, y=v)`.
 `PIE_CHART` also accepts the older names `name` / `labels` / `values` for backwards compatibility; prefer `category` / `value`.
@@ -466,7 +472,151 @@ RANGE(x: "timestamp", low: "minCpu", high: "maxCpu", center: "medianCpu")
 
 ---
 
-### TABLE
+### TREEMAP
+
+Hierarchical area chart where each rectangle's area is proportional to its value. Use a list of columns as the `path` to build multi-level hierarchies (e.g., package → class), or use a single delimiter-separated column.
+
+**Example 1 — Package-level memory allocation**
+
+````
+```plot
+TREEMAP(path: ["package", "className"], value: "allocBytes")
+  TITLE "Allocation by Package and Class"
+```
+````
+
+**Example 2 — Single-column slash-delimited path**
+
+````
+```plot
+TREEMAP(path: "fullClassName", value: "samples", delimiter: "/")
+  TITLE "CPU Samples by Class"
+```
+````
+
+---
+
+### WATERFALL
+
+Waterfall (bridge) chart — each bar starts where the previous one ended. Positive values go up, negative values go down. Ideal for showing cumulative effects (e.g., memory deltas, GC reclaim/overhead breakdown).
+
+**Example 1 — GC memory delta breakdown**
+
+````
+```plot
+WATERFALL(category: "phase", value: "deltaBytes")
+  TITLE "GC Memory Deltas"
+  AXIS_Y LABEL "Bytes"
+```
+````
+
+---
+
+### VIOLIN_PLOT
+
+Kernel-density estimate of a numeric distribution — wider sections show where data is more concentrated. Optional `category` column draws one violin per group side by side.
+
+**Example 1 — GC pause duration distribution**
+
+````
+```plot
+VIOLIN_PLOT(value: "pauseMs")
+  TITLE "GC Pause Distribution"
+  AXIS_Y LABEL "ms"
+```
+````
+
+**Example 2 — Pause duration split by GC type**
+
+````
+```plot
+VIOLIN_PLOT(value: "pauseMs", category: "gcType", bins: 30)
+  TITLE "Pause Duration by GC Type"
+  AXIS_Y LABEL "ms"
+```
+````
+
+Supports `BRUSH $var` to write `$var.selection` = the category label on click.
+
+---
+
+### SUNBURST
+
+Interactive sunburst drill-down chart. Clicking an inner arc zooms in; the breadcrumb trail lets you navigate back. Use a list of columns as the path to describe hierarchy levels, or a single string column with a `delimiter` separator.
+
+**Example 1 — Package → class hierarchy**
+
+````
+```plot
+SUNBURST(path: ["package", "className"], value: "samples")
+  TITLE "CPU Samples"
+```
+````
+
+**Example 2 — Slash-delimited call path**
+
+````
+```plot
+SUNBURST(path: "callPath", value: "samples", delimiter: "/")
+  TITLE "Hot Paths"
+```
+````
+
+Supports `BRUSH $var` to write `$var.selection` = the node name on click.
+
+---
+
+### SANKEY
+
+Sankey flow diagram showing how a quantity flows from `source` nodes through `target` nodes. Clicking a node focuses the chart on that node and its immediate neighbours; click again to reset.
+
+**Example 1 — Method call flow**
+
+````
+```plot
+SANKEY(source: "caller", target: "callee", value: "samples")
+  TITLE "Hot Call Paths"
+```
+````
+
+**Example 2 — Thread-to-lock allocation flow**
+
+````
+```plot
+SANKEY(source: "thread", target: "lock", value: "waitMs")
+  TITLE "Thread → Lock Wait Time"
+```
+````
+
+Supports `BRUSH $var` to write `$var.selection` = the node name on click.
+
+---
+
+### CROSSTAB
+
+Pivot table with per-cell heat-map coloring (blue intensity = relative magnitude). Aggregates a numeric `value` column by two categorical dimensions: `row` and `col`. The `agg` parameter selects the aggregation function (`SUM`, `AVG`, `COUNT`, `MAX`, `MIN`; default `SUM`).
+
+**Example 1 — GC pause by cause and phase (average)**
+
+````
+```plot
+CROSSTAB(row: "cause", col: "phase", value: "pauseMs", agg: "AVG")
+  TITLE "Avg Pause by Cause and Phase"
+```
+````
+
+**Example 2 — Thread × lock contention count**
+
+````
+```plot
+CROSSTAB(row: "thread", col: "lock", value: "samples", agg: "COUNT")
+  TITLE "Contention Count"
+```
+````
+
+Supports two-variable `BRUSH $rowVar $colVar` to write `$rowVar.selection` = row label and `$colVar.selection` = column label on cell click.
+
+---
 
 Sortable, filterable table with CSV export — the default when no other plot is specified. Timestamps, durations, and numbers are auto-formatted.
 
@@ -502,8 +652,8 @@ Inner arguments go inside the parentheses after the plot type. All are optional;
 |----------|------------|---------|
 | `x` | most types | Column bound to the X axis. |
 | `y` | most types | Column bound to the Y axis. May be a list `[a, b, c]` for multi-series plots. |
-| `value` | HEATMAP, FLAMEGRAPH | Intensity / weight column. |
-| `category` | PIE_CHART | Column providing slice labels. |
+| `value` | HEATMAP, FLAMEGRAPH, TREEMAP, SUNBURST, SANKEY, WATERFALL, CROSSTAB, VIOLIN_PLOT | Intensity / weight column. |
+| `category` | PIE_CHART, BOX_PLOT, WATERFALL, VIOLIN_PLOT | Column providing slice/group labels. |
 | `label` | TABLE, BAR | Text label column. |
 | `start` | GANTT | Column for the bar start time/value. |
 | `end` | GANTT | Column for the bar end time/value. |
@@ -513,6 +663,14 @@ Inner arguments go inside the parentheses after the plot type. All are optional;
 | `high` | RANGE | Upper bound column for the shaded band. |
 | `center` | RANGE | Optional center-line column (e.g. median). |
 | `frames` | FLAMEGRAPH | Column containing the list of stack frames. |
+| `path` | TREEMAP, SUNBURST | One or more columns describing the hierarchy path, or a single delimiter-separated column. |
+| `delimiter` | TREEMAP, SUNBURST | Separator character for splitting a single `path` column (default `/`). |
+| `row` | CROSSTAB | Column for row labels. |
+| `col` | CROSSTAB | Column for column headers. |
+| `agg` | CROSSTAB | Aggregation function: `SUM` (default), `AVG`, `COUNT`, `MAX`, `MIN`. |
+| `source` | SANKEY | Source node column. |
+| `target` | SANKEY | Target node column. |
+| `bins` | VIOLIN_PLOT, HISTOGRAM | Number of density/frequency bins (default 20). |
 | `color` | most types | Column used to derive series/category colours. |
 | `size` | SCATTER | Column used to derive marker size. |
 | `title` | any | Inline title. Equivalent to the `TITLE` tail clause. |
@@ -549,6 +707,7 @@ Tail clauses come after the closing paren of the plot type and each other, in an
 - `LINK_X($start, $end, [master], [clamp])` — link the X zoom range to variables `$start` and `$end`. Optional `master` marks this plot as the driver. Optional `clamp` prevents zooming beyond the data domain.
 - `LINK_Y($var)` — link Y axis zoom to a variable.
 - `BRUSH $var MODE X | Y | XY` — capture user brush selection into `$var`. `$var.brush.lo` / `$var.brush.hi` hold the range for X/Y; `$var.brush.x_lo` / `$var.brush.x_hi` / `$var.brush.y_lo` / `$var.brush.y_hi` for XY.
+- `BRUSH $rowVar $colVar` — two-variable form for CROSSTAB: writes the clicked row label to `$rowVar.selection` and the clicked column label to `$colVar.selection`.
 
 ### Axes
 

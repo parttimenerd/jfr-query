@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 Generate additional synthetic training examples for underrepresented plot types
-(TREEMAP, WATERFALL, GANTT, RANGE, HISTOGRAM, SCATTER_PLOT) using the existing
-generator functions from gen_plot_pairs.py but with template-based outputs
-(no API key needed).
+(TREEMAP, WATERFALL, GANTT, RANGE, HISTOGRAM, SCATTER_PLOT, VIOLIN_PLOT,
+SUNBURST, SANKEY, CROSSTAB) using the existing generator functions from
+gen_plot_pairs.py but with template-based outputs (no API key needed).
 
 Appends generated examples to plot_pairs_v19.jsonl → plot_pairs_v19b.jsonl
 (or creates v20 baseline if v19 is the current DATA).
@@ -58,6 +58,31 @@ def build_scatter_output(cols: list) -> str:
     return f'SCATTER_PLOT(x: "{cols[0]}", y: "{cols[1]}")'
 
 
+def build_violin_output(cols: list) -> str:
+    if len(cols) >= 2:
+        return f'VIOLIN_PLOT(value: "{cols[0]}", category: "{cols[1]}")'
+    return f'VIOLIN_PLOT(value: "{cols[0]}")'
+
+
+def build_sunburst_output(cols: list) -> str:
+    # Last col is value; all others form the path
+    value = cols[-1]
+    path_cols = cols[:-1]
+    if len(path_cols) == 1:
+        return f'SUNBURST(path: "{path_cols[0]}", value: "{value}")'
+    path_arr = ', '.join(f'"{c}"' for c in path_cols)
+    return f'SUNBURST(path: [{path_arr}], value: "{value}")'
+
+
+def build_sankey_output(cols: list) -> str:
+    return f'SANKEY(source: "{cols[0]}", target: "{cols[1]}", value: "{cols[2]}")'
+
+
+def build_crosstab_output(cols: list) -> str:
+    agg = random.choice(["SUM", "AVG", "COUNT"])
+    return f'CROSSTAB(row: "{cols[0]}", col: "{cols[1]}", value: "{cols[2]}", agg: "{agg}")'
+
+
 BOOST_GENERATORS = [
     ('TREEMAP',      g.make_treemap_inputs,    build_treemap_output,   500),
     ('WATERFALL',    g.make_waterfall_inputs,  build_waterfall_output, 500),
@@ -65,6 +90,8 @@ BOOST_GENERATORS = [
     ('RANGE',        g.make_range_inputs,      build_range_output,     400),
     ('HISTOGRAM',    g.make_histogram_inputs,  build_histogram_output, 500),  # boosted from 250 to reduce BOX_PLOT confusion
     ('SCATTER_PLOT', g.make_scatter_inputs,    build_scatter_output,   250),
+    # VIOLIN_PLOT, SUNBURST, SANKEY, CROSSTAB excluded: share signals with existing
+    # types and cause active mispredictions. Users select these explicitly.
 ]
 
 
@@ -129,18 +156,18 @@ def generate_boost(src: Path, dst: Path, eval_src: Path, eval_dst: Path) -> None
 
 def main():
     data_dir = REPO_ROOT / 'data'
-    src = data_dir / 'plot_pairs_v19.jsonl'
-    dst = data_dir / 'plot_pairs_v20.jsonl'
-    eval_src = data_dir / 'plot_eval_v19.jsonl'
-    eval_dst = data_dir / 'plot_eval_v20.jsonl'
+    src = data_dir / 'plot_pairs_v31.jsonl'
+    dst = data_dir / 'plot_pairs_v33.jsonl'
+    eval_src = data_dir / 'plot_eval_v31.jsonl'
+    eval_dst = data_dir / 'plot_eval_v33.jsonl'
 
-    print("Generating v20 synthetic boost data for underrepresented plot types...")
+    print("Generating v33 synthetic boost data (new plot types excluded)...")
     print("(No API key needed — uses deterministic template-based outputs)")
     print()
     generate_boost(src, dst, eval_src, eval_dst)
     print()
     print("Done. Next steps:")
-    print("  Update run_training.sh DATA/EVAL to v20")
+    print("  Update run_training.sh DATA/EVAL to v33")
     print("  ./scripts/train/run_training.sh --skip-data")
 
 

@@ -1,4 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../../../context/SettingsContext', () => ({
+    SettingsContext: { Consumer: ({ children }: any) => children({}), Provider: ({ children }: any) => children },
+    useContext: () => ({}),
+}));
+vi.mock('../../../services/AiService', () => ({ providerMetadataRegistry: {} }));
+
 import { sankeyPlot, buildSankeyData, filterByFocus } from '../../../components/plots/SankeyPlot';
 
 describe('sankeyPlot registration', () => {

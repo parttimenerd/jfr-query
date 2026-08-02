@@ -247,6 +247,8 @@ const PLOT_NAMES = [
     'LINE_CHART', 'BAR_CHART', 'AREA_CHART', 'SCATTER_PLOT', 'PIE_CHART',
     'HISTOGRAM', 'HEATMAP', 'BOX_PLOT', 'TABLE', 'FLAMEGRAPH', 'GANTT', 'RANGE',
     'TREEMAP', 'WATERFALL',
+    // New chart types (user-selected; not ML-predicted).
+    'VIOLIN_PLOT', 'SUNBURST', 'SANKEY', 'CROSSTAB',
     // Composition primitives.
     'ROW', 'COL',
     // Legacy names still emitted by older artifacts — keep parseable.
