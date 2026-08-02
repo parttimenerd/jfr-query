@@ -25,6 +25,8 @@ const SHAPE_NORMALIZE: Record<string, string> = {
     gantt_chart: 'gantt', gantt: 'gantt',
     range_plot: 'range', range: 'range',
     range_chart: 'range',
+    treemap: 'treemap',
+    waterfall: 'waterfall',
 };
 
 // Anything in this set, when seen as the *first* token (case-insensitive), is

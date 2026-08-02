@@ -40,6 +40,8 @@ const LOWERCASE_TO_UC: Record<string, string> = {
     area: 'AREA_CHART',
     gantt: 'GANTT',
     range: 'RANGE',
+    treemap: 'TREEMAP',
+    waterfall: 'WATERFALL',
 };
 
 /**
