@@ -197,16 +197,19 @@ export function extractInputSignals(sql: string, columns: string[] | TypedColumn
     if (hasTimestamp && hasNumericBand) tags.push('num_range');
 
     // Count numeric vs categorical columns using type info when available.
+    // Time-named columns are excluded from both counts (they are neither numeric nor categorical).
     let numCount = 0;
     let catCount = 0;
     const NUM_TYPES = new Set(['INTEGER', 'BIGINT', 'DOUBLE', 'FLOAT', 'DECIMAL', 'NUMERIC',
         'SMALLINT', 'TINYINT', 'REAL', 'HUGEINT', 'INT4', 'INT8', 'FLOAT4', 'FLOAT8']);
+    const TIME_NAME_PAT = /time|timestamp|bucket|date|_at$|_ts$|_dt$|^ts$|^dt$|^when$/;
     for (let i = 0; i < typed.length; i++) {
         const t = types[i] ?? '';
         const n = names[i] ?? '';
+        if (TIME_NAME_PAT.test(n) && t === '') continue;  // time-named cols: skip num/cat
         if (NUM_TYPES.has(t) || (t === '' && /(?:count|size|ms|mb|kb|rate|pct|load|pause|duration|alloc|heap|cpu|ticks|samples|total|avg|max|overhead|throughput|latency|weight|score|p\d+|%$|^young$|^old$|^meta$|^eden$|^survivor$)/i.test(n))) {
             numCount++;
-        } else if (t === 'VARCHAR' || t === 'TEXT' || t === 'STRING' || (t === '' && !/time|stamp|date|bucket|_at$|_ts$|_dt$/.test(n))) {
+        } else if (t === 'VARCHAR' || t === 'TEXT' || t === 'STRING' || (t === '' && !TIME_NAME_PAT.test(n))) {
             catCount++;
         }
     }
