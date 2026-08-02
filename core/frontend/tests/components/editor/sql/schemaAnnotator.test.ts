@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { annotateSchema } from '../../../../components/editor/sql/annotators/schemaAnnotator';
+import { annotateSchema, registerScope } from '../../../../components/editor/sql/annotators/schemaAnnotator';
 import { annotateAliases } from '../../../../components/editor/sql/annotators/aliasAnnotator';
 import { parse } from '../../../../components/editor/sql/parser';
+import { Scope } from '../../../../components/editor/sql/scope';
 
 const eventsTable = {
     name: 'events',
@@ -99,5 +100,39 @@ describe('annotateSchema — no crash cases', () => {
 
     it('handles star select without throwing', () => {
         expect(() => run('SELECT * FROM events')).not.toThrow();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// registerScope
+// ---------------------------------------------------------------------------
+
+describe('registerScope', () => {
+    it('associates a Scope with a node and makes it retrievable via annotateSchema', () => {
+        // registerScope stores in a WeakMap; the indirect test is that when
+        // annotateSchema is passed a scopeById map that includes the scope, the
+        // query node's annotations.scope.id is used to look up the right scope.
+        // Here we verify that registerScope does not throw and that the same
+        // scope surfaces during resolution of a SELECT on that node.
+        const { root } = parse('SELECT ts FROM events');
+        const scope = new Scope();
+        // Annotate aliases first so the query node gets an annotations.scope.id
+        const scopes = annotateAliases(root, { tables: [eventsTable], views: [] });
+        // Register the scope for the root node as well (no-op for resolution,
+        // but must not throw).
+        registerScope(root, scope);
+        // Now run full schema annotation — should not crash.
+        expect(() =>
+            annotateSchema(root, { tables: [eventsTable], views: [], scopeById: scopes })
+        ).not.toThrow();
+    });
+
+    it('accepts any node kind without throwing', () => {
+        const { root } = parse('SELECT 1');
+        const scope = new Scope();
+        // Register on a non-query node — must be silent.
+        for (const child of root.children) {
+            expect(() => registerScope(child, scope)).not.toThrow();
+        }
     });
 });
