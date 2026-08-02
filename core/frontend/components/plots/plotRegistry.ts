@@ -15,6 +15,7 @@ import { treemapPlot } from './TreemapPlot';
 import { waterfallPlot } from './WaterfallPlot';
 import { violinPlot } from './ViolinPlot';
 import { sunburstPlot } from './SunburstPlot';
+import { sankeyPlot } from './SankeyPlot';
 
 export const plotRegistry: Record<string, PlotRegistration<any>> = {
   [tablePlot.name]: tablePlot,
@@ -35,4 +36,5 @@ export const plotRegistry: Record<string, PlotRegistration<any>> = {
   [waterfallPlot.name]: waterfallPlot,
   [violinPlot.name]: violinPlot,
   [sunburstPlot.name]: sunburstPlot,
+  [sankeyPlot.name]: sankeyPlot,
 };
