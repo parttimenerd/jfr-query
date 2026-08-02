@@ -53,8 +53,8 @@ for arg in "$@"; do
   esac
 done
 
-DATA="data/plot_pairs_v33.jsonl"
-EVAL="data/plot_eval_v33.jsonl"
+DATA="data/plot_pairs_v36.jsonl"
+EVAL="data/plot_eval_v36.jsonl"
 CHECKPOINT_DIR="checkpoints/t5-small-latest"
 ONNX_OUT="onnx/t5-small-q8-arm"
 
