@@ -13,6 +13,7 @@ import { ganttChartPlot } from './GanttChartPlot';
 import { rangePlot } from './RangePlot';
 import { treemapPlot } from './TreemapPlot';
 import { waterfallPlot } from './WaterfallPlot';
+import { violinPlot } from './ViolinPlot';
 
 export const plotRegistry: Record<string, PlotRegistration<any>> = {
   [tablePlot.name]: tablePlot,
@@ -31,4 +32,5 @@ export const plotRegistry: Record<string, PlotRegistration<any>> = {
   [rangePlot.name]: rangePlot,
   [treemapPlot.name]: treemapPlot,
   [waterfallPlot.name]: waterfallPlot,
+  [violinPlot.name]: violinPlot,
 };
