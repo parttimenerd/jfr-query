@@ -90,7 +90,7 @@ export const buildPlotLanguage = (plotRegistry: Record<string, PlotRegistration<
       }
       // Identifiers and keywords
       if (/[\w_]/.test(ch)) {
-        stream.eatWhile(/[\w$_\-\.]/);
+        stream.eatWhile(/[\w_\-\.]/);
         const word = stream.current() as string;
         const upper = word.toUpperCase();
         if (keywords.has(upper)) return 'keyword';
