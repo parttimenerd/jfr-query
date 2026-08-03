@@ -14,6 +14,12 @@ cellConditions:
   metaspace: "SELECT count(*) > 0 FROM MetaspaceSummary"
   g1-regions: "SELECT count(*) > 0 FROM G1HeapSummary"
   tenuring: "SELECT count(*) > 0 FROM TenuringDistribution"
+  jvm-memory-size: "SELECT count(*) > 0 FROM GCHeapConfiguration"
+  pause-vs-concurrent: "SELECT count(*) > 0 FROM GCPhaseConcurrent"
+  object-stats: "SELECT count(*) > 0 FROM ObjectAllocationSample"
+  cpu-stats: "SELECT count(*) > 0 FROM GCCPUTime"
+  safepoint-summary: "SELECT count(*) > 0 FROM SafepointEnd"
+  promotion-rate: "SELECT count(*) > 0 FROM G1HeapSummary"
 ---
 
 <!-- @cell name=intro -->
@@ -367,5 +373,164 @@ FROM "tenuring-distribution"
 
 ```plot
 BAR_CHART(x: "Age", y: ["MB"]) TITLE "Survivor Age Distribution (most recent GC)" AXIS_X LABEL "Survivor Age" AXIS_Y LABEL "MB"
+```
+
+---
+
+<!-- @cell name=jvm-memory-size -->
+
+## JVM Memory Size: Allocated vs Peak
+
+Configured heap maximum vs the peak heap actually used. A large gap between allocated and peak means the heap ceiling can be lowered to reduce GC overhead. A peak close to the max means the JVM is running near capacity.
+
+*Requires `GCHeapConfiguration` events.*
+
+```sql
+SELECT * FROM "gc-memory-size"
+```
+
+```plot
+BAR_CHART(x: "Region", y: ["MB"], horizontal: true) TITLE "JVM Heap: Allocated vs Peak Used" AXIS_Y LABEL "MB"
+```
+
+---
+
+<!-- @cell name=gc-duration-buckets -->
+
+## GC Pause Duration Distribution
+
+Count of GC pause events grouped into duration ranges. A healthy JVM has most pauses in the short (sub-10ms) bucket; a long tail in the 100ms+ buckets signals tuning opportunities.
+
+```sql
+SELECT "Range", "Count", "Percentage"
+FROM "gc-duration-buckets"
+```
+
+```plot
+BAR_CHART(x: "Range", y: ["Count"], horizontal: false) TITLE "GC Pause Duration Ranges" AXIS_Y LABEL "Pauses"
+```
+
+---
+
+<!-- @cell name=gc-phase-stats -->
+
+## GC Phase Statistics
+
+Per-phase statistics including count, total time, average, and standard deviation. A high standard deviation relative to the mean suggests inconsistent GC behavior — investigate phases with high stddev first.
+
+```sql
+SELECT * FROM "gc-phase-stats"
+```
+
+```plot
+TABLE() TITLE "GC Phase Statistics"
+```
+
+---
+
+<!-- @cell name=pause-vs-concurrent -->
+
+## Pause vs Concurrent GC Time
+
+Total wall-clock time split between stop-the-world pauses and concurrent GC work. Concurrent collectors (G1, ZGC, Shenandoah) aim to shift most work to concurrent phases — a large STW share relative to concurrent indicates the collector is under stress.
+
+*Requires `GCPhaseConcurrent` events.*
+
+```sql
+SELECT * FROM "gc-time-split"
+```
+
+```plot
+PIE_CHART(category: "Type", value: "Total (ms)") TITLE "STW vs Concurrent GC Time"
+```
+
+---
+
+<!-- @cell name=object-stats -->
+
+## Object Allocation Statistics
+
+Total sampled allocation volume and average allocation rate over the recording. High allocation rates are the root cause of most GC pressure — reducing object churn is often the highest-leverage GC optimization.
+
+*Requires `ObjectAllocationSample` events. Enable allocation profiling to populate this section.*
+
+```sql
+SELECT * FROM "gc-object-stats"
+```
+
+```plot
+TABLE() TITLE "Object Allocation Summary"
+```
+
+---
+
+<!-- @cell name=cpu-stats -->
+
+## GC CPU Time
+
+CPU time consumed by GC threads across the recording. High GC CPU time relative to total recording duration indicates the collector is competing significantly with the application for CPU.
+
+*Requires `GCCPUTime` events.*
+
+```sql
+SELECT * FROM "gc-cpu-time"
+```
+
+```plot
+TABLE() TITLE "GC CPU Time Summary"
+```
+
+---
+
+<!-- @cell name=safepoint-summary -->
+
+## Safepoint Summary
+
+Total time all JVM threads were stopped at safepoints, average per safepoint, and percentage of the recording. Safepoints are not limited to GC — JVM operations like deoptimization and class redefinition also trigger them.
+
+*Requires `SafepointBegin` and `SafepointEnd` events.*
+
+```sql
+SELECT * FROM "gc-safepoint-summary"
+```
+
+```plot
+TABLE() TITLE "Safepoint Stop-the-World Summary"
+```
+
+---
+
+<!-- @cell name=consecutive-full-gcs -->
+
+## Consecutive Full GCs
+
+Full GC events that occurred without an intervening Young/Mixed GC. Back-to-back Full GCs are a strong signal of heap exhaustion or a memory leak — the collector cannot reclaim enough memory to make forward progress.
+
+```sql
+SELECT * FROM "gc-consecutive-full" LIMIT 50
+```
+
+```plot
+TABLE() TITLE "Consecutive Full GC Events"
+```
+
+---
+
+<!-- @cell name=promotion-rate -->
+
+## Promotion Rate Over Time
+
+Old-generation growth per GC as a proxy for object promotion (G1 only). Steady promotion is healthy; a rising or spiking promotion rate means short-lived objects are surviving into the old generation, which can trigger Mixed or Full GCs.
+
+*Requires `G1HeapSummary` events.*
+
+```sql
+SELECT "Time", "GC ID", "Promoted MB"
+FROM "gc-promotion-rate"
+ORDER BY "Time"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Promoted MB"]) TITLE "Promotion Rate (Old Gen Growth per GC)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
 ```
 

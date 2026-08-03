@@ -1606,4 +1606,170 @@ GROUP BY eventType
 ORDER BY SUM(duration) DESC`;
     },
   },
+  // ── GCEasy-inspired analysis views ────────────────────────────────────────
+  {
+    // JVM Memory Size: Allocated vs Peak — requires GCHeapConfiguration for
+    // max/initial heap and GCHeapSummary for peak observed usage.
+    requires: 'GCHeapConfiguration',
+    sql: `CREATE OR REPLACE VIEW "gc-memory-size" AS
+SELECT
+    'Heap Allocated (Max)' AS "Region",
+    round(LAST(maxSize) / 1048576.0, 1) AS "MB"
+FROM GCHeapConfiguration
+UNION ALL
+SELECT
+    'Heap Peak Used' AS "Region",
+    round(MAX(heapUsed) / 1048576.0, 1) AS "MB"
+FROM GCHeapSummary`,
+  },
+  {
+    // GC Duration Time Range histogram — buckets each GCPhasePause duration into
+    // human-readable ranges with count and percentage.
+    requires: 'GCPhasePause',
+    sql: `CREATE OR REPLACE VIEW "gc-duration-buckets" AS
+WITH buckets AS (
+    SELECT
+        CASE
+            WHEN duration * 1000 < 1      THEN '0-1ms'
+            WHEN duration * 1000 < 10     THEN '1-10ms'
+            WHEN duration * 1000 < 100    THEN '10-100ms'
+            WHEN duration * 1000 < 200    THEN '100-200ms'
+            WHEN duration * 1000 < 500    THEN '200-500ms'
+            WHEN duration * 1000 < 1000   THEN '500ms-1s'
+            ELSE '>1s'
+        END AS "Range",
+        CASE
+            WHEN duration * 1000 < 1      THEN 1
+            WHEN duration * 1000 < 10     THEN 2
+            WHEN duration * 1000 < 100    THEN 3
+            WHEN duration * 1000 < 200    THEN 4
+            WHEN duration * 1000 < 500    THEN 5
+            WHEN duration * 1000 < 1000   THEN 6
+            ELSE 7
+        END AS sort_key
+    FROM GCPhasePause
+    WHERE name NOT LIKE '%Level%'
+)
+SELECT
+    "Range",
+    COUNT(*) AS "Count",
+    round(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 1) AS "Percentage"
+FROM buckets
+GROUP BY "Range", sort_key
+ORDER BY sort_key`,
+  },
+  {
+    // G1 Phase stats with stddev — extends gc-pause-distribution with stddev
+    // and average interval between consecutive events of the same phase.
+    requires: 'GCPhasePause',
+    sql: `CREATE OR REPLACE VIEW "gc-phase-stats" AS
+SELECT
+    name AS "Phase",
+    COUNT(*) AS "Count",
+    round(SUM(duration) * 1000, 1) AS "Total (ms)",
+    round(AVG(duration) * 1000, 3) AS "Avg (ms)",
+    round(STDDEV_POP(duration) * 1000, 3) AS "StdDev (ms)",
+    round(MIN(duration) * 1000, 3) AS "Min (ms)",
+    round(MAX(duration) * 1000, 3) AS "Max (ms)"
+FROM GCPhasePause
+GROUP BY name
+ORDER BY SUM(duration) DESC`,
+  },
+  {
+    // Pause vs Concurrent time split — total wall-clock time spent in STW
+    // vs concurrent GC work.
+    requires: 'GCPhaseConcurrent',
+    sql: `CREATE OR REPLACE VIEW "gc-time-split" AS
+SELECT 'Stop-the-World' AS "Type", round(SUM(duration) * 1000, 1) AS "Total (ms)"
+FROM GCPhasePause
+UNION ALL
+SELECT 'Concurrent' AS "Type", round(SUM(duration) * 1000, 1) AS "Total (ms)"
+FROM GCPhaseConcurrent`,
+  },
+  {
+    // Object stats — allocation and promotion rates from ObjectAllocationSample
+    // and G1HeapSummary old-gen growth (best proxy for promotion in G1).
+    requires: 'ObjectAllocationSample',
+    sql: `CREATE OR REPLACE VIEW "gc-object-stats" AS
+WITH rec AS (
+    SELECT epoch(MAX(startTime) - MIN(startTime)) AS duration_sec
+    FROM ObjectAllocationSample
+)
+SELECT
+    format_memory(SUM(weight)) AS "Total Allocated (sampled)",
+    format_rate(SUM(weight) / NULLIF((SELECT duration_sec FROM rec), 0)) AS "Avg Alloc Rate"
+FROM ObjectAllocationSample`,
+  },
+  {
+    // Safepoint summary — total stopped time, average per safepoint, % of recording.
+    requires: 'SafepointEnd',
+    sql: `CREATE OR REPLACE VIEW "gc-safepoint-summary" AS
+WITH stops AS (
+    SELECT epoch(E.startTime - B.startTime) AS duration_sec
+    FROM SafepointBegin B
+    JOIN SafepointEnd E ON B.safepointId = E.safepointId
+),
+rec AS (
+    SELECT epoch(MAX(startTime) - MIN(startTime)) AS total_sec
+    FROM ActiveRecording
+)
+SELECT
+    COUNT(*) AS "Safepoints",
+    format_duration(SUM(duration_sec)) AS "Total Stopped Time",
+    format_duration(AVG(duration_sec)) AS "Avg Duration",
+    format_duration(MAX(duration_sec)) AS "Max Duration",
+    round(SUM(duration_sec) / NULLIF((SELECT total_sec FROM rec), 0) * 100, 2) AS "% of Recording"
+FROM stops`,
+  },
+  {
+    // Consecutive Full GCs — detect back-to-back Full GC events (no Young GC
+    // in between) which indicate heap pressure or memory leaks.
+    requires: 'GarbageCollection',
+    sql: `CREATE OR REPLACE VIEW "gc-consecutive-full" AS
+WITH full_gcs AS (
+    SELECT
+        gcId,
+        startTime,
+        cause,
+        longestPause,
+        LAG(startTime) OVER (ORDER BY gcId) AS prev_start,
+        LAG(cause) OVER (ORDER BY gcId) AS prev_cause
+    FROM GarbageCollection
+    WHERE LOWER(cause) LIKE '%system%' OR LOWER(cause) LIKE '%heap%'
+       OR LOWER(name) LIKE '%full%' OR LOWER(cause) LIKE '%ergonomics%'
+)
+SELECT
+    gcId AS "GC ID",
+    startTime AS "Time",
+    cause AS "Cause",
+    round(longestPause * 1000, 1) AS "Pause (ms)",
+    prev_cause AS "Previous Cause",
+    round(epoch(startTime - prev_start) * 1000, 0) AS "Gap from Previous (ms)"
+FROM full_gcs
+WHERE prev_cause IS NOT NULL
+ORDER BY startTime`,
+  },
+  {
+    // Promotion rate over time — old-gen growth between consecutive After-GC
+    // snapshots as a proxy for object promotion (G1 only).
+    requires: 'G1HeapSummary',
+    sql: `CREATE OR REPLACE VIEW "gc-promotion-rate" AS
+WITH after_gcs AS (
+    SELECT
+        g.startTime AS "Time",
+        g.gcId,
+        s.oldGenUsedSize,
+        LAG(s.oldGenUsedSize) OVER (ORDER BY g.gcId) AS prev_old_gen
+    FROM G1HeapSummary s
+    JOIN GarbageCollection g ON s.gcId = g.gcId
+    WHERE s."when" = 'After GC'
+)
+SELECT
+    "Time",
+    gcId AS "GC ID",
+    round((oldGenUsedSize - COALESCE(prev_old_gen, 0)) / 1048576.0, 2) AS "Promoted MB"
+FROM after_gcs
+WHERE prev_old_gen IS NOT NULL AND oldGenUsedSize > prev_old_gen
+ORDER BY "Time"`,
+  },
 ];
