@@ -425,7 +425,7 @@ TABLE() TITLE "GC Phase Statistics"
 
 ---
 
-<!-- @cell name=pause-vs-concurrent -->
+<!-- @cell name=pause-vs-concurrent requires="GCPhaseConcurrent" -->
 
 ## Pause vs Concurrent GC Time
 

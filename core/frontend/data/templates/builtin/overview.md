@@ -160,7 +160,7 @@ BAR_CHART(x: "Monitor Class", y: ["Total Wait (ms)"], horizontal: true) TITLE "T
 
 ---
 
-<!-- @cell name=io-section -->
+<!-- @cell name=io-section requires="JavaMonitorWait" -->
 
 ## I/O Overview
 
