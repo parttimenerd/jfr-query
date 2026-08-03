@@ -1020,14 +1020,17 @@ export async function loadJfrIntoWasm(
   // with Catalog Error when the macro hadn't been created yet.
   const tSqlStart = performance.now();
   const PARALLELISM = new URL(location.href).searchParams.has('sqlSerial') ? 1 : 4;
-  const runSql = (c: typeof conn, sql: string) =>
+  const runSql = (c: typeof conn, sql: string, isMacro = false) =>
     c.query(sql).catch((e: any) => {
       const msg = String(e?.message ?? e);
-      if (!msg.includes('Catalog Error') && !msg.includes('Binder Error')) console.warn('builtin sql failed:', e);
+      // Macros referencing absent tables get Catalog/Binder errors — expected, suppress.
+      // View creation Binder errors are unexpected and should be logged.
+      const suppress = msg.includes('Catalog Error') || (isMacro && msg.includes('Binder Error'));
+      if (!suppress) console.warn('builtin sql failed:', e);
     });
   // Phase 1: macros — sequential on the main connection so they're visible to all
   for (const sql of BUILTIN_MACROS_SQL) {
-    await runSql(conn, sql);
+    await runSql(conn, sql, true);
   }
   // Phase 2: views — parallel across extra connections (macros are now committed)
   const extraConns: typeof conn[] = [];

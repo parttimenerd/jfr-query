@@ -570,7 +570,7 @@ SELECT
     format_duration(SUM(userTime)) AS "GC User Time",
     format_duration(SUM(systemTime)) AS "GC System Time",
     format_duration(SUM(realTime)) AS "GC Wall Clock Time",
-    format_duration(epoch(MAX(startTime) - MIN(startTime))) AS "Total Time",
+    format_duration((MAX(epoch_ms(startTime::TIMESTAMP)) - MIN(epoch_ms(startTime::TIMESTAMP))) / 1000.0) AS "Total Time",
     COUNT(*) AS "GC Count"
 FROM GCCPUTime`,
 
@@ -968,7 +968,7 @@ SELECT
     g.startTime AS "Time",
     h."when" AS "Phase",
     h.heapUsed / (1024.0 * 1024.0) AS "Used MB",
-    h."heapSpace$committedSize" / (1024.0 * 1024.0) AS "Committed MB"
+    COALESCE(h."heapSpace$committedSize", h."heapCommitted") / (1024.0 * 1024.0) AS "Committed MB"
 FROM GCHeapSummary h
 JOIN GarbageCollection g ON g.gcId = h.gcId
 ORDER BY g.startTime`,
@@ -1102,7 +1102,7 @@ ORDER BY sb.startTime`,
     sql: `CREATE OR REPLACE VIEW "safepoints" AS
 SELECT
     B.startTime AS "Start Time",
-    format_duration(epoch(E.startTime - B.startTime)) AS "Duration",
+    format_duration((epoch_ms(E.startTime::TIMESTAMP) - epoch_ms(B.startTime::TIMESTAMP)) / 1000.0) AS "Duration",
     format_duration(S.duration) AS "State Synchronization",
     format_duration(C.duration) AS "Cleanup",
     jniCriticalThreadCount AS "JNI Critical Threads",
@@ -1697,7 +1697,7 @@ FROM GCPhaseConcurrent`,
     requires: 'ObjectAllocationSample',
     sql: `CREATE OR REPLACE VIEW "gc-object-stats" AS
 WITH rec AS (
-    SELECT epoch(MAX(startTime) - MIN(startTime)) AS duration_sec
+    SELECT (MAX(epoch_ms(startTime::TIMESTAMP)) - MIN(epoch_ms(startTime::TIMESTAMP))) / 1000.0 AS duration_sec
     FROM ObjectAllocationSample
 )
 SELECT
@@ -1710,12 +1710,12 @@ FROM ObjectAllocationSample`,
     requires: 'SafepointEnd',
     sql: `CREATE OR REPLACE VIEW "gc-safepoint-summary" AS
 WITH stops AS (
-    SELECT epoch(E.startTime - B.startTime) AS duration_sec
+    SELECT (epoch_ms(E.startTime::TIMESTAMP) - epoch_ms(B.startTime::TIMESTAMP)) / 1000.0 AS duration_sec
     FROM SafepointBegin B
     JOIN SafepointEnd E ON B.safepointId = E.safepointId
 ),
 rec AS (
-    SELECT epoch(MAX(startTime) - MIN(startTime)) AS total_sec
+    SELECT (MAX(epoch_ms(startTime::TIMESTAMP)) - MIN(epoch_ms(startTime::TIMESTAMP))) / 1000.0 AS total_sec
     FROM ActiveRecording
 )
 SELECT
@@ -1749,7 +1749,7 @@ SELECT
     cause AS "Cause",
     round(longestPause * 1000, 1) AS "Pause (ms)",
     prev_cause AS "Previous Cause",
-    round(epoch(startTime - prev_start) * 1000, 0) AS "Gap from Previous (ms)"
+    round((epoch_ms(startTime::TIMESTAMP) - epoch_ms(prev_start::TIMESTAMP)) / 1000.0 * 1000, 0) AS "Gap from Previous (ms)"
 FROM full_gcs
 WHERE prev_cause IS NOT NULL
 ORDER BY startTime`,
@@ -1859,7 +1859,7 @@ ORDER BY g.startTime`,
     requires: 'SafepointBegin',
     sql: `CREATE OR REPLACE VIEW "gc-safepoint-distribution" AS
 SELECT
-    round(epoch(E.startTime - B.startTime) * 1000, 3) AS "TTSP (ms)",
+    round((epoch_ms(E.startTime::TIMESTAMP) - epoch_ms(B.startTime::TIMESTAMP)) / 1000.0 * 1000, 3) AS "TTSP (ms)",
     B.safepointId AS "Safepoint ID"
 FROM SafepointBegin B
 JOIN SafepointEnd E ON B.safepointId = E.safepointId

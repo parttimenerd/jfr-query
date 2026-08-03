@@ -477,7 +477,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Register built-in views (same as JFR import path).
       for (const sql of BUILTIN_VIEWS_SQL) {
         try { await conn.query(sql); } catch (e: any) {
-          if (!String(e?.message ?? e).includes('Catalog Error')) console.warn('builtin view failed:', e);
+          const msg = String(e?.message ?? e);
+          if (!msg.includes('Catalog Error')) console.warn('builtin view failed:', e);
         }
       }
       // Register conditional views only when their required source table exists.
@@ -492,7 +493,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (!stmt) continue;
           try { await conn.query(stmt); } catch (e: any) {
             const msg = String(e?.message ?? e);
-            if (!msg.includes('Catalog Error') && !msg.includes('Binder Error')) console.warn('conditional view failed:', e);
+            if (!msg.includes('Catalog Error')) console.warn('conditional view failed:', e);
           }
         }
       }
