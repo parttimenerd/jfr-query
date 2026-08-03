@@ -7,8 +7,17 @@ interface Props {
     onClose: () => void;
 }
 
+function extractTitle(cell: NotebookCellData): string {
+    if (cell.title && cell.title.trim()) return cell.title.trim();
+    // Fall back to extracting the first ## heading from raw content
+    const m = cell.content?.match(/^\s*#{1,3}\s+(.+)/m);
+    return m ? m[1].trim() : '';
+}
+
 export const NotebookTOC: React.FC<Props> = ({ cells, onClose }) => {
-    const entries = cells.filter(c => c.title && c.title.trim() !== '');
+    const entries = cells
+        .map(c => ({ cell: c, title: extractTitle(c) }))
+        .filter(e => e.title !== '');
 
     return (
         <div className="flex flex-col bg-gray-900 border border-gray-700 rounded-lg shadow-2xl w-64 max-h-[70vh] overflow-hidden">
@@ -23,13 +32,13 @@ export const NotebookTOC: React.FC<Props> = ({ cells, onClose }) => {
                 {entries.length === 0 && (
                     <p className="text-xs text-gray-500 px-3 py-2 italic">No headings found.</p>
                 )}
-                {entries.map(cell => (
+                {entries.map(({ cell, title }) => (
                     <button
                         key={cell.id}
                         onClick={() => scrollToCell(cell.id)}
                         className="w-full text-left px-3 py-1 text-xs hover:bg-gray-800 text-gray-300 hover:text-cyan-300 transition-colors truncate"
-                        title={cell.title}>
-                        {cell.title}
+                        title={title}>
+                        {title}
                     </button>
                 ))}
             </div>
