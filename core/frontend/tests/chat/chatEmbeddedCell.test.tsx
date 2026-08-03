@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { parseCellFence, splitCellFences } from '../../components/chat/ChatEmbeddedCell';
-import { render, waitFor, fireEvent } from '@testing-library/react';
+import { render, waitFor, fireEvent, act } from '@testing-library/react';
 import React from 'react';
 import { ChatEmbeddedCell } from '../../components/chat/ChatEmbeddedCell';
 import { DataContext } from '../../context/DuckDBContext';
@@ -93,32 +93,41 @@ describe('ChatEmbeddedCell', () => {
         await waitFor(() => expect(mockQuery).toHaveBeenCalledWith('SELECT 1'));
     });
 
-    it('shows type badge', () => {
-        const { container } = render(
-            React.createElement(ChatEmbeddedCell, { type: 'table', sql: 'SELECT 1', onAddToNotebook: vi.fn() }),
-            { wrapper },
-        );
+    it('shows type badge', async () => {
+        let container!: HTMLElement;
+        await act(async () => {
+            ({ container } = render(
+                React.createElement(ChatEmbeddedCell, { type: 'table', sql: 'SELECT 1', onAddToNotebook: vi.fn() }),
+                { wrapper },
+            ));
+        });
         expect(container.textContent).toContain('TABLE');
     });
 
-    it('shows truncated sql label', () => {
-        const { container } = render(
-            React.createElement(ChatEmbeddedCell, {
-                type: 'table',
-                sql: 'SELECT bucket FROM gc_events LIMIT 10',
-                onAddToNotebook: vi.fn(),
-            }),
-            { wrapper },
-        );
+    it('shows truncated sql label', async () => {
+        let container!: HTMLElement;
+        await act(async () => {
+            ({ container } = render(
+                React.createElement(ChatEmbeddedCell, {
+                    type: 'table',
+                    sql: 'SELECT bucket FROM gc_events LIMIT 10',
+                    onAddToNotebook: vi.fn(),
+                }),
+                { wrapper },
+            ));
+        });
         expect(container.textContent).toContain('SELECT bucket FROM gc_events');
     });
 
-    it('calls onAddToNotebook when button clicked', () => {
+    it('calls onAddToNotebook when button clicked', async () => {
         const onAdd = vi.fn();
-        const { container } = render(
-            React.createElement(ChatEmbeddedCell, { type: 'table', sql: 'SELECT 1', onAddToNotebook: onAdd }),
-            { wrapper },
-        );
+        let container!: HTMLElement;
+        await act(async () => {
+            ({ container } = render(
+                React.createElement(ChatEmbeddedCell, { type: 'table', sql: 'SELECT 1', onAddToNotebook: onAdd }),
+                { wrapper },
+            ));
+        });
         const button = container.querySelector('button')!;
         fireEvent.click(button);
         expect(onAdd).toHaveBeenCalledOnce();
