@@ -22,7 +22,7 @@ const params: PlotParameter[] = [
 const parseConfig = createConfigParser<Config>(buildParserSpec(params));
 
 // Freedman-Diaconis bin count: bins ≈ (max-min) / (2 * IQR / n^(1/3)). Capped at 100.
-function freedmanDiaconisBins(values: number[]): number {
+export function freedmanDiaconisBins(values: number[]): number {
     if (values.length < 2) return 1;
     const sorted = [...values].sort((a, b) => a - b);
     const q = (p: number) => sorted[Math.floor((sorted.length - 1) * p)];

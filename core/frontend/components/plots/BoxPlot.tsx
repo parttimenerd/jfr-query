@@ -25,7 +25,7 @@ const params: PlotParameter[] = [
 
 const parseConfig = createConfigParser<BoxPlotConfig>(buildParserSpec(params));
 
-const calculateStats = (arr: number[]) => {
+export const calculateStats = (arr: number[]) => {
     if (arr.length === 0) return null;
     const sorted = [...arr].sort((a, b) => a - b);
     // Use linear interpolation for quantiles to avoid zero-height boxes on small arrays.
