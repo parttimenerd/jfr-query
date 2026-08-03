@@ -3,12 +3,6 @@ title: Container & Cloud
 description: CPU throttling, memory limits, and I/O usage for JVMs running in Docker or Kubernetes.
 tags: [container, kubernetes, docker, cloud]
 license: MIT
-requires:
-  container-config: ContainerConfiguration
-  cpu-throttling: ContainerCPUThrottling
-  cpu-usage: ContainerCPUUsage
-  memory-usage: ContainerMemoryUsage
-  io-usage: ContainerIOUsage
 ---
 
 <!-- @cell name=intro -->
@@ -29,7 +23,7 @@ When a JVM runs inside a container, it may be throttled by cgroup CPU quotas or 
 
 ---
 
-<!-- @cell name=container-config -->
+<!-- @cell name=container-config requires="ContainerConfiguration" -->
 
 ## Container Configuration
 
@@ -44,7 +38,7 @@ TABLE()
 
 ---
 
-<!-- @cell name=cpu-throttling -->
+<!-- @cell name=cpu-throttling requires="ContainerCPUThrottling" -->
 
 ## CPU Throttling Over Time
 
@@ -67,7 +61,7 @@ LINE_CHART(x: "Time", y: ["Throttle %"]) TITLE "CPU Throttle Percentage Over Tim
 
 ---
 
-<!-- @cell name=cpu-usage -->
+<!-- @cell name=cpu-usage requires="ContainerCPUUsage" -->
 
 ## Container CPU Usage Over Time
 
@@ -85,7 +79,7 @@ LINE_CHART(x: "Time", y: ["CPU %"]) TITLE "Container CPU Usage (%)" LINK_X($star
 
 ---
 
-<!-- @cell name=memory-usage -->
+<!-- @cell name=memory-usage requires="ContainerMemoryUsage" -->
 
 ## Container Memory Usage vs. Limit
 
@@ -107,7 +101,7 @@ LINE_CHART(x: "Time", y: ["Used MB", "Limit MB"]) TITLE "Container Memory Usage 
 
 ---
 
-<!-- @cell name=io-usage -->
+<!-- @cell name=io-usage requires="ContainerIOUsage" -->
 
 ## Container I/O Usage
 

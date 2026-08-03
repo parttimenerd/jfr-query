@@ -5,7 +5,7 @@ import NotebookCell from './NotebookCell';
 import SettingsPanel from './SettingsPanel';
 import { PlusIcon } from './icons/PlusIcon';
 import SQLEditor from './SQLEditor';
-import { parseCellContent, tokenizeCellContent } from '../utils/notebookParser';
+import { parseCellContent, parseCellDirective, tablesToConditionSql, tokenizeCellContent } from '../utils/notebookParser';
 import { cellHandle } from '../utils/cellHandle';
 import { resolveCellVisibility } from '../utils/cellVisibility';
 import { NotebookTOC } from './NotebookTOC';
@@ -81,7 +81,22 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     }, []);
 
     useEffect(() => {
-        if (!metadata.cellConditions || Object.keys(metadata.cellConditions).length === 0) {
+        // Build effective conditions: notebook-level cellConditions merged with
+        // per-cell `requires=` attributes from <!-- @cell requires="Table1,Table2" -->.
+        const effective: Record<string, string> = { ...(metadata.cellConditions ?? {}) };
+        for (let idx = 0; idx < cells.length; idx++) {
+            const c = cells[idx];
+            const name = cellHandle(c, idx);
+            if (effective[name]) continue; // notebook-level condition takes precedence
+            const directive = parseCellDirective(c.content);
+            const reqAttr = directive?.rest?.requires;
+            if (reqAttr) {
+                const tables = reqAttr.split(',').map(t => t.trim()).filter(Boolean);
+                if (tables.length > 0) effective[name] = tablesToConditionSql(tables);
+            }
+        }
+
+        if (Object.keys(effective).length === 0) {
             setCellVisibility({});
             return;
         }
@@ -93,7 +108,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                 const name = cellHandle(c, idx);
                 next[name] = await resolveCellVisibility(
                     name,
-                    metadata.cellConditions,
+                    effective,
                     metadata.variables ?? {},
                     onRunPreviewQuery,
                 );

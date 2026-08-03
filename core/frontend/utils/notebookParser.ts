@@ -35,6 +35,19 @@ export interface ParsedNotebook {
 const FRONT_MATTER_DELIMITER = '---';
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n([\s\S]*))?$/;
 
+/**
+ * Converts a list of JFR table names into a visibility-check SQL predicate.
+ * Used by both the front-matter `requires:` parser and cell-inline `requires=`.
+ */
+export function tablesToConditionSql(tables: string[]): string {
+    const escaped = tables.map(t => t.trim()).filter(Boolean)
+        .map(t => `'${t.replace(/'/g, "''")}'`);
+    if (escaped.length === 0) return 'SELECT true';
+    return escaped.length === 1
+        ? `SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = ${escaped[0]}`
+        : `SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN (${escaped.join(', ')})`;
+}
+
 const parseInlineYamlList = (raw: string): string[] | null => {
     const t = raw.trim();
     if (!t.startsWith('[') || !t.endsWith(']')) return null;
@@ -196,14 +209,9 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
                 const k = trimmedLine.substring(0, colonIdx).trim();
                 const v = trimmedLine.substring(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
                 if (k && v && !result.cellConditions![k]) {
-                    // Parse inline list [A, B] or single table name
                     const inlineList = parseInlineYamlList(v);
                     const tables = inlineList ?? [v];
-                    const escaped = tables.map(t => t.trim()).filter(Boolean)
-                        .map(t => `'${t.replace(/'/g, "''")}'`);
-                    result.cellConditions![k] = escaped.length === 1
-                        ? `SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = ${escaped[0]}`
-                        : `SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN (${escaped.join(', ')})`;
+                    result.cellConditions![k] = tablesToConditionSql(tables);
                 }
             }
         } else if (currentSection === 'variables') {

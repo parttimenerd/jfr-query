@@ -6,36 +6,6 @@ license: MIT
 variables:
   $$threshold_ms: "100"
   $limit: "20"
-requires:
-  gc-config: GCConfiguration
-  long-pauses-section: GarbageCollection
-  gc-allocation-trigger: AllocationRequiringGC
-  gc-references: GCReferenceStatistics
-  system-gc-blockers: SystemGC
-  metaspace: MetaspaceSummary
-  g1-regions: G1HeapSummary
-  tenuring: TenuringDistribution
-  jvm-memory-size: GCHeapConfiguration
-  concurrent-phases: GCPhaseConcurrent
-  object-stats: ObjectAllocationSample
-  cpu-stats: GCCPUTime
-  safepoint-summary: SafepointEnd
-  consecutive-full-gcs: GarbageCollection
-  promotion-rate: G1HeapSummary
-  gc-throughput: GarbageCollection
-  parallel-phases: GCPhaseParallel
-  tlab-efficiency: ObjectAllocationInNewTLAB
-  finalizers: FinalizerStatistics
-  gc-pause-over-time: GarbageCollection
-  gc-young-old-time: GarbageCollection
-  gc-pause-cause-over-time: GarbageCollection
-  gc-eden-size: G1HeapSummary
-  gc-safepoint-distribution: SafepointBegin
-  gc-allocation-by-class: ObjectAllocationSample
-  gc-thread-allocation: ObjectAllocationSample
-  gc-old-gen-growth: G1HeapSummary
-  gc-duration-buckets: GCPhasePause
-  gc-phase-stats: GCPhasePause
 cellConditions:
   pause-vs-concurrent: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GCPhaseConcurrent'"
 ---
@@ -83,7 +53,7 @@ TABLE()
 
 ---
 
-<!-- @cell name=gc-config -->
+<!-- @cell name=gc-config requires="GCConfiguration" -->
 
 ## GC & Heap Configuration
 
@@ -136,7 +106,7 @@ BAR_CHART(x: "Cause", y: ["Total Pause (ms)", "Avg Pause (ms)", "Max Pause (ms)"
 
 ---
 
-<!-- @cell name=long-pauses-section -->
+<!-- @cell name=long-pauses-section requires="GarbageCollection" -->
 
 ## Long Pauses Detected
 
@@ -263,7 +233,7 @@ HISTOGRAM(x: "Pause (ms)", logBins: true, yLog: true) TITLE "GC Pause Duration D
 
 ---
 
-<!-- @cell name=concurrent-phases -->
+<!-- @cell name=concurrent-phases requires="GCPhaseConcurrent" -->
 
 ## Concurrent GC Phase Timeline
 
@@ -285,7 +255,7 @@ GANTT(start: "Start", end: "End", lane: "Phase", task: "GC") TITLE "Concurrent G
 
 ---
 
-<!-- @cell name=gc-allocation-trigger -->
+<!-- @cell name=gc-allocation-trigger requires="AllocationRequiringGC" -->
 
 ## Allocation Triggers
 
@@ -303,7 +273,7 @@ BAR_CHART(x: "Trigger Method (Non-JDK)", y: ["Count"], horizontal: true) TITLE "
 
 ---
 
-<!-- @cell name=gc-references -->
+<!-- @cell name=gc-references requires="GCReferenceStatistics" -->
 
 ## Reference Pressure
 
@@ -323,7 +293,7 @@ LINE_CHART(x: "Time", y: ["Soft Ref.", "Weak Ref.", "Phantom Ref.", "Final Ref."
 
 ---
 
-<!-- @cell name=system-gc-blockers -->
+<!-- @cell name=system-gc-blockers requires="SystemGC" -->
 
 ## Explicit System.gc() Calls
 
@@ -349,7 +319,7 @@ TABLE() TITLE "Explicit System.gc() Callers"
 
 ---
 
-<!-- @cell name=metaspace -->
+<!-- @cell name=metaspace requires="MetaspaceSummary" -->
 
 ## Metaspace Usage Over Time
 
@@ -367,7 +337,7 @@ LINE_CHART(x: "Time", y: ["Metaspace Used MB", "GC Threshold MB"]) TITLE "Metasp
 
 ---
 
-<!-- @cell name=g1-regions -->
+<!-- @cell name=g1-regions requires="G1HeapSummary" -->
 
 ## G1 Heap Region Breakdown
 
@@ -385,7 +355,7 @@ AREA_CHART(x: "Time", y: ["Eden MB", "Survivor MB", "Old Gen MB"], layout: "stac
 
 ---
 
-<!-- @cell name=tenuring -->
+<!-- @cell name=tenuring requires="TenuringDistribution" -->
 
 ## Survivor Tenuring Distribution
 
@@ -404,7 +374,7 @@ BAR_CHART(x: "Age", y: ["MB"]) TITLE "Survivor Age Distribution (most recent GC)
 
 ---
 
-<!-- @cell name=jvm-memory-size -->
+<!-- @cell name=jvm-memory-size requires="GCHeapConfiguration" -->
 
 ## JVM Memory Size: Allocated vs Peak
 
@@ -422,7 +392,7 @@ BAR_CHART(x: "Region", y: ["MB"], horizontal: true) TITLE "JVM Heap: Allocated v
 
 ---
 
-<!-- @cell name=gc-duration-buckets -->
+<!-- @cell name=gc-duration-buckets requires="GCPhasePause" -->
 
 ## GC Pause Duration Distribution
 
@@ -439,7 +409,7 @@ BAR_CHART(x: "Range", y: ["Count"], horizontal: false) TITLE "GC Pause Duration 
 
 ---
 
-<!-- @cell name=gc-phase-stats -->
+<!-- @cell name=gc-phase-stats requires="GCPhasePause" -->
 
 ## GC Phase Statistics
 
@@ -473,7 +443,7 @@ PIE_CHART(category: "Type", value: "Total (ms)") TITLE "STW vs Concurrent GC Tim
 
 ---
 
-<!-- @cell name=object-stats -->
+<!-- @cell name=object-stats requires="ObjectAllocationSample" -->
 
 ## Object Allocation Statistics
 
@@ -491,7 +461,7 @@ TABLE() TITLE "Object Allocation Summary"
 
 ---
 
-<!-- @cell name=cpu-stats -->
+<!-- @cell name=cpu-stats requires="GCCPUTime" -->
 
 ## GC CPU Time
 
@@ -509,7 +479,7 @@ TABLE() TITLE "GC CPU Time Summary"
 
 ---
 
-<!-- @cell name=safepoint-summary -->
+<!-- @cell name=safepoint-summary requires="SafepointEnd" -->
 
 ## Safepoint Summary
 
@@ -527,7 +497,7 @@ TABLE() TITLE "Safepoint Stop-the-World Summary"
 
 ---
 
-<!-- @cell name=consecutive-full-gcs -->
+<!-- @cell name=consecutive-full-gcs requires="GarbageCollection" -->
 
 ## Consecutive Full GCs
 
@@ -543,7 +513,7 @@ TABLE() TITLE "Consecutive Full GC Events"
 
 ---
 
-<!-- @cell name=promotion-rate -->
+<!-- @cell name=promotion-rate requires="G1HeapSummary" -->
 
 ## Promotion Rate Over Time
 
@@ -563,7 +533,7 @@ LINE_CHART(x: "Time", y: ["Promoted MB"]) TITLE "Promotion Rate (Old Gen Growth 
 
 ---
 
-<!-- @cell name=gc-throughput -->
+<!-- @cell name=gc-throughput requires="GarbageCollection" -->
 
 ## GC Throughput Over Time
 
@@ -581,7 +551,7 @@ LINE_CHART(x: "Time", y: ["Throughput %"]) TITLE "Application Throughput % (10s 
 
 ---
 
-<!-- @cell name=parallel-phases -->
+<!-- @cell name=parallel-phases requires="GCPhaseParallel" -->
 
 ## Parallel GC Phase Statistics
 
@@ -599,7 +569,7 @@ TABLE() TITLE "Parallel GC Phase Statistics"
 
 ---
 
-<!-- @cell name=tlab-efficiency -->
+<!-- @cell name=tlab-efficiency requires="ObjectAllocationInNewTLAB" -->
 
 ## TLAB Allocation Efficiency
 
@@ -619,7 +589,7 @@ LINE_CHART(x: "Time", y: ["Fill Ratio"]) TITLE "TLAB Fill Ratio Over Time" LINK_
 
 ---
 
-<!-- @cell name=finalizers -->
+<!-- @cell name=finalizers requires="FinalizerStatistics" -->
 
 ## Finalizer Queue Depth
 
@@ -637,7 +607,7 @@ TABLE() TITLE "Finalizer Statistics by Class"
 
 ---
 
-<!-- @cell name=gc-pause-over-time -->
+<!-- @cell name=gc-pause-over-time requires="GarbageCollection" -->
 
 ## GC Pause Over Time
 
@@ -653,7 +623,7 @@ SCATTER(x: "Time", y: "Pause (ms)", color: "Cause") TITLE "GC Pause Events Over 
 
 ---
 
-<!-- @cell name=gc-young-old-time -->
+<!-- @cell name=gc-young-old-time requires="GarbageCollection" -->
 
 ## Young vs Old/Full GC Time
 
@@ -673,7 +643,7 @@ PIE_CHART(category: "Generation", value: "Total Pause (ms)") TITLE "Total STW Ti
 
 ---
 
-<!-- @cell name=gc-pause-cause-over-time -->
+<!-- @cell name=gc-pause-cause-over-time requires="GarbageCollection" -->
 
 ## Pause by Cause Over Time
 
@@ -689,7 +659,7 @@ AREA_CHART(x: "Window", y: ["Pause (ms)"], color: "Cause", layout: "stacked") TI
 
 ---
 
-<!-- @cell name=gc-eden-size -->
+<!-- @cell name=gc-eden-size requires="G1HeapSummary" -->
 
 ## Eden and Survivor Region Sizing
 
@@ -707,7 +677,7 @@ LINE_CHART(x: "Time", y: ["Eden Used MB", "Survivor MB"], color: "Phase") TITLE 
 
 ---
 
-<!-- @cell name=gc-safepoint-distribution -->
+<!-- @cell name=gc-safepoint-distribution requires="SafepointBegin" -->
 
 ## Time To SafePoint (TTSP) Distribution
 
@@ -726,7 +696,7 @@ HISTOGRAM(x: "TTSP (ms)", logBins: true) TITLE "TTSP Distribution" ON ttsp
 
 ---
 
-<!-- @cell name=gc-allocation-by-class -->
+<!-- @cell name=gc-allocation-by-class requires="ObjectAllocationSample" -->
 
 ## Top Allocating Classes
 
@@ -744,7 +714,7 @@ BAR_CHART(x: "Class", y: ["Approx MB"], horizontal: true) TITLE "Top Allocating 
 
 ---
 
-<!-- @cell name=gc-thread-allocation -->
+<!-- @cell name=gc-thread-allocation requires="ObjectAllocationSample" -->
 
 ## Per-Thread Allocation
 
@@ -762,7 +732,7 @@ BAR_CHART(x: "Thread", y: ["Approx MB"], horizontal: true) TITLE "Allocation by 
 
 ---
 
-<!-- @cell name=gc-old-gen-growth -->
+<!-- @cell name=gc-old-gen-growth requires="G1HeapSummary" -->
 
 ## Old Generation Growth Rate
 

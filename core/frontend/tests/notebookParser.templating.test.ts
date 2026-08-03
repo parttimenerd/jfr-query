@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCellDirective, stripCellDirective, parseNotebook, reconstructNotebook, tokenizeCellContent, parseCellContent } from '../utils/notebookParser';
+import { parseCellDirective, stripCellDirective, parseNotebook, reconstructNotebook, tokenizeCellContent, parseCellContent, tablesToConditionSql } from '../utils/notebookParser';
 
 describe('parseCellDirective', () => {
     it('returns null for content without a directive', () => {
@@ -108,6 +108,43 @@ body`;
         const parsed = parseNotebook(md);
         const rebuilt = reconstructNotebook(parsed);
         expect(rebuilt).not.toContain('cellConditions');
+    });
+});
+
+describe('tablesToConditionSql', () => {
+    it('generates single-table WHERE clause', () => {
+        expect(tablesToConditionSql(['ExecutionSample'])).toBe(
+            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ExecutionSample'"
+        );
+    });
+
+    it('generates IN clause for multiple tables', () => {
+        expect(tablesToConditionSql(['ThreadPark', 'ThreadSleep'])).toBe(
+            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('ThreadPark', 'ThreadSleep')"
+        );
+    });
+
+    it('escapes single quotes in table names', () => {
+        expect(tablesToConditionSql(["O'Brien"])).toBe(
+            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'O''Brien'"
+        );
+    });
+
+    it('returns SELECT true for empty array', () => {
+        expect(tablesToConditionSql([])).toBe('SELECT true');
+    });
+});
+
+describe('cell-inline requires= attribute', () => {
+    it('parseCellDirective captures requires as rest.requires', () => {
+        const r = parseCellDirective('<!-- @cell name=gc-section requires="GarbageCollection" -->');
+        expect(r!.name).toBe('gc-section');
+        expect(r!.rest.requires).toBe('GarbageCollection');
+    });
+
+    it('parseCellDirective captures multi-table requires', () => {
+        const r = parseCellDirective('<!-- @cell name=blocking requires="ThreadPark,ThreadSleep" -->');
+        expect(r!.rest.requires).toBe('ThreadPark,ThreadSleep');
     });
 });
 

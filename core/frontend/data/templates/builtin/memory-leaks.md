@@ -5,9 +5,6 @@ tags: [memory, leaks, heap]
 license: MIT
 variables:
   $limit: "20"
-requires:
-  leaks-by-class: OldObjectSample
-  leaks-by-site: OldObjectSample
 ---
 
 <!-- @cell name=intro -->
@@ -27,7 +24,7 @@ Identifies objects that survived multiple GC cycles and the code that allocated 
 
 ---
 
-<!-- @cell name=leaks-by-class -->
+<!-- @cell name=leaks-by-class requires="OldObjectSample" -->
 
 ## Long-Lived Objects by Class
 
@@ -53,7 +50,7 @@ BAR_CHART(x: "Class", y: ["Samples"], horizontal: true) TITLE "Long-Lived Object
 
 ---
 
-<!-- @cell name=leaks-by-site -->
+<!-- @cell name=leaks-by-site requires="OldObjectSample" -->
 
 ## Oldest Surviving Objects by Allocation Site
 

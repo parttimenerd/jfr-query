@@ -7,8 +7,6 @@ priority: 99
 variables:
   $limit: "20"
   $min_pause_ms: "5"
-requires:
-  allocation-hotspots: ObjectAllocationSample
 ---
 
 <!-- @cell name=intro -->
@@ -164,7 +162,7 @@ BAR_CHART(x: "Phase", y: ["Median (ms)", "P90 (ms)", "P99 (ms)", "Max (ms)"], la
 
 ---
 
-<!-- @cell name=allocation-hotspots -->
+<!-- @cell name=allocation-hotspots requires="ObjectAllocationSample" -->
 
 ## Top Allocation Hotspots
 

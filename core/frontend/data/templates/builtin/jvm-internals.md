@@ -5,13 +5,6 @@ tags: [jvm, safepoints, jit, compilation]
 license: MIT
 variables:
   $limit: "20"
-requires:
-  vm-operations: ExecuteVMOperation
-  safepoints: SafepointEnd
-  safepoints-over-time: SafepointEnd
-  deoptimizations: Deoptimization
-  class-loading: ClassLoad
-  compiler-phases: CompilerPhase
 ---
 
 <!-- @cell name=intro -->
@@ -32,7 +25,7 @@ Low-level JVM overhead that can cause latency spikes invisible to application-le
 
 ---
 
-<!-- @cell name=vm-operations -->
+<!-- @cell name=vm-operations requires="ExecuteVMOperation" -->
 
 ## VM Operations by Total Pause Time
 
@@ -57,7 +50,7 @@ BAR_CHART(x: "VM Operation", y: ["Total (ms)"], horizontal: true) TITLE "VM Oper
 
 ---
 
-<!-- @cell name=safepoints -->
+<!-- @cell name=safepoints requires="SafepointEnd" -->
 
 ## Safepoints Over Time
 
@@ -85,7 +78,7 @@ TABLE()
 
 ---
 
-<!-- @cell name=safepoints-over-time -->
+<!-- @cell name=safepoints-over-time requires="SafepointEnd" -->
 
 ## Safepoint Overhead per Second
 
@@ -108,7 +101,7 @@ LINE_CHART(x: "Second", y: ["Total STW (ms)"]) TITLE "Total Safepoint STW per Se
 
 ---
 
-<!-- @cell name=deoptimizations -->
+<!-- @cell name=deoptimizations requires="Deoptimization" -->
 
 ## JIT Deoptimizations by Reason
 
@@ -145,7 +138,7 @@ LINE_CHART(x: "Window", y: ["Deoptimizations"]) TITLE "Deoptimizations Over Time
 
 ---
 
-<!-- @cell name=class-loading -->
+<!-- @cell name=class-loading requires="ClassLoad" -->
 
 ## Slowest Class Loading Events
 
@@ -167,7 +160,7 @@ TABLE()
 
 ---
 
-<!-- @cell name=compiler-phases -->
+<!-- @cell name=compiler-phases requires="CompilerPhase" -->
 
 ## JIT Compiler Phase Durations
 

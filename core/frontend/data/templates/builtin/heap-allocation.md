@@ -5,9 +5,6 @@ tags: [heap, allocation]
 license: MIT
 variables:
   $limit: "15"
-requires:
-  top-classes: ObjectAllocationSample
-  allocation-rate: ObjectAllocationSample
 ---
 
 <!-- @cell name=intro -->
@@ -28,7 +25,7 @@ Counts are **sampled approximations**, not exact totals. The `$limit` variable c
 
 ---
 
-<!-- @cell name=top-classes -->
+<!-- @cell name=top-classes requires="ObjectAllocationSample" -->
 
 ## Top Allocating Classes
 
@@ -52,7 +49,7 @@ BAR_CHART(x: "Class", y: ["Sampled MB"], horizontal: true) TITLE "Top Allocating
 
 ---
 
-<!-- @cell name=allocation-rate -->
+<!-- @cell name=allocation-rate requires="ObjectAllocationSample" -->
 
 ## Allocation Rate
 

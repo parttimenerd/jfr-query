@@ -4,16 +4,6 @@ description: Adaptive first-look at a JFR recording — shows only sections rele
 tags: [overview, gc, cpu, memory, io, threads]
 license: MIT
 priority: 1
-requires:
-  gc-section: GarbageCollection
-  cpu-section: CPULoad
-  hot-methods-section: ExecutionSample
-  allocation-section: ObjectAllocationSample
-  contention-section: JavaMonitorEnter
-  exceptions-section: JavaExceptionThrow
-  container-section: ContainerCPUThrottling
-  leaks-section: OldObjectSample
-  threads-section: JavaThreadStatistics
 cellConditions:
   io-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('FileRead', 'SocketRead', 'FileWrite', 'ThreadPark', 'JavaMonitorEnter')"
 ---
@@ -39,7 +29,7 @@ TABLE()
 
 ---
 
-<!-- @cell name=gc-section -->
+<!-- @cell name=gc-section requires="GarbageCollection" -->
 
 ## GC Summary
 
@@ -75,7 +65,7 @@ LINE_CHART(x: "Time", y: ["Used MB", "Committed MB"]) TITLE "Heap Used vs Commit
 
 ---
 
-<!-- @cell name=cpu-section -->
+<!-- @cell name=cpu-section requires="CPULoad" -->
 
 ## CPU Load
 
@@ -97,7 +87,7 @@ LINE_CHART(x: "Time", y: ["JVM User %", "JVM System %", "Machine Total %"]) TITL
 
 ---
 
-<!-- @cell name=hot-methods-section -->
+<!-- @cell name=hot-methods-section requires="ExecutionSample" -->
 
 ## Top Hot Methods
 
@@ -122,7 +112,7 @@ BAR_CHART(x: "Method", y: ["CPU %"], horizontal: true) TITLE "Top 10 Hot Methods
 
 ---
 
-<!-- @cell name=allocation-section -->
+<!-- @cell name=allocation-section requires="ObjectAllocationSample" -->
 
 ## Top Allocating Classes
 
@@ -146,7 +136,7 @@ BAR_CHART(x: "Class", y: ["Sampled MB"], horizontal: true) TITLE "Top 10 Allocat
 
 ---
 
-<!-- @cell name=contention-section -->
+<!-- @cell name=contention-section requires="JavaMonitorEnter" -->
 
 ## Monitor Contention Hotspots
 
@@ -187,7 +177,7 @@ BAR_CHART(x: "Event Type", y: ["Total"], horizontal: true) TITLE "Total Blocking
 
 ---
 
-<!-- @cell name=exceptions-section -->
+<!-- @cell name=exceptions-section requires="JavaExceptionThrow" -->
 
 ## Top Exceptions
 
@@ -210,7 +200,7 @@ BAR_CHART(x: "Class", y: ["Throws"], horizontal: true) TITLE "Top 10 Thrown Exce
 
 ---
 
-<!-- @cell name=leaks-section -->
+<!-- @cell name=leaks-section requires="OldObjectSample" -->
 
 ## Potential Memory Leaks
 
@@ -235,7 +225,7 @@ TABLE()
 
 ---
 
-<!-- @cell name=container-section -->
+<!-- @cell name=container-section requires="ContainerCPUThrottling" -->
 
 ## Container Pressure
 
@@ -255,7 +245,7 @@ LINE_CHART(x: "Time", y: ["Throttle %"]) TITLE "CPU Throttle %" LINK_X($start, $
 
 ---
 
-<!-- @cell name=threads-section -->
+<!-- @cell name=threads-section requires="JavaThreadStatistics" -->
 
 ## Thread Activity
 

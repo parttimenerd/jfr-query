@@ -5,14 +5,6 @@ tags: [threads, contention, virtual-threads]
 license: MIT
 variables:
   $limit: "20"
-requires:
-  thread-counts: JavaThreadStatistics
-  thread-cpu: ThreadCPULoad
-  monitor-contention: JavaMonitorEnter
-  contention-by-site: JavaMonitorEnter
-  contention-over-time: JavaMonitorEnter
-  thread-blocking: [ThreadPark, ThreadSleep]
-  pinned-threads: VirtualThreadPinned
 ---
 
 <!-- @cell name=intro -->
@@ -35,7 +27,7 @@ How threads behaved during the recording — live thread counts, where threads b
 
 ---
 
-<!-- @cell name=thread-counts -->
+<!-- @cell name=thread-counts requires="JavaThreadStatistics" -->
 
 ## Thread Counts Over Time
 
@@ -57,7 +49,7 @@ LINE_CHART(x: "Time", y: ["Active", "Peak"]) TITLE "Thread Counts" LINK_X($start
 
 ---
 
-<!-- @cell name=thread-cpu -->
+<!-- @cell name=thread-cpu requires="ThreadCPULoad" -->
 
 ## Thread CPU Load
 
@@ -82,7 +74,7 @@ BAR_CHART(x: "Thread", y: ["User %", "System %"], layout: "stacked", horizontal:
 
 ---
 
-<!-- @cell name=monitor-contention -->
+<!-- @cell name=monitor-contention requires="JavaMonitorEnter" -->
 
 ## Top Monitor Contention by Class
 
@@ -109,7 +101,7 @@ BAR_CHART(x: "Monitor Class", y: ["Total Wait (ms)"], horizontal: true) TITLE "T
 
 ---
 
-<!-- @cell name=contention-by-site -->
+<!-- @cell name=contention-by-site requires="JavaMonitorEnter" -->
 
 ## Contention by Calling Site
 
@@ -135,7 +127,7 @@ TABLE()
 
 ---
 
-<!-- @cell name=contention-over-time -->
+<!-- @cell name=contention-over-time requires="JavaMonitorEnter" -->
 
 ## Monitor Contention Over Time
 
@@ -157,7 +149,7 @@ LINE_CHART(x: "Second", y: ["Contention Events", "Total Wait (ms)"], layout: "gr
 
 ---
 
-<!-- @cell name=thread-blocking -->
+<!-- @cell name=thread-blocking requires="ThreadPark,ThreadSleep" -->
 
 ## Thread Blocking Over Time
 
@@ -183,7 +175,7 @@ LINE_CHART(x: "Second", y: ["Parks", "Sleeps"]) TITLE "Thread Blocking per Secon
 
 ---
 
-<!-- @cell name=pinned-threads -->
+<!-- @cell name=pinned-threads requires="VirtualThreadPinned" -->
 
 ## Virtual Thread Pinning
 

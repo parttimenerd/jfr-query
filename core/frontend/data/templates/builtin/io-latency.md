@@ -5,13 +5,6 @@ tags: [io, latency, network, threads]
 license: MIT
 variables:
   $limit: "20"
-requires:
-  latency-overview: JavaMonitorWait
-  file-reads: FileRead
-  file-writes: FileWrite
-  socket-reads: SocketRead
-  socket-writes: SocketWrite
-  thread-parks-over-time: [ThreadPark, ThreadSleep]
 ---
 
 <!-- @cell name=intro -->
@@ -32,7 +25,7 @@ Where is your application spending time waiting? This notebook covers all blocki
 
 ---
 
-<!-- @cell name=latency-overview -->
+<!-- @cell name=latency-overview requires="JavaMonitorWait" -->
 
 ## Combined Latency Overview
 
@@ -48,7 +41,7 @@ BAR_CHART(x: "Event Type", y: ["Total"], horizontal: true) TITLE "Total Blocking
 
 ---
 
-<!-- @cell name=file-reads -->
+<!-- @cell name=file-reads requires="FileRead" -->
 
 ## File Reads by Path
 
@@ -70,7 +63,7 @@ TABLE()
 
 ---
 
-<!-- @cell name=file-writes -->
+<!-- @cell name=file-writes requires="FileWrite" -->
 
 ## File Writes by Path
 
@@ -92,7 +85,7 @@ TABLE()
 
 ---
 
-<!-- @cell name=socket-reads -->
+<!-- @cell name=socket-reads requires="SocketRead" -->
 
 ## Socket Reads by Host
 
@@ -116,7 +109,7 @@ TABLE()
 
 ---
 
-<!-- @cell name=socket-writes -->
+<!-- @cell name=socket-writes requires="SocketWrite" -->
 
 ## Socket Writes by Host
 
@@ -139,7 +132,7 @@ TABLE()
 
 ---
 
-<!-- @cell name=thread-parks-over-time -->
+<!-- @cell name=thread-parks-over-time requires="ThreadPark,ThreadSleep" -->
 
 ## Thread Blocking Over Time
 

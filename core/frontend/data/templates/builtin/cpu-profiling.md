@@ -5,11 +5,6 @@ tags: [cpu, profiling, performance]
 license: MIT
 variables:
   $limit: "25"
-requires:
-  cpu-load: CPULoad
-  hot-methods: ExecutionSample
-  cpu-by-state: ExecutionSample
-  flamegraph: ExecutionSample
 ---
 
 <!-- @cell name=intro -->
@@ -27,7 +22,7 @@ Where is CPU time being spent? This notebook analyses `ExecutionSample` events c
 
 ---
 
-<!-- @cell name=cpu-load -->
+<!-- @cell name=cpu-load requires="CPULoad" -->
 
 ## CPU Load Over Time
 
@@ -49,7 +44,7 @@ LINE_CHART(x: "Time", y: ["JVM User %", "JVM System %", "Machine Total %"]) TITL
 
 ---
 
-<!-- @cell name=hot-methods -->
+<!-- @cell name=hot-methods requires="ExecutionSample" -->
 
 ## Hottest Methods
 
@@ -74,7 +69,7 @@ BAR_CHART(x: "Method", y: ["CPU %"], horizontal: true) TITLE "Top CPU Methods (%
 
 ---
 
-<!-- @cell name=cpu-by-state -->
+<!-- @cell name=cpu-by-state requires="ExecutionSample" -->
 
 ## CPU Samples by Thread State Over Time
 
@@ -96,7 +91,7 @@ AREA_CHART(x: "Second", y: ["Runnable", "Waiting"], layout: "stacked") TITLE "CP
 
 ---
 
-<!-- @cell name=flamegraph -->
+<!-- @cell name=flamegraph requires="ExecutionSample" -->
 
 ## CPU Flame Graph
 

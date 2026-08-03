@@ -5,9 +5,6 @@ tags: [exceptions, errors]
 license: MIT
 variables:
   $limit: "20"
-requires:
-  exceptions-by-class: JavaExceptionThrow
-  errors: JavaErrorThrow
 ---
 
 <!-- @cell name=intro -->
@@ -28,7 +25,7 @@ These events require `-XX:StartFlightRecording:settings=profile` (they're off in
 
 ---
 
-<!-- @cell name=exceptions-by-class -->
+<!-- @cell name=exceptions-by-class requires="JavaExceptionThrow" -->
 
 ## Exceptions by Class
 
@@ -50,7 +47,7 @@ BAR_CHART(x: "Class", y: ["Throws"], horizontal: true) TITLE "Top Thrown Excepti
 
 ---
 
-<!-- @cell name=errors -->
+<!-- @cell name=errors requires="JavaErrorThrow" -->
 
 ## Errors
 
