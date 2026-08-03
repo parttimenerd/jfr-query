@@ -988,13 +988,12 @@ ORDER BY 1`,
     requires: 'ObjectAllocationSample',
     sql: `CREATE OR REPLACE VIEW "allocation-by-class-detail" AS
 SELECT
-    c.javaName AS "Class",
+    o.objectClass AS "Class",
     COUNT(*) AS "Sample Events",
     format_memory(SUM(o.weight)) AS "Sampled Bytes",
     format_memory(AVG(o.weight)) AS "Avg Sample Weight"
 FROM ObjectAllocationSample o
-JOIN Class c ON o.objectClass = c._id
-GROUP BY c.javaName
+GROUP BY o.objectClass
 ORDER BY SUM(o.weight) DESC
 LIMIT 30`,
   },
@@ -1045,7 +1044,7 @@ ORDER BY pressure DESC`,
   },
   {
     requires: 'ObjectAllocationSample',
-    sql: `CREATE OR REPLACE VIEW "allocation-by-thread" AS
+    buildSql: (tables: Set<string>) => tables.has('Thread') ? `CREATE OR REPLACE VIEW "allocation-by-thread" AS
 SELECT th.javaName AS "Thread", format_percentage(pressure) AS "Allocation Pressure" FROM (SELECT
     eventThread AS _thread,
     SUM(weight) / (SELECT SUM(weight) FROM ObjectAllocationSample) AS pressure
@@ -1054,11 +1053,12 @@ GROUP BY eventThread
 ORDER BY pressure DESC
 LIMIT 25), Thread th
 WHERE _thread = th._id
-ORDER BY pressure DESC`,
+ORDER BY pressure DESC` : `CREATE OR REPLACE VIEW "allocation-by-thread" AS
+SELECT 'Thread metadata not available' AS "Thread", 0.0 AS "Allocation Pressure" WHERE false`,
   },
   {
     requires: 'ObjectAllocationSample',
-    sql: `CREATE OR REPLACE VIEW "allocation-by-site" AS
+    buildSql: (tables: Set<string>) => (tables.has('Method') && tables.has('Class')) ? `CREATE OR REPLACE VIEW "allocation-by-site" AS
 SELECT "Method", format_percentage(pressure) AS "Allocation Pressure" FROM
 (SELECT
     (c.javaName || m.name || m.descriptor) AS "Method",
@@ -1070,7 +1070,8 @@ GROUP BY stackTrace$topMethod, c.javaName, m.name, m.descriptor
 ORDER BY pressure DESC
 LIMIT 25
 )
-ORDER BY pressure DESC`,
+ORDER BY pressure DESC` : `CREATE OR REPLACE VIEW "allocation-by-site" AS
+SELECT 'Stack trace metadata not available' AS "Method", 0.0 AS "Allocation Pressure" WHERE false`,
   },
   {
     requires: 'ObjectAllocationSample',
@@ -1560,7 +1561,7 @@ ORDER BY name ASC`;
 SELECT "Class", "Count", "Heap Space", "Increase"
 FROM (
   SELECT
-    c.javaName AS "Class",
+    COALESCE(c.javaName, ocg.objectClass) AS "Class",
     LAST(count) AS "Count",
     format_memory(LAST(totalSize)) AS "Heap Space",
     LAST(totalSize) AS h,
@@ -1568,8 +1569,8 @@ FROM (
   FROM (
     ${branches.join('\n    UNION ALL\n    ')}
   ) ocg
-  JOIN Class c ON ocg.objectClass = c._id
-  GROUP BY c.javaName
+  LEFT JOIN Class c ON ocg.objectClass = c._id
+  GROUP BY COALESCE(c.javaName, ocg.objectClass)
 ) ORDER BY h DESC`;
     },
   },
@@ -1868,12 +1869,11 @@ LIMIT 500`,
     requires: 'ObjectAllocationSample',
     sql: `CREATE OR REPLACE VIEW "gc-allocation-by-class" AS
 SELECT
-    c.javaName AS "Class",
+    o.objectClass AS "Class",
     COUNT(*) AS "Samples",
     round(SUM(o.weight) / 1048576.0, 2) AS "Approx MB"
 FROM ObjectAllocationSample o
-JOIN Class c ON o.objectClass = c._id
-GROUP BY c.javaName
+GROUP BY o.objectClass
 ORDER BY SUM(o.weight) DESC
 LIMIT 30`,
   },
@@ -1881,7 +1881,7 @@ LIMIT 30`,
     // Per-thread allocation from ObjectAllocationSample. High single-thread
     // allocation often indicates a worker thread generating garbage.
     requires: 'ObjectAllocationSample',
-    sql: `CREATE OR REPLACE VIEW "gc-thread-allocation" AS
+    buildSql: (tables) => tables.has('Thread') ? `CREATE OR REPLACE VIEW "gc-thread-allocation" AS
 SELECT
     th.javaName AS "Thread",
     COUNT(*) AS "Samples",
@@ -1890,7 +1890,12 @@ FROM ObjectAllocationSample o
 JOIN Thread th ON o.eventThread = th._id
 GROUP BY th.javaName
 ORDER BY SUM(o.weight) DESC
-LIMIT 20`,
+LIMIT 20` : `CREATE OR REPLACE VIEW "gc-thread-allocation" AS
+SELECT
+    'Thread metadata not available' AS "Thread",
+    0 AS "Samples",
+    0.0 AS "Approx MB"
+WHERE false`,
   },
   {
     // Old generation growth rate per minute (G1 only). A steadily rising

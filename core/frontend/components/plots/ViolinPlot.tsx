@@ -115,14 +115,14 @@ const ViolinComponent: React.FC<{
                 return (
                     <div
                         key={v.label || idx}
-                        className="flex-1 min-w-[80px] cursor-pointer"
+                        className="flex-1 min-w-[80px] cursor-pointer flex flex-col"
                         onClick={() => handleClick(v.label)}
                         title={v.label || undefined}
                     >
                         {v.label && (
                             <div className="text-center text-[11px] text-gray-400 truncate px-1 mb-1">{v.label}</div>
                         )}
-                        <ResponsiveContainer width="100%" height="90%">
+                        <ResponsiveContainer width="100%" minHeight={160}>
                             <ComposedChart data={chartData} layout="vertical"
                                 margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
                                 <XAxis type="number" domain={[-1, 1]} hide />

@@ -12,12 +12,12 @@ const DEFAULT_COLORS = ['#60a5fa', '#34d399', '#f59e0b', '#f87171', '#a78bfa', '
     '#38bdf8', '#4ade80', '#fbbf24', '#f472b6'];
 
 export interface SunburstConfig {
-    path: string | string[];
+    path: string[];
     value: string;
 }
 
 const params: PlotParameter[] = [
-    { name: 'path', type: 'column', required: true, description: 'Column(s) defining hierarchy depth. Use a single column name or a comma-separated list for multiple levels.' },
+    { name: 'path', type: 'column[]', required: true, description: 'Column(s) defining hierarchy depth. A single column name or an array like ["col1", "col2"] for multi-level hierarchies.' },
     { name: 'value', type: 'column', required: true, description: 'Numeric column for node size.' },
 ];
 
@@ -57,6 +57,15 @@ export function buildTree(
             node = child;
         }
     }
+    // Recharts SunburstChart requires value on all nodes, not just leaves.
+    // Propagate children sum up to parent nodes.
+    function sumValues(node: SunburstNode & { children?: SunburstNode[] }): number {
+        if (!node.children || node.children.length === 0) return node.value ?? 0;
+        const childSum = node.children.reduce((acc, c) => acc + sumValues(c as any), 0);
+        if (node.value === undefined) node.value = childSum;
+        return node.value;
+    }
+    sumValues(root);
     return root;
 }
 
@@ -80,9 +89,7 @@ const SunburstComponent: React.FC<{
     useContext(SettingsContext);
     const colors = getPaletteColors(clauses?.palette, DEFAULT_COLORS);
 
-    const pathCols: string | string[] = Array.isArray(config.path)
-        ? config.path
-        : config.path;
+    const pathCols = config.path;
 
     const valueCol = config.value;
 

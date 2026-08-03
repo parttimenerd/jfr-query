@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useState, useCallback } from 'react';
+import React, { useContext, useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { Sankey, Tooltip, Layer, Rectangle } from 'recharts';
 import type { PlotRegistration, PlotParameter } from './plotTypes';
 import { withCommonParams } from './plotTypes';
@@ -88,6 +88,19 @@ const SankeyComponent: React.FC<{
 
     const [focus, setFocus] = useState<string | null>(null);
     const [trail, setTrail] = useState<string[]>([]);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [dims, setDims] = useState({ width: 600, height: 400 });
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver(entries => {
+            const { width, height } = entries[0].contentRect;
+            if (width > 10 && height > 10) setDims({ width, height });
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
 
     const filteredRows = useMemo(() =>
         filterByFocus(data, sourceCol, targetCol, focus),
@@ -167,10 +180,10 @@ const SankeyComponent: React.FC<{
                     ))}
                 </div>
             )}
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0" ref={containerRef}>
                 <Sankey
-                    width={600}
-                    height={400}
+                    width={dims.width}
+                    height={dims.height}
                     data={sankeyData}
                     node={CustomNode}
                     nodePadding={8}

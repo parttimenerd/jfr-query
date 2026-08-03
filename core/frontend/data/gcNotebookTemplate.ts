@@ -114,13 +114,12 @@ Which classes account for the most heap allocation (from TLAB samples). Long tai
 
 \`\`\`sql
 SELECT
-  c.javaName AS "Class",
+  o.objectClass AS "Class",
   COUNT(*) AS "Samples",
   round(SUM(o.weight) / (1024.0 * 1024.0), 1) AS "Sampled MB",
   round(AVG(o.weight) / 1024.0, 1) AS "Avg KB/sample"
 FROM ObjectAllocationSample o
-JOIN Class c ON o.objectClass = c._id
-GROUP BY c.javaName
+GROUP BY o.objectClass
 ORDER BY SUM(o.weight) DESC
 LIMIT 15
 \`\`\`

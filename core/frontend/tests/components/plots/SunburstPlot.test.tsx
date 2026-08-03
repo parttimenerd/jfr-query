@@ -22,10 +22,15 @@ describe('sunburstPlot registration', () => {
 });
 
 describe('sunburstPlot parseConfig', () => {
-    it('parses single path column', () => {
+    it('parses single path column as array', () => {
         const cfg = sunburstPlot.parseConfig('SUNBURST(path: "pkg", value: "samples")', []);
         expect(cfg.value).toBe('samples');
-        expect(cfg.path).toBe('pkg');
+        expect(cfg.path).toEqual(['pkg']);
+    });
+
+    it('parses multi-level path as array', () => {
+        const cfg = sunburstPlot.parseConfig('SUNBURST(path: ["pkg", "cls"], value: "samples")', []);
+        expect(cfg.path).toEqual(['pkg', 'cls']);
     });
 });
 

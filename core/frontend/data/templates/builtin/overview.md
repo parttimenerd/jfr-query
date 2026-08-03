@@ -120,12 +120,11 @@ Classes responsible for the most heap allocation (sampled). Use the **Heap Alloc
 
 ```sql
 SELECT
-  c.javaName AS "Class",
+  o.objectClass AS "Class",
   COUNT(*) AS "Samples",
   round(SUM(o.weight) / 1048576.0, 1) AS "Sampled MB"
 FROM ObjectAllocationSample o
-JOIN Class c ON o.objectClass = c._id
-GROUP BY c.javaName
+GROUP BY o.objectClass
 ORDER BY SUM(o.weight) DESC
 LIMIT 10
 ```
