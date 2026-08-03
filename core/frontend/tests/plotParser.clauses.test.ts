@@ -570,4 +570,24 @@ describe('parsePlotCall — comprehensive clause coverage', () => {
         expect(p.axisY?.label).toBe('CPU %');
         expect(p.axisY?.type).toBe('linear');
     });
+
+    // ---- 41. AXIS_X LABEL and TYPE TIME together ----
+    it('AXIS_X LABEL "Time" TYPE TIME', () => {
+        const r = parsePlotCall('LINE_CHART(x:"t",y:["v"]) AXIS_X LABEL "Time" TYPE TIME');
+        expect(r.axisX?.label).toBe('Time');
+        expect(r.axisX?.type).toBe('time');
+    });
+
+    // ---- 42. AXIS_Y TYPE LOG and FORMAT together ----
+    it('AXIS_Y TYPE LOG FORMAT ".2f"', () => {
+        const r = parsePlotCall('LINE_CHART(x:"t",y:["v"]) AXIS_Y TYPE LOG FORMAT ".2f"');
+        expect(r.axisY?.type).toBe('log');
+        expect(r.axisY?.format).toBe('.2f');
+    });
+
+    // ---- 43. TITLE with single-quoted string ----
+    it("TITLE with single quotes", () => {
+        const r = parsePlotCall("TABLE() TITLE 'hello world'");
+        expect(r.title).toBe('hello world');
+    });
 });
