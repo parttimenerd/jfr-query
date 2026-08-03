@@ -1682,10 +1682,10 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     })()}
                     {!presenterMode && (
                         <div className="flex justify-end gap-3 opacity-0 group-hover/cell:opacity-100 transition-opacity">
-                            <button onClick={handleAddVariable} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add variable</button>
-                            <button onClick={handleAddPlot} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add Plot</button>
-                            <button onClick={handleAddSql} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add SQL</button>
-                            <button onClick={handleAddConclusion} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Prose</button>
+                            <button onClick={handleAddVariable} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> variable</button>
+                            <button onClick={handleAddPlot} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> plot</button>
+                            <button onClick={handleAddSql} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> sql</button>
+                            <button onClick={handleAddConclusion} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> prose</button>
                             {results.filter(r => r && r.length > 0 && !r[0]?.error).length >= 2 && (
                                 <button
                                     onClick={() => setShowCompareView(p => !p)}

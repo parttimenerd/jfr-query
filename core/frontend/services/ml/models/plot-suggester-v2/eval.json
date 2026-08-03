@@ -1,14 +1,14 @@
 {
   "accuracy": 0.937,
-  "plotShapeAccuracy": 0.9369,
-  "columnMatchAccuracy": 0.9554,
-  "sampledAt": "2026-08-02T00:00:00.000Z",
+  "plotShapeAccuracy": 0.9278,
+  "columnMatchAccuracy": 0.9489,
+  "sampledAt": "2026-07-29T23:21:00.000Z",
   "sampleSize": 2266,
-  "modelVersion": "t5-small-jfr-v14",
+  "modelVersion": "t5-small-v5-q8-arm",
   "trainingData": "plot_pairs_v36.jsonl",
-  "evalData": "plot_eval_v36.jsonl",
-  "notes": "v14: trained on v36 data (25,284 examples = v33 re-signaled with v16 extractor + 300 LINE duo+time injections). v16 signal fix: time-named untyped columns excluded from num/cat counting, fixing phantom num inflation for aliases like cpu_time/gc_time. LINE->SCATTER reduced from x13 to x11. 89/90 original scenarios pass (table_jfr_metadata persistent BAR signal collision). VIOLIN_PLOT/SUNBURST/SANKEY/CROSSTAB in PLOT_NAMES but excluded from training.",
+  "evalData": "plot_eval_v31.jsonl",
+  "notes": "v5: ARM q8 quantized export via deploy_v5.sh. plotShapeAccuracy=0.9278, columnMatchAccuracy=0.9489 on v31 eval set.",
   "trainedOn": "data/plot_pairs_v36.jsonl",
-  "evalOn": "data/plot_eval_v36.jsonl",
+  "evalOn": "data/plot_eval_v31.jsonl",
   "checkpoint": "checkpoints/t5-small-latest"
 }
