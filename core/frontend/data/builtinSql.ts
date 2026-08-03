@@ -1772,4 +1772,139 @@ FROM after_gcs
 WHERE prev_old_gen IS NOT NULL AND oldGenUsedSize > prev_old_gen
 ORDER BY "Time"`,
   },
+  // ── Extended GC analysis views (2026 session) ─────────────────────────────
+  {
+    // Split GC pause time between Young, Mixed/Concurrent, and Old/Full
+    // collections. Young-dominant workloads are healthy; a large Old/Full
+    // fraction means the old generation is under pressure.
+    requires: 'GarbageCollection',
+    sql: `CREATE OR REPLACE VIEW "gc-young-old-time" AS
+SELECT
+    CASE
+        WHEN cause IN ('G1 Evacuation Pause','Young GC','ParNew','DefNew','Allocation Failure') THEN 'Young'
+        WHEN cause IN ('G1 Mixed GC','CMS Initial Mark','CMS Final Remark') THEN 'Mixed/Concurrent'
+        ELSE 'Old/Full'
+    END AS "Generation",
+    COUNT(*) AS "Collections",
+    round(SUM(sumOfPauses) * 1000, 1) AS "Total Pause (ms)",
+    round(AVG(sumOfPauses) * 1000, 2) AS "Avg Pause (ms)"
+FROM GarbageCollection
+GROUP BY 1
+ORDER BY 3 DESC`,
+  },
+  {
+    // Individual pause events over time (for scatter/line). A clustering of
+    // long pauses in a short window is a strong signal of heap pressure.
+    requires: 'GarbageCollection',
+    sql: `CREATE OR REPLACE VIEW "gc-pause-over-time" AS
+SELECT
+    startTime AS "Time",
+    round(longestPause * 1000, 2) AS "Pause (ms)",
+    cause AS "Cause",
+    gcId AS "GC ID"
+FROM GarbageCollection
+ORDER BY startTime`,
+  },
+  {
+    // Humongous object allocation collections (G1 only). Humongous
+    // allocations occupy whole regions and can fragment the heap.
+    requires: 'GarbageCollection',
+    sql: `CREATE OR REPLACE VIEW "gc-humongous" AS
+SELECT
+    startTime AS "Time",
+    gcId AS "GC ID",
+    cause AS "Cause",
+    round(longestPause * 1000, 2) AS "Pause (ms)"
+FROM GarbageCollection
+WHERE LOWER(cause) LIKE '%humongous%'
+ORDER BY startTime`,
+  },
+  {
+    // Pause duration grouped by cause over 30s windows (for area/bar). A shift
+    // in cause dominance often pinpoints when a problem started.
+    requires: 'GarbageCollection',
+    sql: `CREATE OR REPLACE VIEW "gc-pause-cause-over-time" AS
+SELECT
+    bucket_time(startTime, 30000) AS "Window",
+    cause AS "Cause",
+    round(SUM(longestPause) * 1000, 1) AS "Pause (ms)"
+FROM GarbageCollection
+GROUP BY 1, 2
+ORDER BY 1, 2`,
+  },
+  {
+    // Eden and survivor sizing over time from G1HeapSummary. Eden frequently
+    // at capacity forces more frequent Young collections.
+    requires: 'G1HeapSummary',
+    sql: `CREATE OR REPLACE VIEW "gc-eden-size" AS
+SELECT
+    g.startTime AS "Time",
+    round(s.edenUsedSize / 1048576.0, 1) AS "Eden Used MB",
+    round(s.survivorUsedSize / 1048576.0, 1) AS "Survivor MB",
+    s."when" AS "Phase"
+FROM G1HeapSummary s
+JOIN GarbageCollection g ON s.gcId = g.gcId
+ORDER BY g.startTime`,
+  },
+  {
+    // TTSP (Time To SafePoint) analysis — the interval between requesting a
+    // safepoint (SafepointBegin) and all threads reaching it (SafepointEnd).
+    // High TTSP means threads are slow to respond to stop-the-world requests,
+    // often caused by long loops without safepoint polls.
+    requires: 'SafepointBegin',
+    sql: `CREATE OR REPLACE VIEW "gc-safepoint-distribution" AS
+SELECT
+    round(epoch(E.startTime - B.startTime) * 1000, 3) AS "TTSP (ms)",
+    B.safepointId AS "Safepoint ID"
+FROM SafepointBegin B
+JOIN SafepointEnd E ON B.safepointId = E.safepointId
+WHERE E.startTime IS NOT NULL
+ORDER BY 1 DESC
+LIMIT 500`,
+  },
+  {
+    // Top allocating classes from ObjectAllocationSample. weight is the
+    // estimated bytes allocated for the sampled object population.
+    requires: 'ObjectAllocationSample',
+    sql: `CREATE OR REPLACE VIEW "gc-allocation-by-class" AS
+SELECT
+    c.javaName AS "Class",
+    COUNT(*) AS "Samples",
+    round(SUM(o.weight) / 1048576.0, 2) AS "Approx MB"
+FROM ObjectAllocationSample o
+JOIN Class c ON o.objectClass = c._id
+GROUP BY c.javaName
+ORDER BY SUM(o.weight) DESC
+LIMIT 30`,
+  },
+  {
+    // Per-thread allocation from ObjectAllocationSample. High single-thread
+    // allocation often indicates a worker thread generating garbage.
+    requires: 'ObjectAllocationSample',
+    sql: `CREATE OR REPLACE VIEW "gc-thread-allocation" AS
+SELECT
+    th.javaName AS "Thread",
+    COUNT(*) AS "Samples",
+    round(SUM(o.weight) / 1048576.0, 2) AS "Approx MB"
+FROM ObjectAllocationSample o
+JOIN Thread th ON o.eventThread = th._id
+GROUP BY th.javaName
+ORDER BY SUM(o.weight) DESC
+LIMIT 20`,
+  },
+  {
+    // Old generation growth rate per minute (G1 only). A steadily rising
+    // minimum is the clearest early warning sign of a memory leak.
+    requires: 'G1HeapSummary',
+    sql: `CREATE OR REPLACE VIEW "gc-old-gen-growth" AS
+SELECT
+    bucket_time(g.startTime, 60000) AS "Minute",
+    round(MAX(s.oldGenUsedSize) / 1048576.0, 1) AS "Old Gen Max MB",
+    round(MIN(s.oldGenUsedSize) / 1048576.0, 1) AS "Old Gen Min MB"
+FROM G1HeapSummary s
+JOIN GarbageCollection g ON s.gcId = g.gcId
+WHERE s."when" = 'After GC'
+GROUP BY 1
+ORDER BY 1`,
+  },
 ];

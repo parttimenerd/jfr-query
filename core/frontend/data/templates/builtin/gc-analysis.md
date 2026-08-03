@@ -24,6 +24,14 @@ cellConditions:
   parallel-phases: "SELECT count(*) > 0 FROM GCPhaseParallel"
   tlab-efficiency: "SELECT count(*) > 0 FROM ObjectAllocationInNewTLAB"
   finalizers: "SELECT count(*) > 0 FROM FinalizerStatistics"
+  gc-pause-over-time: "SELECT count(*) > 0 FROM GarbageCollection"
+  gc-young-old-time: "SELECT count(*) > 0 FROM GarbageCollection"
+  gc-pause-cause-over-time: "SELECT count(*) > 0 FROM GarbageCollection"
+  gc-eden-size: "SELECT count(*) > 0 FROM G1HeapSummary"
+  gc-safepoint-distribution: "SELECT count(*) > 0 FROM SafepointBegin"
+  gc-allocation-by-class: "SELECT count(*) > 0 FROM ObjectAllocationSample"
+  gc-thread-allocation: "SELECT count(*) > 0 FROM ObjectAllocationSample"
+  gc-old-gen-growth: "SELECT count(*) > 0 FROM G1HeapSummary"
 ---
 
 <!-- @cell name=intro -->
@@ -37,10 +45,17 @@ A ready-to-run analysis of garbage-collection behavior from your JFR recording.
 - Pause time breakdown by GC cause — which cause is costing the most stop-the-world time
 - Long-pause drill-down (shown only when pauses exceed `$$threshold_ms` ms)
 - Phase-level percentile table (P50 / P90 / P99 / Max per GC phase)
+- GC pause events over time and pause-by-cause windows (linked time axis)
+- Young vs Old/Full GC time split
+- Eden/Survivor sizing and Old generation growth rate (G1)
+- Time To SafePoint (TTSP) distribution
+- Top allocating classes and per-thread allocation
 
 **Required events:** `GarbageCollection`, `GCPhasePause`
 
 Change `$$threshold_ms` in the Notebook Settings cell above to adjust the long-pause threshold.
+
+**Quick navigation:** @cell:pause-summary | @cell:heap-over-time | @cell:pause-histogram | @cell:gc-overhead | @cell:concurrent-phases
 
 ---
 
@@ -110,6 +125,8 @@ ORDER BY SUM(sumOfPauses) DESC
 ```plot
 BAR_CHART(x: "Cause", y: ["Total Pause (ms)", "Avg Pause (ms)", "Max Pause (ms)"], layout: "grouped") TITLE "GC Pause Time by Cause"
 ```
+
+> See also: @cell:pause-histogram for duration distribution • @cell:long-pauses-section for individual events
 
 ---
 
@@ -610,5 +627,148 @@ SELECT * FROM "finalizers"
 
 ```plot
 TABLE() TITLE "Finalizer Statistics by Class"
+```
+
+---
+
+<!-- @cell name=gc-pause-over-time -->
+
+## GC Pause Over Time
+
+Individual pause durations plotted over the recording. Hover over points to see cause and GC ID. A clustering of long pauses in a short window is a strong signal of heap pressure.
+
+```sql
+SELECT * FROM "gc-pause-over-time" ORDER BY "Time"
+```
+
+```plot
+SCATTER(x: "Time", y: "Pause (ms)", color: "Cause") TITLE "GC Pause Events Over Time" LINK_X($start, $end) ZOOM
+```
+
+---
+
+<!-- @cell name=gc-young-old-time -->
+
+## Young vs Old/Full GC Time
+
+Time spent in Young, Mixed, and Old/Full GC phases. Young-dominant workloads are healthy; a high Old/Full fraction indicates the old generation is under pressure.
+
+```sql
+SELECT * FROM "gc-young-old-time"
+```
+
+```plot
+BAR_CHART(x: "Generation", y: ["Total Pause (ms)", "Avg Pause (ms)"], layout: "grouped") TITLE "Pause Time by GC Generation"
+```
+
+```plot
+PIE_CHART(category: "Generation", value: "Total Pause (ms)") TITLE "Total STW Time by Generation"
+```
+
+---
+
+<!-- @cell name=gc-pause-cause-over-time -->
+
+## Pause by Cause Over Time
+
+30-second windows showing which GC cause contributed the most pause time. A shift in cause dominance often pinpoints when a problem started.
+
+```sql
+SELECT * FROM "gc-pause-cause-over-time"
+```
+
+```plot
+AREA_CHART(x: "Window", y: ["Pause (ms)"], color: "Cause", layout: "stacked") TITLE "Pause Time by Cause (30s windows)" LINK_X($start, $end) ZOOM
+```
+
+---
+
+<!-- @cell name=gc-eden-size -->
+
+## Eden and Survivor Region Sizing
+
+Eden used vs allocated, and survivor sizes after each GC. Eden frequently at capacity forces more frequent Young collections.
+
+*Requires `G1HeapSummary` events.*
+
+```sql
+SELECT * FROM "gc-eden-size" ORDER BY "Time"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Eden Used MB", "Survivor MB"], color: "Phase") TITLE "Eden and Survivor Sizing (G1)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
+```
+
+---
+
+<!-- @cell name=gc-safepoint-distribution -->
+
+## Time To SafePoint (TTSP) Distribution
+
+Time for all JVM threads to reach a safepoint. High TTSP means threads are slow to respond to stop-the-world requests — often caused by long loops without safepoint polls (use `-XX:+UseCountedLoopSafepoints`).
+
+*Requires `SafepointBegin` and `SafepointEnd` events.*
+
+```sql
+-- alias ttsp
+SELECT * FROM "gc-safepoint-distribution" LIMIT 200
+```
+
+```plot
+HISTOGRAM(x: "TTSP (ms)", logBins: true) TITLE "TTSP Distribution" ON ttsp
+```
+
+---
+
+<!-- @cell name=gc-allocation-by-class -->
+
+## Top Allocating Classes
+
+Classes contributing most to allocation volume. Target the top 3-5 classes for allocation reduction — reducing churn from these directly lowers GC frequency.
+
+*Requires `ObjectAllocationSample` events.*
+
+```sql
+SELECT * FROM "gc-allocation-by-class"
+```
+
+```plot
+BAR_CHART(x: "Class", y: ["Approx MB"], horizontal: true) TITLE "Top Allocating Classes (sampled)" AXIS_Y LABEL "MB"
+```
+
+---
+
+<!-- @cell name=gc-thread-allocation -->
+
+## Per-Thread Allocation
+
+Threads that allocate the most. High single-thread allocation often indicates a worker thread generating garbage — consider allocating outside hot loops.
+
+*Requires `ObjectAllocationSample` events.*
+
+```sql
+SELECT * FROM "gc-thread-allocation"
+```
+
+```plot
+BAR_CHART(x: "Thread", y: ["Approx MB"], horizontal: true) TITLE "Allocation by Thread (sampled)"
+```
+
+---
+
+<!-- @cell name=gc-old-gen-growth -->
+
+## Old Generation Growth Rate
+
+Old generation min/max size per minute. A steadily rising minimum is the clearest early warning sign of a memory leak — the GC cannot reclaim as much as the application produces.
+
+*Requires `G1HeapSummary` events.*
+
+```sql
+SELECT * FROM "gc-old-gen-growth" ORDER BY "Minute"
+```
+
+```plot
+LINE_CHART(x: "Minute", y: ["Old Gen Max MB", "Old Gen Min MB"]) TITLE "Old Generation Size Over Time" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
 ```
 
