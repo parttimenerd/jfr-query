@@ -24,21 +24,23 @@ const params: PlotParameter[] = [
 const parseConfig = createConfigParser<SunburstConfig>(buildParserSpec(params));
 
 export interface SunburstNode extends SunburstData {
-    name: string;
+    name: string;       // unique full-path key (used by Recharts for stable keys)
+    displayName: string; // human-readable label shown in tooltip
     value?: number;
     fill?: string;
     children?: SunburstNode[];
 }
 
 /** Build a hierarchy tree from flat rows. pathCols can be an array of column names or
- *  a single column name (then rows are split by `sep`). */
+ *  a single column name (then rows are split by `sep`). Node names are full paths so
+ *  Recharts key generation produces unique keys even when leaf labels repeat. */
 export function buildTree(
     rows: any[],
     pathCols: string | string[],
     valueCol: string,
     sep = '/',
 ): SunburstNode {
-    const root: SunburstNode & { children: SunburstNode[] } = { name: '(root)', children: [] };
+    const root: SunburstNode & { children: SunburstNode[] } = { name: '(root)', displayName: '(root)', children: [] };
     for (const row of rows) {
         const segments: string[] = Array.isArray(pathCols)
             ? pathCols.map(c => String(row[c] ?? ''))
@@ -46,15 +48,18 @@ export function buildTree(
         const val = parseFloat(String(row[valueCol]));
         if (isNaN(val) || segments.length === 0) continue;
         let node: SunburstNode & { children?: SunburstNode[] } = root;
+        let pathPrefix = '';
         for (let d = 0; d < segments.length; d++) {
             const seg = segments[d];
+            const fullPath = pathPrefix ? `${pathPrefix}/${seg}` : seg;
             if (!node.children) node.children = [];
-            let child = node.children.find(c => c.name === seg);
-            if (!child) { child = { name: seg }; node.children.push(child); }
+            let child = node.children.find(c => c.name === fullPath);
+            if (!child) { child = { name: fullPath, displayName: seg }; node.children.push(child); }
             if (d === segments.length - 1) {
                 child.value = (child.value ?? 0) + val;
             }
             node = child;
+            pathPrefix = fullPath;
         }
     }
     // Recharts SunburstChart requires value on all nodes, not just leaves.
@@ -103,17 +108,22 @@ const SunburstComponent: React.FC<{
 
     const currentNode: SunburstNode = useMemo(() => {
         let node: SunburstNode = fullTree;
+        let pathPrefix = '';
         for (const seg of rootPath) {
-            const child = node.children?.find(c => c.name === seg);
+            const fullPath = pathPrefix ? `${pathPrefix}/${seg}` : seg;
+            const child = node.children?.find(c => c.name === fullPath);
             if (!child) break;
             node = child;
+            pathPrefix = fullPath;
         }
         return node;
     }, [fullTree, rootPath]);
 
     const navigate = useCallback((node: SunburstData) => {
         if (!node || node.name === '(root)') return;
-        const newPath = [...rootPath, node.name];
+        // node.name is the full path key; extract the display segment for rootPath
+        const parts = node.name.split('/');
+        const newPath = [...rootPath, parts[parts.length - 1]];
         setRootPath(newPath);
         if (gestureName && onVariableChange) {
             onVariableChange({ [`${gestureName}.selection`]: newPath.join('/') });
@@ -154,6 +164,7 @@ const SunburstComponent: React.FC<{
                     height={400}
                     data={currentNode}
                     dataKey="value"
+                    nameKey="displayName"
                     onClick={navigate}
                 >
                     <Tooltip

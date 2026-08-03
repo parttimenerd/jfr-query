@@ -47,11 +47,13 @@ describe('buildTree', () => {
         expect(tree.children).toHaveLength(2);
     });
 
-    it('leaf nodes have value', () => {
+    it('leaf nodes have unique full-path name and displayName as leaf label', () => {
         const tree = buildTree(rows, ['pkg', 'cls'], 'samples');
         const example = tree.children!.find(c => c.name === 'com.example');
+        expect(example?.displayName).toBe('com.example');
         expect(example?.children).toHaveLength(2);
-        const foo = example?.children?.find(c => c.name === 'Foo');
+        const foo = example?.children?.find(c => c.name === 'com.example/Foo');
+        expect(foo?.displayName).toBe('Foo');
         expect(foo?.value).toBe(10);
     });
 
@@ -64,7 +66,9 @@ describe('buildTree', () => {
         const rows2 = [{ path: 'a/b/c', samples: 7 }];
         const tree = buildTree(rows2, 'path', 'samples', '/');
         const a = tree.children?.find(c => c.name === 'a');
-        const b = a?.children?.find(c => c.name === 'b');
-        expect(b?.children?.find(c => c.name === 'c')?.value).toBe(7);
+        expect(a?.displayName).toBe('a');
+        const b = a?.children?.find(c => c.name === 'a/b');
+        expect(b?.displayName).toBe('b');
+        expect(b?.children?.find(c => c.name === 'a/b/c')?.value).toBe(7);
     });
 });
