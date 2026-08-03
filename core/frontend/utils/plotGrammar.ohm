@@ -104,16 +104,20 @@ PlotDSL {
   TitleClause = caseInsensitive<"TITLE"> stringLit
 
   // ZOOM [factor] — bare ZOOM with no number sets zoom = 1.
+  // zoomVal tries varRef before number so "$scale" is not mis-parsed as a
+  // bare identifier by the number rule.
   ZoomClause
-    = caseInsensitive<"ZOOM"> number -- withFactor
-    | caseInsensitive<"ZOOM">        -- bare
+    = caseInsensitive<"ZOOM"> zoomVal -- withValue
+    | caseInsensitive<"ZOOM">         -- bare
+  zoomVal = varRef | number
 
   // ZOOM_X <factor>
   ZoomXClause = caseInsensitive<"ZOOM_X"> number
 
-  // WIDTH / HEIGHT <dim>
-  WidthClause  = caseInsensitive<"WIDTH">  dimValue
-  HeightClause = caseInsensitive<"HEIGHT"> dimValue
+  // WIDTH / HEIGHT <dim>  (also accept $variable)
+  WidthClause  = caseInsensitive<"WIDTH">  sizeVal
+  HeightClause = caseInsensitive<"HEIGHT"> sizeVal
+  sizeVal  = varRef | dimValue
   dimValue = digit+ ("px" | "%")?
 
   // ON HOVER TOOLTIP "..." (must be tried before bare ON)
@@ -182,7 +186,7 @@ PlotDSL {
 
   AxisSubClause = DomainSub | LabelSub | TypeSub | FormatSub
   DomainSub  = caseInsensitive<"DOMAIN"> "[" domainVal "," domainVal "]"
-  domainVal  = stringLit | number
+  domainVal  = varRef | stringLit | number
   LabelSub   = caseInsensitive<"LABEL">  stringLit
   TypeSub    = caseInsensitive<"TYPE">   axisType
   FormatSub  = caseInsensitive<"FORMAT"> stringLit

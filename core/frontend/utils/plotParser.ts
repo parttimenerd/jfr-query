@@ -21,7 +21,7 @@ export interface ParsedPlotCall {
     on?: string[]; // Array of query references, e.g., ["1", "my_view"]
     width?: string; // e.g., "100px", "50%"
     height?: string; // e.g., "300px"
-    zoom?: number; // legacy — kept for back-compat; not in showcase
+    zoom?: number | string; // number or $variable; legacy — kept for back-compat
     zoomX?: number; // horizontal-only scale factor
     title?: string;
     linkX?: [string, string];
@@ -96,6 +96,7 @@ function _extractStrValue(node: any): string {
 function _extractDomainVal(node: any): number | string {
     const src = (node.sourceString as string).trim();
     if (src.startsWith('"') || src.startsWith("'")) return src.slice(1, -1);
+    if (src.startsWith('$')) return src; // varRef — keep as-is
     const n = Number(src);
     return isNaN(n) ? src : n;
 }
@@ -111,11 +112,14 @@ function _buildSemantics(g: ReturnType<typeof ohmGrammar>): Semantics {
         },
         Clause(alt) { (alt as any).toResult((this.args as any).r); },
         TitleClause(_kw, str) { (this.args as any).r.title = _extractStrValue(str); },
-        ZoomClause_withFactor(_kw, num) { (this.args as any).r.zoom = parseFloat((num as any).sourceString); },
+        ZoomClause_withValue(_kw, val) {
+            const src = (val as any).sourceString.trim();
+            (this.args as any).r.zoom = src.startsWith('$') ? src : parseFloat(src);
+        },
         ZoomClause_bare(_kw) { (this.args as any).r.zoom = 1; },
         ZoomXClause(_kw, num) { (this.args as any).r.zoomX = parseFloat((num as any).sourceString); },
-        WidthClause(_kw, dim) { (this.args as any).r.width = (dim as any).sourceString; },
-        HeightClause(_kw, dim) { (this.args as any).r.height = (dim as any).sourceString; },
+        WidthClause(_kw, sz) { (this.args as any).r.width = (sz as any).sourceString.trim(); },
+        HeightClause(_kw, sz) { (this.args as any).r.height = (sz as any).sourceString.trim(); },
         OnHoverTooltipClause(_on, _hover, _tooltip, str) {
             (this.args as any).r.onHoverTooltip = _extractStrValue(str);
         },
@@ -306,10 +310,13 @@ const buildAxisProcessor = (axis: 'axisX' | 'axisY') => (match: RegExpMatchArray
 
 const CLAUSES: ClauseSpec[] = [
     { key: 'title', regex: /(?<!\w)TITLE\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
+    { key: 'zoom', regex: /(?<!\w)ZOOM\s+(\$[A-Za-z_]\w*)\s*$/i, processor: (m) => m[1] },
     { key: 'zoom', regex: /(?<!\w)ZOOM\s+([\d\.]+)\s*$/i, processor: (m) => parseFloat(m[1]) },
     { key: 'zoom', regex: /(?<!\w)ZOOM\s*$/i, processor: () => 1 },
     { key: 'zoomX', regex: /(?<!\w)ZOOM_X\s+([\d\.]+)\s*$/i, processor: (m) => parseFloat(m[1]) },
+    { key: 'height', regex: /(?<!\w)HEIGHT\s+(\$[A-Za-z_]\w*)\s*$/i, processor: (m) => m[1] },
     { key: 'height', regex: /(?<!\w)HEIGHT\s+((?:\d+)(?:px|%)?)\s*$/i, processor: (m) => m[1] },
+    { key: 'width', regex: /(?<!\w)WIDTH\s+(\$[A-Za-z_]\w*)\s*$/i, processor: (m) => m[1] },
     { key: 'width', regex: /(?<!\w)WIDTH\s+((?:\d+)(?:px|%)?)\s*$/i, processor: (m) => m[1] },
     { key: 'on', regex: /(?<!\w)ON\s+((?:#\d+|\w+|\d+)(?:\s*,\s*(?:#\d+|\w+|\d+))*)\s*$/i, processor: (m) => m[1].split(',').map(s => s.trim()) },
     { key: 'legend', regex: /(?<!\w)LEGEND\s+HIDDEN\s*$/i, processor: () => 'none' as LegendPosition },

@@ -304,3 +304,270 @@ describe('regression — AXIS_Y DOMAIN+LABEL after LINK_X and ZOOM', () => {
         expect(result.axisY).toEqual({ domain: [0, 100], label: '%' });
     });
 });
+
+// ---------------------------------------------------------------------------
+// Comprehensive grammar clause coverage tests (≥20 tests covering all 21
+// clause types plus variable-arg forms and edge cases).
+// ---------------------------------------------------------------------------
+
+describe('parsePlotCall — comprehensive clause coverage', () => {
+
+    // ---- 1. TITLE ----
+    it('TITLE clause', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) TITLE "My Title"');
+        expect(p.title).toBe('My Title');
+        expect(p.mainConfig).toBe('LINE_CHART(x: "t", y: ["v"])');
+    });
+
+    // ---- 2. ZOOM bare ----
+    it('ZOOM bare sets zoom to 1', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) ZOOM');
+        expect(p.zoom).toBe(1);
+    });
+
+    // ---- 3. ZOOM with number ----
+    it('ZOOM with numeric factor', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) ZOOM 2.5');
+        expect(p.zoom).toBe(2.5);
+    });
+
+    // ---- 4. ZOOM with $variable ----
+    it('ZOOM $variable stores variable name as string', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) ZOOM $scale');
+        expect(p.zoom).toBe('$scale');
+    });
+
+    // ---- 5. ZOOM_X ----
+    it('ZOOM_X with numeric factor', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) ZOOM_X 3');
+        expect(p.zoomX).toBe(3);
+        expect(p.zoom).toBeUndefined();
+    });
+
+    // ---- 6. WIDTH with px ----
+    it('WIDTH with px value', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) WIDTH 800px');
+        expect(p.width).toBe('800px');
+    });
+
+    // ---- 7. HEIGHT with % ----
+    it('HEIGHT with percent value', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) HEIGHT 50%');
+        expect(p.height).toBe('50%');
+    });
+
+    // ---- 8. WIDTH $variable ----
+    it('WIDTH $variable stores variable name', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) WIDTH $w');
+        expect(p.width).toBe('$w');
+    });
+
+    // ---- 9. HEIGHT $variable ----
+    it('HEIGHT $variable stores variable name', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) HEIGHT $h');
+        expect(p.height).toBe('$h');
+    });
+
+    // ---- 10. ON with query ref ----
+    it('ON clause with single ref', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) ON myQuery');
+        expect(p.on).toEqual(['myQuery']);
+    });
+
+    // ---- 11. ON HOVER TOOLTIP ----
+    it('ON HOVER TOOLTIP clause', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) ON HOVER TOOLTIP "val={{v}}"');
+        expect(p.onHoverTooltip).toBe('val={{v}}');
+    });
+
+    // ---- 12. LEGEND AT LEFT ----
+    it('LEGEND AT LEFT', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) LEGEND AT LEFT');
+        expect(p.legend).toBe('left');
+    });
+
+    // ---- 13. LEGEND HIDDEN ----
+    it('LEGEND HIDDEN', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) LEGEND HIDDEN');
+        expect(p.legend).toBe('none');
+    });
+
+    // ---- 14. PALETTE ----
+    it('PALETTE clause', () => {
+        const p = parsePlotCall('BAR_CHART(x: "h", y: ["c"]) PALETTE "dark2"');
+        expect(p.palette).toBe('dark2');
+    });
+
+    // ---- 15. BRUSH single-var MODE Y ----
+    it('BRUSH single-var MODE Y', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) BRUSH $sel MODE Y');
+        expect(p.brush).toEqual({ name: '$sel', mode: 'y' });
+    });
+
+    // ---- 16. BRUSH single-var MODE XY ----
+    it('BRUSH single-var MODE XY', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) BRUSH $sel MODE XY');
+        expect(p.brush).toEqual({ name: '$sel', mode: 'xy' });
+    });
+
+    // ---- 17. BRUSH two-var (CROSSTAB) form ----
+    it('BRUSH two-var form for CROSSTAB', () => {
+        const p = parsePlotCall('CROSSTAB(x: "a", y: "b") BRUSH $rowSel $colSel');
+        expect(p.brush).toEqual({ name: '$rowSel', mode: 'xy' });
+        expect(p.brush2).toBe('$colSel');
+    });
+
+    // ---- 18. AXIS_Y DOMAIN with number bounds ----
+    it('AXIS_Y DOMAIN with number bounds', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) AXIS_Y DOMAIN [0, 200]');
+        expect(p.axisY?.domain).toEqual([0, 200]);
+    });
+
+    // ---- 19. AXIS_X DOMAIN with $variable bounds ----
+    it('AXIS_X DOMAIN with $variable bounds', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) AXIS_X DOMAIN [$min, $max]');
+        expect(p.axisX?.domain).toEqual(['$min', '$max']);
+    });
+
+    // ---- 20. AXIS_Y DOMAIN with mixed $var and number ----
+    it('AXIS_Y DOMAIN with mixed $var and number bound', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) AXIS_Y DOMAIN [$floor, 100]');
+        expect(p.axisY?.domain).toEqual(['$floor', 100]);
+    });
+
+    // ---- 21. AXIS_Y LABEL ----
+    it('AXIS_Y LABEL sub-clause', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) AXIS_Y LABEL "ms"');
+        expect(p.axisY?.label).toBe('ms');
+    });
+
+    // ---- 22. AXIS_Y TYPE ----
+    it('AXIS_Y TYPE LOG', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) AXIS_Y TYPE LOG');
+        expect(p.axisY?.type).toBe('log');
+    });
+
+    // ---- 23. AXIS_X FORMAT ----
+    it('AXIS_X FORMAT sub-clause', () => {
+        const p = parsePlotCall('LINE_CHART(x: "ts", y: ["v"]) AXIS_X FORMAT ".3s"');
+        expect(p.axisX?.format).toBe('.3s');
+    });
+
+    // ---- 24. LINK_X ----
+    it('LINK_X with two variables', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) LINK_X($start, $end)');
+        expect(p.linkX).toEqual(['$start', '$end']);
+    });
+
+    // ---- 25. LINK_X with master and clamp ----
+    it('LINK_X with master and clamp options', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) LINK_X($a, $b, master, clamp)');
+        expect(p.linkX).toEqual(['$a', '$b']);
+        expect(p.linkXMaster).toBe(true);
+        expect(p.linkXClamp).toBe(true);
+    });
+
+    // ---- 26. LINK_Y ----
+    it('LINK_Y clause', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) LINK_Y $ydomain');
+        expect(p.linkY).toBe('$ydomain');
+    });
+
+    // ---- 27. LINK_XY ----
+    it('LINK_XY clause', () => {
+        const p = parsePlotCall('SCATTER_PLOT(x: "a", y: "b") LINK_XY $combined');
+        expect(p.linkXY).toBe('$combined');
+    });
+
+    // ---- 28. LINK_SCROLL ----
+    it('LINK_SCROLL clause', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) LINK_SCROLL logGroup');
+        expect(p.linkScroll).toBe('logGroup');
+    });
+
+    // ---- 29. TOOLTIP COLUMNS ----
+    it('TOOLTIP COLUMNS clause', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) TOOLTIP COLUMNS ["host", "dc"]');
+        expect(p.tooltipColumns).toEqual(['host', 'dc']);
+    });
+
+    // ---- 30. NAME ----
+    it('NAME clause', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) NAME "cpuCell"');
+        expect(p.cellName).toBe('cpuCell');
+    });
+
+    // ---- 31. DATASET ----
+    it('DATASET clause', () => {
+        const p = parsePlotCall('TABLE() DATASET my_view');
+        expect(p.dataset).toBe('my_view');
+        expect(p.mainConfig).toBe('TABLE()');
+    });
+
+    // ---- 32. LET single ----
+    it('LET clause single variable', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) LET threshold = 100');
+        expect(p.let).toEqual({ threshold: '100' });
+    });
+
+    // ---- 33. LET multiple clauses ----
+    it('multiple LET clauses accumulate into map', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) LET a = 1 LET b = 2');
+        expect(p.let).toEqual({ a: '1', b: '2' });
+    });
+
+    // ---- 34. TABLE() empty args ----
+    it('TABLE() with no args is parsed as mainConfig', () => {
+        const p = parsePlotCall('TABLE()');
+        expect(p.mainConfig).toBe('TABLE()');
+        expect(p.title).toBeUndefined();
+    });
+
+    // ---- 35. Mixed ordering: TITLE before LINK_X ----
+    it('TITLE before LINK_X parsed correctly', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) TITLE "A" LINK_X($a, $b)');
+        expect(p.title).toBe('A');
+        expect(p.linkX).toEqual(['$a', '$b']);
+    });
+
+    // ---- 36. Mixed ordering: AXIS_Y after ZOOM ----
+    it('AXIS_Y after ZOOM is parsed correctly', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) ZOOM AXIS_Y DOMAIN [0, 50]');
+        expect(p.zoom).toBe(1);
+        expect(p.axisY?.domain).toEqual([0, 50]);
+    });
+
+    // ---- 37. Mixed ordering: LEGEND before PALETTE ----
+    it('LEGEND before PALETTE parsed correctly', () => {
+        const p = parsePlotCall('BAR_CHART(x: "h", y: ["c"]) LEGEND AT TOP PALETTE "set2"');
+        expect(p.legend).toBe('top');
+        expect(p.palette).toBe('set2');
+    });
+
+    // ---- 38. gc-analysis regression (unchanged) ----
+    it('gc-analysis regression — AXIS_Y DOMAIN+LABEL after LINK_X and ZOOM', () => {
+        const input = 'LINE_CHART(x: "Time", y: ["GC Overhead %"]) TITLE "GC Overhead %" LINK_X($start, $end) ZOOM AXIS_Y DOMAIN [0, 100] LABEL "%"';
+        const result = parsePlotCall(input);
+        expect(result.mainConfig).toBe('LINE_CHART(x: "Time", y: ["GC Overhead %"])');
+        expect(result.title).toBe('GC Overhead %');
+        expect(result.linkX).toEqual(['$start', '$end']);
+        expect(result.zoom).toBe(1);
+        expect(result.axisY).toEqual({ domain: [0, 100], label: '%' });
+    });
+
+    // ---- 39. ZOOM $scale combined with HEIGHT $h and WIDTH $w ----
+    it('ZOOM / HEIGHT / WIDTH all accept $variable args', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) ZOOM $zf HEIGHT $h WIDTH $w');
+        expect(p.zoom).toBe('$zf');
+        expect(p.height).toBe('$h');
+        expect(p.width).toBe('$w');
+    });
+
+    // ---- 40. AXIS_Y multiple sub-clauses in single clause ----
+    it('AXIS_Y with DOMAIN, LABEL, TYPE in one clause', () => {
+        const p = parsePlotCall('LINE_CHART(x: "t", y: ["v"]) AXIS_Y DOMAIN [0, 100] LABEL "CPU %" TYPE LINEAR');
+        expect(p.axisY?.domain).toEqual([0, 100]);
+        expect(p.axisY?.label).toBe('CPU %');
+        expect(p.axisY?.type).toBe('linear');
+    });
+});
