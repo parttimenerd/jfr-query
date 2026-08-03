@@ -4,9 +4,10 @@ import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
-import { buildParserSpec, findColumn, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds, getPaletteColors } from '../../utils/plotUtils';
+import { buildParserSpec, findColumn, isDurationColumnName, formatDurationNs, sampleLooksLikeNanoseconds, getPaletteColors, getTimeValue } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
+import { formatTimestamp } from '../../utils/timeFormatter';
 import { PlotTooltip } from './PlotTooltip';
 
 interface ScatterPlotConfig {
@@ -41,32 +42,49 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
   const xLabelFromClause = clauses?.axisX?.label;
   const yLabelFromClause = clauses?.axisY?.label;
 
+  // Detect whether the X column contains timestamp values.
+  const allCols = data.length > 0 ? Object.keys(data[0]) : [];
+  let resolvedXCol: string;
+  try { resolvedXCol = findColumn(config.x, allCols); } catch { resolvedXCol = config.x; }
+  const firstXVal = data.find(d => d[resolvedXCol] != null)?.[resolvedXCol];
+  const isTimeX = !isNaN(getTimeValue(firstXVal));
+
+  const transformedData = React.useMemo(() =>
+    isTimeX
+      ? data.map(row => { const r = {...row}; r[resolvedXCol] = getTimeValue(r[resolvedXCol]); return r; })
+      : data,
+  [data, isTimeX, resolvedXCol]);
+
   const series = React.useMemo(() => {
     const groupCol = config.color;
     if (!groupCol) {
-      return [{ name: config.y, data }];
+      return [{ name: config.y, data: transformedData }];
     }
-    const groups = data.reduce((acc, row) => {
+    const groups = transformedData.reduce((acc, row) => {
       const category = row[groupCol];
       if (!acc[category]) acc[category] = [];
       acc[category].push(row);
       return acc;
     }, {} as Record<string, any[]>);
     return Object.keys(groups).map(name => ({ name, data: groups[name] }));
-  }, [data, config.color, config.y]);
-  
-    const sizeDomain = React.useMemo(() => {
-    if (!config.size || data.length === 0) return [10, 100];
-    const allCols = Object.keys(data[0]);
+  }, [transformedData, config.color, config.y]);
+
+  const sizeDomain = React.useMemo(() => {
+    if (!config.size || transformedData.length === 0) return [10, 100];
+    const sizeCols = Object.keys(transformedData[0]);
     let resolvedSizeCol: string;
-    try { resolvedSizeCol = findColumn(config.size, allCols); } catch { resolvedSizeCol = config.size; }
-    const values = data.map(d => d[resolvedSizeCol]).filter(v => typeof v === 'number' && !isNaN(v));
+    try { resolvedSizeCol = findColumn(config.size, sizeCols); } catch { resolvedSizeCol = config.size; }
+    const values = transformedData.map(d => d[resolvedSizeCol]).filter(v => typeof v === 'number' && !isNaN(v));
     if(values.length === 0) return [10, 100];
     let min = values[0], max = values[0];
     for (let i = 1; i < values.length; i++) { if (values[i] < min) min = values[i]; if (values[i] > max) max = values[i]; }
     if (min === max) { const half = Math.abs(min) || 1; return [min - half, max + half]; }
     return [min, max];
-  }, [data, config.size]);
+  }, [transformedData, config.size]);
+
+  const xTickFormatter = makeTickFormatter(clauses?.axisX) ?? (isTimeX ? (l: any) => formatTimestamp(l, settings.timeFormat) : numberFormatter);
+  const xDomain = xDomainFromClause || domainX || (isTimeX ? ['dataMin', 'dataMax'] : undefined);
+  const xLabelFormatter = isTimeX ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined;
 
   if (!data || data.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">No data.</div>;
 
@@ -75,10 +93,10 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
       <ResponsiveContainer width="100%" minHeight={200}>
         <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
-          <XAxis allowDataOverflow type="number" dataKey={config.x} name={config.x} tickFormatter={makeTickFormatter(clauses?.axisX) ?? numberFormatter} scale={mapAxisScale(clauses?.axisX)} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={xDomainFromClause || domainX} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined} />
+          <XAxis allowDataOverflow type="number" dataKey={config.x} name={config.x} tickFormatter={xTickFormatter} scale={mapAxisScale(clauses?.axisX)} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={xDomain} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined} />
           <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={makeTickFormatter(clauses?.axisY) ?? yFormatter} scale={mapAxisScale(clauses?.axisY)} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={yDomainFromClause || domainY} allowDataOverflow label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined} />
           {config.size && <ZAxis type="number" dataKey={config.size} name={config.size} range={[10, 200]} domain={sizeDomain} />}
-          <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} formatter={(value: any, name: string) => [(name === config.y ? yFormatter : numberFormatter)(value), name]} content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />) : undefined}/>
+          <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} formatter={(value: any, name: string) => [(name === config.y ? yFormatter : numberFormatter)(value), name]} labelFormatter={xLabelFormatter} content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} labelFormatter={xLabelFormatter} />) : undefined}/>
           {showLegend && <Legend wrapperStyle={{ fontSize: "12px" }} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'} />}
           {series.map((s, i) => (
             <Scatter key={s.name} name={s.name} data={s.data} fill={colors[i % colors.length]} isAnimationActive={isAnimationActive} animationDuration={animationDuration} />

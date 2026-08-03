@@ -23,7 +23,7 @@ import { aiService } from './services/AiService';
 import type { NotebookCellData, NotebookMetadata } from './types';
 import { initialNotebook } from './data/mockData';
 import { gcAnalysisNotebook } from './data/gcNotebookTemplate';
-import { parseNotebook, reconstructNotebook, tokenizeCellContent, reconstructCellContent, parseCellContent, parseCellDirective } from './utils/notebookParser';
+import { parseNotebook, reconstructNotebook, tokenizeCellContent, reconstructCellContent, parseCellContent, parseCellDirective, requiresAttrToConditionSql } from './utils/notebookParser';
 import { formatPlotCode } from './utils/plotFormatter';
 import { formatSql } from './utils/sqlFormatter';
 import { substituteVariables, findRemainingVariables, toSqlVariables } from './utils/variableSubstitution';
@@ -1126,6 +1126,19 @@ const App: React.FC = () => {
         setIsRunningAll(true);
         try {
             for (const cell of cellsRef.current) {
+                const directive = parseCellDirective(cell.content);
+                const reqAttr = directive?.rest?.requires;
+                if (reqAttr) {
+                    try {
+                        const condSql = requiresAttrToConditionSql(reqAttr);
+                        const rows = await query(condSql);
+                        const val = rows?.[0] ? Object.values(rows[0])[0] : false;
+                        if (!val) continue;
+                    } catch {
+                        // If check fails, skip cell to avoid spurious errors
+                        continue;
+                    }
+                }
                 const parsed = parseCellContent(tokenizeCellContent(cell.content));
                 const allVariables = { ...metadataRef.current.variables, ...parsed.variables };
                 for (let i = 0; i < parsed.sqlBlocks.length; i++) {
@@ -1136,7 +1149,7 @@ const App: React.FC = () => {
             isRunningAllRef.current = false;
             setIsRunningAll(false);
         }
-    }, [runQuery]);
+    }, [runQuery, query]);
     handleRunAllRef.current = handleRunAll;
 
     const handleClearResults = useCallback(() => {
