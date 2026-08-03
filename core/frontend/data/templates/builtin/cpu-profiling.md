@@ -5,6 +5,10 @@ tags: [cpu, profiling, performance]
 license: MIT
 variables:
   $limit: "25"
+cellConditions:
+  cpu-load: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'CPULoad'"
+  hot-methods: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ExecutionSample'"
+  flamegraph: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ExecutionSample'"
 ---
 
 <!-- @cell name=intro -->

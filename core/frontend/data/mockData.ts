@@ -15,7 +15,7 @@ Welcome! This notebook lets you query a loaded JFR recording (or any DuckDB data
 
 ## Step 1 — Your first query
 
-Click **▶** below to run this query. It returns the 10 longest GC pauses. The result appears in the table.
+This query returns the 10 longest GC pauses — results appear in the table below automatically.
 
 \`\`\`sql
 SELECT

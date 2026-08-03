@@ -7,6 +7,8 @@ priority: 99
 variables:
   $limit: "20"
   $min_pause_ms: "5"
+cellConditions:
+  allocation-hotspots: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ObjectAllocationSample'"
 ---
 
 <!-- @cell name=intro -->

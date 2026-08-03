@@ -5,6 +5,9 @@ tags: [memory, leaks, heap]
 license: MIT
 variables:
   $limit: "20"
+cellConditions:
+  leaks-by-class: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'OldObjectSample'"
+  leaks-by-site: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'OldObjectSample'"
 ---
 
 <!-- @cell name=intro -->

@@ -5,6 +5,8 @@ tags: [threads, contention, virtual-threads]
 license: MIT
 variables:
   $limit: "20"
+cellConditions:
+  pinned-threads: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'VirtualThreadPinned'"
 ---
 
 <!-- @cell name=intro -->

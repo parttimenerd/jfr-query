@@ -5,6 +5,9 @@ tags: [jvm, safepoints, jit, compilation]
 license: MIT
 variables:
   $limit: "20"
+cellConditions:
+  safepoints: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'SafepointEnd'"
+  compiler-phases: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'CompilerPhase'"
 ---
 
 <!-- @cell name=intro -->

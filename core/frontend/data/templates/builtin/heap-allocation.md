@@ -5,6 +5,9 @@ tags: [heap, allocation]
 license: MIT
 variables:
   $limit: "15"
+cellConditions:
+  top-classes: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ObjectAllocationSample'"
+  allocation-rate: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ObjectAllocationSample'"
 ---
 
 <!-- @cell name=intro -->
@@ -66,5 +69,5 @@ ORDER BY 1
 ```
 
 ```plot
-LINE_CHART(x: "Bucket", y: ["Sample MB/s"]) TITLE "Allocation Rate (MB/s)"
+LINE_CHART(x: "Bucket", y: ["Sample MB/s"]) TITLE "Allocation Rate (MB/s)" LINK_X($start, $end) ZOOM
 ```
