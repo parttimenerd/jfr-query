@@ -1,4 +1,5 @@
 import type { PlotParameter } from '../components/plots/plotTypes';
+import { looksLikeStartName, looksLikeEndName, looksLikeRangeBound } from '../services/ml/classifyColumns';
 
 // Named color palettes for the PALETTE clause.
 const PALETTES: Record<string, string[]> = {
@@ -7,6 +8,8 @@ const PALETTES: Record<string, string[]> = {
     pastel1:    ['#fbb4ae','#b3cde3','#ccebc5','#decbe4','#fed9a6','#ffffcc','#e5d8bd','#fddaec','#f2f2f2'],
     dark2:      ['#1b9e77','#d95f02','#7570b3','#e7298a','#66a61e','#e6ab02','#a6761d','#666666'],
     set2:       ['#66c2a5','#fc8d62','#8da0cb','#e78ac3','#a6d854','#ffd92f','#e5c494','#b3b3b3'],
+    spectral:   ['#d53e4f','#f46d43','#fdae61','#fee08b','#e6f598','#abdda4','#66c2a5','#3288bd'],
+    rdylgn:     ['#d73027','#f46d43','#fdae61','#fee090','#d9ef8b','#a6d96a','#66bd63','#1a9850'],
 };
 
 /**
@@ -232,6 +235,8 @@ export function sampleLooksLikeNanoseconds(data: any[], cols: string[]): boolean
 export const buildSmartTemplate = (plotName: string, columns: string[], sampleRow: Record<string, any> | null): string | null => {
     if (columns.length === 0) return null;
 
+    const STACKED_NAMES_RE = /pct|percent|share|portion|fraction|alloc|heap|eden|survivor|metaspace|reserved|committed|used|free|available/i;
+
     // Classify each column as numeric, time-like, or categorical
     const isNumeric = (col: string) => {
         if (!sampleRow) return false;
@@ -305,6 +310,38 @@ export const buildSmartTemplate = (plotName: string, columns: string[], sampleRo
             const valCol = numericCols[0] ?? columns.find(c => c !== nameCol);
             if (!valCol) return 'FLAMEGRAPH(frames: , value: )';
             return `FLAMEGRAPH(frames: ${q(nameCol)}, value: ${q(valCol)})`;
+        }
+        case 'AREA_CHART': {
+            const xCol = timeCols[0] ?? columns[0];
+            const yCols = numericCols.length > 0 ? numericCols.slice(0, 4) : columns.filter(c => c !== xCol).slice(0, 2);
+            if (yCols.length === 0) return 'AREA_CHART(x: , y: [])';
+            const stacked = yCols.length >= 2 && yCols.every(c => STACKED_NAMES_RE.test(c));
+            const layoutPart = stacked ? ', layout: "stacked"' : '';
+            return `AREA_CHART(x: ${q(xCol)}, y: [${ql(yCols)}]${layoutPart})`;
+        }
+        case 'GANTT': {
+            const startCol = columns.find(c => looksLikeStartName(c));
+            const endCol   = columns.find(c => looksLikeEndName(c));
+            const laneCol  = categoryCols[0] ?? columns.find(c => c !== startCol && c !== endCol);
+            if (!startCol || !endCol || !laneCol) return 'GANTT(start: , end: , lane: )';
+            const taskCol  = categoryCols[1];
+            const taskPart = taskCol ? `, task: ${q(taskCol)}` : '';
+            return `GANTT(start: ${q(startCol)}, end: ${q(endCol)}, lane: ${q(laneCol)}${taskPart})`;
+        }
+        case 'RANGE': {
+            const xCol = timeCols[0] ?? categoryCols[0] ?? columns[0];
+            const lowCol  = numericCols.find(c => looksLikeRangeBound(c) === 'low');
+            const highCol = numericCols.find(c => looksLikeRangeBound(c) === 'high');
+            if (!lowCol || !highCol) return 'RANGE(x: , low: , high: )';
+            const centerCol = numericCols.find(c => c !== lowCol && c !== highCol && looksLikeRangeBound(c) === null);
+            const centerPart = centerCol ? `, center: ${q(centerCol)}` : '';
+            return `RANGE(x: ${q(xCol)}, low: ${q(lowCol)}, high: ${q(highCol)}${centerPart})`;
+        }
+        case 'VIOLIN_PLOT': {
+            const valCol = numericCols[0] ?? columns[0];
+            const catCol = categoryCols[0];
+            const catPart = catCol ? `, category: ${q(catCol)}` : '';
+            return `VIOLIN_PLOT(value: ${q(valCol)}${catPart})`;
         }
         default:
             return null;
