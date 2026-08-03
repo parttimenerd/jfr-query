@@ -1,0 +1,209 @@
+// Ohm.js PEG grammar for the Plot DSL outer syntax.
+//
+// The grammar recognises an input of the form:
+//   <mainConfig> <Clause>*
+//
+// where <mainConfig> is any text up to (but not including) the first
+// space-separated clause keyword, and each <Clause> is one of the
+// recognised plot-modifier clauses.
+//
+// IMPORTANT: all Clause rules are SYNTACTIC (uppercase) so that Ohm
+// automatically skips whitespace between clause tokens.
+// The mainContent / mainConfigChar rules are LEXICAL (lowercase) so that
+// spaces inside the main function call are preserved exactly.
+
+PlotDSL {
+  // Top-level: captured mainConfig followed by zero or more clauses.
+  PlotCall = MainContent Clause* end
+
+  // ---------------------------------------------------------------------------
+  // Main configuration (everything before the first clause keyword)
+  // ---------------------------------------------------------------------------
+
+  MainContent = mainConfigChar+
+
+  // A mainConfigChar is either a quoted string literal (consumed atomically so
+  // that clause keywords inside quotes are ignored) or any single character
+  // that is NOT the start of a "space + clauseKeyword + non-identChar" boundary.
+  mainConfigChar = inString | ~clauseBoundary any
+
+  // A quoted string (single or double), consumed atomically.
+  inString = "\"" (~"\"" any)* "\"" | "'" (~"'" any)* "'"
+
+  // The boundary that stops mainConfig: one or more spaces followed by a
+  // clause keyword that is not part of a longer identifier.
+  clauseBoundary = spaces clauseKeyword ~identChar
+
+  // Exhaustive list of clause keywords (case-insensitive).
+  // IMPORTANT: In PEG alternation is ordered and does NOT backtrack once an
+  // alternative succeeds. Therefore longer alternatives MUST be listed before
+  // shorter ones that share a common prefix, e.g. LINK-SCROLL before LINK-XY
+  // before LINK-X so that "LINK-XY" is not consumed as "LINK-X".
+  clauseKeyword
+    = caseInsensitive<"TITLE">
+    | caseInsensitive<"ZOOM_X">
+    | caseInsensitive<"ZOOM">
+    | caseInsensitive<"WIDTH">
+    | caseInsensitive<"HEIGHT">
+    | caseInsensitive<"ON">
+    | caseInsensitive<"LEGEND">
+    | caseInsensitive<"PALETTE">
+    | caseInsensitive<"LINK_SCROLL">
+    | caseInsensitive<"LINK-SCROLL">
+    | caseInsensitive<"LINK_XY">
+    | caseInsensitive<"LINK-XY">
+    | caseInsensitive<"LINK_X">
+    | caseInsensitive<"LINK-X">
+    | caseInsensitive<"LINK_Y">
+    | caseInsensitive<"LINK-Y">
+    | caseInsensitive<"TOOLTIP">
+    | caseInsensitive<"BRUSH">
+    | caseInsensitive<"NAME">
+    | caseInsensitive<"DATASET">
+    | caseInsensitive<"AXIS_X">
+    | caseInsensitive<"AXIS_Y">
+    | caseInsensitive<"AXIS-X">
+    | caseInsensitive<"AXIS-Y">
+    | caseInsensitive<"LET">
+
+  // Characters that may appear in an identifier (used for word-boundary checks).
+  identChar = alnum | "_" | "-" | "."
+
+  // ---------------------------------------------------------------------------
+  // Clauses (syntactic rules — spaces skipped automatically between terms)
+  // ---------------------------------------------------------------------------
+
+  // OnHoverTooltipClause must be listed BEFORE OnClause (more-specific first).
+  // BrushTwoVarClause must be listed BEFORE BrushClause (more-specific first).
+  // LinkScrollClause before LinkXYClause before LinkXClause / LinkYClause: longer prefix first.
+  // ZoomXClause before ZoomClause: ZOOM_X is longer than ZOOM.
+  Clause
+    = OnHoverTooltipClause
+    | OnClause
+    | TitleClause
+    | ZoomXClause
+    | ZoomClause
+    | LinkScrollClause
+    | LinkXYClause
+    | LinkXClause
+    | LinkYClause
+    | AxisYClause
+    | AxisXClause
+    | WidthClause
+    | HeightClause
+    | LegendClause
+    | PaletteClause
+    | TooltipColumnsClause
+    | BrushTwoVarClause
+    | BrushClause
+    | NameClause
+    | DatasetClause
+    | LetClause
+
+  // TITLE "..."
+  TitleClause = caseInsensitive<"TITLE"> stringLit
+
+  // ZOOM [factor] — bare ZOOM with no number sets zoom = 1.
+  ZoomClause
+    = caseInsensitive<"ZOOM"> number -- withFactor
+    | caseInsensitive<"ZOOM">        -- bare
+
+  // ZOOM_X <factor>
+  ZoomXClause = caseInsensitive<"ZOOM_X"> number
+
+  // WIDTH / HEIGHT <dim>
+  WidthClause  = caseInsensitive<"WIDTH">  dimValue
+  HeightClause = caseInsensitive<"HEIGHT"> dimValue
+  dimValue = digit+ ("px" | "%")?
+
+  // ON HOVER TOOLTIP "..." (must be tried before bare ON)
+  OnHoverTooltipClause
+    = caseInsensitive<"ON"> caseInsensitive<"HOVER"> caseInsensitive<"TOOLTIP"> stringLit
+
+  // ON <ref>, <ref>, ...
+  OnClause = caseInsensitive<"ON"> NonemptyListOf<onRef, ",">
+  onRef    = hashRef | varRef | bareIdent
+  hashRef  = "#" digit+
+  bareIdent = (alnum | "_")+
+
+  // LEGEND HIDDEN  |  LEGEND AT <position>
+  LegendClause
+    = caseInsensitive<"LEGEND"> caseInsensitive<"HIDDEN"> -- hidden
+    | caseInsensitive<"LEGEND"> caseInsensitive<"AT"> legendPos -- at
+  legendPos
+    = caseInsensitive<"RIGHT">
+    | caseInsensitive<"LEFT">
+    | caseInsensitive<"TOP">
+    | caseInsensitive<"BOTTOM">
+    | caseInsensitive<"NONE">
+
+  // PALETTE "name"
+  PaletteClause = caseInsensitive<"PALETTE"> stringLit
+
+  // LINK_X($var1, $var2 [, master] [, clamp])
+  LinkXClause = linkXKw "(" NonemptyListOf<LinkXArg, ","> ")"
+  linkXKw = caseInsensitive<"LINK_X"> | caseInsensitive<"LINK-X">
+  LinkXArg = varRef | ident
+
+  // LINK_Y / LINK-Y  $var  or  "$var"
+  LinkYClause = linkYKw (stringLit | varRef)
+  linkYKw = caseInsensitive<"LINK_Y"> | caseInsensitive<"LINK-Y">
+
+  // LINK_XY / LINK-XY  $var  or  "$var"
+  LinkXYClause = linkXYKw (stringLit | varRef)
+  linkXYKw = caseInsensitive<"LINK_XY"> | caseInsensitive<"LINK-XY">
+
+  // LINK_SCROLL / LINK-SCROLL  groupName  or  "group name"
+  LinkScrollClause = linkScrollKw (stringLit | ident)
+  linkScrollKw = caseInsensitive<"LINK_SCROLL"> | caseInsensitive<"LINK-SCROLL">
+
+  // TOOLTIP COLUMNS ["col1", "col2", ...]
+  TooltipColumnsClause
+    = caseInsensitive<"TOOLTIP"> caseInsensitive<"COLUMNS"> "[" NonemptyListOf<stringLit, ","> "]"
+
+  // BRUSH $var1 $var2  (two-var CROSSTAB form — tried first)
+  BrushTwoVarClause = caseInsensitive<"BRUSH"> varRef varRef
+
+  // BRUSH "$var"  MODE  X|Y|XY  (single-var form)
+  BrushClause = caseInsensitive<"BRUSH"> (stringLit | varRef) caseInsensitive<"MODE"> brushMode
+  brushMode = caseInsensitive<"XY"> | caseInsensitive<"X"> | caseInsensitive<"Y">
+
+  // NAME "cellAlias"
+  NameClause = caseInsensitive<"NAME"> stringLit
+
+  // DATASET <identifier>
+  DatasetClause = caseInsensitive<"DATASET"> ident
+
+  // AXIS_Y / AXIS-Y  <sub-clauses>+
+  AxisYClause = axisYKw AxisSubClause+
+  AxisXClause = axisXKw AxisSubClause+
+  axisYKw = caseInsensitive<"AXIS_Y"> | caseInsensitive<"AXIS-Y">
+  axisXKw = caseInsensitive<"AXIS_X"> | caseInsensitive<"AXIS-X">
+
+  AxisSubClause = DomainSub | LabelSub | TypeSub | FormatSub
+  DomainSub  = caseInsensitive<"DOMAIN"> "[" domainVal "," domainVal "]"
+  domainVal  = stringLit | number
+  LabelSub   = caseInsensitive<"LABEL">  stringLit
+  TypeSub    = caseInsensitive<"TYPE">   axisType
+  FormatSub  = caseInsensitive<"FORMAT"> stringLit
+  axisType
+    = caseInsensitive<"LINEAR">
+    | caseInsensitive<"LOG">
+    | caseInsensitive<"TIME">
+    | caseInsensitive<"BAND">
+
+  // LET varName = value  (value runs to end or to the next LET keyword)
+  LetClause = caseInsensitive<"LET"> ident "=" letValue
+  letValue = letValueChar+
+  // Stop before the next "LET <ident> =" sequence.
+  letValueChar = ~(spaces caseInsensitive<"LET"> space+ ident space+ "=") any
+
+  // ---------------------------------------------------------------------------
+  // Terminals
+  // ---------------------------------------------------------------------------
+
+  varRef    = "$" ident
+  stringLit = "\"" (~"\"" any)* "\"" | "'" (~"'" any)* "'"
+  number    = "-"? digit+ ("." digit+)?
+  ident     = (letter | "_") (alnum | "_" | "-" | ".")*
+}
