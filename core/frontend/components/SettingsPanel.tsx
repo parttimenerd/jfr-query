@@ -1,7 +1,7 @@
 
-import React, { useState, useRef, useContext, forwardRef, useImperativeHandle, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useContext, forwardRef, useImperativeHandle, useEffect, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
-import type { CustomView, CustomMacro, NotebookMetadata } from '../types';
+import type { CustomView, CustomMacro, NotebookMetadata, NotebookCellData } from '../types';
 import SQLEditor from './SQLEditor';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { ChevronUpIcon } from './icons/ChevronUpIcon';
@@ -13,6 +13,7 @@ import { TrashIcon } from './icons/TrashIcon';
 import { SettingsContext } from '../context/SettingsContext';
 import { DocumentTextIcon } from './icons/DocumentTextIcon';
 import { WandSparklesIcon } from './icons/WandSparklesIcon';
+import { scrollToCell } from './chat/scrollToCell';
 
 const SURPRISE_PROMPTS = [
     "You are a grizzled pirate captain who's found a treasure map in this data. Your responses should be enthusiastic and full of pirate slang.",
@@ -45,15 +46,17 @@ interface SettingsPanelProps {
     onMetadataChange: (newMetadata: NotebookMetadata) => Promise<void>;
     onRunPreviewQuery: (query: string) => Promise<any[]>;
     isAiFeatureActive: boolean;
+    cells?: NotebookCellData[];
 }
 
-const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadataChange, isAiFeatureActive }, ref) => {
+const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadataChange, isAiFeatureActive, cells = [] }, ref) => {
     const { settings: globalSettings } = useContext(SettingsContext);
     const [isPanelCollapsed, setIsPanelCollapsed] = useState(true);
     const [isGeneralCollapsed, setIsGeneralCollapsed] = useState(true);
     const [isVariablesCollapsed, setIsVariablesCollapsed] = useState(true);
     const [isViewsCollapsed, setIsViewsCollapsed] = useState(true);
     const [isMacrosCollapsed, setIsMacrosCollapsed] = useState(true);
+    const [isTocCollapsed, setIsTocCollapsed] = useState(true);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editingName, setEditingName] = useState('');
     const [editingSql, setEditingSql] = useState('');
@@ -180,6 +183,13 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
         setSuggestionIndex(newIndex);
     };
 
+    const tocEntries = useMemo(() => {
+        return cells.flatMap(cell => {
+            const m = (cell.content ?? '').match(/^(#{1,3})\s+(.+)/m);
+            return m ? [{ cellId: cell.id, title: m[2].trim(), level: m[1].length }] : [];
+        });
+    }, [cells]);
+
     const renderEditableItem = (type: 'view' | 'macro', item: CustomView | CustomMacro) => { if (editingId === item.id) { return (<div className="p-2 bg-gray-700/50 rounded-md space-y-2"><input type="text" value={editingName} onChange={e=>setEditingName(e.target.value)} aria-label={`${type === 'view' ? 'View' : 'Macro'} name`} className="w-full bg-gray-800 p-1.5 text-sm"/><div className="border border-gray-600 rounded-md"><SQLEditor value={editingSql} onChange={setEditingSql} variables={metadata.variables} metadata={metadata} /></div><div className="flex justify-end gap-2"><button onClick={handleCancel} className="px-2 py-1 text-xs bg-gray-600 rounded">Cancel</button><button onClick={()=>handleSave(type)} className="px-2 py-1 text-xs bg-cyan-600 rounded">Save</button></div></div>); } return (<div className="flex justify-between items-center p-2 hover:bg-gray-700/50 rounded-md" onMouseEnter={e=>handleShowTooltip(e,<TooltipContent item={item} type={type}/>)} onMouseLeave={handleHideTooltip}><span className="font-mono text-sm">{item.name}</span><div className="flex items-center gap-2"><button onClick={()=>handleEdit(type,item)} title={`Edit ${type}`} aria-label={`Edit ${type} ${item.name}`} className="p-1 text-gray-400 hover:text-cyan-400"><PencilIcon className="w-4 h-4"/></button><button onClick={()=>handleDelete(type,item.id)} title={`Delete ${type}`} aria-label={`Delete ${type} ${item.name}`} className="p-1 text-gray-400 hover:text-red-400"><TrashIcon className="w-4 h-4"/></button></div></div>); };
     const hasContent = Object.keys(globalVars).length > 0 || metadata.views.length > 0 || metadata.macros.length > 0;
 
@@ -235,6 +245,33 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
 
             <div><div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={()=>setIsViewsCollapsed(!isViewsCollapsed)} role="button" tabIndex={0} aria-expanded={!isViewsCollapsed} onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();setIsViewsCollapsed(!isViewsCollapsed);}}}><h3 className="flex items-center gap-2 text-sm font-medium text-gray-400"><ViewIcon className="w-3.5 h-3.5"/>Views ({metadata.views.length})</h3>{isViewsCollapsed?<ChevronDownIcon className="w-3.5 h-3.5 text-gray-500"/>:<ChevronUpIcon className="w-3.5 h-3.5 text-gray-500"/>}</div>{!isViewsCollapsed && <div className="animate-fade-in-down">{metadata.views.map(v=><div key={v.id}>{renderEditableItem('view',v)}</div>)}<div className="px-3 py-2"><button onClick={()=>handleAdd('view')} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700 rounded-md"><PlusIcon className="w-3 h-3"/> Add</button></div></div>}</div>
             <div><div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={()=>setIsMacrosCollapsed(!isMacrosCollapsed)} role="button" tabIndex={0} aria-expanded={!isMacrosCollapsed} onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();setIsMacrosCollapsed(!isMacrosCollapsed);}}}><h3 className="flex items-center gap-2 text-sm font-medium text-gray-400"><CodeBracketIcon className="w-3.5 h-3.5"/>Custom Macros ({metadata.macros.length})</h3>{isMacrosCollapsed?<ChevronDownIcon className="w-3.5 h-3.5 text-gray-500"/>:<ChevronUpIcon className="w-3.5 h-3.5 text-gray-500"/>}</div>{!isMacrosCollapsed && <div className="animate-fade-in-down">{metadata.macros.map(m=><div key={m.id}>{renderEditableItem('macro',m)}</div>)}<div className="px-3 py-2"><button onClick={()=>handleAdd('macro')} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700 rounded-md"><PlusIcon className="w-3 h-3"/> Add</button></div></div>}</div>
+
+            {tocEntries.length > 0 && (
+                <div>
+                    <div className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-700/20" onClick={() => setIsTocCollapsed(!isTocCollapsed)} role="button" tabIndex={0} aria-expanded={!isTocCollapsed} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsTocCollapsed(!isTocCollapsed); } }}>
+                        <h3 className="flex items-center gap-2 text-sm font-medium text-gray-400">
+                            <DocumentTextIcon className="w-3.5 h-3.5"/>
+                            Contents ({tocEntries.length})
+                        </h3>
+                        {isTocCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5 text-gray-500"/> : <ChevronUpIcon className="w-3.5 h-3.5 text-gray-500"/>}
+                    </div>
+                    {!isTocCollapsed && (
+                        <div className="pb-2 animate-fade-in-down">
+                            {tocEntries.map(e => (
+                                <button
+                                    key={e.cellId}
+                                    onClick={() => scrollToCell(e.cellId)}
+                                    className="w-full text-left px-3 py-1 text-xs hover:bg-gray-700/50 text-gray-300 hover:text-cyan-300 transition-colors truncate"
+                                    style={{ paddingLeft: `${(e.level - 1) * 12 + 12}px` }}
+                                    title={e.title}
+                                >
+                                    {e.title}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>}
     </div>{tooltip?.visible && ReactDOM.createPortal(<div style={{top:tooltip.top,left:tooltip.left}} className="fixed z-[100] p-2 bg-gray-700 border border-gray-600 rounded shadow-lg w-auto max-w-xs animate-fade-in" onMouseEnter={()=>{if(hideTimeout.current)clearTimeout(hideTimeout.current);}} onMouseLeave={handleHideTooltip}>{tooltip.content}</div>, document.body)}</>);
 });

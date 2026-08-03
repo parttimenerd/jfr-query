@@ -8,7 +8,6 @@ import SQLEditor from './SQLEditor';
 import { parseCellContent, parseCellDirective, requiresAttrToConditionSql, tokenizeCellContent } from '../utils/notebookParser';
 import { cellHandle } from '../utils/cellHandle';
 import { resolveCellVisibility } from '../utils/cellVisibility';
-import { NotebookTOC } from './NotebookTOC';
 
 interface NotebookProps {
     notebookMarkdown: string;
@@ -72,19 +71,6 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     // (which happens on every dbState change).
     const onRunPreviewQueryRef = useRef(onRunPreviewQuery);
     useEffect(() => { onRunPreviewQueryRef.current = onRunPreviewQuery; });
-
-    const [tocOpen, setTocOpen] = useState(false);
-
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 't') {
-                e.preventDefault();
-                setTocOpen(prev => !prev);
-            }
-        };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, []);
 
     useEffect(() => {
         // Build effective conditions: notebook-level cellConditions merged with
@@ -189,6 +175,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                             onMetadataChange={onMetadataChange}
                             onRunPreviewQuery={onRunPreviewQuery}
                             isAiFeatureActive={isAiFeatureActive}
+                            cells={cells}
                         />
                         {cells.map((cell, idx) => {
                             const name = cellHandle(cell, idx);
@@ -258,6 +245,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     onMetadataChange={onMetadataChange}
                     onRunPreviewQuery={onRunPreviewQuery}
                     isAiFeatureActive={isAiFeatureActive}
+                    cells={cells}
                 />
             )}
             {cells.map((cell, idx) => {
@@ -327,8 +315,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
             )}
             {!presenterMode && (
                 <div className="flex justify-center py-4">
-                    <div className="flex items-center gap-1 bg-gray-800/60 border border-gray-700 rounded-lg p-1">
-                        <button
+                    <div className="flex items-center gap-1 bg-gray-800/60 border border-gray-700 rounded-lg p-1">                        <button
                             onClick={() => onAddCellFromTool
                                 ? onAddCellFromTool({ type: 'sql', content: 'SELECT\n  *\nFROM\n  ' })
                                 : onAddCell()
@@ -361,22 +348,6 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                             <PlusIcon className="w-4 h-4" /> Markdown
                         </button>
                     </div>
-                </div>
-            )}
-            {/* TOC toggle button */}
-            <button
-                onClick={() => setTocOpen(prev => !prev)}
-                aria-label="Toggle table of contents"
-                title="Table of Contents (Ctrl+Shift+T)"
-                className="fixed bottom-6 right-6 z-40 p-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-300 hover:text-cyan-300 hover:border-cyan-500 shadow-lg transition-colors text-sm"
-                style={{ lineHeight: 1 }}>
-                ☰
-            </button>
-
-            {/* TOC panel */}
-            {tocOpen && (
-                <div className="fixed bottom-16 right-6 z-40">
-                    <NotebookTOC cells={cells} onClose={() => setTocOpen(false)} />
                 </div>
             )}
         </div>
