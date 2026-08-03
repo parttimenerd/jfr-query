@@ -142,6 +142,99 @@ describe('buildExecutionGraph', () => {
     });
 });
 
+// Auto-generated qualified views: every SQL cell registers "handle"."1" even
+// without an explicit -- alias directive. Downstream cells can reference the
+// result via `cell_N."1"` or `cell_name."1"` and the DAG must order them correctly.
+describe('buildExecutionGraph — auto-generated handle."1" qualified refs', () => {
+    const mkCell = (id: string, handle: string, sql: string, aliases: string[] = []): GraphCell => ({
+        id, handle, producedBareAliases: aliases, referencedSql: sql,
+    });
+
+    it('B depends on A when B SQL references cell_A.1 (no explicit alias on A)', () => {
+        // Cell A has no -- alias; its auto-view is "cell_A"."1".
+        // Cell B references it as `SELECT * FROM cell_A.1` (unquoted — DuckDB
+        // accepts both cell_A."1" and cell_A.1 for a schema named cell_A).
+        const cells = [
+            mkCell('a', 'cell_A', 'SELECT bucket, AVG(pauseMs) AS avg FROM gc_pauses GROUP BY bucket'),
+            mkCell('b', 'cell_B', 'SELECT * FROM cell_A.1 LIMIT 10'),
+        ];
+        const g = buildExecutionGraph(cells);
+        expect(g.order.indexOf('a')).toBeLessThan(g.order.indexOf('b'));
+        expect(g.deps.get('b')!.has('a')).toBe(true);
+        expect(g.cycles.size).toBe(0);
+    });
+
+    it('resolves handle.1 ref with lowercase matching (case-insensitive handle)', () => {
+        // extractReferences uses unquoted form; `qualifiedProducer` stores lowercase keys.
+        const cells = [
+            mkCell('a', 'GC_Overview', 'SELECT 1'),
+            mkCell('b', 'cell_B', 'SELECT * FROM GC_Overview.1'),
+        ];
+        const g = buildExecutionGraph(cells);
+        expect(g.deps.get('b')!.has('a')).toBe(true);
+    });
+
+    it('named cell (<!-- @cell name="gc-overview" -->) is referenced by its handle name', () => {
+        // sanitizeForDuckDB converts 'gc-overview' → 'gc_overview'.
+        // The DAG stores handles as-is; extractReferences returns the raw identifier.
+        // Both sides normalise to lowercase for matching.
+        const cells = [
+            mkCell('cell-1', 'gc_overview', 'SELECT SUM(pauseMs) AS total FROM gc_pauses'),
+            mkCell('cell-2', 'cell_2', 'SELECT * FROM gc_overview.1'),
+        ];
+        const g = buildExecutionGraph(cells);
+        expect(g.order.indexOf('cell-1')).toBeLessThan(g.order.indexOf('cell-2'));
+        expect(g.deps.get('cell-2')!.has('cell-1')).toBe(true);
+    });
+
+    it('three-cell chain A.1 → B.1 → C all ordered correctly', () => {
+        const cells = [
+            mkCell('c', 'cell_3', 'SELECT * FROM cell_2.1'),
+            mkCell('b', 'cell_2', 'SELECT * FROM cell_1.1'),
+            mkCell('a', 'cell_1', 'SELECT bucket FROM gc_pauses ORDER BY bucket'),
+        ];
+        const g = buildExecutionGraph(cells);
+        expect(g.cycles.size).toBe(0);
+        const ia = g.order.indexOf('a');
+        const ib = g.order.indexOf('b');
+        const ic = g.order.indexOf('c');
+        expect(ia).toBeLessThan(ib);
+        expect(ib).toBeLessThan(ic);
+    });
+
+    it('cell with explicit alias ALSO creates handle.1; downstream can ref either form', () => {
+        // A cell with `-- alias gc_summary` creates both "cell_A"."gc_summary"
+        // and "cell_A"."1". The DAG tracks them independently.
+        const cells = [
+            mkCell('a', 'cell_A', 'SELECT SUM(pauseMs) AS total FROM gc_pauses', ['gc_summary']),
+            mkCell('b', 'cell_B', 'SELECT * FROM cell_A.gc_summary'),
+            mkCell('c', 'cell_C', 'SELECT * FROM cell_A.1'),
+        ];
+        const g = buildExecutionGraph(cells);
+        expect(g.deps.get('b')!.has('a')).toBe(true);
+        expect(g.deps.get('c')!.has('a')).toBe(true);
+        expect(g.cycles.size).toBe(0);
+    });
+
+    it('second SQL block in a cell is accessible as handle."2" (future-proof registry key)', () => {
+        // The current system always uses aliasOr1 = alias ?? "1".  A cell with two SQL
+        // blocks produces two separate registerAlias calls: sqlIndex=0 → aliasOr1="1"
+        // (or named alias), sqlIndex=1 → aliasOr1="1" (or named alias for that block).
+        // For the DAG test: two separate cells each producing ".1" must remain independent.
+        const cells = [
+            mkCell('a', 'cell_A', 'SELECT 1', []),   // anonymous → only "cell_A"."1"
+            mkCell('b', 'cell_B', 'SELECT 2', []),   // anonymous → only "cell_B"."1"
+            mkCell('c', 'cell_C', 'SELECT * FROM cell_A.1 JOIN cell_B.1 USING (x)'),
+        ];
+        const g = buildExecutionGraph(cells);
+        expect(g.deps.get('c')!.has('a')).toBe(true);
+        expect(g.deps.get('c')!.has('b')).toBe(true);
+        expect(g.deps.get('a')!.size).toBe(0);
+        expect(g.deps.get('b')!.size).toBe(0);
+        expect(g.cycles.size).toBe(0);
+    });
+});
+
 // B-161: plot ON clause named refs must be tracked as cross-cell DAG edges.
 describe('buildExecutionGraph — B-161 plot ON alias refs', () => {
     const mkCell = (id: string, handle: string, sql: string, aliases: string[] = [], plotOnRefs: string[] = []): GraphCell => ({

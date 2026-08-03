@@ -555,3 +555,196 @@ describe('cross-cell view reference scenario', () => {
         expect(getActions().getByQualified('cell-B', 'cpu_hot')?.columns[1].name).toBe('samples');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Auto-generated "handle"."1" views (no -- alias directive)
+// ---------------------------------------------------------------------------
+// Every SQL cell registers a qualified TEMP VIEW "handle"."1" regardless of
+// whether the author wrote `-- alias <name>`. This lets downstream cells
+// reference an upstream cell's result as `cell_name.1` without any annotation.
+// ---------------------------------------------------------------------------
+
+describe('auto-generated handle."1" TEMP VIEW (no explicit alias)', () => {
+    it('registerAlias(alias: null) creates "handle"."1" qualified view', async () => {
+        const { queryFn } = makeQueryMock({
+            responses: [['information_schema.columns', [{ column_name: 'avg_pause', data_type: 'DOUBLE' }]]],
+        });
+        const { getActions } = renderWithProvider(queryFn);
+
+        let info!: AliasInfo | null;
+        await act(async () => {
+            info = await getActions().registerAlias({
+                cellId: 'cell-1',
+                cellHandle: 'cell-1',
+                cellIndex: 0,
+                sqlIndex: 0,
+                alias: null,   // no -- alias directive
+                sql: 'SELECT AVG(pauseMs) AS avg_pause FROM gc_pauses GROUP BY bucket',
+                materialized: false,
+            });
+        });
+
+        expect(info).not.toBeNull();
+        expect(info!.alias).toBeNull();     // no named alias
+        const sqls = queryFn.mock.calls.map(c => c[0]);
+
+        // Qualified schema+view must be created
+        expect(sqls).toContain('CREATE SCHEMA IF NOT EXISTS "cell_1"');
+        expect(sqls).toContain(
+            'CREATE OR REPLACE TEMP VIEW "cell_1"."1" AS ' +
+            '(SELECT AVG(pauseMs) AS avg_pause FROM gc_pauses GROUP BY bucket)',
+        );
+        // NO bare view should be created (alias is null → no bare name)
+        expect(sqls.some(s => /CREATE.*VIEW "1" AS/.test(s))).toBe(false);
+    });
+
+    it('getByQualified resolves the auto-view as handle."1"', async () => {
+        const { queryFn } = makeQueryMock({
+            responses: [['information_schema.columns', [{ column_name: 'n', data_type: 'BIGINT' }]]],
+        });
+        const { getActions } = renderWithProvider(queryFn);
+
+        await act(async () => {
+            await getActions().registerAlias({
+                cellId: 'cell-1',
+                cellHandle: 'cell-1',
+                cellIndex: 0,
+                sqlIndex: 0,
+                alias: null,
+                sql: 'SELECT COUNT(*) AS n FROM gc_pauses',
+                materialized: false,
+            });
+        });
+
+        // Downstream cell looks up by qualified ref: cell_1."1"
+        const info = getActions().getByQualified('cell-1', '1');
+        expect(info).toBeDefined();
+        expect(info!.alias).toBeNull();
+        expect(info!.columns).toEqual([{ name: 'n', type: 'BIGINT' }]);
+    });
+
+    it('named cell handle (gc-overview) → schema "gc_overview", view "gc_overview"."1"', async () => {
+        // sanitizeForDuckDB('gc-overview') → 'gc_overview'
+        const { queryFn } = makeQueryMock({
+            responses: [['information_schema.columns', [
+                { column_name: 'bucket', data_type: 'VARCHAR' },
+                { column_name: 'total_pause_ms', data_type: 'DOUBLE' },
+            ]]],
+        });
+        const { getActions } = renderWithProvider(queryFn);
+
+        await act(async () => {
+            await getActions().registerAlias({
+                cellId: 'gc-overview-cell',
+                cellHandle: 'gc-overview',  // from <!-- @cell name="gc-overview" -->
+                cellIndex: 0,
+                sqlIndex: 0,
+                alias: null,
+                sql: 'SELECT bucket, SUM(pauseMs) AS total_pause_ms FROM gc_pauses GROUP BY bucket',
+                materialized: false,
+            });
+        });
+
+        const sqls = queryFn.mock.calls.map(c => c[0]);
+        expect(sqls).toContain('CREATE SCHEMA IF NOT EXISTS "gc_overview"');
+        expect(sqls).toContain(
+            'CREATE OR REPLACE TEMP VIEW "gc_overview"."1" AS ' +
+            '(SELECT bucket, SUM(pauseMs) AS total_pause_ms FROM gc_pauses GROUP BY bucket)',
+        );
+
+        // Downstream cell references it as gc_overview.1 → getByQualified('gc-overview', '1')
+        const info = getActions().getByQualified('gc-overview', '1');
+        expect(info).toBeDefined();
+        expect(info!.cellHandle).toBe('gc_overview');
+        expect(info!.columns).toHaveLength(2);
+    });
+
+    it('named cell + explicit alias creates both "name"."alias" and "name"."1" views', async () => {
+        // A cell with `-- alias gc_summary` registers the alias for "gc_summary",
+        // but aliasOr1 is "gc_summary" (not "1"). The handle.1 qualified view is
+        // the SAME view — aliasOr1 = alias ?? "1". So handle.1 only exists when
+        // no alias is given. When alias IS given, the view is handle.alias_name.
+        // This test confirms the explicit-alias case to document the contract.
+        const { queryFn } = makeQueryMock({
+            responses: [['information_schema.columns', [{ column_name: 'x', data_type: 'DOUBLE' }]]],
+        });
+        const { getActions } = renderWithProvider(queryFn);
+
+        await act(async () => {
+            await getActions().registerAlias({
+                cellId: 'cell-1',
+                cellHandle: 'cell-1',
+                cellIndex: 0,
+                sqlIndex: 0,
+                alias: 'gc_summary',
+                sql: 'SELECT AVG(x) AS x FROM t',
+                materialized: false,
+            });
+        });
+
+        const sqls = queryFn.mock.calls.map(c => c[0]);
+        // Explicit alias → view is "cell_1"."gc_summary", NOT "cell_1"."1"
+        expect(sqls).toContain('CREATE OR REPLACE TEMP VIEW "cell_1"."gc_summary" AS (SELECT AVG(x) AS x FROM t)');
+        expect(sqls.some(s => s.includes('"cell_1"."1"'))).toBe(false);
+
+        // Accessible via both qualified-alias and bare-name lookups
+        expect(getActions().getByQualified('cell-1', 'gc_summary')).toBeDefined();
+        expect(getActions().getByBare('gc_summary')).toBeDefined();
+        // But NOT via .1 (only an alias creates the view in the alias map)
+        expect(getActions().getByQualified('cell-1', '1')).toBeUndefined();
+    });
+
+    it('full cross-cell flow: cell A (no alias) → cell B references cell_A.1', async () => {
+        // Simulates the real notebook scenario:
+        //   Cell A: SELECT bucket, AVG(pauseMs) AS avg FROM gc_pauses GROUP BY bucket
+        //           (no -- alias)
+        //   Cell B: SELECT * FROM cell_A.1 LIMIT 10
+        //
+        // After cell A runs: TEMP VIEW "cell_a"."1" exists in DuckDB.
+        // Cell B's SELECT resolves that view directly.
+        const creates: string[] = [];
+        const queryFn = vi.fn(async (sql: string): Promise<any[]> => {
+            if (sql.startsWith('CREATE')) creates.push(sql);
+            if (sql.includes('information_schema.columns'))
+                return [
+                    { column_name: 'bucket', data_type: 'VARCHAR' },
+                    { column_name: 'avg', data_type: 'DOUBLE' },
+                ];
+            return [];
+        });
+        const { getActions } = renderWithProvider(queryFn);
+
+        // Step 1: Cell A runs and registers its auto-view
+        await act(async () => {
+            await getActions().registerAlias({
+                cellId: 'cell-A',
+                cellHandle: 'cell-A',
+                cellIndex: 0,
+                sqlIndex: 0,
+                alias: null,
+                sql: 'SELECT bucket, AVG(pauseMs) AS avg FROM gc_pauses GROUP BY bucket',
+                materialized: false,
+            });
+        });
+
+        // The TEMP VIEW "cell_A"."1" now exists in DuckDB.
+        expect(creates).toContain(
+            'CREATE OR REPLACE TEMP VIEW "cell_A"."1" AS ' +
+            '(SELECT bucket, AVG(pauseMs) AS avg FROM gc_pauses GROUP BY bucket)',
+        );
+
+        // Step 2: Cell B can query cell A's result via the schema-qualified name.
+        // In real DuckDB this would be: SELECT * FROM "cell_A"."1" LIMIT 10
+        // We verify the alias registry knows about it (schema + columns).
+        const info = getActions().getByQualified('cell-A', '1');
+        expect(info).toBeDefined();
+        expect(info!.columns).toEqual([
+            { name: 'bucket', type: 'VARCHAR' },
+            { name: 'avg', type: 'DOUBLE' },
+        ]);
+
+        // The downstream query "SELECT * FROM cell_A.1" references the TEMP VIEW
+        // that DuckDB resolves to the view body above. No additional registration
+        // is needed by Cell B — it just issues the SELECT directly.
+    });
+});

@@ -672,3 +672,101 @@ describe('adversarial input — malformed authors / model outputs', () => {
         expect(substituteVariables(sql, {})).toBe(sql);
     });
 });
+
+// =========================================================================
+// 10. Auto-generated handle."1" views — parsing contract
+// =========================================================================
+//
+// Every SQL cell registers a TEMP VIEW keyed as "handle"."1" automatically.
+// The PARSER side of this contract: a cell without `-- alias` produces
+// queryAliases[i] = null (so CellAliasContext uses aliasOr1="1"), and the
+// SQL body does not include the alias comment.
+// The RUNTIME side is tested in cellAliasIntegration.test.tsx.
+// =========================================================================
+
+describe('auto-generated handle."1" views — parsing contract', () => {
+    it('cell without -- alias has queryAliases[0] === null', () => {
+        const cell = cellWith({
+            id: 'c1',
+            sql: [{ body: 'SELECT AVG(pauseMs) AS avg FROM gc_pauses GROUP BY bucket' }],
+        });
+        const parsed = parseCellContent(tokenizeCellContent(cell.content));
+        expect(parsed.queryAliases[0]).toBeNull();
+        // sqlBlocks[0] must be the raw SQL, with no alias comment prepended
+        expect(parsed.sqlBlocks[0].trim()).toBe('SELECT AVG(pauseMs) AS avg FROM gc_pauses GROUP BY bucket');
+    });
+
+    it('cell WITH -- alias has queryAliases[0] set and alias line stripped from SQL', () => {
+        const cell = cellWith({
+            id: 'c1',
+            sql: [{ alias: 'gc_summary', body: 'SELECT SUM(pauseMs) AS total FROM gc_pauses GROUP BY bucket' }],
+        });
+        const parsed = parseCellContent(tokenizeCellContent(cell.content));
+        expect(parsed.queryAliases[0]).toBe('gc_summary');
+        // The alias directive comment must NOT appear in the SQL sent to DuckDB
+        expect(parsed.sqlBlocks[0]).not.toContain('-- alias');
+        expect(parsed.sqlBlocks[0].trim()).toBe('SELECT SUM(pauseMs) AS total FROM gc_pauses GROUP BY bucket');
+    });
+
+    it('two SQL blocks: first aliased, second anonymous → [alias, null]', () => {
+        const cell = cellWith({
+            id: 'c1',
+            sql: [
+                { alias: 'named_query', body: 'SELECT 1 AS x FROM gc' },
+                { body: 'SELECT 2 AS y FROM cpu' },
+            ],
+        });
+        const parsed = parseCellContent(tokenizeCellContent(cell.content));
+        expect(parsed.queryAliases).toEqual(['named_query', null]);
+        // Both SQL bodies are clean
+        expect(parsed.sqlBlocks[0].trim()).toBe('SELECT 1 AS x FROM gc');
+        expect(parsed.sqlBlocks[1].trim()).toBe('SELECT 2 AS y FROM cpu');
+    });
+
+    it('materialized flag only applies to aliased blocks', () => {
+        const cell = cellWith({
+            id: 'c1',
+            sql: [
+                { alias: 'big_agg', materialized: true, body: 'SELECT SUM(x) AS s FROM t' },
+                { body: 'SELECT 1' },
+            ],
+        });
+        const parsed = parseCellContent(tokenizeCellContent(cell.content));
+        expect(parsed.queryAliases).toEqual(['big_agg', null]);
+        expect(parsed.queryAliasMaterialized).toEqual([true, false]);
+    });
+
+    it('extractReferences correctly extracts handle.1 as a qualified ref', () => {
+        // Downstream cell SQL: SELECT * FROM cell_1.1 LIMIT 5
+        // The DAG uses extractReferences on this to find the dependency.
+        const sql = 'SELECT avg, bucket FROM cell_1.1 LIMIT 5';
+        const refs = extractReferences(sql);
+        const qualRef = refs.find(r => r.kind === 'qualified');
+        expect(qualRef).toBeDefined();
+        expect((qualRef as any).handle).toBe('cell_1');
+        expect((qualRef as any).alias).toBe('1');
+    });
+
+    it('cross-cell reference to an unnamed cell is expressed as cell_N.1 in SQL', () => {
+        // Full parsing round-trip: cell A (unnamed) + cell B (references A.1)
+        const cellA = cellWith({
+            id: 'cell-a', title: 'GC Pauses',
+            sql: [{ body: 'SELECT bucket, AVG(pauseMs) AS avg FROM gc_pauses GROUP BY bucket' }],
+        });
+        const cellB = cellWith({
+            id: 'cell-b', title: 'Filtered Pauses',
+            sql: [{ body: 'SELECT * FROM cell_a.1 WHERE avg > 5' }],
+        });
+
+        // Cell A: no alias → null
+        const parsedA = parseCellContent(tokenizeCellContent(cellA.content));
+        expect(parsedA.queryAliases[0]).toBeNull();
+
+        // Cell B: SQL has a qualified ref to cell_a.1
+        const parsedB = parseCellContent(tokenizeCellContent(cellB.content));
+        const refs = extractReferences(parsedB.sqlBlocks[0]);
+        const qualRef = refs.find(r => r.kind === 'qualified' && (r as any).handle === 'cell_a');
+        expect(qualRef).toBeDefined();
+        expect((qualRef as any).alias).toBe('1');
+    });
+});
