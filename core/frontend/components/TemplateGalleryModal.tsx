@@ -16,10 +16,14 @@ interface TemplateGalleryModalProps {
     onInsert: (mergedSource: string, warnings: string[]) => void;
     /** Server vs WASM mode; affects which templates are available. */
     mode: 'server' | 'wasm' | null;
+    /** True when a JFR/DuckDB file is already loaded and queries can run. */
+    hasLoadedFile?: boolean;
+    /** Called after inserting the template to trigger run-all. */
+    onRunAll?: () => void;
 }
 
 const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
-    isOpen, onClose, currentSource, onInsert, mode,
+    isOpen, onClose, currentSource, onInsert, mode, hasLoadedFile, onRunAll,
 }) => {
     const [templates, setTemplates] = useState<TemplateMeta[]>([]);
     const [selected, setSelected] = useState<TemplateMeta | null>(null);
@@ -93,6 +97,19 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
             const { notebookSource, warnings } = mergeTemplate(currentSource, body, insertMode);
             onInsert(notebookSource, warnings);
             onClose();
+        } catch (e) {
+            setError(`Merge failed: ${String(e)}`);
+        }
+    };
+
+    const handleRunWithFile = () => {
+        if (!selected || !body) return;
+        try {
+            const { notebookSource, warnings } = mergeTemplate(currentSource, body, 'replace');
+            onInsert(notebookSource, warnings);
+            onClose();
+            // Defer run-all until after the notebook has re-rendered with the new cells.
+            setTimeout(() => onRunAll?.(), 300);
         } catch (e) {
             setError(`Merge failed: ${String(e)}`);
         }
@@ -212,6 +229,14 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
                     </fieldset>
                     <div className="flex items-center gap-2">
                         <button onClick={onClose} className="px-4 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600 text-gray-200">Cancel</button>
+                        {hasLoadedFile && onRunAll && (
+                            <button onClick={handleRunWithFile}
+                                disabled={!selected || !body}
+                                title="Replace notebook with this template and run all queries against the loaded file"
+                                className="px-4 py-1.5 rounded text-sm bg-green-700 hover:bg-green-600 disabled:bg-gray-700 disabled:text-gray-500 text-white">
+                                Run with current file
+                            </button>
+                        )}
                         <button onClick={handleInsert}
                             disabled={!selected || !body}
                             className="px-4 py-1.5 rounded text-sm bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:text-gray-500 text-white">

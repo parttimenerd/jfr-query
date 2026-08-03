@@ -1406,6 +1406,8 @@ const App: React.FC = () => {
                 currentSource={notebookMarkdown}
                 mode={mode}
                 onInsert={handleTemplateInsert}
+                hasLoadedFile={dbState === DBState.READY}
+                onRunAll={handleRunAll}
             />
             <CommandPalette isOpen={isCmdPaletteOpen} onClose={handleCloseCommandPalette} actions={cmdActions} cells={cmdCells} onRunQuery={cmdRunQuery} onAiAddCell={cmdAiAddCell} onAddSqlCell={cmdAddSqlCell} isAiAvailable={isAiFeatureActive} />
             {aiFailureMessage && <ToastNotification title="AI Assistant Alert" message={aiFailureMessage} onClose={() => setAiFailureMessage(null)} action={{ label: 'Open Settings →', onClick: () => setIsSettingsModalOpen(true) }} />}

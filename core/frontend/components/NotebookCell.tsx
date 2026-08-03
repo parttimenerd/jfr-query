@@ -131,7 +131,7 @@ const MarkdownSectionEditor = React.memo<{ section: MarkdownSection | null; defa
         [section?.content],
     );
 
-    if (!section) return presenterMode ? null : <div className="py-1"><button onClick={onAdd} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add {defaultTitle}</button></div>;
+    if (!section) return null;
     return <div>{isEditing ? <SQLEditor value={content} onChange={setContent} onBlur={handleBlur} mode="markdown" autoFocus/> : <div className="space-y-1"><div onClick={() => { if (!presenterMode) onSetEditing(true); }} onKeyDown={e => { if (!presenterMode && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSetEditing(true); } }} role={presenterMode ? undefined : 'button'} tabIndex={presenterMode ? undefined : 0} aria-label={presenterMode ? undefined : 'Edit prose block'} className={`prose prose-invert max-w-none px-2 py-1 rounded-md min-h-[2rem] ${presenterMode ? '' : 'hover:bg-gray-700/30 cursor-pointer'}`}><TemplatedMarkdown segments={renderSegments} variables={variables ?? {}} formatSettings={formatSettings} allCells={allCells}/></div></div>}</div>;
 });
 
@@ -1130,7 +1130,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
     return (
         <div
-            className={`rounded-lg border shadow-sm relative transition-opacity ${isConditionallyHidden ? 'bg-amber-950/20 border-amber-800/40' : 'bg-gray-800/40 border-gray-700/80'} ${isBeingDragged ? 'opacity-50' : ''}`}
+            className={`group/cell rounded-lg border shadow-sm relative transition-opacity ${isConditionallyHidden ? 'bg-amber-950/20 border-amber-800/40' : 'bg-gray-800/40 border-gray-700/80'} ${isBeingDragged ? 'opacity-50' : ''}`}
             data-cell-id={cell.id}
             data-cell-idx={cellIdx >= 0 ? String(cellIdx + 1) : undefined}
             data-cell-alias={cellAlias}
@@ -1189,13 +1189,18 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                 // Find last token after whitespace/( / ,
                                                 const lastTokMatch = val.match(/[^(,\s]+$/);
                                                 const lastTok = lastTokMatch ? lastTokMatch[0] : '';
-                                                if (!lastTok) {
+                                                // AND/OR only make sense after a complete token (trailing space)
+                                                // i.e. the cursor is at the start of a new word slot.
+                                                const afterCompletedToken = /\S\s+$/.test(val);
+                                                if (!lastTok && !afterCompletedToken) {
                                                     setRequiresAutocomplete([]);
                                                     return;
                                                 }
                                                 const upper = lastTok.toUpperCase();
-                                                // Keywords
-                                                const kwSuggestions = ['AND', 'OR'].filter(k => k.startsWith(upper) && k !== upper);
+                                                // Keywords: only suggest AND/OR when after a completed token and partial matches keyword
+                                                const kwSuggestions = afterCompletedToken && !lastTok
+                                                    ? ['AND', 'OR']
+                                                    : ['AND', 'OR'].filter(k => k.startsWith(upper) && k !== upper);
                                                 // Table/view names — prioritise those referenced in the cell's SQL
                                                 const sqlText = parsedSqlBlocks.join(' ').toUpperCase();
                                                 const allNames = [
@@ -1676,10 +1681,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                         return items;
                     })()}
                     {!presenterMode && (
-                        <div className="flex justify-end gap-3">
+                        <div className="flex justify-end gap-3 opacity-0 group-hover/cell:opacity-100 transition-opacity">
                             <button onClick={handleAddVariable} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add variable</button>
                             <button onClick={handleAddPlot} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add Plot</button>
                             <button onClick={handleAddSql} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add SQL</button>
+                            <button onClick={handleAddConclusion} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Prose</button>
                             {results.filter(r => r && r.length > 0 && !r[0]?.error).length >= 2 && (
                                 <button
                                     onClick={() => setShowCompareView(p => !p)}
