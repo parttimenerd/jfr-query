@@ -20,6 +20,10 @@ cellConditions:
   cpu-stats: "SELECT count(*) > 0 FROM GCCPUTime"
   safepoint-summary: "SELECT count(*) > 0 FROM SafepointEnd"
   promotion-rate: "SELECT count(*) > 0 FROM G1HeapSummary"
+  gc-throughput: "SELECT count(*) > 0 FROM GarbageCollection"
+  parallel-phases: "SELECT count(*) > 0 FROM GCPhaseParallel"
+  tlab-efficiency: "SELECT count(*) > 0 FROM ObjectAllocationInNewTLAB"
+  finalizers: "SELECT count(*) > 0 FROM FinalizerStatistics"
 ---
 
 <!-- @cell name=intro -->
@@ -532,5 +536,79 @@ ORDER BY "Time"
 
 ```plot
 LINE_CHART(x: "Time", y: ["Promoted MB"]) TITLE "Promotion Rate (Old Gen Growth per GC)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
+```
+
+---
+
+<!-- @cell name=gc-throughput -->
+
+## GC Throughput Over Time
+
+Application throughput (% of time NOT spent in GC pauses) per 10-second window. Values above 95% are typically acceptable; below 90% indicates the GC is imposing significant overhead.
+
+```sql
+SELECT "Window" AS "Time", "Throughput %", "GC Time (ms)", "Mutator Time (ms)"
+FROM "gc-throughput"
+ORDER BY 1
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Throughput %"]) TITLE "Application Throughput % (10s windows)" LINK_X($start, $end) ZOOM AXIS_Y DOMAIN [0, 100] LABEL "%"
+```
+
+---
+
+<!-- @cell name=parallel-phases -->
+
+## Parallel GC Phase Statistics
+
+Per-phase timing for parallel (multi-threaded) GC work. High P95/Max relative to Average reveals phases with inconsistent parallelism — a sign of OS scheduling interference or unbalanced work distribution.
+
+*Requires `GCPhaseParallel` events.*
+
+```sql
+SELECT * FROM "gc-parallel-phases"
+```
+
+```plot
+TABLE() TITLE "Parallel GC Phase Statistics"
+```
+
+---
+
+<!-- @cell name=tlab-efficiency -->
+
+## TLAB Allocation Efficiency
+
+Thread-local allocation buffer (TLAB) fill ratio and sizing. A fill ratio below 0.5 means threads are wasting more than half each TLAB — consider `-XX:TLABSize` tuning. Large outside-TLAB allocations trigger GC directly.
+
+*Requires `ObjectAllocationInNewTLAB` events.*
+
+```sql
+SELECT "Bucket (5s)" AS "Time", round("Fill Ratio", 3) AS "Fill Ratio", "Allocations", "Total TLAB", "Total Allocated"
+FROM "tlab-efficiency"
+ORDER BY 1
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Fill Ratio"]) TITLE "TLAB Fill Ratio Over Time" LINK_X($start, $end) ZOOM AXIS_Y DOMAIN [0, 1] LABEL "ratio"
+```
+
+---
+
+<!-- @cell name=finalizers -->
+
+## Finalizer Queue Depth
+
+Classes with pending or completed finalizers. Objects with `finalize()` methods survive at least one extra GC cycle — a growing count signals finalizer queue buildup, which delays memory reclamation.
+
+*Requires `FinalizerStatistics` events.*
+
+```sql
+SELECT * FROM "finalizers"
+```
+
+```plot
+TABLE() TITLE "Finalizer Statistics by Class"
 ```
 
