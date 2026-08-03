@@ -782,7 +782,17 @@ export function updateCellDirectiveAttrs(
     updates: Record<string, string | null>,
 ): string {
     const directive = parseCellDirective(content);
-    if (!directive) return content;
+
+    // When no directive exists yet, create one (unless all updates are null/deletions).
+    const hasNonNull = Object.values(updates).some(v => v !== null);
+    if (!directive) {
+        if (!hasNonNull) return content;
+        const attrStr = Object.entries(updates)
+            .filter(([, v]) => v !== null)
+            .map(([k, v]) => `${k}="${(v as string).replace(/"/g, '&quot;')}"`)
+            .join(' ');
+        return `<!-- @cell ${attrStr} -->\n${content}`;
+    }
 
     // Rebuild the directive with updated attrs.
     const allAttrs: Record<string, string> = {};

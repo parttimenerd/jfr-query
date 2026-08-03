@@ -210,9 +210,16 @@ describe('updateCellDirectiveAttrs', () => {
         expect(result).not.toContain('OldTable');
     });
 
-    it('is a no-op when no directive is present', () => {
+    it('creates a new directive when none is present', () => {
         const content = '## No directive here\nbody';
-        expect(updateCellDirectiveAttrs(content, { requires: 'X' })).toBe(content);
+        const result = updateCellDirectiveAttrs(content, { requires: 'X' });
+        expect(result).toContain('<!-- @cell requires="X" -->');
+        expect(result).toContain('## No directive here');
+    });
+
+    it('is a no-op when no directive is present and all updates are null', () => {
+        const content = '## No directive here\nbody';
+        expect(updateCellDirectiveAttrs(content, { requires: null })).toBe(content);
     });
 });
 
