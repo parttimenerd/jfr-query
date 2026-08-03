@@ -35,11 +35,15 @@ describe('PlotTooltip', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('returns null when both filters absent', () => {
+  it('shows all payload entries when both filters absent', () => {
     const { container } = render(
       <PlotTooltip active={true} payload={payload} />
     );
-    expect(container.firstChild).toBeNull();
+    // Default tooltip now renders all payload entries instead of returning null
+    expect(container.firstChild).not.toBeNull();
+    expect(container.textContent).toContain('method');
+    expect(container.textContent).toContain('duration');
+    expect(container.textContent).toContain('thread');
   });
 });
 

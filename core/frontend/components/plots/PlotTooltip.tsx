@@ -16,7 +16,25 @@ export interface PlotTooltipProps {
     labelFormatter?: (label: unknown) => string;
 }
 
-const boxCls = 'bg-gray-800 border border-gray-600 text-white text-xs p-2 rounded';
+export function formatTooltipValue(val: unknown): string {
+    if (typeof val === 'number') {
+        if (!isFinite(val)) return String(val);
+        if (Math.abs(val) > 0 && Math.abs(val) < 0.01) {
+            return val.toPrecision(3);
+        }
+        return val.toLocaleString('en-US', { maximumFractionDigits: 3 });
+    }
+    return String(val ?? '');
+}
+
+const boxCls = [
+    'bg-gray-900/95 border border-gray-600/70',
+    'text-xs rounded-lg shadow-xl',
+    'px-3 py-2 min-w-[120px] max-w-[280px]',
+].join(' ');
+const labelCls = 'text-gray-400 truncate max-w-[160px]';
+const valueCls = 'text-gray-100 font-mono font-medium text-right ml-3 shrink-0';
+const headerCls = 'text-gray-300 font-semibold border-b border-gray-700 pb-1 mb-1.5 truncate';
 
 const lookup = (payload: PlotTooltipEntry[], key: string): unknown => {
     for (const e of payload) {
@@ -69,19 +87,40 @@ export const PlotTooltip: React.FC<PlotTooltipProps> = ({
         return (
             <div className={boxCls}>
                 {label !== undefined && (
-                    <div className="mb-1 opacity-80">
-                        {labelFormatter ? labelFormatter(label) : String(label)}
+                    <div className={headerCls}>
+                        {labelFormatter ? labelFormatter(label) : formatTooltipValue(label)}
                     </div>
                 )}
                 {shown.map((e) => (
-                    <div key={e.dataKey} style={{ color: e.color }}>
-                        <span className="opacity-80">{e.name.replace(/_/g, ' ')}:</span>{' '}
-                        <span>{String(e.value)}</span>
+                    <div key={e.dataKey} className="flex items-center justify-between gap-2">
+                        <span className={labelCls} style={{ color: e.color ? `${e.color}cc` : undefined }}>
+                            {e.name.replace(/_/g, ' ')}
+                        </span>
+                        <span className={valueCls}>{formatTooltipValue(e.value)}</span>
                     </div>
                 ))}
             </div>
         );
     }
 
-    return null;
+    // Default: show all payload entries.
+    return (
+        <div className={boxCls}>
+            {label !== undefined && (
+                <div className={headerCls}>
+                    {labelFormatter ? labelFormatter(label) : formatTooltipValue(label)}
+                </div>
+            )}
+            <div className="space-y-0.5">
+                {payload.map((e) => (
+                    <div key={e.dataKey} className="flex items-center justify-between gap-2">
+                        <span className={labelCls} style={{ color: e.color ? `${e.color}cc` : undefined }}>
+                            {e.name.replace(/_/g, ' ')}
+                        </span>
+                        <span className={valueCls}>{formatTooltipValue(e.value)}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
 };
