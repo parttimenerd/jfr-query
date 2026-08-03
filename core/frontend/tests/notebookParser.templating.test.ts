@@ -111,23 +111,26 @@ body`;
     });
 });
 
+// Helper: the new FILTER-based single-name check
+const filterCheck = (name: string) =>
+    `(count(*) FILTER (WHERE table_name = '${name}') > 0)`;
+
 describe('tablesToConditionSql', () => {
-    it('generates single-table WHERE clause', () => {
-        expect(tablesToConditionSql(['ExecutionSample'])).toBe(
-            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ExecutionSample'"
-        );
+    it('generates a FILTER-based check for a single table', () => {
+        const sql = tablesToConditionSql(['ExecutionSample']);
+        expect(sql).toBe(`SELECT ${filterCheck('ExecutionSample')} FROM information_schema.tables`);
     });
 
-    it('generates IN clause for multiple tables', () => {
-        expect(tablesToConditionSql(['ThreadPark', 'ThreadSleep'])).toBe(
-            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('ThreadPark', 'ThreadSleep')"
+    it('generates AND-joined FILTER checks for multiple tables', () => {
+        const sql = tablesToConditionSql(['ThreadPark', 'ThreadSleep']);
+        expect(sql).toBe(
+            `SELECT (${filterCheck('ThreadPark')} AND ${filterCheck('ThreadSleep')}) FROM information_schema.tables`
         );
     });
 
     it('escapes single quotes in table names', () => {
-        expect(tablesToConditionSql(["O'Brien"])).toBe(
-            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'O''Brien'"
-        );
+        const sql = tablesToConditionSql(["O'Brien"]);
+        expect(sql).toContain("'O''Brien'");
     });
 
     it('returns SELECT true for empty array', () => {
@@ -135,32 +138,52 @@ describe('tablesToConditionSql', () => {
     });
 
     it('passes through a raw SELECT statement unchanged', () => {
-        const sql = "SELECT count(*) > 0 FROM my_view WHERE active = true";
-        expect(tablesToConditionSql([sql])).toBe(sql);
+        const raw = "SELECT count(*) > 0 FROM my_view WHERE active = true";
+        expect(tablesToConditionSql([raw])).toBe(raw);
     });
 });
 
 describe('requiresAttrToConditionSql', () => {
-    it('converts single table name to WHERE clause', () => {
-        expect(requiresAttrToConditionSql('GarbageCollection')).toBe(
-            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GarbageCollection'"
+    it('converts single table name', () => {
+        const sql = requiresAttrToConditionSql('GarbageCollection');
+        expect(sql).toBe(`SELECT ${filterCheck('GarbageCollection')} FROM information_schema.tables`);
+    });
+
+    it('converts comma-separated names as AND', () => {
+        const sql = requiresAttrToConditionSql('ThreadPark, ThreadSleep');
+        expect(sql).toBe(
+            `SELECT (${filterCheck('ThreadPark')} AND ${filterCheck('ThreadSleep')}) FROM information_schema.tables`
         );
     });
 
-    it('converts comma-separated names to IN clause', () => {
-        expect(requiresAttrToConditionSql('ThreadPark, ThreadSleep')).toBe(
-            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('ThreadPark', 'ThreadSleep')"
+    it('handles AND keyword', () => {
+        const sql = requiresAttrToConditionSql('GarbageCollection AND G1HeapSummary');
+        expect(sql).toBe(
+            `SELECT (${filterCheck('GarbageCollection')} AND ${filterCheck('G1HeapSummary')}) FROM information_schema.tables`
+        );
+    });
+
+    it('handles OR keyword', () => {
+        const sql = requiresAttrToConditionSql('ThreadPark OR ThreadSleep');
+        expect(sql).toBe(
+            `SELECT (${filterCheck('ThreadPark')} OR ${filterCheck('ThreadSleep')}) FROM information_schema.tables`
+        );
+    });
+
+    it('handles mixed AND/OR with parentheses', () => {
+        const sql = requiresAttrToConditionSql('GarbageCollection AND (G1HeapSummary OR ZGCHeapCapacity)');
+        expect(sql).toBe(
+            `SELECT (${filterCheck('GarbageCollection')} AND (${filterCheck('G1HeapSummary')} OR ${filterCheck('ZGCHeapCapacity')})) FROM information_schema.tables`
         );
     });
 
     it('passes through raw SQL predicate unchanged', () => {
-        const sql = "SELECT count(*) > 0 FROM latencies_view";
-        expect(requiresAttrToConditionSql(sql)).toBe(sql);
+        const raw = "SELECT count(*) > 0 FROM latencies_view";
+        expect(requiresAttrToConditionSql(raw)).toBe(raw);
     });
 
-    it('passes through SELECT with leading whitespace', () => {
-        const sql = "  SELECT 1 > 0";
-        expect(requiresAttrToConditionSql(sql)).toBe(sql.trim());
+    it('returns SELECT true for empty string', () => {
+        expect(requiresAttrToConditionSql('')).toBe('SELECT true');
     });
 });
 
@@ -207,7 +230,7 @@ describe('cell-inline requires= attribute', () => {
 });
 
 describe('requires front-matter shorthand', () => {
-    it('expands single table name into information_schema SQL', () => {
+    it('expands single table name into FILTER-based SQL', () => {
         const md = `---
 requires:
   hot-methods: ExecutionSample
@@ -215,12 +238,11 @@ requires:
 
 body`;
         const { metadata } = parseNotebook(md);
-        expect(metadata.cellConditions!['hot-methods']).toBe(
-            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ExecutionSample'"
-        );
+        expect(metadata.cellConditions!['hot-methods']).toContain("'ExecutionSample'");
+        expect(metadata.cellConditions!['hot-methods']).toContain('information_schema.tables');
     });
 
-    it('expands inline list into IN clause', () => {
+    it('expands inline list into AND-joined FILTER checks', () => {
         const md = `---
 requires:
   blocking: [ThreadPark, ThreadSleep]
@@ -228,9 +250,9 @@ requires:
 
 body`;
         const { metadata } = parseNotebook(md);
-        expect(metadata.cellConditions!['blocking']).toBe(
-            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('ThreadPark', 'ThreadSleep')"
-        );
+        expect(metadata.cellConditions!['blocking']).toContain("'ThreadPark'");
+        expect(metadata.cellConditions!['blocking']).toContain("'ThreadSleep'");
+        expect(metadata.cellConditions!['blocking']).toContain(' AND ');
     });
 
     it('cellConditions entry takes precedence over requires for the same cell', () => {

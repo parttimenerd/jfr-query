@@ -1,4 +1,27 @@
+import * as ohm from 'ohm-js';
+import requiresGrammarSrc from './requiresGrammar.ohm?raw';
 import type { CustomView, CustomMacro, NotebookMetadata as NotebookMetadataType } from '../types';
+
+// ---------------------------------------------------------------------------
+// Ohm grammar for the requires= expression language
+// ---------------------------------------------------------------------------
+const _requiresGrammar = ohm.grammar(requiresGrammarSrc);
+const _requiresSemantics = _requiresGrammar.createSemantics();
+
+_requiresSemantics.addOperation<string>('toSql', {
+    Expr(e)                    { return e.toSql(); },
+    OrExpr_or(l, _op, r)      { return `(${l.toSql()} OR ${r.toSql()})`; },
+    OrExpr(e)                  { return e.toSql(); },
+    AndExpr_and(l, _op, r)    { return `(${l.toSql()} AND ${r.toSql()})`; },
+    AndExpr_comma(l, _op, r)  { return `(${l.toSql()} AND ${r.toSql()})`; },
+    AndExpr_adjacent(l, r)    { return `(${l.toSql()} AND ${r.toSql()})`; },
+    AndExpr(e)                 { return e.toSql(); },
+    AtomExpr_paren(_l, e, _r) { return e.toSql(); },
+    AtomExpr(e)                { return e.toSql(); },
+    Name(tokens)               { return nameToExistsSql(tokens.sourceString); },
+    _iter(...children)         { return children.map(c => c.toSql()).join(''); },
+    _terminal()                { return this.sourceString; },
+});
 
 export interface MarkdownSection {
     title: string;
@@ -36,36 +59,55 @@ const FRONT_MATTER_DELIMITER = '---';
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n([\s\S]*))?$/;
 
 /**
- * Converts a requires= value into a visibility-check SQL predicate.
+ * Converts a single table/view name to an existence-check SQL subexpression
+ * (no SELECT wrapper — for composing into boolean expressions).
+ */
+function nameToExistsSql(name: string): string {
+    const escaped = `'${name.replace(/'/g, "''")}'`;
+    return `(count(*) FILTER (WHERE table_name = ${escaped}) > 0)`;
+}
+
+/**
+ * Parses a requires= expression into a runnable SQL predicate.
  *
- * Accepts three forms:
- *   - Raw SQL: any string starting with SELECT (case-insensitive) is used as-is.
- *   - Single name: "GarbageCollection"  → WHERE table_name = '...'
- *   - Comma list:  "ThreadPark,ThreadSleep" → WHERE table_name IN (...)
+ * Supported value forms:
+ *   - Raw SQL:          any string starting with SELECT → used as-is
+ *   - Name:             "GarbageCollection"
+ *   - AND expression:   "GarbageCollection AND G1HeapSummary"
+ *   - OR expression:    "ThreadPark OR ThreadSleep"
+ *   - Mixed:            "GarbageCollection AND (G1HeapSummary OR ZGCHeapCapacity)"
+ *   - Comma list:       "ThreadPark,ThreadSleep"  → treated as AND
  *
- * Names match both tables and views (DuckDB's information_schema.tables covers both).
+ * Names match both tables and views via information_schema.tables.
+ * AND/OR operators are case-insensitive.
+ *
+ * Uses an Ohm.js PEG grammar (requiresGrammar.ohm) for parsing.
+ */
+export function requiresAttrToConditionSql(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) return 'SELECT true';
+    if (/^select\s/i.test(trimmed)) return trimmed;
+
+    const match = _requiresGrammar.match(trimmed);
+    if (match.failed()) {
+        // Graceful fallback: treat entire string as a single name.
+        return `SELECT ${nameToExistsSql(trimmed)} FROM information_schema.tables`;
+    }
+    const expr = _requiresSemantics(match).toSql();
+    return `SELECT ${expr} FROM information_schema.tables`;
+}
+
+/**
+ * Converts a list of table/view names into an AND-joined visibility-check SQL.
+ * Used by the front-matter `requires:` parser.
  */
 export function tablesToConditionSql(tables: string[]): string {
     const filtered = tables.map(t => t.trim()).filter(Boolean);
     if (filtered.length === 0) return 'SELECT true';
-    // Single entry that looks like a SQL statement — pass through as-is.
     if (filtered.length === 1 && /^select\s/i.test(filtered[0])) return filtered[0];
-    const escaped = filtered.map(t => `'${t.replace(/'/g, "''")}'`);
-    return escaped.length === 1
-        ? `SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = ${escaped[0]}`
-        : `SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN (${escaped.join(', ')})`;
+    return requiresAttrToConditionSql(filtered.join(' AND '));
 }
 
-/**
- * Parses a requires= attribute value into a condition SQL string.
- * Handles raw SQL (passed through), single name, and comma-separated names.
- */
-export function requiresAttrToConditionSql(value: string): string {
-    const trimmed = value.trim();
-    if (/^select\s/i.test(trimmed)) return trimmed;
-    const names = trimmed.split(',').map(t => t.trim()).filter(Boolean);
-    return tablesToConditionSql(names);
-}
 
 const parseInlineYamlList = (raw: string): string[] | null => {
     const t = raw.trim();

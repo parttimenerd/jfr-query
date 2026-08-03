@@ -1,0 +1,27 @@
+RequiresDSL {
+  // Syntactic rules (uppercase) auto-skip spaces between terms.
+  Expr    = OrExpr
+
+  OrExpr  = OrExpr  orKw  AndExpr  -- or
+           | AndExpr
+
+  AndExpr = AndExpr andKw AtomExpr  -- and
+           | AndExpr ","  AtomExpr  -- comma
+           | AtomExpr AtomExpr     -- adjacent
+           | AtomExpr
+
+  AtomExpr = "(" Expr ")"  -- paren
+            | Name
+
+  // Keywords — case-insensitive, must be followed by a non-nameChar
+  // so "ANDROID" is not tokenized as "AND" + "ROID".
+  andKw = caseInsensitive<"AND"> ~nameChar
+  orKw  = caseInsensitive<"OR">  ~nameChar
+
+  // A name is a sequence of nameChars that does NOT form a keyword.
+  // We express this by saying: the first segment cannot be just a keyword.
+  Name = nameToken+
+  nameToken = ~(caseInsensitive<"AND"> ~nameChar) ~(caseInsensitive<"OR"> ~nameChar) nameChar
+
+  nameChar = ~("(" | ")" | "," | " " | "\t" | "\n" | "\r") any
+}
