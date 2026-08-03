@@ -170,15 +170,6 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                         {cells.map((cell, idx) => {
                             const name = cellHandle(cell, idx);
                             const visible = cellVisibility[name] ?? true;
-                            if (!visible) {
-                                return (
-                                    <details key={cell.id} className="opacity-60 py-1">
-                                        <summary className="text-xs text-gray-400 cursor-pointer select-none">
-                                            {name} <span className="italic">(hidden by cellCondition)</span>
-                                        </summary>
-                                    </details>
-                                );
-                            }
                             return (
                                 <NotebookCell
                                     key={cell.id}
@@ -193,6 +184,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                                     allCollapsed={allCollapsed}
                                     isAiFeatureActive={isAiFeatureActive}
                                     initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
+                                    isConditionallyHidden={!visible}
                                     onCellCollapseChange={handleCellCollapseChange}
                                     clearResultsTrigger={clearResultsTrigger}
                                     onRunQuery={onRunQuery}
@@ -248,15 +240,6 @@ const Notebook: React.FC<NotebookProps> = (props) => {
             {cells.map((cell, idx) => {
                 const name = cellHandle(cell, idx);
                 const visible = cellVisibility[name] ?? true;
-                if (!visible) {
-                    return (
-                        <details key={cell.id} className="opacity-60 py-1">
-                            <summary className="text-xs text-gray-400 cursor-pointer select-none">
-                                {name} <span className="italic">(hidden by cellCondition)</span>
-                            </summary>
-                        </details>
-                    );
-                }
                 return (
                     <NotebookCell
                         key={cell.id}
@@ -271,6 +254,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                         allCollapsed={allCollapsed}
                         isAiFeatureActive={isAiFeatureActive}
                         initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
+                        isConditionallyHidden={!visible}
                         onCellCollapseChange={handleCellCollapseChange}
                         clearResultsTrigger={clearResultsTrigger}
                         onRunQuery={onRunQuery}

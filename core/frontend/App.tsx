@@ -1314,7 +1314,14 @@ const App: React.FC = () => {
         // instead of a blank screen while we wait for the server probe to time out.
         const showDropZone = mode === 'wasm' || (mode === null && dbState === DBState.SCHEMA_LOADING);
         if (showDropZone && (dbState === DBState.NEEDS_FILE || dbState === DBState.IMPORTING || dbState === DBState.SCHEMA_LOADING || dbState === DBState.ERROR)) {
+            const handleLandingTemplateInsert = (merged: string, warnings: string[]) => {
+                loadNotebook(merged);
+                if (warnings.length > 0) console.warn('Template merge warnings:', warnings);
+                void loadDemo();
+                setIsTemplateGalleryOpen(false);
+            };
             return (
+                <>
                 <JFRDropZone
                     onFileSelected={(bytes, fileName, stacktraceDepth) => { void loadFile(bytes, fileName, stacktraceDepth); }}
                     isImporting={dbState === DBState.IMPORTING || (mode === 'wasm' && dbState === DBState.SCHEMA_LOADING)}
@@ -1340,6 +1347,14 @@ const App: React.FC = () => {
                     onOpenTemplates={() => setIsTemplateGalleryOpen(true)}
                     wasmInitializing={wasmInitializing}
                 />
+                <TemplateGalleryModal
+                    isOpen={isTemplateGalleryOpen}
+                    onClose={handleCloseTemplateGallery}
+                    currentSource=""
+                    mode={mode}
+                    onInsert={handleLandingTemplateInsert}
+                />
+                </>
             );
         }
         return <FileLoader dbState={dbState} errorMessage={errorMessage} />;

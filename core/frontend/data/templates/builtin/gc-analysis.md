@@ -7,6 +7,7 @@ variables:
   $$threshold_ms: "100"
   $limit: "20"
 cellConditions:
+  gc-config: "SELECT count(*) > 0 FROM GCConfiguration"
   long-pauses-section: "SELECT max(longestPause) * 1000 > $$threshold_ms FROM GarbageCollection"
   gc-allocation-trigger: "SELECT count(*) > 0 FROM AllocationRequiringGC"
   gc-references: "SELECT count(*) > 0 FROM GCReferenceStatistics"
@@ -19,6 +20,7 @@ cellConditions:
   object-stats: "SELECT count(*) > 0 FROM ObjectAllocationSample"
   cpu-stats: "SELECT count(*) > 0 FROM GCCPUTime"
   safepoint-summary: "SELECT count(*) > 0 FROM SafepointEnd"
+  consecutive-full-gcs: "SELECT count(*) > 0 FROM GarbageCollection"
   promotion-rate: "SELECT count(*) > 0 FROM G1HeapSummary"
   gc-throughput: "SELECT count(*) > 0 FROM GarbageCollection"
   parallel-phases: "SELECT count(*) > 0 FROM GCPhaseParallel"
@@ -32,6 +34,8 @@ cellConditions:
   gc-allocation-by-class: "SELECT count(*) > 0 FROM ObjectAllocationSample"
   gc-thread-allocation: "SELECT count(*) > 0 FROM ObjectAllocationSample"
   gc-old-gen-growth: "SELECT count(*) > 0 FROM G1HeapSummary"
+  gc-duration-buckets: "SELECT count(*) > 0 FROM GCPhasePause"
+  gc-phase-stats: "SELECT count(*) > 0 FROM GCPhasePause"
 ---
 
 <!-- @cell name=intro -->

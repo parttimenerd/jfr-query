@@ -77,6 +77,8 @@ interface NotebookCellProps {
     initialCellCollapsed?: boolean;
     /** B-033: callback to persist cell-level collapse changes to the parent ref. */
     onCellCollapseChange?: (cellId: string, collapsed: boolean) => void;
+    /** When true the cell's cellCondition evaluated to false — render collapsed with amber tint. */
+    isConditionallyHidden?: boolean;
     onRunQuery: (cellId: string, sql: string, queryIndex: number, allVariables: Record<string, string>) => void;
     /** C7 — tool-runtime callbacks forwarded into InlineChat so AI tool calls
      * can mutate other notebook cells. */
@@ -164,7 +166,7 @@ const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: stri
 };
 
 
-const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, queryTimings, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, initialCellCollapsed, onCellCollapseChange, clearResultsTrigger, onRunQuery, onUpdateCell, onAddCellFromTool, onDeleteCell, onDuplicateCell, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false, onPopChatToSidebar, onNavigateRef }) => {
+const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, queryTimings, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, initialCellCollapsed, isConditionallyHidden, onCellCollapseChange, clearResultsTrigger, onRunQuery, onUpdateCell, onAddCellFromTool, onDeleteCell, onDuplicateCell, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false, onPopChatToSidebar, onNavigateRef }) => {
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [editingTitleValue, setEditingTitleValue] = useState('');
     const [isRawEditing, setIsRawEditing] = useState(false);
@@ -200,7 +202,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const [aiErrorSuggestions, setAiErrorSuggestions] = useState<Record<number, { text: string; code: string | null } | null>>({});
     const [sparkleLoading, setSparkleLoading] = useState<Record<number, boolean>>({});
     const [editingBlockName, setEditingBlockName] = useState<{ type: 'sql' | 'plot'; idx: number; value: string } | null>(null);
-    const [isCellCollapsed, setIsCellCollapsed] = useState(() => initialCellCollapsed ?? false);
+    const [isCellCollapsed, setIsCellCollapsed] = useState(() => initialCellCollapsed ?? isConditionallyHidden ?? false);
 
     const [segments, setSegments] = useState(() => tokenizeCellContent(cell.content));
     const segmentsRef = useRef(segments);
@@ -1109,7 +1111,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
     return (
         <div
-            className={`bg-gray-800/40 rounded-lg border border-gray-700/80 shadow-sm relative transition-opacity ${isBeingDragged ? 'opacity-50' : ''}`}
+            className={`rounded-lg border shadow-sm relative transition-opacity ${isConditionallyHidden ? 'bg-amber-950/20 border-amber-800/40' : 'bg-gray-800/40 border-gray-700/80'} ${isBeingDragged ? 'opacity-50' : ''}`}
             data-cell-id={cell.id}
             data-cell-idx={cellIdx >= 0 ? String(cellIdx + 1) : undefined}
             data-cell-alias={cellAlias}
@@ -1121,6 +1123,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                      {!presenterMode && <div draggable onDragStart={handleDragStart} onDragEnd={()=>setIsBeingDragged(false)} title="Drag to reorder (Alt+↑/↓ for keyboard)" aria-label="Drag to reorder cell" role="button" tabIndex={0} className="cursor-grab p-1 text-gray-600 hover:text-gray-400"><Bars2Icon className="w-4 h-4"/></div>}
                     {!presenterMode && <button onClick={()=>{ const next = !isCellCollapsed; setIsCellCollapsed(next); onCellCollapseChange?.(cell.id, next); }} className="p-1 text-gray-400 hover:text-gray-300 flex-shrink-0" title={isCellCollapsed ? "Expand cell" : "Collapse cell"} aria-label={isCellCollapsed ? "Expand cell" : "Collapse cell"}>{isCellCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5"/> : <ChevronUpIcon className="w-3.5 h-3.5"/>}</button>}
                     {isEditingTitle ? <input type="text" value={editingTitleValue} onChange={e=>setEditingTitleValue(e.target.value)} onBlur={()=>handleTitleBlur(editingTitleValue)} onKeyDown={handleTitleKeyDown} className="text-base font-semibold bg-gray-900 border border-cyan-500 rounded-md px-2 py-0.5 w-full" autoFocus/> : <h2 onClick={()=>{if(!presenterMode){setEditingTitleValue(title||'');setIsEditingTitle(true);}}} className={`text-base font-semibold w-full text-gray-100 ${presenterMode ? '' : 'cursor-pointer'}`}>{title}</h2>}
+                    {isConditionallyHidden && <span className="text-[10px] px-1.5 py-0.5 rounded border border-amber-700/60 bg-amber-900/30 text-amber-400/80 whitespace-nowrap flex-shrink-0">hidden</span>}
                 </div>
                 {!presenterMode && <div className="flex items-center gap-1 flex-shrink-0"><button onClick={()=>setIsRawEditing(!isRawEditing)} className="p-1.5 hover:bg-cyan-600/30 rounded-md" title={isRawEditing?"Rich View":"Raw Markdown"} aria-label={isRawEditing?"Rich View":"Raw Markdown"}>{isRawEditing ? <EyeIcon className="w-4 h-4 text-cyan-300"/>:<CodeBracketIcon className="w-4 h-4 text-gray-400"/>}</button>{isDeleteConfirming ? (<div className="flex items-center gap-1"><span className="text-xs text-red-400">Delete?</span><button onClick={()=>{setIsDeleteConfirming(false);onDeleteCell(cell.id);}} className="px-1.5 py-0.5 text-xs bg-red-700 hover:bg-red-600 text-white rounded">Yes</button><button onClick={()=>setIsDeleteConfirming(false)} className="px-1.5 py-0.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded">No</button></div>) : (<button onClick={()=>setIsDeleteConfirming(true)} className="p-1.5 hover:bg-red-600/50 rounded-md" title="Delete Cell" aria-label="Delete Cell"><TrashIcon className="w-4 h-4 text-gray-400"/></button>)}</div>}
             </div>
