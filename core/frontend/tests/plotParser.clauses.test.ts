@@ -292,3 +292,15 @@ describe('parsePlotCall — LINK-Y / LINK-XY one-var semantics', () => {
         expect(res.linkXMaster).toBe(true);
     });
 });
+
+describe('regression — AXIS_Y DOMAIN+LABEL after LINK_X and ZOOM', () => {
+    it('AXIS_Y DOMAIN+LABEL after LINK_X and ZOOM — gc-analysis regression', () => {
+        const input = 'LINE_CHART(x: "Time", y: ["GC Overhead %"]) TITLE "GC Overhead % (10-second windows)" LINK_X($start, $end) ZOOM AXIS_Y DOMAIN [0, 100] LABEL "%"';
+        const result = parsePlotCall(input);
+        expect(result.mainConfig).toBe('LINE_CHART(x: "Time", y: ["GC Overhead %"])');
+        expect(result.title).toBe('GC Overhead % (10-second windows)');
+        expect(result.linkX).toEqual(['$start', '$end']);
+        expect(result.zoom).toBe(1);
+        expect(result.axisY).toEqual({ domain: [0, 100], label: '%' });
+    });
+});

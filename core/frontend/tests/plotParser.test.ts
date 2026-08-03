@@ -74,3 +74,51 @@ describe('Plot Parser', () => {
         expect(result.height).toBe('200px');
     });
 });
+
+// Ohm.js PEG grammar smoke tests — verify the primary parser handles the canonical
+// use-cases and that the regex fallback is only used for edge-case inputs.
+describe('Plot Parser — Ohm.js grammar smoke tests', () => {
+    it('Ohm grammar: parses all clause types in a single complex input', () => {
+        const input =
+            'LINE_CHART(x: "Time", y: ["GC Overhead %"]) ' +
+            'TITLE "GC Overhead % (10-second windows)" ' +
+            'LINK_X($start, $end) ZOOM AXIS_Y DOMAIN [0, 100] LABEL "%"';
+        const r = parsePlotCall(input);
+        expect(r.mainConfig).toBe('LINE_CHART(x: "Time", y: ["GC Overhead %"])');
+        expect(r.title).toBe('GC Overhead % (10-second windows)');
+        expect(r.linkX).toEqual(['$start', '$end']);
+        expect(r.zoom).toBe(1);
+        expect(r.axisY).toEqual({ domain: [0, 100], label: '%' });
+    });
+
+    it('Ohm grammar: LINK-XY with quoted $var', () => {
+        const r = parsePlotCall('SCATTER_PLOT(x: a, y: b) LINK-XY "$combined"');
+        expect(r.linkXY).toBe('$combined');
+    });
+
+    it('Ohm grammar: LINK-XY without quotes', () => {
+        const r = parsePlotCall('SCATTER_PLOT(x: a, y: b) LINK-XY $combined');
+        expect(r.linkXY).toBe('$combined');
+    });
+
+    it('Ohm grammar: LINK_SCROLL before LINK_XY does not corrupt the latter', () => {
+        const r = parsePlotCall('LINE_CHART(x: ts, y: v) LINK_XY $xy LINK_SCROLL logs');
+        expect(r.linkXY).toBe('$xy');
+        expect(r.linkScroll).toBe('logs');
+    });
+
+    it('Ohm grammar: all five AXIS_Y sub-clauses combined', () => {
+        const r = parsePlotCall(
+            'LINE_CHART(x: "ts", y: ["cpu"]) ' +
+            'AXIS_Y DOMAIN [0, 100] LABEL "CPU %" TYPE LINEAR FORMAT ".1f"',
+        );
+        expect(r.axisY).toEqual({ domain: [0, 100], label: 'CPU %', type: 'linear', format: '.1f' });
+    });
+
+    it('Ohm grammar: ZOOM_X is parsed correctly (not confused with ZOOM)', () => {
+        const r = parsePlotCall('LINE_CHART(x: "ts") ZOOM_X 1.5');
+        expect(r.zoomX).toBe(1.5);
+        expect(r.zoom).toBeUndefined();
+    });
+});
+
