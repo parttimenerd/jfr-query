@@ -20,7 +20,7 @@ import { scrollToCell } from './chat/scrollToCell';
  */
 export function preprocessCellLinks(md: string): string {
     return md.replace(/@cell:([\w-]+)/g, (_, name) =>
-        `[→ ${name}](jfr://cell/${encodeURIComponent(name)})`);
+        `[→ ${name}](#jfr-cell-${encodeURIComponent(name)})`);
 }
 
 interface Props {
@@ -150,8 +150,8 @@ const InlineProse: React.FC<InlineProseProps> = ({ text, query, variables, forma
 
     const mdComponents = useMemo(() => ({
         a: ({ href, children }: any) => {
-            if (href?.startsWith('jfr://cell/')) {
-                const cellName = decodeURIComponent(href.replace('jfr://cell/', ''));
+            if (href?.startsWith('#jfr-cell-')) {
+                const cellName = decodeURIComponent(href.replace('#jfr-cell-', ''));
                 const target = allCells?.find((c: NotebookCellData) => c.name === cellName);
                 return (
                     <button
