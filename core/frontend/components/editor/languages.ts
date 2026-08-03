@@ -18,7 +18,32 @@ export const buildPlotLanguage = (plotRegistry: Record<string, PlotRegistration<
       if (param.options) for (const opt of param.options) allOptions.add(opt);
     }
   }
-  const keywords = new Set(['ON', 'WIDTH', 'HEIGHT', 'ZOOM', 'TITLE', 'LINK_X', 'MASTER', 'CLAMP', 'LET']);
+  const keywords = new Set([
+    // Main clause keywords
+    'ON', 'WIDTH', 'HEIGHT', 'ZOOM', 'ZOOM_X', 'TITLE', 'LET', 'NAME', 'DATASET',
+    'LINK_X', 'LINK_Y', 'LINK_XY', 'LINK_SCROLL',
+    'LINK-X', 'LINK-Y', 'LINK-XY', 'LINK-SCROLL',
+    'MASTER', 'CLAMP',
+    'LEGEND', 'PALETTE', 'BRUSH',
+    'AXIS_X', 'AXIS_Y', 'AXIS-X', 'AXIS-Y',
+    'TOOLTIP',
+  ]);
+  const subKeywords = new Set([
+    // AXIS sub-clauses
+    'DOMAIN', 'LABEL', 'TYPE', 'FORMAT',
+    // LEGEND sub-clauses
+    'AT', 'HIDDEN',
+    // BRUSH sub-clauses
+    'MODE', 'COLUMNS',
+    // ON HOVER TOOLTIP
+    'HOVER',
+    // Axis type values
+    'LINEAR', 'LOG', 'TIME', 'BAND',
+    // Legend position values
+    'RIGHT', 'LEFT', 'TOP', 'BOTTOM', 'NONE',
+    // BRUSH mode values
+    'X', 'Y', 'XY',
+  ]);
 
   const lang = StreamLanguage.define({
     name: 'plot',
@@ -58,12 +83,18 @@ export const buildPlotLanguage = (plotRegistry: Record<string, PlotRegistration<
         stream.eatWhile(/[\w\.%]/);
         return 'number';
       }
-      // Identifiers
-      if (/[\w$_]/.test(ch)) {
-        stream.eatWhile(/[\w$_]/);
+      // $variable references
+      if (ch === '$') {
+        stream.eatWhile(/[\w]/);
+        return 'macroName';
+      }
+      // Identifiers and keywords
+      if (/[\w_]/.test(ch)) {
+        stream.eatWhile(/[\w$_\-\.]/);
         const word = stream.current() as string;
         const upper = word.toUpperCase();
         if (keywords.has(upper)) return 'keyword';
+        if (subKeywords.has(upper)) return 'clauseSubKeyword';
         if (functions.has(upper)) return 'plotFunction';
         if (allParams.has(word)) return 'plotParam';
         if (allOptions.has(word)) return 'atom';
@@ -75,6 +106,7 @@ export const buildPlotLanguage = (plotRegistry: Record<string, PlotRegistration<
       plotFunction: t.processingInstruction,
       plotParam: t.labelName,
       macroName: t.special(t.variableName),
+      clauseSubKeyword: t.modifier,
     },
   });
   return new LanguageSupport(lang);
