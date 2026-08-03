@@ -36,16 +36,35 @@ const FRONT_MATTER_DELIMITER = '---';
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n([\s\S]*))?$/;
 
 /**
- * Converts a list of JFR table names into a visibility-check SQL predicate.
- * Used by both the front-matter `requires:` parser and cell-inline `requires=`.
+ * Converts a requires= value into a visibility-check SQL predicate.
+ *
+ * Accepts three forms:
+ *   - Raw SQL: any string starting with SELECT (case-insensitive) is used as-is.
+ *   - Single name: "GarbageCollection"  → WHERE table_name = '...'
+ *   - Comma list:  "ThreadPark,ThreadSleep" → WHERE table_name IN (...)
+ *
+ * Names match both tables and views (DuckDB's information_schema.tables covers both).
  */
 export function tablesToConditionSql(tables: string[]): string {
-    const escaped = tables.map(t => t.trim()).filter(Boolean)
-        .map(t => `'${t.replace(/'/g, "''")}'`);
-    if (escaped.length === 0) return 'SELECT true';
+    const filtered = tables.map(t => t.trim()).filter(Boolean);
+    if (filtered.length === 0) return 'SELECT true';
+    // Single entry that looks like a SQL statement — pass through as-is.
+    if (filtered.length === 1 && /^select\s/i.test(filtered[0])) return filtered[0];
+    const escaped = filtered.map(t => `'${t.replace(/'/g, "''")}'`);
     return escaped.length === 1
         ? `SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = ${escaped[0]}`
         : `SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN (${escaped.join(', ')})`;
+}
+
+/**
+ * Parses a requires= attribute value into a condition SQL string.
+ * Handles raw SQL (passed through), single name, and comma-separated names.
+ */
+export function requiresAttrToConditionSql(value: string): string {
+    const trimmed = value.trim();
+    if (/^select\s/i.test(trimmed)) return trimmed;
+    const names = trimmed.split(',').map(t => t.trim()).filter(Boolean);
+    return tablesToConditionSql(names);
 }
 
 const parseInlineYamlList = (raw: string): string[] | null => {
@@ -710,3 +729,33 @@ export const stripCellDirective = (content: string): { directive: ParsedCellDire
     if (!directive) return { directive: null, body: content };
     return { directive, body: content.substring(directive.matchLength) };
 };
+
+/**
+ * Rewrites the `<!-- @cell ... -->` directive in `content`, setting or removing
+ * the given attributes. Pass `null` for a value to remove that attribute.
+ * Returns the updated content string. If no directive is present, returns content unchanged.
+ */
+export function updateCellDirectiveAttrs(
+    content: string,
+    updates: Record<string, string | null>,
+): string {
+    const directive = parseCellDirective(content);
+    if (!directive) return content;
+
+    // Rebuild the directive with updated attrs.
+    const allAttrs: Record<string, string> = {};
+    if (directive.name !== undefined) allAttrs['name'] = directive.name;
+    if (directive.collapsed !== undefined) allAttrs['collapsed'] = String(directive.collapsed);
+    for (const [k, v] of Object.entries(directive.rest)) allAttrs[k] = v;
+    // Apply updates
+    for (const [k, v] of Object.entries(updates)) {
+        if (v === null) delete allAttrs[k];
+        else allAttrs[k] = v;
+    }
+
+    const attrStr = Object.entries(allAttrs)
+        .map(([k, v]) => `${k}="${v.replace(/"/g, '&quot;')}"`)
+        .join(' ');
+    const newDirective = `<!-- @cell ${attrStr} -->`;
+    return newDirective + content.substring(directive.matchLength);
+}

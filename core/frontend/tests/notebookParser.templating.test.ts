@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCellDirective, stripCellDirective, parseNotebook, reconstructNotebook, tokenizeCellContent, parseCellContent, tablesToConditionSql } from '../utils/notebookParser';
+import { parseCellDirective, stripCellDirective, parseNotebook, reconstructNotebook, tokenizeCellContent, parseCellContent, tablesToConditionSql, requiresAttrToConditionSql, updateCellDirectiveAttrs } from '../utils/notebookParser';
 
 describe('parseCellDirective', () => {
     it('returns null for content without a directive', () => {
@@ -132,6 +132,64 @@ describe('tablesToConditionSql', () => {
 
     it('returns SELECT true for empty array', () => {
         expect(tablesToConditionSql([])).toBe('SELECT true');
+    });
+
+    it('passes through a raw SELECT statement unchanged', () => {
+        const sql = "SELECT count(*) > 0 FROM my_view WHERE active = true";
+        expect(tablesToConditionSql([sql])).toBe(sql);
+    });
+});
+
+describe('requiresAttrToConditionSql', () => {
+    it('converts single table name to WHERE clause', () => {
+        expect(requiresAttrToConditionSql('GarbageCollection')).toBe(
+            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GarbageCollection'"
+        );
+    });
+
+    it('converts comma-separated names to IN clause', () => {
+        expect(requiresAttrToConditionSql('ThreadPark, ThreadSleep')).toBe(
+            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('ThreadPark', 'ThreadSleep')"
+        );
+    });
+
+    it('passes through raw SQL predicate unchanged', () => {
+        const sql = "SELECT count(*) > 0 FROM latencies_view";
+        expect(requiresAttrToConditionSql(sql)).toBe(sql);
+    });
+
+    it('passes through SELECT with leading whitespace', () => {
+        const sql = "  SELECT 1 > 0";
+        expect(requiresAttrToConditionSql(sql)).toBe(sql.trim());
+    });
+});
+
+describe('updateCellDirectiveAttrs', () => {
+    it('adds a new attribute to an existing directive', () => {
+        const content = '<!-- @cell name=foo -->\n## Title';
+        const result = updateCellDirectiveAttrs(content, { requires: 'GarbageCollection' });
+        expect(result).toContain('requires="GarbageCollection"');
+        expect(result).toContain('name="foo"');
+        expect(result).toContain('## Title');
+    });
+
+    it('removes an attribute when value is null', () => {
+        const content = '<!-- @cell name=foo requires="GarbageCollection" -->\nbody';
+        const result = updateCellDirectiveAttrs(content, { requires: null });
+        expect(result).not.toContain('requires');
+        expect(result).toContain('name="foo"');
+    });
+
+    it('updates an existing attribute value', () => {
+        const content = '<!-- @cell name=foo requires="OldTable" -->\nbody';
+        const result = updateCellDirectiveAttrs(content, { requires: 'NewTable' });
+        expect(result).toContain('requires="NewTable"');
+        expect(result).not.toContain('OldTable');
+    });
+
+    it('is a no-op when no directive is present', () => {
+        const content = '## No directive here\nbody';
+        expect(updateCellDirectiveAttrs(content, { requires: 'X' })).toBe(content);
     });
 });
 

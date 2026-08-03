@@ -5,7 +5,7 @@ import NotebookCell from './NotebookCell';
 import SettingsPanel from './SettingsPanel';
 import { PlusIcon } from './icons/PlusIcon';
 import SQLEditor from './SQLEditor';
-import { parseCellContent, parseCellDirective, tablesToConditionSql, tokenizeCellContent } from '../utils/notebookParser';
+import { parseCellContent, parseCellDirective, requiresAttrToConditionSql, tokenizeCellContent } from '../utils/notebookParser';
 import { cellHandle } from '../utils/cellHandle';
 import { resolveCellVisibility } from '../utils/cellVisibility';
 import { NotebookTOC } from './NotebookTOC';
@@ -90,9 +90,8 @@ const Notebook: React.FC<NotebookProps> = (props) => {
             if (effective[name]) continue; // notebook-level condition takes precedence
             const directive = parseCellDirective(c.content);
             const reqAttr = directive?.rest?.requires;
-            if (reqAttr) {
-                const tables = reqAttr.split(',').map(t => t.trim()).filter(Boolean);
-                if (tables.length > 0) effective[name] = tablesToConditionSql(tables);
+            if (reqAttr?.trim()) {
+                effective[name] = requiresAttrToConditionSql(reqAttr);
             }
         }
 

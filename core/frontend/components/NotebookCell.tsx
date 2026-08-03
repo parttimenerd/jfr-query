@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect, useContext } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { NotebookCellData, NotebookMetadata } from '../types';
-import { tokenizeCellContent, reconstructCellContent, parseCellContent, CellSegment, MarkdownSection } from '../utils/notebookParser';
+import { tokenizeCellContent, reconstructCellContent, parseCellContent, parseCellDirective, updateCellDirectiveAttrs, CellSegment, MarkdownSection } from '../utils/notebookParser';
 import { cellHandle as computeCellHandle } from '../utils/cellHandle';
 import { useCellAliases, useCellAliasActions } from '../context/CellAliasContext';
 import { DataContext } from '../context/DuckDBContext';
@@ -183,6 +183,8 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
     const deleteConfirmRef = useRef(false);
     deleteConfirmRef.current = isDeleteConfirming;
+    const [isRequiresOpen, setIsRequiresOpen] = useState(false);
+    const [requiresEditValue, setRequiresEditValue] = useState('');
     const [resultHeight, setResultHeight] = useState(250);
     const [showCompareView, setShowCompareView] = useState(false);
     const resultResizeRef = useRef<{ startY: number; startH: number } | null>(null);
@@ -1109,6 +1111,20 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const cellIdx = allCells.findIndex(c => c.id === cell.id);
     const cellAlias = computeCellHandle(cell, cellIdx);
 
+    const currentRequires = parseCellDirective(cell.content)?.rest?.requires ?? '';
+
+    const handleRequiresSave = useCallback((value: string) => {
+        const trimmed = value.trim();
+        const newContent = updateCellDirectiveAttrs(cell.content, { requires: trimmed || null });
+        onUpdateCell(cell.id, newContent);
+        setIsRequiresOpen(false);
+    }, [cell.content, cell.id, onUpdateCell]);
+
+    const handleRequiresOpen = useCallback(() => {
+        setRequiresEditValue(currentRequires);
+        setIsRequiresOpen(true);
+    }, [currentRequires]);
+
     return (
         <div
             className={`rounded-lg border shadow-sm relative transition-opacity ${isConditionallyHidden ? 'bg-amber-950/20 border-amber-800/40' : 'bg-gray-800/40 border-gray-700/80'} ${isBeingDragged ? 'opacity-50' : ''}`}
@@ -1118,12 +1134,51 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             onKeyDown={handleCellKeyDown}
             onDragOver={handleDragOver} onDragLeave={()=>setIsDraggingOver(null)} onDrop={handleDrop}>
             {isDraggingOver === 'top' && <div className="absolute top-0 left-0 right-0 h-1 bg-cyan-400 z-10" />}
-            <div className="px-3 py-2 border-b border-gray-700/60 flex items-center justify-between bg-gray-700/20" data-testid="cell-header" onContextMenu={handleCellHeaderContextMenu}>
+            <div className="px-3 py-2 border-b border-gray-700/60 flex items-center justify-between bg-gray-700/20 group/header" data-testid="cell-header" onContextMenu={handleCellHeaderContextMenu}>
                 <div className="flex items-center gap-2 w-full">
                      {!presenterMode && <div draggable onDragStart={handleDragStart} onDragEnd={()=>setIsBeingDragged(false)} title="Drag to reorder (Alt+↑/↓ for keyboard)" aria-label="Drag to reorder cell" role="button" tabIndex={0} className="cursor-grab p-1 text-gray-600 hover:text-gray-400"><Bars2Icon className="w-4 h-4"/></div>}
                     {!presenterMode && <button onClick={()=>{ const next = !isCellCollapsed; setIsCellCollapsed(next); onCellCollapseChange?.(cell.id, next); }} className="p-1 text-gray-400 hover:text-gray-300 flex-shrink-0" title={isCellCollapsed ? "Expand cell" : "Collapse cell"} aria-label={isCellCollapsed ? "Expand cell" : "Collapse cell"}>{isCellCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5"/> : <ChevronUpIcon className="w-3.5 h-3.5"/>}</button>}
                     {isEditingTitle ? <input type="text" value={editingTitleValue} onChange={e=>setEditingTitleValue(e.target.value)} onBlur={()=>handleTitleBlur(editingTitleValue)} onKeyDown={handleTitleKeyDown} className="text-base font-semibold bg-gray-900 border border-cyan-500 rounded-md px-2 py-0.5 w-full" autoFocus/> : <h2 onClick={()=>{if(!presenterMode){setEditingTitleValue(title||'');setIsEditingTitle(true);}}} className={`text-base font-semibold w-full text-gray-100 ${presenterMode ? '' : 'cursor-pointer'}`}>{title}</h2>}
                     {isConditionallyHidden && <span className="text-[10px] px-1.5 py-0.5 rounded border border-amber-700/60 bg-amber-900/30 text-amber-400/80 whitespace-nowrap flex-shrink-0">hidden</span>}
+                    {!presenterMode && (
+                        <div className="relative flex-shrink-0">
+                            <button
+                                onClick={handleRequiresOpen}
+                                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-all ${currentRequires ? 'text-cyan-400/80 border border-cyan-700/50 bg-cyan-900/20 opacity-100' : 'text-gray-500 border border-transparent opacity-0 group-hover/header:opacity-100'}`}
+                                title={currentRequires ? `Requires: ${currentRequires}` : 'Set requires condition'}
+                                aria-label="Set requires condition"
+                            >
+                                {currentRequires ? '⚡ requires' : '+ requires'}
+                            </button>
+                            {isRequiresOpen && (
+                                <div className="absolute right-0 top-full mt-1 z-50 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl p-3 w-80" onMouseDown={e=>e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs font-semibold text-gray-300">Visibility condition</span>
+                                        <button onClick={()=>setIsRequiresOpen(false)} className="text-gray-500 hover:text-gray-300 text-sm leading-none">×</button>
+                                    </div>
+                                    <p className="text-[11px] text-gray-500 mb-2 leading-relaxed">Table/view names (comma-separated) or a SQL predicate. Cell is hidden when condition fails.</p>
+                                    <input
+                                        type="text"
+                                        value={requiresEditValue}
+                                        onChange={e=>setRequiresEditValue(e.target.value)}
+                                        onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();handleRequiresSave(requiresEditValue);} if(e.key==='Escape'){e.preventDefault();setIsRequiresOpen(false);} }}
+                                        placeholder="e.g. GarbageCollection or SELECT count(*)>0 FROM my_view"
+                                        className="w-full bg-gray-800 border border-gray-600 focus:border-cyan-500 rounded-md px-2 py-1.5 text-xs font-mono text-gray-200 placeholder-gray-600 outline-none"
+                                        autoFocus
+                                    />
+                                    <div className="flex items-center justify-between mt-2 gap-2">
+                                        {requiresEditValue.trim() && (
+                                            <button onClick={()=>handleRequiresSave('')} className="text-[10px] text-red-400/70 hover:text-red-300 px-1">Remove</button>
+                                        )}
+                                        <div className="flex gap-1.5 ml-auto">
+                                            <button onClick={()=>setIsRequiresOpen(false)} className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300">Cancel</button>
+                                            <button onClick={()=>handleRequiresSave(requiresEditValue)} className="px-2 py-1 text-xs bg-cyan-700 hover:bg-cyan-600 rounded text-white">Save</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
                 {!presenterMode && <div className="flex items-center gap-1 flex-shrink-0"><button onClick={()=>setIsRawEditing(!isRawEditing)} className="p-1.5 hover:bg-cyan-600/30 rounded-md" title={isRawEditing?"Rich View":"Raw Markdown"} aria-label={isRawEditing?"Rich View":"Raw Markdown"}>{isRawEditing ? <EyeIcon className="w-4 h-4 text-cyan-300"/>:<CodeBracketIcon className="w-4 h-4 text-gray-400"/>}</button>{isDeleteConfirming ? (<div className="flex items-center gap-1"><span className="text-xs text-red-400">Delete?</span><button onClick={()=>{setIsDeleteConfirming(false);onDeleteCell(cell.id);}} className="px-1.5 py-0.5 text-xs bg-red-700 hover:bg-red-600 text-white rounded">Yes</button><button onClick={()=>setIsDeleteConfirming(false)} className="px-1.5 py-0.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded">No</button></div>) : (<button onClick={()=>setIsDeleteConfirming(true)} className="p-1.5 hover:bg-red-600/50 rounded-md" title="Delete Cell" aria-label="Delete Cell"><TrashIcon className="w-4 h-4 text-gray-400"/></button>)}</div>}
             </div>

@@ -38,7 +38,7 @@ The front matter is standard YAML between two `---` fences at the top of the fil
 | `variables` | map | Notebook-level variables, keyed by `$$name`. Values are strings, numbers, booleans, or ISO datetime strings. |
 | `views` | list of `{name, sql}` | Custom views available to every SQL cell. |
 | `macros` | list of `{name, sql}` | Custom macros available to every SQL cell. |
-| `cellConditions` | map | Visibility conditions per cell handle. Value is a SQL predicate. When the predicate returns a falsy value the cell collapses to a minimal stub instead of rendering its content. Re-evaluated whenever a dependency changes. |
+| `cellConditions` | map | Advanced visibility conditions per cell handle. Value is any SQL predicate. When the predicate returns a falsy value the cell is dimmed and collapsed. Re-evaluated whenever a dependency changes. Use `requires:` or inline `requires=` for the common case of checking table/view availability. |
 | `customSystemPrompt` | string | Custom AI system prompt for the chat panel. |
 
 ### Example
@@ -61,8 +61,13 @@ views:
 macros:
   - name: over_threshold
     sql: "duration_ms > $$threshold"
+requires:
+  detail_cell: GarbageCollection
+  allocation_cell: ObjectAllocationSample
 cellConditions:
-  detail_cell: "SELECT COUNT(*) > 0 FROM long_pauses"
+  io_section: >
+    SELECT count(*) > 0 FROM information_schema.tables
+    WHERE table_name IN ('FileRead', 'SocketRead', 'FileWrite')
 customSystemPrompt: |
   You are analysing GC pauses. Prefer P95 and P99 over averages.
 ---
@@ -85,6 +90,68 @@ Cell handles are used by:
 - `cellConditions` in the front matter.
 - Cross-cell plot references (`cell_handle.alias_name`).
 - Cell-scoped variables (`$name` is scoped to its declaring cell).
+
+## Cell visibility conditions
+
+A cell can be hidden when specific JFR tables, views, or SQL conditions are not satisfied. This is how built-in templates stay useful across JFR recordings that don't have every event type enabled — sections that have no data simply don't appear.
+
+A cell is visible by default. When a visibility condition is defined and it evaluates to a falsy value, the cell header turns amber and the content is collapsed. Conditions are re-evaluated whenever data changes.
+
+### Inline `requires=` (recommended)
+
+Declare visibility directly on the cell directive:
+
+```html
+<!-- @cell name=gc-section requires="GarbageCollection" -->
+<!-- @cell name=blocking   requires="ThreadPark,ThreadSleep" -->
+<!-- @cell name=heap-trend requires="SELECT count(*) > 0 FROM heap_summary_view" -->
+```
+
+The `requires=` attribute accepts three forms:
+
+| Form | Example | Behaviour |
+|------|---------|-----------|
+| Single table or view name | `requires="GarbageCollection"` | Cell shown only when that table or view exists |
+| Comma-separated names | `requires="ThreadPark,ThreadSleep"` | Cell shown only when **all** named tables/views exist |
+| Raw SQL predicate | `requires="SELECT count(*) > 0 FROM my_view"` | Cell shown when the predicate returns a truthy value |
+
+Names match both tables and views — you don't need to know whether something is a JFR event table or a built-in view.
+
+You can set or remove `requires=` without editing the Markdown: hover over any cell header to reveal a **`+ requires`** button (or **`⚡ requires`** when a condition already exists). Clicking it opens a small editor where you can type the condition and press Enter or Save.
+
+### Front-matter `requires:` shorthand
+
+Use this when you want to declare visibility for many cells in one place (e.g. in a template file):
+
+```yaml
+---
+requires:
+  gc-config:    GCConfiguration
+  blocking:     [ThreadPark, ThreadSleep]
+  heap-section: GarbageCollection
+---
+```
+
+The same three value forms are accepted. Front-matter `requires:` entries are expanded at parse time and behave identically to inline `requires=`.
+
+### Front-matter `cellConditions:` (advanced)
+
+For full SQL predicates that don't fit the `requires=` syntax:
+
+```yaml
+cellConditions:
+  io-section: >
+    SELECT count(*) > 0 FROM information_schema.tables
+    WHERE table_name IN ('FileRead','SocketRead','FileWrite','ThreadPark','JavaMonitorEnter')
+  detail-cell: "SELECT COUNT(*) > 0 FROM long_pauses"
+```
+
+Any SQL predicate is valid. Variable substitution (`$var`) is supported.
+
+### Precedence
+
+When the same cell name is defined in multiple places, `cellConditions` wins over `requires:` (front-matter) which wins over `requires=` (inline). This lets templates define complex fallback conditions while individual cells can set simple table checks.
+
 
 ## SQL blocks
 
