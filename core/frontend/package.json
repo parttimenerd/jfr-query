@@ -49,6 +49,7 @@
     "apache-arrow": "^17.0.0",
     "html2canvas": "^1.4.1",
     "katex": "^0.17.0",
+    "ohm-js": "^17.5.0",
     "path": "^0.12.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
