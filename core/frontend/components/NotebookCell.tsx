@@ -185,6 +185,9 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     deleteConfirmRef.current = isDeleteConfirming;
     const [isRequiresOpen, setIsRequiresOpen] = useState(false);
     const [requiresEditValue, setRequiresEditValue] = useState('');
+    const [requiresAutocomplete, setRequiresAutocomplete] = useState<string[]>([]);
+    const [requiresAcIdx, setRequiresAcIdx] = useState(-1);
+    const requiresInputRef = useRef<HTMLInputElement>(null);
     const [resultHeight, setResultHeight] = useState(250);
     const [showCompareView, setShowCompareView] = useState(false);
     const resultResizeRef = useRef<{ startY: number; startH: number } | null>(null);
@@ -1142,30 +1145,116 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     {isConditionallyHidden && <span className="text-[10px] px-1.5 py-0.5 rounded border border-amber-700/60 bg-amber-900/30 text-amber-400/80 whitespace-nowrap flex-shrink-0">hidden</span>}
                     {!presenterMode && (
                         <div className="relative flex-shrink-0">
+                            {/* Permanent dot badge when condition is set */}
+                            {currentRequires && (
+                                <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-cyan-400 z-10 pointer-events-none" title={`Requires: ${currentRequires}`} />
+                            )}
                             <button
                                 onClick={handleRequiresOpen}
                                 className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-all ${currentRequires ? 'text-cyan-400/80 border border-cyan-700/50 bg-cyan-900/20 opacity-100' : 'text-gray-500 border border-transparent opacity-0 group-hover/header:opacity-100'}`}
-                                title={currentRequires ? `Requires: ${currentRequires}` : 'Set requires condition'}
-                                aria-label="Set requires condition"
+                                title={currentRequires ? `Requires: ${currentRequires}` : 'Set visibility condition'}
+                                aria-label="Set visibility condition"
                             >
-                                {currentRequires ? '⚡ requires' : '+ requires'}
+                                requires
                             </button>
                             {isRequiresOpen && (
-                                <div className="absolute right-0 top-full mt-1 z-50 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl p-3 w-80" onMouseDown={e=>e.stopPropagation()}>
+                                <div className="absolute right-0 top-full mt-1 z-50 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl p-3 w-96" onMouseDown={e=>e.stopPropagation()}>
                                     <div className="flex items-center justify-between mb-2">
                                         <span className="text-xs font-semibold text-gray-300">Visibility condition</span>
                                         <button onClick={()=>setIsRequiresOpen(false)} className="text-gray-500 hover:text-gray-300 text-sm leading-none">×</button>
                                     </div>
-                                    <p className="text-[11px] text-gray-500 mb-2 leading-relaxed">Table/view names (comma-separated) or a SQL predicate. Cell is hidden when condition fails.</p>
-                                    <input
-                                        type="text"
-                                        value={requiresEditValue}
-                                        onChange={e=>setRequiresEditValue(e.target.value)}
-                                        onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();handleRequiresSave(requiresEditValue);} if(e.key==='Escape'){e.preventDefault();setIsRequiresOpen(false);} }}
-                                        placeholder="e.g. GarbageCollection or SELECT count(*)>0 FROM my_view"
-                                        className="w-full bg-gray-800 border border-gray-600 focus:border-cyan-500 rounded-md px-2 py-1.5 text-xs font-mono text-gray-200 placeholder-gray-600 outline-none"
-                                        autoFocus
-                                    />
+                                    <p className="text-[11px] text-gray-400 mb-1 leading-relaxed">
+                                        Cell is hidden when the condition fails. Accepts:
+                                    </p>
+                                    <ul className="text-[11px] text-gray-500 mb-2.5 space-y-0.5 pl-3 list-disc leading-relaxed">
+                                        <li><span className="text-gray-400 font-mono">GarbageCollection</span> — single table or view</li>
+                                        <li><span className="text-gray-400 font-mono">ThreadPark AND ThreadSleep</span> — all must exist</li>
+                                        <li><span className="text-gray-400 font-mono">A OR (B AND C)</span> — boolean logic with parentheses</li>
+                                        <li><span className="text-gray-400 font-mono">SELECT count(*)&gt;0 FROM my_view</span> — raw SQL predicate</li>
+                                    </ul>
+                                    <div className="relative">
+                                        <input
+                                            ref={requiresInputRef}
+                                            type="text"
+                                            value={requiresEditValue}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setRequiresEditValue(val);
+                                                setRequiresAcIdx(-1);
+                                                // Build autocomplete suggestions
+                                                if (/^select\s/i.test(val.trim())) {
+                                                    setRequiresAutocomplete([]);
+                                                    return;
+                                                }
+                                                // Find last token after whitespace/( / ,
+                                                const lastTokMatch = val.match(/[^(,\s]+$/);
+                                                const lastTok = lastTokMatch ? lastTokMatch[0] : '';
+                                                if (!lastTok) {
+                                                    setRequiresAutocomplete([]);
+                                                    return;
+                                                }
+                                                const upper = lastTok.toUpperCase();
+                                                // Keywords
+                                                const kwSuggestions = ['AND', 'OR'].filter(k => k.startsWith(upper) && k !== upper);
+                                                // Table/view names — prioritise those referenced in the cell's SQL
+                                                const sqlText = parsedSqlBlocks.join(' ').toUpperCase();
+                                                const allNames = [
+                                                    ...(schema?.tables ?? []).map(t => t.name),
+                                                    ...(schema?.views ?? []).map(v => v.name),
+                                                ];
+                                                const matched = allNames.filter(n => n.toUpperCase().startsWith(upper) && n.toUpperCase() !== upper);
+                                                matched.sort((a, b) => {
+                                                    const aInCell = sqlText.includes(a.toUpperCase());
+                                                    const bInCell = sqlText.includes(b.toUpperCase());
+                                                    if (aInCell && !bInCell) return -1;
+                                                    if (!aInCell && bInCell) return 1;
+                                                    return a.localeCompare(b);
+                                                });
+                                                setRequiresAutocomplete([...kwSuggestions, ...matched].slice(0, 10));
+                                            }}
+                                            onKeyDown={e => {
+                                                if (requiresAutocomplete.length > 0) {
+                                                    if (e.key === 'ArrowDown') { e.preventDefault(); setRequiresAcIdx(i => Math.min(i + 1, requiresAutocomplete.length - 1)); return; }
+                                                    if (e.key === 'ArrowUp') { e.preventDefault(); setRequiresAcIdx(i => Math.max(i - 1, -1)); return; }
+                                                    if ((e.key === 'Tab' || e.key === 'Enter') && requiresAcIdx >= 0) {
+                                                        e.preventDefault();
+                                                        const chosen = requiresAutocomplete[requiresAcIdx];
+                                                        const val = requiresEditValue.replace(/[^(,\s]+$/, chosen);
+                                                        setRequiresEditValue(val + ' ');
+                                                        setRequiresAutocomplete([]);
+                                                        setRequiresAcIdx(-1);
+                                                        return;
+                                                    }
+                                                    if (e.key === 'Escape') { e.preventDefault(); setRequiresAutocomplete([]); return; }
+                                                }
+                                                if (e.key === 'Enter') { e.preventDefault(); handleRequiresSave(requiresEditValue); }
+                                                if (e.key === 'Escape') { e.preventDefault(); setIsRequiresOpen(false); }
+                                            }}
+                                            placeholder="e.g. GarbageCollection or SELECT count(*)>0 FROM my_view"
+                                            className="w-full bg-gray-800 border border-gray-600 focus:border-cyan-500 rounded-md px-2 py-1.5 text-xs font-mono text-gray-200 placeholder-gray-600 outline-none"
+                                            autoFocus
+                                        />
+                                        {requiresAutocomplete.length > 0 && (
+                                            <div className="absolute left-0 right-0 top-full mt-0.5 bg-gray-800 border border-gray-600 rounded-md shadow-lg z-10 overflow-hidden max-h-48 overflow-y-auto">
+                                                {requiresAutocomplete.map((item, i) => (
+                                                    <button
+                                                        key={item}
+                                                        onMouseDown={e => {
+                                                            e.preventDefault();
+                                                            const val = requiresEditValue.replace(/[^(,\s]+$/, item);
+                                                            setRequiresEditValue(val + ' ');
+                                                            setRequiresAutocomplete([]);
+                                                            setRequiresAcIdx(-1);
+                                                            requiresInputRef.current?.focus();
+                                                        }}
+                                                        className={`w-full text-left px-2.5 py-1 text-xs font-mono truncate transition-colors ${i === requiresAcIdx ? 'bg-cyan-700/60 text-cyan-200' : 'text-gray-300 hover:bg-gray-700'} ${['AND','OR'].includes(item) ? 'text-yellow-300' : ''}`}
+                                                    >
+                                                        {item}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                     <div className="flex items-center justify-between mt-2 gap-2">
                                         {requiresEditValue.trim() && (
                                             <button onClick={()=>handleRequiresSave('')} className="text-[10px] text-red-400/70 hover:text-red-300 px-1">Remove</button>
@@ -1705,6 +1794,7 @@ function arePropsEqual(prev: NotebookCellProps, next: NotebookCellProps): boolea
         prev.results === next.results &&
         prev.queryTimings === next.queryTimings &&
         areCrossCellRefsEqual(prev.crossCellQueryRefs, next.crossCellQueryRefs) &&
+        prev.isConditionallyHidden === next.isConditionallyHidden &&
         prev.isAutoRunEnabled === next.isAutoRunEnabled &&
         prev.collapseTrigger === next.collapseTrigger &&
         prev.allCollapsed === next.allCollapsed &&

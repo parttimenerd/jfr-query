@@ -67,6 +67,12 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     // cellConditions: evaluate each cell's SQL predicate to decide visibility.
     const [cellVisibility, setCellVisibility] = useState<Record<string, boolean>>({});
 
+    // Ref-stabilise onRunPreviewQuery so the visibility effect doesn't re-run
+    // every time the underlying DuckDB query function gets a new reference
+    // (which happens on every dbState change).
+    const onRunPreviewQueryRef = useRef(onRunPreviewQuery);
+    useEffect(() => { onRunPreviewQueryRef.current = onRunPreviewQuery; });
+
     const [tocOpen, setTocOpen] = useState(false);
 
     useEffect(() => {
@@ -103,20 +109,23 @@ const Notebook: React.FC<NotebookProps> = (props) => {
         (async () => {
             const next: Record<string, boolean> = {};
             for (let idx = 0; idx < cells.length; idx++) {
+                if (cancelled) return;
                 const c = cells[idx];
                 const name = cellHandle(c, idx);
                 next[name] = await resolveCellVisibility(
                     name,
                     effective,
                     metadata.variables ?? {},
-                    onRunPreviewQuery,
+                    onRunPreviewQueryRef.current,
                 );
             }
             if (!cancelled) setCellVisibility(next);
         })();
         return () => { cancelled = true; };
+    // onRunPreviewQuery is intentionally omitted — captured via ref to prevent
+    // re-runs on every DuckDB state change (dbState triggers new query reference).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cells, metadata.cellConditions, metadata.variables, onRunPreviewQuery]);
+    }, [cells, metadata.cellConditions, metadata.variables]);
 
     // B-161/cross-cell ON routing: build a map from SQL alias name → dataset so
     // plots in any cell can reference results from other cells via ON <alias>.
