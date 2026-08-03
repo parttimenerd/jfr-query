@@ -7,6 +7,9 @@ export const BUILTIN_MACROS_SQL: string[] = [
   `CREATE OR REPLACE MACRO P95(col) AS quantile(col, 0.95)`,
   `CREATE OR REPLACE MACRO P99(col) AS quantile(col, 0.99)`,
   `CREATE OR REPLACE MACRO P999(col) AS quantile(col, 0.999)`,
+  `CREATE OR REPLACE MACRO P50(col) AS quantile(col, 0.50)`,
+  `CREATE OR REPLACE MACRO P25(col) AS quantile(col, 0.25)`,
+  `CREATE OR REPLACE MACRO P75(col) AS quantile(col, 0.75)`,
   `CREATE OR REPLACE MACRO normalized(x) AS (
   x / NULLIF(MAX(x) OVER(), 0)
 )`,
@@ -97,6 +100,15 @@ export const BUILTIN_MACROS_SQL: string[] = [
   END
 )`,
   `CREATE OR REPLACE MACRO format_hex(i) AS format('0x{:x}', i)`,
+  `CREATE OR REPLACE MACRO format_rate(bytes_per_sec, decimals := 2) AS (
+  CASE
+    WHEN bytes_per_sec IS NULL THEN NULL
+    WHEN abs(bytes_per_sec) >= 1073741824 THEN format_decimals(bytes_per_sec / 1073741824.0, decimals) || ' GB/s'
+    WHEN abs(bytes_per_sec) >= 1048576    THEN format_decimals(bytes_per_sec / 1048576.0,    decimals) || ' MB/s'
+    WHEN abs(bytes_per_sec) >= 1024       THEN format_decimals(bytes_per_sec / 1024.0,       decimals) || ' KB/s'
+    ELSE format_decimals(bytes_per_sec * 1.0, decimals) || ' B/s'
+  END
+)`,
 
   // Garbage collection analysis
   `CREATE OR REPLACE MACRO before_gc(ts) AS (
@@ -148,11 +160,18 @@ export const BUILTIN_MACROS_SQL: string[] = [
     'Unknown'
   )
 )`,
+  `CREATE OR REPLACE MACRO reclaim_mb(gc_id) AS (
+  (HEAP_BEFORE_GC(gc_id) - HEAP_AFTER_GC(gc_id)) / 1048576.0
+)`,
 
   // Time-window helpers — note: bucket_ms(ts, width_ms) returns epoch-ms integer;
   // use DuckDB's native time_bucket(INTERVAL, TIMESTAMP) for TIMESTAMP results
   `CREATE OR REPLACE MACRO bucket_ms(ts, width_ms) AS (
   epoch_ms(ts) - (epoch_ms(ts) % width_ms)
+)`,
+  // Returns a TIMESTAMP (not a raw integer) so LINE_CHART auto-formats the axis.
+  `CREATE OR REPLACE MACRO bucket_time(ts, width_ms) AS (
+  epoch_ms(epoch_ms(ts) - (epoch_ms(ts) % width_ms))
 )`,
   `CREATE OR REPLACE MACRO in_range(ts, t_start, t_end) AS (
   ts >= t_start AND ts <= t_end
@@ -1461,6 +1480,47 @@ FROM VirtualThreadPinned vtp
 JOIN Class c ON vtp.stackTrace$topApplicationClass = c._id
 GROUP BY vtp.stackTrace$topApplicationMethod, vtp.stackTrace$topApplicationClass, c.javaName
 ORDER BY SUM(vtp.duration) DESC`,
+  },
+  {
+    requires: 'MetaspaceSummary',
+    sql: `CREATE OR REPLACE VIEW "metaspace-over-time" AS
+SELECT
+    g.startTime AS "Time",
+    round(ms.metaspace$used / 1048576.0, 1) AS "Metaspace Used MB",
+    round(ms.metaspace$committed / 1048576.0, 1) AS "Metaspace Committed MB",
+    round(ms.gcThreshold / 1048576.0, 1) AS "GC Threshold MB"
+FROM MetaspaceSummary ms
+JOIN GarbageCollection g ON ms.gcId = g.gcId
+WHERE ms."when" = 'After GC'
+ORDER BY g.startTime`,
+  },
+  {
+    requires: 'G1HeapSummary',
+    sql: `CREATE OR REPLACE VIEW "g1-heap-regions" AS
+SELECT
+    g.startTime AS "Time",
+    round(s.edenUsedSize / 1048576.0, 1) AS "Eden MB",
+    round(s.survivorUsedSize / 1048576.0, 1) AS "Survivor MB",
+    round(s.oldGenUsedSize / 1048576.0, 1) AS "Old Gen MB"
+FROM G1HeapSummary s
+JOIN GarbageCollection g ON s.gcId = g.gcId
+WHERE s."when" = 'After GC'
+ORDER BY g.startTime`,
+  },
+  {
+    requires: 'TenuringDistribution',
+    sql: `CREATE OR REPLACE VIEW "tenuring-distribution" AS
+SELECT
+    td.age AS "Age",
+    SUM(td.count) AS "Objects",
+    round(SUM(td.size) / 1048576.0, 3) AS "MB",
+    MAX(sc.maxTenuringThreshold) AS "Max Tenure Threshold",
+    round(MAX(sc.desiredSurvivorSize) / 1048576.0, 1) AS "Desired Survivor MB"
+FROM TenuringDistribution td
+JOIN GCSurvivorConfiguration sc ON td.gcId = sc.gcId
+WHERE td.gcId = (SELECT max(gcId) FROM GarbageCollection)
+GROUP BY td.age
+ORDER BY td.age`,
   },
   {
     // Build jvm-flags from only the flag tables that are present in this recording
