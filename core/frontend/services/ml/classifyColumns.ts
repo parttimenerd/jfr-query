@@ -16,6 +16,10 @@ const TIME_SUFFIX_NAMES_RE = /[_.\-](at|on|date|time|timestamp|ts)$/i;
 // These take precedence over the time-name patterns above.
 const DURATION_NAMES_RE = /(duration|elapsed|latency|pause|wait|delay|interval|lag|cost|cpu|memory|count|total|sum|avg|min|max|p\d{1,2}|percentile)/i;
 const NUMERIC_TYPE_RE = /INT|DOUBLE|DECIMAL|FLOAT|REAL|NUMERIC|HUGEINT|BIGINT|SMALLINT|TINYINT/i;
+// Column names that strongly imply a numeric/metric value even without a type declaration.
+// Uses anchored alternatives or word-boundary safe patterns to avoid false positives
+// (e.g., "us" must not match "cause", "ms" must not match "promise").
+const KNOWN_NUMERIC_NAMES_RE = /\b(duration|elapsed|latency|pause|wait|delay|interval|lag|cost|count|total|sum|avg|min|max|percent|ratio|rate|throughput|size|bytes|weight|score|cpu|memory)\b|(^|\D)(ms|ns|kb|mb|gb)(\d|$)/i;
 
 function looksLikeTimeName(name: string): boolean {
     if (DURATION_NAMES_RE.test(name)) return false;
@@ -80,7 +84,7 @@ export function classifyColumns(
         if (looksLikeTimeName(c.name)) {
             return { ...c, role: 'time' as const };
         }
-        if (typeof sampleVal === 'number' || NUMERIC_TYPE_RE.test(typeStr)) {
+        if (typeof sampleVal === 'number' || NUMERIC_TYPE_RE.test(typeStr) || KNOWN_NUMERIC_NAMES_RE.test(c.name)) {
             return { ...c, role: 'numeric' as const };
         }
         return { ...c, role: 'category' as const };

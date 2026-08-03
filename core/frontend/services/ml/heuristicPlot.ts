@@ -17,6 +17,10 @@ function distinctCount(sample: any[], colName: string): number | null {
 // Matches anywhere in the column name (camelCase-aware via case-insensitive).
 const STACKED_NAMES_RE = /pct|percent|share|portion|fraction|alloc|heap|eden|survivor|metaspace|reserved|committed|used|free|available/i;
 
+// Names that suggest the column is an aggregate/summary scalar rather than
+// a raw per-event measurement. Single columns matching these fall through to TABLE.
+const AGGREGATE_NAMES_RE = /^(count|total|sum|avg|average|mean|median|mode|n|num|number|frequency|occurrences?|events?|hits?|samples?)$/i;
+
 /**
  * Returns true when the numeric columns look like they sum to a meaningful
  * whole (e.g. memory regions, allocation percentages) and stacking them makes
@@ -59,14 +63,20 @@ export function heuristicPlot(
     const numerics = roles.filter(r => r.role === 'numeric');
     const cats = roles.filter(r => r.role === 'category');
 
-    // Single scalar value → table
-    if (roles.length === 1 && numerics.length === 1) return 'TABLE()';
+    // Single scalar value → table only when the column name suggests an aggregate (count, total, sum…)
+    // or when sample has exactly 1 row. Single raw-measurement columns (pauseMs, duration…) → HISTOGRAM.
+    if (roles.length === 1 && numerics.length === 1) {
+        const isAggregate = AGGREGATE_NAMES_RE.test(numerics[0].name) || sample.length === 1;
+        if (isAggregate) return 'TABLE()';
+    }
 
     // GANTT — require BOTH start* AND end* (conservative; per plan risk matrix
     // we never emit GANTT on a single time column).
+    // Also check numeric columns: BIGINT timestamps (epoch-ns) are numeric-typed by
+    // classifyColumns but can have start/end-style names.
     const timeRoles = roles.filter(r => r.role === 'time');
-    const startCol = timeRoles.find(r => looksLikeStartName(r.name));
-    const endCol = timeRoles.find(r => looksLikeEndName(r.name));
+    const startCol = [...timeRoles, ...numerics].find(r => looksLikeStartName(r.name));
+    const endCol = [...timeRoles, ...numerics].find(r => looksLikeEndName(r.name));
     if (startCol && endCol && startCol.name !== endCol.name && cats.length >= 1) {
         const lane = cats[0].name;
         const task = cats.length > 1 ? cats[1].name : undefined;
@@ -74,15 +84,17 @@ export function heuristicPlot(
         return `GANTT(start: "${startCol.name}", end: "${endCol.name}", lane: "${lane}"${taskPart})`;
     }
 
-    // RANGE — exactly 1 category + 2 numerics whose names look like min/max
-    // or p-low/p-high pair.
-    if (cats.length === 1 && numerics.length === 2 && !time) {
-        const a = looksLikeRangeBound(numerics[0].name);
-        const b = looksLikeRangeBound(numerics[1].name);
+    // RANGE — 1 category (or time) + exactly 2 numerics with min/max-like names.
+    // Allow time column as x so `bucket (time) + p25 + p75` also works.
+    const rangeX = cats[0] ?? time;
+    const rangeNumerics = cats.length === 1 ? numerics : (time && cats.length === 0 ? numerics : []);
+    if (rangeX && rangeNumerics.length === 2) {
+        const a = looksLikeRangeBound(rangeNumerics[0].name);
+        const b = looksLikeRangeBound(rangeNumerics[1].name);
         if (a && b && a !== b) {
-            const low = a === 'low' ? numerics[0] : numerics[1];
-            const high = a === 'high' ? numerics[0] : numerics[1];
-            return `RANGE(x: "${cats[0].name}", low: "${low.name}", high: "${high.name}")`;
+            const low = a === 'low' ? rangeNumerics[0] : rangeNumerics[1];
+            const high = a === 'high' ? rangeNumerics[0] : rangeNumerics[1];
+            return `RANGE(x: "${rangeX.name}", low: "${low.name}", high: "${high.name}")`;
         }
     }
 

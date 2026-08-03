@@ -64,11 +64,9 @@ describe('heuristicPlot — output is a valid plot-registry config', () => {
     it('single numeric, no time/cat → HISTOGRAM(value:) — NOT HISTOGRAM(column:)', () => {
         const cols = [{ name: 'duration', type: 'DOUBLE' }];
         const out = heuristicPlot(cols, [{ duration: 5 }, { duration: 8 }]);
-        // Single column + numeric is now a scalar/TABLE in the heuristic;
-        // for two+ rows we still want it treated as a distribution candidate.
-        // Reality: with cols.length === 1 the function returns TABLE() because
-        // there's only one role. That's fine for a single-column scalar result.
-        expect(out).toBe('TABLE()');
+        // A single raw-measurement column with multiple rows is a distribution → HISTOGRAM.
+        expect(out).toMatch(/^HISTOGRAM\(/);
+        expect(out).toContain('x: "duration"');
     });
 
     it('two numerics, no time/cat → SCATTER_PLOT not HISTOGRAM', () => {
