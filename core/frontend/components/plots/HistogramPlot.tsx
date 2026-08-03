@@ -9,13 +9,14 @@ import { PlotTooltip } from './PlotTooltip';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
 
-interface Config { x: string; bins: number | string; logScale: boolean; logBins: boolean; xDomain: any[]; }
+interface Config { x: string; bins: number | string; logScale: boolean; logBins: boolean; xDomain: any[]; yLog: boolean; }
 const params: PlotParameter[] = [
     { name: 'x', type: 'column', required: true, description: 'Numeric column for the histogram.' },
     { name: 'bins', type: 'string', defaultValue: '10', description: 'Number of bins, or "auto" for Freedman-Diaconis.' },
     { name: 'logScale', type: 'boolean', defaultValue: false, description: 'Use log scale for the Y-axis. Deprecated — use AXIS-Y TYPE LOG suffix clause.' },
     { name: 'logBins', type: 'boolean', defaultValue: false, description: 'Use logarithmically sized bins.' },
     { name: 'xDomain', type: 'number[]', defaultValue: ['auto', 'auto'], description: 'Set a fixed domain for the X-axis.' },
+    { name: 'yLog', type: 'boolean', defaultValue: false, description: 'Use a logarithmic scale for the frequency (Y) axis.' },
     // Deprecated alias: `value` → `x`.
     { name: 'value', type: 'column', aliasFor: 'x', deprecated: true, description: 'Deprecated alias for "x".' },
 ];
@@ -36,7 +37,7 @@ export function freedmanDiaconisBins(values: number[]): number {
 const HistogramComponent: React.FC<{ config: Config; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; clauses?: ParsedPlotCall; }> = ({ config, data, isAnimationActive, animationDuration, domainX, clauses }) => {
     const { settings } = useContext(SettingsContext);
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
-    const effectiveLogScale = clauses?.axisY?.type === 'log' ? true : config.logScale;
+    const effectiveLogScale = clauses?.axisY?.type === 'log' ? true : (config.logScale || config.yLog);
     const yDomainFromClause = clauses?.axisY?.domain as [any, any] | undefined;
     const xLabelFromClause = clauses?.axisX?.label;
     const yLabelFromClause = clauses?.axisY?.label;

@@ -25,6 +25,10 @@ describe('histogramPlot registration', () => {
         expect(histogramPlot.params.find(p => p.name === 'logBins')?.defaultValue).toBe(false);
     });
 
+    it('yLog param defaults to false', () => {
+        expect(histogramPlot.params.find(p => p.name === 'yLog')?.defaultValue).toBe(false);
+    });
+
     it('value param is a deprecated alias for x', () => {
         const p = histogramPlot.params.find(p => p.name === 'value');
         expect(p?.aliasFor).toBe('x');
@@ -53,6 +57,14 @@ describe('histogramPlot parseConfig', () => {
     it('bins defaults to "10" when absent', () => {
         const cfg = histogramPlot.parseConfig('HISTOGRAM(x: "v")', []);
         expect(cfg.bins ?? '10').toBe('10');
+    });
+
+    it('parses yLog: true', () => {
+        expect(histogramPlot.parseConfig('HISTOGRAM(x: "v", yLog: true)', []).yLog).toBe(true);
+    });
+
+    it('yLog defaults to false when absent', () => {
+        expect(histogramPlot.parseConfig('HISTOGRAM(x: "v")', []).yLog).toBe(false);
     });
 });
 
