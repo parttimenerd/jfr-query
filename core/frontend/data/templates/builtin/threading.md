@@ -5,8 +5,14 @@ tags: [threads, contention, virtual-threads]
 license: MIT
 variables:
   $limit: "20"
-cellConditions:
-  pinned-threads: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'VirtualThreadPinned'"
+requires:
+  thread-counts: JavaThreadStatistics
+  thread-cpu: ThreadCPULoad
+  monitor-contention: JavaMonitorEnter
+  contention-by-site: JavaMonitorEnter
+  contention-over-time: JavaMonitorEnter
+  thread-blocking: [ThreadPark, ThreadSleep]
+  pinned-threads: VirtualThreadPinned
 ---
 
 <!-- @cell name=intro -->
@@ -129,6 +135,28 @@ TABLE()
 
 ---
 
+<!-- @cell name=contention-over-time -->
+
+## Monitor Contention Over Time
+
+Wait events per second — spikes reveal when lock contention is highest and whether it correlates with GC pauses or CPU spikes.
+
+```sql
+SELECT
+  time_bucket(INTERVAL '1 second', e.startTime) AS "Second",
+  COUNT(*) AS "Contention Events",
+  round(SUM(e.duration) * 1000.0, 1) AS "Total Wait (ms)"
+FROM JavaMonitorEnter e
+GROUP BY 1
+ORDER BY 1
+```
+
+```plot
+LINE_CHART(x: "Second", y: ["Contention Events", "Total Wait (ms)"], layout: "grouped") TITLE "Monitor Contention per Second" LINK_X($start, $end) ZOOM
+```
+
+---
+
 <!-- @cell name=thread-blocking -->
 
 ## Thread Blocking Over Time
@@ -159,7 +187,7 @@ LINE_CHART(x: "Second", y: ["Parks", "Sleeps"]) TITLE "Thread Blocking per Secon
 
 ## Virtual Thread Pinning
 
-Virtual threads are pinned when they block while holding a monitor or running inside a `synchronized` block. Pinned threads occupy a carrier thread and reduce parallelism. Each row is a pinning event with its duration.
+Virtual threads are pinned when they block while holding a monitor or running inside a `synchronized` block. Pinned threads occupy a carrier thread and reduce parallelism.
 
 *Only present if the recording includes `VirtualThreadPinned` events (Java 21+).*
 
@@ -176,4 +204,8 @@ LIMIT $limit
 
 ```plot
 TABLE()
+```
+
+```plot
+SCATTER(x: "Time", y: "Duration (ms)", color: "Carrier Thread") TITLE "Virtual Thread Pinning Events" LINK_X($start, $end) ZOOM
 ```

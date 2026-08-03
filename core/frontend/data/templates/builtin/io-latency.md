@@ -5,13 +5,13 @@ tags: [io, latency, network, threads]
 license: MIT
 variables:
   $limit: "20"
-cellConditions:
-  latency-overview: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'JavaMonitorWait'"
-  file-reads: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'FileRead'"
-  file-writes: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'FileWrite'"
-  socket-reads: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'SocketRead'"
-  socket-writes: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'SocketWrite'"
-  thread-parks-over-time: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('ThreadPark','ThreadSleep')"
+requires:
+  latency-overview: JavaMonitorWait
+  file-reads: FileRead
+  file-writes: FileWrite
+  socket-reads: SocketRead
+  socket-writes: SocketWrite
+  thread-parks-over-time: [ThreadPark, ThreadSleep]
 ---
 
 <!-- @cell name=intro -->

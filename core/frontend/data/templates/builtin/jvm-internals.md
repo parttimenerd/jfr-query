@@ -5,9 +5,13 @@ tags: [jvm, safepoints, jit, compilation]
 license: MIT
 variables:
   $limit: "20"
-cellConditions:
-  safepoints: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'SafepointEnd'"
-  compiler-phases: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'CompilerPhase'"
+requires:
+  vm-operations: ExecuteVMOperation
+  safepoints: SafepointEnd
+  safepoints-over-time: SafepointEnd
+  deoptimizations: Deoptimization
+  class-loading: ClassLoad
+  compiler-phases: CompilerPhase
 ---
 
 <!-- @cell name=intro -->
@@ -57,20 +61,49 @@ BAR_CHART(x: "VM Operation", y: ["Total (ms)"], horizontal: true) TITLE "VM Oper
 
 ## Safepoints Over Time
 
-Each row is one safepoint — a moment when all application threads were paused. The "Sync Duration" is how long it took to bring all threads to a halt; long sync means threads were deep in native code or JNI.
+Each point is one safepoint — a moment when all application threads were paused. Tall spikes indicate long STW pauses. The "Sync Duration" is how long it took to bring all threads to a halt; a long sync means threads were deep in native code or JNI.
 
 ```sql
 SELECT
-  "Start Time",
-  "Duration",
-  "State Synchronization",
-  "Total Threads"
-FROM "safepoints"
-ORDER BY "Start Time"
+  B.startTime AS "Time",
+  round(epoch_ms(E.startTime - B.startTime), 1) AS "Duration (ms)",
+  round(S.duration * 1000, 1) AS "Sync (ms)",
+  B.totalThreadCount AS "Threads"
+FROM SafepointBegin B
+JOIN SafepointEnd E ON B.safepointId = E.safepointId
+LEFT JOIN SafepointStateSynchronization S ON B.safepointId = S.safepointId
+ORDER BY B.startTime
+```
+
+```plot
+SCATTER(x: "Time", y: "Duration (ms)") TITLE "Safepoint Duration Over Time (ms)" LINK_X($start, $end) ZOOM
 ```
 
 ```plot
 TABLE()
+```
+
+---
+
+<!-- @cell name=safepoints-over-time -->
+
+## Safepoint Overhead per Second
+
+Total STW time per second — shows when the JVM spent the most time stopped. Sustained high safepoint overhead indicates GC or other VM operations dominating runtime.
+
+```sql
+SELECT
+  time_bucket(INTERVAL '1 second', B.startTime) AS "Second",
+  COUNT(*) AS "Count",
+  round(SUM(epoch_ms(E.startTime - B.startTime)), 1) AS "Total STW (ms)"
+FROM SafepointBegin B
+JOIN SafepointEnd E ON B.safepointId = E.safepointId
+GROUP BY 1
+ORDER BY 1
+```
+
+```plot
+LINE_CHART(x: "Second", y: ["Total STW (ms)"]) TITLE "Total Safepoint STW per Second" LINK_X($start, $end) ZOOM
 ```
 
 ---
@@ -95,6 +128,19 @@ LIMIT $limit
 
 ```plot
 BAR_CHART(x: "Reason", y: ["Count"], horizontal: true) TITLE "Deoptimizations by Reason"
+```
+
+```sql
+SELECT
+  time_bucket(INTERVAL '5 seconds', startTime) AS "Window",
+  COUNT(*) AS "Deoptimizations"
+FROM Deoptimization
+GROUP BY 1
+ORDER BY 1
+```
+
+```plot
+LINE_CHART(x: "Window", y: ["Deoptimizations"]) TITLE "Deoptimizations Over Time" LINK_X($start, $end) ZOOM
 ```
 
 ---

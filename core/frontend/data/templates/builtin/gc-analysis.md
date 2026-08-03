@@ -6,37 +6,38 @@ license: MIT
 variables:
   $$threshold_ms: "100"
   $limit: "20"
+requires:
+  gc-config: GCConfiguration
+  long-pauses-section: GarbageCollection
+  gc-allocation-trigger: AllocationRequiringGC
+  gc-references: GCReferenceStatistics
+  system-gc-blockers: SystemGC
+  metaspace: MetaspaceSummary
+  g1-regions: G1HeapSummary
+  tenuring: TenuringDistribution
+  jvm-memory-size: GCHeapConfiguration
+  concurrent-phases: GCPhaseConcurrent
+  object-stats: ObjectAllocationSample
+  cpu-stats: GCCPUTime
+  safepoint-summary: SafepointEnd
+  consecutive-full-gcs: GarbageCollection
+  promotion-rate: G1HeapSummary
+  gc-throughput: GarbageCollection
+  parallel-phases: GCPhaseParallel
+  tlab-efficiency: ObjectAllocationInNewTLAB
+  finalizers: FinalizerStatistics
+  gc-pause-over-time: GarbageCollection
+  gc-young-old-time: GarbageCollection
+  gc-pause-cause-over-time: GarbageCollection
+  gc-eden-size: G1HeapSummary
+  gc-safepoint-distribution: SafepointBegin
+  gc-allocation-by-class: ObjectAllocationSample
+  gc-thread-allocation: ObjectAllocationSample
+  gc-old-gen-growth: G1HeapSummary
+  gc-duration-buckets: GCPhasePause
+  gc-phase-stats: GCPhasePause
 cellConditions:
-  gc-config: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GCConfiguration'"
-  long-pauses-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GarbageCollection'"
-  gc-allocation-trigger: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'AllocationRequiringGC'"
-  gc-references: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GCReferenceStatistics'"
-  system-gc-blockers: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'SystemGC'"
-  metaspace: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'MetaspaceSummary'"
-  g1-regions: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'G1HeapSummary'"
-  tenuring: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'TenuringDistribution'"
-  jvm-memory-size: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GCHeapConfiguration'"
-  concurrent-phases: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GCPhaseConcurrent'"
   pause-vs-concurrent: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GCPhaseConcurrent'"
-  object-stats: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ObjectAllocationSample'"
-  cpu-stats: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GCCPUTime'"
-  safepoint-summary: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'SafepointEnd'"
-  consecutive-full-gcs: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GarbageCollection'"
-  promotion-rate: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'G1HeapSummary'"
-  gc-throughput: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GarbageCollection'"
-  parallel-phases: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GCPhaseParallel'"
-  tlab-efficiency: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ObjectAllocationInNewTLAB'"
-  finalizers: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'FinalizerStatistics'"
-  gc-pause-over-time: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GarbageCollection'"
-  gc-young-old-time: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GarbageCollection'"
-  gc-pause-cause-over-time: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GarbageCollection'"
-  gc-eden-size: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'G1HeapSummary'"
-  gc-safepoint-distribution: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'SafepointBegin'"
-  gc-allocation-by-class: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ObjectAllocationSample'"
-  gc-thread-allocation: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ObjectAllocationSample'"
-  gc-old-gen-growth: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'G1HeapSummary'"
-  gc-duration-buckets: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GCPhasePause'"
-  gc-phase-stats: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GCPhasePause'"
 ---
 
 <!-- @cell name=intro -->

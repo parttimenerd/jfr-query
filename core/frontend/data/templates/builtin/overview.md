@@ -4,17 +4,18 @@ description: Adaptive first-look at a JFR recording — shows only sections rele
 tags: [overview, gc, cpu, memory, io, threads]
 license: MIT
 priority: 1
+requires:
+  gc-section: GarbageCollection
+  cpu-section: CPULoad
+  hot-methods-section: ExecutionSample
+  allocation-section: ObjectAllocationSample
+  contention-section: JavaMonitorEnter
+  exceptions-section: JavaExceptionThrow
+  container-section: ContainerCPUThrottling
+  leaks-section: OldObjectSample
+  threads-section: JavaThreadStatistics
 cellConditions:
-  gc-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'GarbageCollection'"
-  cpu-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'CPULoad'"
-  hot-methods-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ExecutionSample'"
-  allocation-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ObjectAllocationSample'"
-  contention-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'JavaMonitorEnter'"
-  io-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('FileRead', 'SocketRead', 'FileWrite')"
-  exceptions-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'JavaExceptionThrow'"
-  container-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ContainerCPUThrottling'"
-  leaks-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'OldObjectSample'"
-  threads-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'JavaThreadStatistics'"
+  io-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('FileRead', 'SocketRead', 'FileWrite', 'ThreadPark', 'JavaMonitorEnter')"
 ---
 
 <!-- @cell name=intro -->
@@ -42,7 +43,7 @@ TABLE()
 
 ## GC Summary
 
-GC pause time by cause. High "Total Pause" relative to recording duration indicates GC pressure. Use the **GC Analysis** template for a deeper investigation.
+GC pause time by cause plus heap usage over time. High "Total Pause" relative to recording duration indicates GC pressure. Use the **GC Analysis** template for a deeper investigation.
 
 ```sql
 SELECT
@@ -57,6 +58,19 @@ ORDER BY SUM(sumOfPauses) DESC
 
 ```plot
 BAR_CHART(x: "Cause", y: ["Total Pause (ms)"], horizontal: true) TITLE "GC Total Pause by Cause"
+```
+
+```sql
+SELECT
+  "Time",
+  round("Used MB", 1) AS "Used MB",
+  round("Committed MB", 1) AS "Committed MB"
+FROM "heap-committed-vs-used"
+ORDER BY "Time"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Used MB", "Committed MB"]) TITLE "Heap Used vs Committed (MB)" LINK_X($start, $end) ZOOM
 ```
 
 ---
@@ -161,32 +175,14 @@ BAR_CHART(x: "Monitor Class", y: ["Total Wait (ms)"], horizontal: true) TITLE "T
 
 ## I/O Overview
 
-Combined latency across all blocking event types. Use the **I/O & Latency** template for per-path and per-host breakdown.
+Combined blocking time across all event types. The dominant type is the primary latency bottleneck. Use the **I/O & Latency** template for per-path and per-host breakdown.
 
 ```sql
-SELECT
-  eventType AS "Event Type",
-  COUNT(*) AS "Count",
-  round(SUM(duration) * 1000, 1) AS "Total (ms)"
-FROM (
-  SELECT 'Monitor Enter' AS eventType, duration FROM JavaMonitorEnter
-  UNION ALL
-  SELECT 'Thread Park' AS eventType, duration FROM ThreadPark
-  UNION ALL
-  SELECT 'Thread Sleep' AS eventType, duration FROM ThreadSleep
-  UNION ALL
-  SELECT 'Socket Read' AS eventType, duration FROM SocketRead
-  UNION ALL
-  SELECT 'File Read' AS eventType, duration FROM FileRead
-  UNION ALL
-  SELECT 'File Write' AS eventType, duration FROM FileWrite
-)
-GROUP BY eventType
-ORDER BY SUM(duration) DESC
+SELECT * FROM "latencies-by-type"
 ```
 
 ```plot
-BAR_CHART(x: "Event Type", y: ["Total (ms)"], horizontal: true) TITLE "Total Blocking Time by Type (ms)"
+BAR_CHART(x: "Event Type", y: ["Total"], horizontal: true) TITLE "Total Blocking Time by Type"
 ```
 
 ---

@@ -5,9 +5,9 @@ tags: [exceptions, errors]
 license: MIT
 variables:
   $limit: "20"
-cellConditions:
-  exceptions-by-class: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'JavaExceptionThrow'"
-  errors: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'JavaErrorThrow'"
+requires:
+  exceptions-by-class: JavaExceptionThrow
+  errors: JavaErrorThrow
 ---
 
 <!-- @cell name=intro -->

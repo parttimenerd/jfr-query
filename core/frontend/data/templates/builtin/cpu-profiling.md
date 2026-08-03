@@ -1,14 +1,15 @@
 ---
 title: CPU Profiling
-description: CPU load over time, hottest methods, and a flame graph of execution samples.
+description: CPU load over time, hottest methods, thread-state breakdown, and a flame graph of execution samples.
 tags: [cpu, profiling, performance]
 license: MIT
 variables:
   $limit: "25"
-cellConditions:
-  cpu-load: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'CPULoad'"
-  hot-methods: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ExecutionSample'"
-  flamegraph: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ExecutionSample'"
+requires:
+  cpu-load: CPULoad
+  hot-methods: ExecutionSample
+  cpu-by-state: ExecutionSample
+  flamegraph: ExecutionSample
 ---
 
 <!-- @cell name=intro -->
@@ -69,6 +70,28 @@ LIMIT $limit
 
 ```plot
 BAR_CHART(x: "Method", y: ["CPU %"], horizontal: true) TITLE "Top CPU Methods (% of samples)"
+```
+
+---
+
+<!-- @cell name=cpu-by-state -->
+
+## CPU Samples by Thread State Over Time
+
+Breakdown of execution samples per second by thread state. `STATE_RUNNABLE` = actively on CPU; `STATE_SLEEPING` / `STATE_BLOCKED_ON_MONITOR_WAIT` = off-CPU waits captured by the profiler. A high proportion of non-runnable samples means the profiler is capturing wait time, not CPU time.
+
+```sql
+SELECT
+  time_bucket(INTERVAL '1 second', es.startTime) AS "Second",
+  COUNT(*) FILTER (WHERE es.state = 'STATE_RUNNABLE') AS "Runnable",
+  COUNT(*) FILTER (WHERE es.state != 'STATE_RUNNABLE') AS "Waiting"
+FROM ExecutionSample es
+GROUP BY 1
+ORDER BY 1
+```
+
+```plot
+AREA_CHART(x: "Second", y: ["Runnable", "Waiting"], layout: "stacked") TITLE "CPU Samples by State per Second" LINK_X($start, $end) ZOOM
 ```
 
 ---

@@ -5,9 +5,9 @@ tags: [heap, allocation]
 license: MIT
 variables:
   $limit: "15"
-cellConditions:
-  top-classes: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ObjectAllocationSample'"
-  allocation-rate: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ObjectAllocationSample'"
+requires:
+  top-classes: ObjectAllocationSample
+  allocation-rate: ObjectAllocationSample
 ---
 
 <!-- @cell name=intro -->

@@ -3,12 +3,12 @@ title: Container & Cloud
 description: CPU throttling, memory limits, and I/O usage for JVMs running in Docker or Kubernetes.
 tags: [container, kubernetes, docker, cloud]
 license: MIT
-cellConditions:
-  container-config: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ContainerConfiguration'"
-  cpu-throttling: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ContainerCPUThrottling'"
-  cpu-usage: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ContainerCPUUsage'"
-  memory-usage: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ContainerMemoryUsage'"
-  io-usage: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ContainerIOUsage'"
+requires:
+  container-config: ContainerConfiguration
+  cpu-throttling: ContainerCPUThrottling
+  cpu-usage: ContainerCPUUsage
+  memory-usage: ContainerMemoryUsage
+  io-usage: ContainerIOUsage
 ---
 
 <!-- @cell name=intro -->
