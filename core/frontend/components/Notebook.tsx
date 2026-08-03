@@ -64,7 +64,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     const emptyResults = useMemo(() => [], []);
 
     // cellConditions: evaluate each cell's SQL predicate to decide visibility.
-    const [cellVisibility, setCellVisibility] = useState<Record<string, boolean>>({});
+    const [cellVisibility, setCellVisibility] = useState<Record<string, boolean | null | undefined>>({});
 
     // Ref-stabilise onRunPreviewQuery so the visibility effect doesn't re-run
     // every time the underlying DuckDB query function gets a new reference
@@ -91,9 +91,17 @@ const Notebook: React.FC<NotebookProps> = (props) => {
             setCellVisibility({});
             return;
         }
+        // Mark all conditional cells as pending (null) immediately so
+        // NotebookCell's auto-run doesn't fire before we know if they should run.
+        const pending: Record<string, boolean | null | undefined> = {};
+        for (let idx = 0; idx < cells.length; idx++) {
+            const name = cellHandle(cells[idx], idx);
+            if (name in effective) pending[name] = null;
+        }
+        setCellVisibility(pending);
         let cancelled = false;
         (async () => {
-            const next: Record<string, boolean> = {};
+            const next: Record<string, boolean | null | undefined> = { ...pending };
             for (let idx = 0; idx < cells.length; idx++) {
                 if (cancelled) return;
                 const c = cells[idx];
@@ -104,8 +112,9 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     metadata.variables ?? {},
                     onRunPreviewQueryRef.current,
                 );
+                // Update incrementally so visible cells can start running ASAP.
+                if (!cancelled) setCellVisibility(prev => ({ ...prev, [name]: next[name] }));
             }
-            if (!cancelled) setCellVisibility(next);
         })();
         return () => { cancelled = true; };
     // onRunPreviewQuery is intentionally omitted — captured via ref to prevent
@@ -179,7 +188,12 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                         />
                         {cells.map((cell, idx) => {
                             const name = cellHandle(cell, idx);
-                            const visible = cellVisibility[name] ?? true;
+                            // undefined = not in the visibility map (no requires) → visible
+                            // null = pending requires check → block auto-run but don't hide visually
+                            // true = visible (requires satisfied)
+                            // false = hidden (requires not satisfied)
+                            const visibility = cellVisibility[name];
+                            const isConditionallyHidden = visibility === null ? undefined : (visibility === false ? true : false);
                             return (
                                 <NotebookCell
                                     key={cell.id}
@@ -194,7 +208,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                                     allCollapsed={allCollapsed}
                                     isAiFeatureActive={isAiFeatureActive}
                                     initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
-                                    isConditionallyHidden={!visible}
+                                    isConditionallyHidden={isConditionallyHidden}
                                     onCellCollapseChange={handleCellCollapseChange}
                                     clearResultsTrigger={clearResultsTrigger}
                                     onRunQuery={onRunQuery}
@@ -250,7 +264,12 @@ const Notebook: React.FC<NotebookProps> = (props) => {
             )}
             {cells.map((cell, idx) => {
                 const name = cellHandle(cell, idx);
-                const visible = cellVisibility[name] ?? true;
+                // undefined = not in the visibility map (no requires) → visible
+                // null = pending requires check → block auto-run but don't hide visually
+                // true = visible (requires satisfied)
+                // false = hidden (requires not satisfied)
+                const visibility = cellVisibility[name];
+                const isConditionallyHidden = visibility === null ? undefined : (visibility === false ? true : false);
                 return (
                     <NotebookCell
                         key={cell.id}
@@ -265,7 +284,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                         allCollapsed={allCollapsed}
                         isAiFeatureActive={isAiFeatureActive}
                         initialCellCollapsed={cellCollapseStateRef.current.get(cell.id)}
-                        isConditionallyHidden={!visible}
+                        isConditionallyHidden={isConditionallyHidden}
                         onCellCollapseChange={handleCellCollapseChange}
                         clearResultsTrigger={clearResultsTrigger}
                         onRunQuery={onRunQuery}

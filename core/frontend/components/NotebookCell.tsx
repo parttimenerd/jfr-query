@@ -815,7 +815,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     useEffect(() => {
         const prevSqls = prevSqlBlocksRef.current;
         const prevVars = prevVariablesRef.current;
-        if (!isAutoRunEnabled) {
+        if (!isAutoRunEnabled || isConditionallyHidden !== false) {
             Object.values(runTimersRef.current).forEach(clearTimeout); runTimersRef.current = {}; setPendingRunStates({});
             prevSqlBlocksRef.current = parsedSqlBlocks;
             prevVariablesRef.current = allVariables;
@@ -889,7 +889,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             prevSqlBlocksRef.current = [];
             prevVariablesRef.current = {};
         };
-    }, [parsedSqlBlocks, allVariables, isAutoRunEnabled]);
+    }, [parsedSqlBlocks, allVariables, isAutoRunEnabled, isConditionallyHidden]);
 
     useEffect(() => () => { Object.values(runTimersRef.current).forEach(clearTimeout); }, []);
     useEffect(() => () => { if (copiedSqlTimerRef.current) clearTimeout(copiedSqlTimerRef.current); }, []);
