@@ -156,6 +156,8 @@ const CLAUSES: ClauseSpec[] = [
     // Legacy clauses (kept verbatim, /i for case-insensitivity per W12)
     { key: 'title', regex: /(?<!\w)TITLE\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     { key: 'zoom', regex: /(?<!\w)ZOOM\s+([\d\.]+)\s*$/i, processor: (m) => parseFloat(m[1]) },
+    // Bare ZOOM (no factor) → treat as zoom:1 (enables interactive zoom at default scale).
+    { key: 'zoom', regex: /(?<!\w)ZOOM\s*$/i, processor: () => 1 },
     { key: 'zoomX', regex: /(?<!\w)ZOOM_X\s+([\d\.]+)\s*$/i, processor: (m) => parseFloat(m[1]) },
     { key: 'height', regex: /(?<!\w)HEIGHT\s+((?:\d+)(?:px|%)?)\s*$/i, processor: (m) => m[1] },
     { key: 'width', regex: /(?<!\w)WIDTH\s+((?:\d+)(?:px|%)?)\s*$/i, processor: (m) => m[1] },
