@@ -8,6 +8,7 @@ import SQLEditor from './SQLEditor';
 import { parseCellContent, tokenizeCellContent } from '../utils/notebookParser';
 import { cellHandle } from '../utils/cellHandle';
 import { resolveCellVisibility } from '../utils/cellVisibility';
+import { NotebookTOC } from './NotebookTOC';
 
 interface NotebookProps {
     notebookMarkdown: string;
@@ -65,6 +66,19 @@ const Notebook: React.FC<NotebookProps> = (props) => {
 
     // cellConditions: evaluate each cell's SQL predicate to decide visibility.
     const [cellVisibility, setCellVisibility] = useState<Record<string, boolean>>({});
+
+    const [tocOpen, setTocOpen] = useState(false);
+
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 't') {
+                e.preventDefault();
+                setTocOpen(prev => !prev);
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, []);
 
     useEffect(() => {
         if (!metadata.cellConditions || Object.keys(metadata.cellConditions).length === 0) {
@@ -340,6 +354,22 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                             <PlusIcon className="w-4 h-4" /> Markdown
                         </button>
                     </div>
+                </div>
+            )}
+            {/* TOC toggle button */}
+            <button
+                onClick={() => setTocOpen(prev => !prev)}
+                aria-label="Toggle table of contents"
+                title="Table of Contents (Ctrl+Shift+T)"
+                className="fixed bottom-6 right-6 z-40 p-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-300 hover:text-cyan-300 hover:border-cyan-500 shadow-lg transition-colors text-sm"
+                style={{ lineHeight: 1 }}>
+                ☰
+            </button>
+
+            {/* TOC panel */}
+            {tocOpen && (
+                <div className="fixed bottom-16 right-6 z-40">
+                    <NotebookTOC cells={cells} onClose={() => setTocOpen(false)} />
                 </div>
             )}
         </div>
