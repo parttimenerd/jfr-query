@@ -106,7 +106,7 @@ SCATTER_PLOT(x: "Pause (ms)", y: "Reclaimed (MB)", color: "Cause") TITLE "Reclai
 
 ---
 
-<!-- @cell name=heap-timeline -->
+<!-- @cell name=heap-timeline requires="GCHeapSummary" -->
 
 ## Heap Over Time — Linked Line Charts
 

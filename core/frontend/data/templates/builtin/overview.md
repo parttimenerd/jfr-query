@@ -6,6 +6,7 @@ license: MIT
 priority: 1
 cellConditions:
   io-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('FileRead', 'SocketRead', 'FileWrite', 'ThreadPark', 'JavaMonitorEnter')"
+  gc-section: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('GarbageCollection', 'GCHeapSummary')"
 ---
 
 <!-- @cell name=intro -->
