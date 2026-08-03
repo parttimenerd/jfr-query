@@ -111,6 +111,61 @@ body`;
     });
 });
 
+describe('requires front-matter shorthand', () => {
+    it('expands single table name into information_schema SQL', () => {
+        const md = `---
+requires:
+  hot-methods: ExecutionSample
+---
+
+body`;
+        const { metadata } = parseNotebook(md);
+        expect(metadata.cellConditions!['hot-methods']).toBe(
+            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'ExecutionSample'"
+        );
+    });
+
+    it('expands inline list into IN clause', () => {
+        const md = `---
+requires:
+  blocking: [ThreadPark, ThreadSleep]
+---
+
+body`;
+        const { metadata } = parseNotebook(md);
+        expect(metadata.cellConditions!['blocking']).toBe(
+            "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN ('ThreadPark', 'ThreadSleep')"
+        );
+    });
+
+    it('cellConditions entry takes precedence over requires for the same cell', () => {
+        const md = `---
+requires:
+  my-cell: SomeTable
+cellConditions:
+  my-cell: 'SELECT 1 = 1'
+---
+
+body`;
+        const { metadata } = parseNotebook(md);
+        expect(metadata.cellConditions!['my-cell']).toBe('SELECT 1 = 1');
+    });
+
+    it('requires and cellConditions can coexist for different cells', () => {
+        const md = `---
+requires:
+  cell-a: TableA
+cellConditions:
+  cell-b: 'SELECT 2 = 2'
+---
+
+body`;
+        const { metadata } = parseNotebook(md);
+        expect(metadata.cellConditions!['cell-a']).toContain("'TableA'");
+        expect(metadata.cellConditions!['cell-b']).toBe('SELECT 2 = 2');
+    });
+});
+
 describe('-- alias <name>[ materialized] directive', () => {
     it('still recognizes legacy "-- name" alias form', () => {
         const segs = tokenizeCellContent('```sql\n-- gc_pauses\nSELECT 1\n```');

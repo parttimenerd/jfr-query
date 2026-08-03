@@ -81,7 +81,7 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
     // `(result as any)[keyTrimmed] = value` fallback at indent==0 (line 72).
     const lines = fmString.split(/\r?\n/);
     const result: NotebookMetadata = { views: [], macros: [] };
-    let currentSection: 'views' | 'macros' | 'variables' | 'cellConditions' | null = null;
+    let currentSection: 'views' | 'macros' | 'variables' | 'cellConditions' | 'requires' | null = null;
     let currentObject: any = null;
     let multilineKey: string | null = null;
     /** Tracks whether the first line of the customSystemPrompt block scalar has been consumed. */
@@ -125,6 +125,9 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
                 if (!result.variables) result.variables = {};
             } else if (keyTrimmed === 'cellConditions') {
                 currentSection = 'cellConditions';
+                if (!result.cellConditions) result.cellConditions = {};
+            } else if (keyTrimmed === 'requires') {
+                currentSection = 'requires';
                 if (!result.cellConditions) result.cellConditions = {};
             } else if (keyTrimmed === 'decimalPlaces') {
                 const num = parseInt(value, 10);
@@ -182,6 +185,25 @@ const parseFrontMatter = (fmString: string): NotebookMetadata => {
                         const unquotedV = v.replace(/^['"]|['"]$/g, '');
                         result.cellConditions![k] = v.startsWith("'") ? unquotedV.replace(/''/g, "'") : unquotedV;
                     }
+                }
+            }
+        } else if (currentSection === 'requires') {
+            // Shorthand: `cell-name: TableName` or `cell-name: [Table1, Table2]`
+            // Expands to a cellCondition that checks information_schema.tables.
+            // A `cellConditions` entry for the same cell takes precedence (processed later).
+            const colonIdx = trimmedLine.indexOf(':');
+            if (colonIdx > 0) {
+                const k = trimmedLine.substring(0, colonIdx).trim();
+                const v = trimmedLine.substring(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+                if (k && v && !result.cellConditions![k]) {
+                    // Parse inline list [A, B] or single table name
+                    const inlineList = parseInlineYamlList(v);
+                    const tables = inlineList ?? [v];
+                    const escaped = tables.map(t => t.trim()).filter(Boolean)
+                        .map(t => `'${t.replace(/'/g, "''")}'`);
+                    result.cellConditions![k] = escaped.length === 1
+                        ? `SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = ${escaped[0]}`
+                        : `SELECT count(*) > 0 FROM information_schema.tables WHERE table_name IN (${escaped.join(', ')})`;
                 }
             }
         } else if (currentSection === 'variables') {
