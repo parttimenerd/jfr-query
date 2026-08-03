@@ -5,7 +5,7 @@ Welcome! This notebook lets you query a loaded JFR recording (or any DuckDB data
 - **Left sidebar** — Schema Explorer: browse tables, views, and macros in the database. Click any item to preview it in the sidebar; double-click to copy its name to clipboard.
 - **Each cell** has one or more SQL queries followed by a plot config that visualizes the results. Click the **›** chevron in the cell header to collapse/expand it; use **Collapse All** / **Expand All** in the toolbar.
 - **Run** a query with the ▶ button (or Cmd+Enter). The plot updates automatically.
-- **Add content** — use **+ Add SQL** / **+ Plot** / **+ Prose** between blocks, or **+ Add Cell** at the bottom.
+- **Add content** — use **+ sql** / **+ plot** / **+ prose** between blocks (hover any cell footer), or the **+ SQL / + Plot / + Markdown** bar at the bottom.
 - **Variables** — declare \`$name = value\` in a variables block; reference them in SQL as \`$name\`. Notebook-wide variables use \`$$name\` in the Settings cell.
 - **Column chips** appear above the plot editor — click any chip to copy the column name into your plot config.
 - **Templates** — click **New from template** in the toolbar to start from a pre-built analysis (GC, allocation, threading, exceptions).
@@ -78,7 +78,7 @@ LINE_CHART(x: "startTime", y: ["duration_ms"]) LINK_X($start, $end) TITLE "GC Pa
 
 ## Step 4 — Add your own analysis
 
-- Click **+ Add SQL** below any cell to add another query, or **+ Add Cell** at the bottom to start fresh.
+- Hover any cell footer to reveal **+ sql / + plot / + prose** for adding blocks inline, or use the **+ SQL / + Plot / + Markdown** bar at the bottom for a new cell.
 - Click **Plot syntax** beneath any plot block for the full chart reference (LINE_CHART, BAR_CHART, SCATTER_PLOT, HISTOGRAM, FLAMEGRAPH, and more).
 - Click **</>** in the cell header to edit the prose above as raw Markdown.
 - Try the **Schema Explorer** on the left — click a table to preview it, or search for a column name across all tables.

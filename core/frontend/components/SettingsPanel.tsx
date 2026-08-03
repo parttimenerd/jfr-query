@@ -261,7 +261,7 @@ const SettingsPanel = forwardRef<any, SettingsPanelProps>(({ metadata, onMetadat
                                 <button
                                     key={e.cellId}
                                     onClick={() => scrollToCell(e.cellId)}
-                                    className="w-full text-left px-3 py-1 text-xs hover:bg-gray-700/50 text-gray-300 hover:text-cyan-300 transition-colors truncate"
+                                    className={`w-full text-left py-1 text-xs hover:bg-gray-700/50 hover:text-cyan-300 transition-colors truncate ${e.level === 1 ? 'text-gray-200 font-medium' : 'text-gray-400'}`}
                                     style={{ paddingLeft: `${(e.level - 1) * 12 + 12}px` }}
                                     title={e.title}
                                 >
