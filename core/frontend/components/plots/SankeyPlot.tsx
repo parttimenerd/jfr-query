@@ -140,6 +140,20 @@ const SankeyComponent: React.FC<{
         }
     }, [gestureName, onVariableChange]);
 
+    const CustomLink = useCallback((props: any) => {
+        const { sourceX, sourceY, sourceControlX, targetX, targetY, targetControlX, linkWidth, index } = props;
+        const fill = colors[index % colors.length];
+        return (
+            <path
+                d={`M${sourceX},${sourceY} C${sourceControlX},${sourceY} ${targetControlX},${targetY} ${targetX},${targetY}`}
+                strokeWidth={linkWidth}
+                stroke={fill}
+                strokeOpacity={0.4}
+                fill="none"
+            />
+        );
+    }, [colors]);
+
     const CustomNode = useCallback((props: any) => {
         const { x, y, width, height, index, payload } = props;
         const fill = colors[index % colors.length];
@@ -186,6 +200,7 @@ const SankeyComponent: React.FC<{
                     height={dims.height}
                     data={sankeyData}
                     node={CustomNode}
+                    link={CustomLink}
                     nodePadding={8}
                     nodeWidth={10}
                     margin={{ top: 8, right: 120, bottom: 8, left: 8 }}
