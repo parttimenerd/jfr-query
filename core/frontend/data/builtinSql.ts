@@ -1557,20 +1557,24 @@ ORDER BY name ASC`;
       const branches = ['ObjectCountAfterGC', 'ObjectCount']
         .filter(t => tables.has(t))
         .map(t => `SELECT objectClass, count, totalSize FROM ${t}`);
+      const hasClass = tables.has('Class');
+      const classExpr = hasClass
+        ? `COALESCE(c.javaName, CAST(ocg.objectClass AS VARCHAR))`
+        : `CAST(ocg.objectClass AS VARCHAR)`;
+      const classJoin = hasClass ? `\n  LEFT JOIN Class c ON ocg.objectClass = c._id` : '';
       return `CREATE OR REPLACE VIEW "object-statistics" AS
 SELECT "Class", "Count", "Heap Space", "Increase"
 FROM (
   SELECT
-    COALESCE(c.javaName, ocg.objectClass) AS "Class",
+    ${classExpr} AS "Class",
     LAST(count) AS "Count",
     format_memory(LAST(totalSize)) AS "Heap Space",
     LAST(totalSize) AS h,
     format_memory(MAX(totalSize) - MIN(totalSize)) AS "Increase"
   FROM (
     ${branches.join('\n    UNION ALL\n    ')}
-  ) ocg
-  LEFT JOIN Class c ON ocg.objectClass = c._id
-  GROUP BY COALESCE(c.javaName, ocg.objectClass)
+  ) ocg${classJoin}
+  GROUP BY ${classExpr}
 ) ORDER BY h DESC`;
     },
   },
