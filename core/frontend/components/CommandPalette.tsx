@@ -279,7 +279,7 @@ const CommandPalette: React.FC<Props> = ({ isOpen, onClose, actions, cells, onRu
 
         const cellItems: ResultItem[] = (cells ?? [])
             .map(c => {
-                const haystack = c.title || `Cell ${c.index + 1}`;
+                const haystack = [c.title, (c as any).name].filter(Boolean).join(' ') || `Cell ${c.index + 1}`;
                 if (q && !fuzzyMatch(q, haystack)) return null;
                 const score = q ? (fuzzyScore(q, haystack) ?? 0) : c.index;
                 return { kind: 'cell' as const, id: `cell-nav-${c.id}`, label: haystack, hint: `cell ${c.index + 1}`, score, cellId: c.id };

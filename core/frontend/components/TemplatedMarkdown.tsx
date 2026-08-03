@@ -9,6 +9,19 @@ import { splitInlineExprs } from '../utils/inlineExpr';
 import { evaluateCondition, evaluateScalar } from '../services/templating/evaluators';
 import { formatValue, FormatSettings } from '../services/templating/formatValue';
 import { substituteVariables, toSqlVariables } from '../utils/variableSubstitution';
+import type { NotebookCellData } from '../types';
+import { scrollToCell } from './chat/scrollToCell';
+
+/**
+ * Convert `@cell:name` references in markdown text to clickable `jfr://cell/…`
+ * links before the markdown renderer sees the text. The resulting links are
+ * handled by the custom `a` renderer below, which resolves the name against the
+ * `allCells` list and scrolls to the target cell on click.
+ */
+export function preprocessCellLinks(md: string): string {
+    return md.replace(/@cell:([\w-]+)/g, (_, name) =>
+        `[→ ${name}](jfr://cell/${encodeURIComponent(name)})`);
+}
 
 interface Props {
     /** Segments from `tokenizeCellContent` — must include 'if' and 'markdown'. */
@@ -17,6 +30,8 @@ interface Props {
     variables: Record<string, string>;
     /** Notebook-level format settings (timeFormat, decimalPlaces). */
     formatSettings?: FormatSettings;
+    /** All notebook cells — used to resolve `@cell:name` cross-links. */
+    allCells?: NotebookCellData[];
 }
 
 /**
@@ -31,7 +46,7 @@ interface Props {
  * component re-renders when any alias in `useCellAliases` bumps its version,
  * so downstream refs pick up new data automatically.
  */
-export const TemplatedMarkdown: React.FC<Props> = ({ segments, variables, formatSettings }) => {
+export const TemplatedMarkdown: React.FC<Props> = ({ segments, variables, formatSettings, allCells }) => {
     const { query } = useContext(DataContext);
     const aliases = useCellAliases();
 
@@ -55,6 +70,7 @@ export const TemplatedMarkdown: React.FC<Props> = ({ segments, variables, format
                             variables={variables}
                             formatSettings={formatSettings ?? {}}
                             aliasVersionSum={aliasVersionSum}
+                            allCells={allCells}
                         />
                     );
                 }
@@ -68,6 +84,7 @@ export const TemplatedMarkdown: React.FC<Props> = ({ segments, variables, format
                             variables={variables}
                             formatSettings={formatSettings ?? {}}
                             aliasVersionSum={aliasVersionSum}
+                            allCells={allCells}
                         />
                     );
                 }
@@ -83,9 +100,10 @@ interface InlineProseProps {
     variables: Record<string, string>;
     formatSettings: FormatSettings;
     aliasVersionSum: number;
+    allCells?: NotebookCellData[];
 }
 
-const InlineProse: React.FC<InlineProseProps> = ({ text, query, variables, formatSettings, aliasVersionSum }) => {
+const InlineProse: React.FC<InlineProseProps> = ({ text, query, variables, formatSettings, aliasVersionSum, allCells }) => {
     const parts = useMemo(() => splitInlineExprs(text), [text]);
     // Build the rendered markdown by replacing each `${…}` placeholder with
     // its resolved value (or a placeholder while pending / a badge on error).
@@ -128,7 +146,27 @@ const InlineProse: React.FC<InlineProseProps> = ({ text, query, variables, forma
         return resolved[i] ?? '…';
     }).join('');
 
-    return <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{md}</ReactMarkdown>;
+    const processedMd = preprocessCellLinks(md);
+
+    const mdComponents = useMemo(() => ({
+        a: ({ href, children }: any) => {
+            if (href?.startsWith('jfr://cell/')) {
+                const cellName = decodeURIComponent(href.replace('jfr://cell/', ''));
+                const target = allCells?.find((c: NotebookCellData) => c.name === cellName);
+                return (
+                    <button
+                        onClick={() => target && scrollToCell(target.id)}
+                        className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2 cursor-pointer"
+                        title={`Jump to: ${cellName}`}>
+                        {children}
+                    </button>
+                );
+            }
+            return <a href={href as string} target="_blank" rel="noreferrer">{children}</a>;
+        },
+    }), [allCells]);
+
+    return <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]} components={mdComponents}>{processedMd}</ReactMarkdown>;
 };
 
 interface IfBlockProps {
@@ -138,9 +176,10 @@ interface IfBlockProps {
     variables: Record<string, string>;
     formatSettings: FormatSettings;
     aliasVersionSum: number;
+    allCells?: NotebookCellData[];
 }
 
-const IfBlock: React.FC<IfBlockProps> = ({ condition, body, query, variables, formatSettings, aliasVersionSum }) => {
+const IfBlock: React.FC<IfBlockProps> = ({ condition, body, query, variables, formatSettings, aliasVersionSum, allCells }) => {
     const [state, setState] = useState<'pending' | 'true' | 'false' | { error: string }>('pending');
 
     useEffect(() => {
@@ -170,6 +209,7 @@ const IfBlock: React.FC<IfBlockProps> = ({ condition, body, query, variables, fo
             variables={variables}
             formatSettings={formatSettings}
             aliasVersionSum={aliasVersionSum}
+            allCells={allCells}
         />
     );
 };

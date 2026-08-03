@@ -107,7 +107,7 @@ function debounce<T extends (...args: any[]) => any>(func: T, delay: number): (.
   };
 }
 
-const MarkdownSectionEditor = React.memo<{ section: MarkdownSection | null; defaultTitle: string; onUpdate: (s: MarkdownSection | null) => void; onAdd: () => void; isEditing: boolean; onSetEditing: (isEditing: boolean) => void; variables?: Record<string, string>; formatSettings?: { timeFormat?: string; decimalPlaces?: number }; presenterMode?: boolean; }>(({ section, defaultTitle, onUpdate, onAdd, isEditing, onSetEditing, variables, formatSettings, presenterMode }) => {
+const MarkdownSectionEditor = React.memo<{ section: MarkdownSection | null; defaultTitle: string; onUpdate: (s: MarkdownSection | null) => void; onAdd: () => void; isEditing: boolean; onSetEditing: (isEditing: boolean) => void; variables?: Record<string, string>; formatSettings?: { timeFormat?: string; decimalPlaces?: number }; presenterMode?: boolean; allCells?: NotebookCellData[]; }>(({ section, defaultTitle, onUpdate, onAdd, isEditing, onSetEditing, variables, formatSettings, presenterMode, allCells }) => {
     const [content, setContent] = useState(section?.content || '');
     useEffect(() => { setContent(section?.content || ''); }, [section]);
 
@@ -131,7 +131,7 @@ const MarkdownSectionEditor = React.memo<{ section: MarkdownSection | null; defa
     );
 
     if (!section) return presenterMode ? null : <div className="py-1"><button onClick={onAdd} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 px-1 py-0.5 rounded"><PlusIcon className="w-3 h-3"/> Add {defaultTitle}</button></div>;
-    return <div>{isEditing ? <SQLEditor value={content} onChange={setContent} onBlur={handleBlur} mode="markdown" autoFocus/> : <div className="space-y-1"><div onClick={() => { if (!presenterMode) onSetEditing(true); }} onKeyDown={e => { if (!presenterMode && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSetEditing(true); } }} role={presenterMode ? undefined : 'button'} tabIndex={presenterMode ? undefined : 0} aria-label={presenterMode ? undefined : 'Edit prose block'} className={`prose prose-invert max-w-none px-2 py-1 rounded-md min-h-[2rem] ${presenterMode ? '' : 'hover:bg-gray-700/30 cursor-pointer'}`}><TemplatedMarkdown segments={renderSegments} variables={variables ?? {}} formatSettings={formatSettings}/></div></div>}</div>;
+    return <div>{isEditing ? <SQLEditor value={content} onChange={setContent} onBlur={handleBlur} mode="markdown" autoFocus/> : <div className="space-y-1"><div onClick={() => { if (!presenterMode) onSetEditing(true); }} onKeyDown={e => { if (!presenterMode && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSetEditing(true); } }} role={presenterMode ? undefined : 'button'} tabIndex={presenterMode ? undefined : 0} aria-label={presenterMode ? undefined : 'Edit prose block'} className={`prose prose-invert max-w-none px-2 py-1 rounded-md min-h-[2rem] ${presenterMode ? '' : 'hover:bg-gray-700/30 cursor-pointer'}`}><TemplatedMarkdown segments={renderSegments} variables={variables ?? {}} formatSettings={formatSettings} allCells={allCells}/></div></div>}</div>;
 });
 
 const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: string[]; onChange: (o: string, n: string, v: string) => void; onDelete: (k: string) => void; inputRef: React.RefCallback<HTMLInputElement> }> = ({ varKey, varValue, usedIn, onChange, onDelete, inputRef }) => {
@@ -1125,6 +1125,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     variables={allVariables}
                     formatSettings={formatSettings}
                     presenterMode={presenterMode}
+                    allCells={allCells}
                 />
 
                 {!presenterMode && (Object.keys(parsed.variables||{}).length > 0 || (parsed.variableWarnings?.length ?? 0) > 0)
@@ -1162,6 +1163,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                         segments={[seg]}
                                                         variables={allVariables}
                                                         formatSettings={formatSettings}
+                                                        allCells={allCells}
                                                     />
                                                 </div>
                                             ) : !presenterMode ? (
@@ -1195,6 +1197,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                             segments={[seg]}
                                             variables={allVariables}
                                             formatSettings={formatSettings}
+                                            allCells={allCells}
                                         />
                                     </div>
                                 );
@@ -1577,6 +1580,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     variables={allVariables}
                     formatSettings={formatSettings}
                     presenterMode={presenterMode}
+                    allCells={allCells}
                 />
             </div>)}
             {isDraggingOver === 'bottom' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-cyan-400 z-10" />}
