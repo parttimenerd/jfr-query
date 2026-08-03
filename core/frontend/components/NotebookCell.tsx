@@ -241,17 +241,28 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         }
     }, [collapseTrigger, allCollapsed, onCellCollapseChange, cell.id]);
 
-    // Auto-size the result panel to fit small result sets (avoids excess whitespace for 1-row tables).
+    // Auto-size: respect HEIGHT clause from any plot block, then fit small tables.
     // Skipped once the user has manually dragged the resize handle.
     useEffect(() => {
         if (resultHeightUserSet.current) return;
+        // Check for HEIGHT clause in any plot block.
+        for (const seg of segments) {
+            if (seg.type === 'plot' && seg.content?.trim()) {
+                const firstLine = seg.content.trim().split('\n')[0];
+                const p = parsePlotCall(firstLine);
+                if (p.height) {
+                    const px = parseInt(p.height, 10);
+                    if (!isNaN(px) && px > 0) { setResultHeight(px); return; }
+                }
+            }
+        }
         const firstResult = results?.[0];
         if (!firstResult || firstResult.length === 0) return;
         const rowPx = 36;
         const overhead = 44 + 44; // search bar + header row
         const fitted = Math.min(250, overhead + firstResult.length * rowPx + 16);
         setResultHeight(Math.max(120, fitted));
-    }, [results]);
+    }, [results, segments]);
     
     useEffect(() => { if (focusVarName) { const input = variableInputRefs.current[focusVarName]; if (input) { input.focus(); setFocusVarName(null); } } }, [focusVarName]);
 
@@ -1535,20 +1546,14 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                             )}
                         </div>
                     )}
-                    {/* Resize controls: size presets + drag handle */}
+                    {/* Drag-to-resize handle */}
                     {(results?.some(r => r) || Object.keys(datasetResults).some(k => k.startsWith('standalone-'))) && (
-                        <div className="flex items-center gap-1 mt-0.5">
-                            {([['S', 150], ['M', 250], ['L', 400], ['XL', 600], ['2XL', 900]] as [string, number][]).map(([label, px]) => (
-                                <button
-                                    key={label}
-                                    onClick={() => { resultHeightUserSet.current = true; setResultHeight(px); }}
-                                    title={`Set result height to ${px}px`}
-                                    aria-label={`Set result height to ${label}`}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${resultHeight === px ? 'bg-cyan-700/60 text-cyan-200' : 'text-gray-600 hover:text-gray-300 hover:bg-gray-700/50'}`}
-                                >{label}</button>
-                            ))}
-                            <div onMouseDown={handleResultResizeStart} className="flex-1 h-1.5 cursor-row-resize rounded-full bg-gray-700 hover:bg-cyan-600/50 transition-colors" title="Drag to resize results" aria-label="Drag to resize results" />
-                        </div>
+                        <div
+                            onMouseDown={handleResultResizeStart}
+                            className="h-1.5 cursor-row-resize rounded-full bg-gray-700 hover:bg-cyan-600/50 transition-colors mt-0.5"
+                            title="Drag to resize results"
+                            aria-label="Drag to resize results"
+                        />
                     )}
                     {showCompareView && (() => {
                         const validResults = results.map((r, i) => ({ data: r, idx: i })).filter(({ data }) => data && data.length > 0 && !data[0]?.error);
