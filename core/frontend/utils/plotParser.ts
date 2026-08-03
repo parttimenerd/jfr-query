@@ -1,4 +1,6 @@
-// A simple but robust parser for the plot configuration language's outer syntax.
+// Plot configuration language outer-syntax parser.
+// Internals use an Ohm.js PEG grammar (plotGrammar.ohm) with a regex-based
+// fallback for environments where the grammar file cannot be loaded.
 
 export type LegendPosition = 'right' | 'left' | 'top' | 'bottom' | 'none';
 
@@ -52,8 +54,238 @@ export interface ParsedPlotCall {
     };
 }
 
-// Helper: parse a `[a, b]` numeric-or-quoted-date pair.
-const parseDomainPair = (raw: string): [number | string, number | string] | undefined => {
+// ---------------------------------------------------------------------------
+// Ohm.js PEG grammar — primary parser
+// ---------------------------------------------------------------------------
+// The grammar source is co-located in plotGrammar.ohm and imported as a raw
+// string (Vite's `?raw` suffix) at build time.  In test environments
+// (Vitest / Node) we fall back to reading the file from disk.
+
+import { grammar as ohmGrammar, type Semantics } from 'ohm-js';
+
+// Dynamic import of the grammar source.  `?raw` works in Vite; the try/catch
+// below handles the Node/Vitest path where `?raw` is not available.
+let _grammarSrc: string | null = null;
+
+async function _loadGrammarSrc(): Promise<string> {
+    if (_grammarSrc !== null) return _grammarSrc;
+    try {
+        // Vite (browser + vitest with vite) path
+        const mod = await import('./plotGrammar.ohm?raw');
+        _grammarSrc = mod.default as string;
+    } catch {
+        // Node / plain Vitest path — read from disk relative to this file.
+        const { readFileSync } = await import('fs');
+        const { fileURLToPath } = await import('url');
+        const { dirname, join } = await import('path');
+        const __dirname = dirname(fileURLToPath(import.meta.url));
+        _grammarSrc = readFileSync(join(__dirname, 'plotGrammar.ohm'), 'utf8');
+    }
+    return _grammarSrc!;
+}
+
+// We build the grammar once synchronously after it has been loaded.
+let _g: ReturnType<typeof ohmGrammar> | null = null;
+let _s: Semantics | null = null;
+
+function _extractStrValue(node: any): string {
+    const src = node.sourceString as string;
+    return src.slice(1, -1); // strip surrounding quotes
+}
+
+function _extractDomainVal(node: any): number | string {
+    const src = (node.sourceString as string).trim();
+    if (src.startsWith('"') || src.startsWith("'")) return src.slice(1, -1);
+    const n = Number(src);
+    return isNaN(n) ? src : n;
+}
+
+function _buildSemantics(g: ReturnType<typeof ohmGrammar>): Semantics {
+    const s = g.createSemantics();
+
+    s.addOperation<void>('toResult(r)', {
+        PlotCall(mainContent, clauses, _end) {
+            const r = (this.args as any).r as ParsedPlotCall;
+            r.mainConfig = (mainContent.sourceString as string).trim();
+            (clauses.children as any[]).forEach(c => (c as any).toResult(r));
+        },
+        Clause(alt) { (alt as any).toResult((this.args as any).r); },
+        TitleClause(_kw, str) { (this.args as any).r.title = _extractStrValue(str); },
+        ZoomClause_withFactor(_kw, num) { (this.args as any).r.zoom = parseFloat((num as any).sourceString); },
+        ZoomClause_bare(_kw) { (this.args as any).r.zoom = 1; },
+        ZoomXClause(_kw, num) { (this.args as any).r.zoomX = parseFloat((num as any).sourceString); },
+        WidthClause(_kw, dim) { (this.args as any).r.width = (dim as any).sourceString; },
+        HeightClause(_kw, dim) { (this.args as any).r.height = (dim as any).sourceString; },
+        OnHoverTooltipClause(_on, _hover, _tooltip, str) {
+            (this.args as any).r.onHoverTooltip = _extractStrValue(str);
+        },
+        OnClause(_kw, list) {
+            (this.args as any).r.on = (list as any).asIteration().children.map(
+                (c: any) => (c.sourceString as string).trim(),
+            );
+        },
+        LegendClause_hidden(_kw, _h) { (this.args as any).r.legend = 'none' as LegendPosition; },
+        LegendClause_at(_kw, _at, pos) {
+            (this.args as any).r.legend = (pos as any).sourceString.toLowerCase() as LegendPosition;
+        },
+        PaletteClause(_kw, str) { (this.args as any).r.palette = _extractStrValue(str); },
+        LinkXClause(_kw, _open, list, _close) {
+            const args: string[] = (list as any).asIteration().children.map(
+                (c: any) => (c.sourceString as string).trim(),
+            );
+            const variables = args.filter(a => a.startsWith('$'));
+            const options = args.filter(a => !a.startsWith('$'));
+            const bareVarLike = options.filter(
+                o => /^[A-Za-z_]/.test(o) && !['master', 'clamp'].includes(o.toLowerCase()),
+            );
+            if (bareVarLike.length > 0) {
+                console.warn(
+                    `[plotParser] LINK_X: argument(s) "${bareVarLike.join(', ')}" look like variable names but are missing the $ prefix. Did you mean "$${bareVarLike[0]}"?`,
+                );
+            }
+            if (variables.length > 0 && variables.length < 2) {
+                console.warn(
+                    `[plotParser] LINK_X requires two $variable arguments ($min, $max). Got ${variables.length}. LINK_X ignored.`,
+                );
+            }
+            if (variables.length >= 2) {
+                (this.args as any).r.linkX = [variables[0], variables[1]] as [string, string];
+                (this.args as any).r.linkXMaster = options.some(o => o.toLowerCase() === 'master') ? true : undefined;
+                (this.args as any).r.linkXClamp = options.some(o => o.toLowerCase() === 'clamp');
+            }
+        },
+        LinkYClause(_kw, val) {
+            const src = (val as any).sourceString.trim() as string;
+            (this.args as any).r.linkY = src.startsWith('"') || src.startsWith("'") ? src.slice(1, -1) : src;
+        },
+        LinkXYClause(_kw, val) {
+            const src = (val as any).sourceString.trim() as string;
+            (this.args as any).r.linkXY = src.startsWith('"') || src.startsWith("'") ? src.slice(1, -1) : src;
+        },
+        LinkScrollClause(_kw, val) {
+            const src = (val as any).sourceString.trim() as string;
+            (this.args as any).r.linkScroll = src.startsWith('"') || src.startsWith("'") ? src.slice(1, -1) : src;
+        },
+        TooltipColumnsClause(_tt, _cols, _open, list, _close) {
+            (this.args as any).r.tooltipColumns = (list as any).asIteration().children.map(
+                (c: any) => _extractStrValue(c),
+            );
+        },
+        BrushTwoVarClause(_kw, var1, var2) {
+            const n1 = (var1 as any).sourceString.trim() as string;
+            const n2 = (var2 as any).sourceString.trim() as string;
+            if (!/^\$[A-Za-z_]\w*$/.test(n1) || !/^\$[A-Za-z_]\w*$/.test(n2)) return;
+            (this.args as any).r.brush = { name: n1, mode: 'xy' };
+            (this.args as any).r.brush2 = n2;
+        },
+        BrushClause(_kw, varOrStr, _mode, modeVal) {
+            const src = (varOrStr as any).sourceString.trim() as string;
+            const name = src.startsWith('"') || src.startsWith("'") ? src.slice(1, -1) : src;
+            // Validate: name must match $<letter_or_underscore><word_chars>
+            if (!/^\$[A-Za-z_]\w*$/.test(name)) return; // invalid var name — skip
+            (this.args as any).r.brush = { name, mode: (modeVal as any).sourceString.toLowerCase() as BrushSpec['mode'] };
+        },
+        NameClause(_kw, str) { (this.args as any).r.cellName = _extractStrValue(str); },
+        DatasetClause(_kw, id) { (this.args as any).r.dataset = (id as any).sourceString; },
+        AxisYClause(_kw, subs) {
+            const spec: AxisSpec = (this.args as any).r.axisY ?? {};
+            (subs.children as any[]).forEach(sub => (sub as any).applyAxisSub(spec));
+            (this.args as any).r.axisY = spec;
+        },
+        AxisXClause(_kw, subs) {
+            const spec: AxisSpec = (this.args as any).r.axisX ?? {};
+            (subs.children as any[]).forEach(sub => (sub as any).applyAxisSub(spec));
+            (this.args as any).r.axisX = spec;
+        },
+        LetClause(_kw, id, _eq, val) {
+            const prev = ((this.args as any).r.let as Record<string, string> | undefined) ?? {};
+            (this.args as any).r.let = { ...prev, [(id as any).sourceString]: (val as any).sourceString.trim() };
+        },
+    });
+
+    s.addOperation<void>('applyAxisSub(spec)', {
+        AxisSubClause(alt) { (alt as any).applyAxisSub((this.args as any).spec); },
+        DomainSub(_kw, _open, v1, _comma, v2, _close) {
+            (this.args as any).spec.domain = [_extractDomainVal(v1), _extractDomainVal(v2)];
+        },
+        LabelSub(_kw, str) { (this.args as any).spec.label = _extractStrValue(str); },
+        TypeSub(_kw, t) { (this.args as any).spec.type = (t as any).sourceString.toLowerCase(); },
+        FormatSub(_kw, str) { (this.args as any).spec.format = _extractStrValue(str); },
+    });
+
+    return s;
+}
+
+// Pre-load the grammar synchronously when the module is first imported.
+// In environments where top-level await is not available we use a void IIFE
+// so that subsequent calls to `parsePlotCall` will have the grammar ready.
+let _initPromise: Promise<void> | null = null;
+
+function _ensureGrammar(): void {
+    if (_g !== null) return;
+    if (_initPromise !== null) return; // loading in progress
+    _initPromise = _loadGrammarSrc().then(src => {
+        _g = ohmGrammar(src);
+        _s = _buildSemantics(_g);
+    });
+}
+
+// Kick off the async load immediately at module import time.
+_ensureGrammar();
+
+// ---------------------------------------------------------------------------
+// Regex-based fallback helpers (kept for the synchronous fast-path and for
+// inputs that the Ohm grammar cannot parse — e.g. bare-word mainConfig forms
+// that fall outside the grammar).
+// ---------------------------------------------------------------------------
+
+// Split a string by `sep` at the top nesting level only (ignores []/()/"" content).
+function splitTopLevel(s: string, sep: string): string[] {
+    const out: string[] = [];
+    let depth = 0;
+    let inStr: string | null = null;
+    let escaped = false;
+    let cur = '';
+    for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (escaped) { cur += c; escaped = false; continue; }
+        if (c === '\\' && inStr) { cur += c; escaped = true; continue; }
+        if (inStr) { cur += c; if (c === inStr) inStr = null; continue; }
+        if (c === '"' || c === "'") { inStr = c; cur += c; continue; }
+        if (c === '[' || c === '(' || c === '{') depth++;
+        if (c === ']' || c === ')' || c === '}') depth--;
+        if (c === sep && depth === 0) { out.push(cur); cur = ''; continue; }
+        cur += c;
+    }
+    if (cur.length > 0) out.push(cur);
+    return out;
+}
+
+type ClauseSpec = {
+    key: keyof ParsedPlotCall | string;
+    regex: RegExp;
+    processor: (match: RegExpMatchArray, result: ParsedPlotCall) => any;
+    merge?: boolean;
+};
+
+const AXIS_SUB_TOKEN = /(?:DOMAIN\s+(\[[^\]]+\])|LABEL\s+(?:"([^"]*)"|'([^']*)')|TYPE\s+(LINEAR|LOG|TIME|BAND)|FORMAT\s+(?:"([^"]*)"|'([^']*)'))/i;
+
+const buildAxisRegex = (axis: 'X' | 'Y') =>
+    new RegExp(`(?<!\\w)AXIS[-_]${axis}\\s+((?:(?:DOMAIN\\s+\\[[^\\]]+\\]|LABEL\\s+(?:"[^"]*"|'[^']*')|TYPE\\s+(?:LINEAR|LOG|TIME|BAND)|FORMAT\\s+(?:"[^"]*"|'[^']*'))\\s*)+)$`, 'i');
+
+const applyAxisSubClauses = (existing: AxisSpec, tail: string): AxisSpec => {
+    const re = new RegExp(AXIS_SUB_TOKEN.source, 'gi');
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(tail)) !== null) {
+        if (m[1]) { const dom = _parseDomainPair(m[1]); if (dom) existing.domain = dom; }
+        else if (m[2] !== undefined || m[3] !== undefined) { existing.label = m[2] ?? m[3]; }
+        else if (m[4]) { existing.type = m[4].toLowerCase() as AxisSpec['type']; }
+        else if (m[5] !== undefined || m[6] !== undefined) { existing.format = m[5] ?? m[6]; }
+    }
+    return existing;
+};
+
+const _parseDomainPair = (raw: string): [number | string, number | string] | undefined => {
     const inner = raw.trim().replace(/^\[/, '').replace(/\]$/, '').trim();
     const parts = splitTopLevel(inner, ',');
     if (parts.length !== 2) return undefined;
@@ -67,102 +299,19 @@ const parseDomainPair = (raw: string): [number | string, number | string] | unde
     return [parseOne(parts[0]), parseOne(parts[1])];
 };
 
-// Split a string by `sep` at the top nesting level only (ignores []/()/"" content).
-function splitTopLevel(s: string, sep: string): string[] {
-    const out: string[] = [];
-    let depth = 0;
-    let inStr: string | null = null;
-    let escaped = false;
-    let cur = '';
-    for (let i = 0; i < s.length; i++) {
-        const c = s[i];
-        if (escaped) {
-            cur += c;
-            escaped = false;
-            continue;
-        }
-        if (c === '\\' && inStr) {
-            cur += c;
-            escaped = true;
-            continue;
-        }
-        if (inStr) {
-            cur += c;
-            if (c === inStr) inStr = null;
-            continue;
-        }
-        if (c === '"' || c === "'") {
-            inStr = c;
-            cur += c;
-            continue;
-        }
-        if (c === '[' || c === '(' || c === '{') depth++;
-        if (c === ']' || c === ')' || c === '}') depth--;
-        if (c === sep && depth === 0) {
-            out.push(cur);
-            cur = '';
-            continue;
-        }
-        cur += c;
-    }
-    if (cur.length > 0) out.push(cur);
-    return out;
-}
-
-type ClauseSpec = {
-    key: keyof ParsedPlotCall | string;
-    regex: RegExp;
-    processor: (match: RegExpMatchArray, result: ParsedPlotCall) => any;
-    // When true, the clause merges into the existing field instead of being skipped on second hit.
-    merge?: boolean;
-};
-
-// One sub-clause token. Used both for the single-sub and multi-sub AXIS regexes.
-const AXIS_SUB_TOKEN = /(?:DOMAIN\s+(\[[^\]]+\])|LABEL\s+(?:"([^"]*)"|'([^']*)')|TYPE\s+(LINEAR|LOG|TIME|BAND)|FORMAT\s+(?:"([^"]*)"|'([^']*)'))/i;
-
-// Regex that matches AXIS_X/AXIS_Y followed by ONE OR MORE space-separated sub-clauses.
-// Captured group 1 = the entire sub-clause tail.
-const buildAxisRegex = (axis: 'X' | 'Y') =>
-    new RegExp(`(?<!\\w)AXIS[-_]${axis}\\s+((?:(?:DOMAIN\\s+\\[[^\\]]+\\]|LABEL\\s+(?:"[^"]*"|'[^']*')|TYPE\\s+(?:LINEAR|LOG|TIME|BAND)|FORMAT\\s+(?:"[^"]*"|'[^']*'))\\s*)+)$`, 'i');
-
-const applyAxisSubClauses = (existing: AxisSpec, tail: string): AxisSpec => {
-    // Iterate over all sub-clause tokens in the tail string.
-    const re = new RegExp(AXIS_SUB_TOKEN.source, 'gi');
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(tail)) !== null) {
-        if (m[1]) {
-            const dom = parseDomainPair(m[1]);
-            if (dom) existing.domain = dom;
-        } else if (m[2] !== undefined || m[3] !== undefined) {
-            existing.label = m[2] ?? m[3];
-        } else if (m[4]) {
-            existing.type = m[4].toLowerCase() as AxisSpec['type'];
-        } else if (m[5] !== undefined || m[6] !== undefined) {
-            existing.format = m[5] ?? m[6];
-        }
-    }
-    return existing;
-};
-
 const buildAxisProcessor = (axis: 'axisX' | 'axisY') => (match: RegExpMatchArray, result: ParsedPlotCall) => {
     const existing = (result[axis] as AxisSpec | undefined) ?? {};
     return applyAxisSubClauses(existing, match[1] ?? '');
 };
 
-// Regexes are anchored to the end of the string to be matched and stripped safely.
-// Order matters within one pass — but the outer loop runs to fixpoint so any order
-// converges. We list more-specific patterns first to reduce wasted iterations.
 const CLAUSES: ClauseSpec[] = [
-    // Legacy clauses (kept verbatim, /i for case-insensitivity per W12)
     { key: 'title', regex: /(?<!\w)TITLE\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     { key: 'zoom', regex: /(?<!\w)ZOOM\s+([\d\.]+)\s*$/i, processor: (m) => parseFloat(m[1]) },
-    // Bare ZOOM (no factor) → treat as zoom:1 (enables interactive zoom at default scale).
     { key: 'zoom', regex: /(?<!\w)ZOOM\s*$/i, processor: () => 1 },
     { key: 'zoomX', regex: /(?<!\w)ZOOM_X\s+([\d\.]+)\s*$/i, processor: (m) => parseFloat(m[1]) },
     { key: 'height', regex: /(?<!\w)HEIGHT\s+((?:\d+)(?:px|%)?)\s*$/i, processor: (m) => m[1] },
     { key: 'width', regex: /(?<!\w)WIDTH\s+((?:\d+)(?:px|%)?)\s*$/i, processor: (m) => m[1] },
     { key: 'on', regex: /(?<!\w)ON\s+((?:#\d+|\w+|\d+)(?:\s*,\s*(?:#\d+|\w+|\d+))*)\s*$/i, processor: (m) => m[1].split(',').map(s => s.trim()) },
-    // Showcase canon clauses (W2)
     { key: 'legend', regex: /(?<!\w)LEGEND\s+HIDDEN\s*$/i, processor: () => 'none' as LegendPosition },
     { key: 'legend', regex: /(?<!\w)LEGEND\s+AT\s+(RIGHT|LEFT|TOP|BOTTOM|NONE)\s*$/i, processor: (m) => m[1].toLowerCase() as LegendPosition },
     { key: 'palette', regex: /(?<!\w)PALETTE\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
@@ -171,17 +320,12 @@ const CLAUSES: ClauseSpec[] = [
     { key: 'linkScroll', regex: /(?<!\w)LINK[_-]SCROLL\s+(?:"([^"]*)"|'([^']*)'|([A-Za-z_][\w]*))\s*$/i, processor: (m) => m[1] ?? m[2] ?? m[3] },
     { key: 'tooltipColumns', regex: /(?<!\w)TOOLTIP\s+COLUMNS\s+\[([^\]]+)\]\s*$/i, processor: (m) => m[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean) },
     { key: 'onHoverTooltip', regex: /(?<!\w)ON\s+HOVER\s+TOOLTIP\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
-    // Two-variable BRUSH for CROSSTAB: BRUSH $rowVar $colVar (no MODE required) — must be tried before single-var form
     { key: 'brush', regex: /(?<!\w)BRUSH\s+(\$[A-Za-z_][\w]*)\s+(\$[A-Za-z_][\w]*)\s*$/i, processor: (m, result): BrushSpec => { (result as any).brush2 = m[2]; return { name: m[1], mode: 'xy' }; } },
-    // Single-variable BRUSH: BRUSH $var MODE X|Y|XY
     { key: 'brush', regex: /(?<!\w)BRUSH\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)'|(\$[A-Za-z_][\w]*))\s+MODE\s+(X|Y|XY)\s*$/i, processor: (m): BrushSpec => ({ name: m[1] ?? m[2] ?? m[3], mode: m[4].toLowerCase() as BrushSpec['mode'] }) },
     { key: 'cellName', regex: /(?<!\w)NAME\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
-    // DATASET <name> — references a cell alias view by name (bare or qualified).
     { key: 'dataset', regex: /(?<!\w)DATASET\s+([A-Za-z_][\w.-]*)\s*$/i, processor: (m) => m[1] },
-    // AXIS-X / AXIS-Y — one or more sub-clauses (DOMAIN, LABEL, TYPE, FORMAT) in any order, all merged.
     { key: 'axisX', regex: buildAxisRegex('X'), processor: buildAxisProcessor('axisX'), merge: true },
     { key: 'axisY', regex: buildAxisRegex('Y'), processor: buildAxisProcessor('axisY'), merge: true },
-    // LET — multiple LETs stack into a single record. Right-hand-side is a non-greedy expression captured up to end-of-string.
     {
         key: 'let',
         regex: /(?<!\w)LET\s+([A-Za-z_][\w]*)\s*=\s*((?:(?!\sLET\s+[A-Za-z_][\w]*\s*=).)+?)\s*$/i,
@@ -195,7 +339,6 @@ const CLAUSES: ClauseSpec[] = [
 
 const tryMatchClauses = (remaining: string, result: ParsedPlotCall): { remaining: string; changed: boolean } => {
     for (const clause of CLAUSES) {
-        // Skip if this clause has already been captured AND it isn't a merge-style clause.
         if (!clause.merge && (result as any)[clause.key] !== undefined) continue;
         const match = remaining.match(clause.regex);
         if (match) {
@@ -226,17 +369,11 @@ function stripTrailingLineComment(s: string): string {
     return s;
 }
 
-/**
- * Parses a single plot configuration line to separate the main function call
- * from advanced clauses. Robust to clause order.
- */
-export const parsePlotCall = (configLine: string): ParsedPlotCall => {
-    // B-157: strip trailing `# comment` (quote-aware) so that e.g.
-    // `LINE_CHART(…) # comment` and string values containing `#` both work.
+/** Regex-based implementation (fallback). */
+function _parsePlotCallRegex(configLine: string): ParsedPlotCall {
     let remainingConfig = stripTrailingLineComment(configLine).trim();
     const result: ParsedPlotCall = { mainConfig: '' };
 
-    // Repeatedly try to match and strip clauses from the end until no more can be found.
     let changedInLoop = true;
     while (changedInLoop) {
         const r = tryMatchClauses(remainingConfig, result);
@@ -244,13 +381,11 @@ export const parsePlotCall = (configLine: string): ParsedPlotCall => {
         changedInLoop = r.changed;
     }
 
-    // LINK_X has a paren-arg shape, so it doesn't fit the trailing-clause loop above.
     const linkXMatch = remainingConfig.match(/(?<!\w)LINK[-_]X\s*\(([^)]+)\)\s*$/i);
     if (linkXMatch) {
         const linkArgs = linkXMatch[1].split(',').map(s => s.trim()).filter(Boolean);
         const variables = linkArgs.filter(arg => arg.startsWith('$'));
         const options = linkArgs.filter(arg => !arg.startsWith('$'));
-        // Warn if args look like variable names but are missing the $ prefix.
         const bareVarLike = options.filter(o => /^[A-Za-z_]/.test(o) && !['master', 'clamp'].includes(o.toLowerCase()));
         if (bareVarLike.length > 0) {
             console.warn(`[plotParser] LINK_X: argument(s) "${bareVarLike.join(', ')}" look like variable names but are missing the $ prefix. Did you mean "$${bareVarLike[0]}"?`);
@@ -266,8 +401,6 @@ export const parsePlotCall = (configLine: string): ParsedPlotCall => {
         }
     }
 
-    // Re-run the clause loop in case WIDTH/HEIGHT or new-clause forms were blocked
-    // behind a trailing LINK_X(...) that we just stripped.
     changedInLoop = true;
     while (changedInLoop) {
         const r = tryMatchClauses(remainingConfig, result);
@@ -277,6 +410,31 @@ export const parsePlotCall = (configLine: string): ParsedPlotCall => {
 
     result.mainConfig = remainingConfig;
     return result;
+}
+
+/**
+ * Parses a single plot configuration line to separate the main function call
+ * from advanced clauses. Robust to clause order.
+ *
+ * Uses the Ohm.js PEG grammar when available; falls back to the regex-based
+ * implementation for inputs the grammar cannot handle.
+ */
+export const parsePlotCall = (configLine: string): ParsedPlotCall => {
+    // B-157: strip trailing `# comment` (quote-aware).
+    const cleaned = stripTrailingLineComment(configLine).trim();
+
+    // Try Ohm grammar if it has been initialised.
+    if (_g !== null && _s !== null) {
+        const matchResult = _g.match(cleaned);
+        if (matchResult.succeeded()) {
+            const result: ParsedPlotCall = { mainConfig: '' };
+            (_s(matchResult) as any).toResult(result);
+            return result;
+        }
+        // Grammar failed — fall through to regex fallback.
+    }
+
+    return _parsePlotCallRegex(cleaned);
 };
 
 // W10 — Composition parsing.
