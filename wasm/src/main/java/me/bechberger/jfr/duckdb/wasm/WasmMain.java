@@ -1,5 +1,6 @@
 package me.bechberger.jfr.duckdb.wasm;
 
+import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import me.bechberger.jfr.duckdb.BasicParallelImporter;
@@ -117,6 +118,65 @@ public class WasmMain {
         }
     }
 
+    /** Imports a CJFR recording into the provided duckdb-wasm connection. */
+    public static void importCjfrIntoDuckDB(JSObject bytesJs, JSObject jsConn, JSObject jsDb) {
+        String tablePrefix = getTablePrefix();
+        try {
+            int len = getLength(bytesJs);
+            stageBytes(bytesJs);
+
+            byte[] bytes = new byte[len];
+            int off = 0;
+            while (off < len) {
+                int chunkLen = Math.min(B64_CHUNK, len - off);
+                String b64 = getBytesBase64(off, chunkLen);
+                decodeBase64Into(b64, bytes, off, chunkLen);
+                off += chunkLen;
+            }
+            clearStagedBytes();
+            log("CJFR bytes received: " + len);
+
+            JsDuckDBSink rootSink = new JsDuckDBSink(jsConn, jsDb, tablePrefix);
+            java.io.PrintStream origOut = System.out;
+            java.io.PrintStream capture = new java.io.PrintStream(new java.io.OutputStream() {
+                private final StringBuilder line = new StringBuilder();
+                @Override public void write(int b) {
+                    if (b == '\n') { storeLog(line.toString()); line.setLength(0); }
+                    else line.append((char) b);
+                }
+                @Override public void write(byte[] buf, int off, int len) {
+                    for (int i = off; i < off + len; i++) write(buf[i] & 0xFF);
+                }
+            });
+            System.setOut(capture);
+            BasicParallelImporter importer =
+                    new BasicParallelImporter(() -> rootSink, new Options());
+            log("BasicParallelImporter constructed; calling importCjfrRecording()");
+            long t0 = System.currentTimeMillis();
+            importer.importCjfrRecording(new ByteArrayInputStream(bytes));
+            long t1 = System.currentTimeMillis();
+            capture.flush();
+            System.setOut(origOut);
+            log("CJFR import complete: " + bytes.length + " bytes in " + (t1 - t0) + "ms");
+        } catch (Throwable t) {
+            clearStagedBytes();
+            StringBuilder sb = new StringBuilder("CJFR import failed:\n");
+            Throwable cur = t;
+            while (cur != null) {
+                sb.append("  ").append(cur.getClass().getName());
+                if (cur.getMessage() != null) sb.append(": ").append(cur.getMessage());
+                sb.append('\n');
+                StackTraceElement[] trace = cur.getStackTrace();
+                int n = Math.min(trace.length, 12);
+                for (int i = 0; i < n; i++) sb.append("    at ").append(trace[i]).append('\n');
+                cur = cur.getCause();
+                if (cur != null) sb.append("  Caused by: ");
+            }
+            log(sb.toString());
+            throw new RuntimeException(t);
+        }
+    }
+
     /** Decodes a base64 string into {@code dest[destOff .. destOff+byteCount)}. */
     private static void decodeBase64Into(String s, byte[] dest, int destOff, int byteCount) {
         int si = 0;
@@ -141,11 +201,16 @@ public class WasmMain {
     public static void main(String[] args) {
         log("jfr-importer.wasm loaded");
         installEntry(WasmMain::importJfrIntoDuckDB);
+        installCjfrEntry(WasmMain::importCjfrIntoDuckDB);
     }
 
     @JS.Coerce
     @JS("globalThis.JFRImporter = { importJfrIntoDuckDB: (bytes, conn, db, stacktraceDepth, tablePrefix) => { globalThis._jfrStacktraceDepth = (typeof stacktraceDepth === 'number') ? stacktraceDepth : 10; globalThis._jfrTablePrefix = (typeof tablePrefix === 'string') ? tablePrefix : ''; fn(bytes, conn, db); } };")
     private static native void installEntry(JfrImportFn fn);
+
+    @JS.Coerce
+    @JS("globalThis.CJFRImporter = { importCjfrIntoDuckDB: (bytes, conn, db, tablePrefix) => { globalThis._jfrTablePrefix = (typeof tablePrefix === 'string') ? tablePrefix : ''; fn(bytes, conn, db); } };")
+    private static native void installCjfrEntry(JfrImportFn fn);
 
     @JS.Coerce
     @JS("return arr.length;")

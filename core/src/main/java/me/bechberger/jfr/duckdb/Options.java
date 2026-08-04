@@ -47,6 +47,11 @@ public class Options {
         return maxStackTraceDepth;
     }
 
+    public Options withMaxStackTraceDepth(int depth) {
+        this.maxStackTraceDepth = depth;
+        return this;
+    }
+
     public boolean useComplexDescriptors() {
         return complexDescriptors;
     }
