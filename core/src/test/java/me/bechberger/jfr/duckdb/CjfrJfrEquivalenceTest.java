@@ -177,4 +177,70 @@ class CjfrJfrEquivalenceTest {
             }
         }
     }
+
+    // ── Numeric type parity tests ────────────────────────────────────────────────
+
+    private static final Set<String> BIGINT_ALIASES =
+            Set.of("BIGINT", "INT64", "LONG", "HUGEINT");
+    private static final Set<String> INTEGER_ALIASES =
+            Set.of("INTEGER", "INT32", "INT", "INT4");
+    private static final Set<String> SMALLINT_ALIASES =
+            Set.of("SMALLINT", "INT16", "SHORT", "INT2");
+
+    /** jdk.UnsignedLongFlag.value — underlying long with @Unsigned → must be BIGINT in both. */
+    @Test
+    void unsignedLongFlagValueIsBigint() throws SQLException {
+        Map<String, String> jfrCols  = columnTypes(jfrConn,  "UnsignedLongFlag");
+        Map<String, String> cjfrCols = columnTypes(cjfrConn, "UnsignedLongFlag");
+        assertThat(BIGINT_ALIASES).as("JFR UnsignedLongFlag.value must be BIGINT-class")
+                .contains(jfrCols.get("value"));
+        assertThat(BIGINT_ALIASES).as("CJFR UnsignedLongFlag.value must be BIGINT-class")
+                .contains(cjfrCols.get("value"));
+    }
+
+    /** jdk.GCReferenceStatistics.count — underlying long with @Unsigned → must be BIGINT in both. */
+    @Test
+    void gcReferenceStatisticsCountIsBigint() throws SQLException {
+        Map<String, String> jfrCols  = columnTypes(jfrConn,  "GCReferenceStatistics");
+        Map<String, String> cjfrCols = columnTypes(cjfrConn, "GCReferenceStatistics");
+        assertThat(BIGINT_ALIASES).as("JFR GCReferenceStatistics.count must be BIGINT-class")
+                .contains(jfrCols.get("count"));
+        assertThat(BIGINT_ALIASES).as("CJFR GCReferenceStatistics.count must be BIGINT-class")
+                .contains(cjfrCols.get("count"));
+    }
+
+    /** jdk.MetaspaceChunkFreeListSummary chunk-count fields — underlying long → BIGINT in both. */
+    @Test
+    void metaspaceChunkCountsAreBigint() throws SQLException {
+        Map<String, String> jfrCols  = columnTypes(jfrConn,  "MetaspaceChunkFreeListSummary");
+        Map<String, String> cjfrCols = columnTypes(cjfrConn, "MetaspaceChunkFreeListSummary");
+        for (String col : List.of("specializedChunks", "smallChunks", "mediumChunks", "humongousChunks")) {
+            assertThat(BIGINT_ALIASES).as("JFR MetaspaceChunkFreeListSummary." + col + " must be BIGINT-class")
+                    .contains(jfrCols.get(col));
+            assertThat(BIGINT_ALIASES).as("CJFR MetaspaceChunkFreeListSummary." + col + " must be BIGINT-class")
+                    .contains(cjfrCols.get(col));
+        }
+    }
+
+    /** jdk.Compilation.compileLevel — underlying short with @Unsigned → must be SMALLINT in both. */
+    @Test
+    void compilationCompileLevelIsSmallint() throws SQLException {
+        Map<String, String> jfrCols  = columnTypes(jfrConn,  "Compilation");
+        Map<String, String> cjfrCols = columnTypes(cjfrConn, "Compilation");
+        assertThat(SMALLINT_ALIASES).as("JFR Compilation.compileLevel must be SMALLINT-class")
+                .contains(jfrCols.get("compileLevel"));
+        assertThat(SMALLINT_ALIASES).as("CJFR Compilation.compileLevel must be SMALLINT-class")
+                .contains(cjfrCols.get("compileLevel"));
+    }
+
+    /** jdk.ExecuteVMOperation.safepointId — underlying long with @Unsigned → BIGINT in both. */
+    @Test
+    void executeVMOperationSafepointIdIsBigint() throws SQLException {
+        Map<String, String> jfrCols  = columnTypes(jfrConn,  "ExecuteVMOperation");
+        Map<String, String> cjfrCols = columnTypes(cjfrConn, "ExecuteVMOperation");
+        assertThat(BIGINT_ALIASES).as("JFR ExecuteVMOperation.safepointId must be BIGINT-class")
+                .contains(jfrCols.get("safepointId"));
+        assertThat(BIGINT_ALIASES).as("CJFR ExecuteVMOperation.safepointId must be BIGINT-class")
+                .contains(cjfrCols.get("safepointId"));
+    }
 }

@@ -849,10 +849,22 @@ public class BasicParallelImporter {
                             (app) -> app.append(0L));
                 }
             }
-            case "int", "jdk.jfr.Unsigned" -> col = new Table.Column(fieldName, "INTEGER",
+            case "int" -> col = new Table.Column(fieldName, "INTEGER",
                     (obj, app) -> app.append(((CJFREvent) (Object) obj).getInt(fieldName)),
                     (app) -> app.append(0));
-            case "short" -> col = new Table.Column(fieldName, "SMALLINT",
+            case "jdk.jfr.Unsigned" -> {
+                // Unsigned annotation on long → BIGINT; on int/short → INTEGER
+                if ("long".equals(underlying)) {
+                    col = new Table.Column(fieldName, "BIGINT",
+                            (obj, app) -> app.append(cjfrSafeLong((CJFREvent) (Object) obj, fieldName)),
+                            (app) -> app.append(0L));
+                } else {
+                    col = new Table.Column(fieldName, "INTEGER",
+                            (obj, app) -> app.append(((CJFREvent) (Object) obj).getInt(fieldName)),
+                            (app) -> app.append(0));
+                }
+            }
+            case "short", "uint2" -> col = new Table.Column(fieldName, "SMALLINT",
                     (obj, app) -> app.append((short) ((CJFREvent) (Object) obj).getInt(fieldName)),
                     (app) -> app.append((short) 0));
             case "byte" -> col = new Table.Column(fieldName, "TINYINT",
