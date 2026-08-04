@@ -133,6 +133,11 @@
             <version>4.7.7</version>
         </dependency>
         <dependency>
+            <groupId>me.bechberger</groupId>
+            <artifactId>condensed-data-reader</artifactId>
+            <version>0.1.2</version>
+        </dependency>
+        <dependency>
             <groupId>io.btrace</groupId>
             <artifactId>jafar-parser</artifactId>
             <version>0.24.0</version>

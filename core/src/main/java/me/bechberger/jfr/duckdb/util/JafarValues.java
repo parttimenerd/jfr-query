@@ -194,4 +194,63 @@ public final class JafarValues {
         MetadataAnnotation a = findAnnotation(cls, annotationTypeName);
         return a != null ? a.getValue() : null;
     }
+
+    // ── Direct (pool-bypass) accessors ───────────────────────────────────────
+    // These receive a raw value already extracted from the jafar ArrayPool;
+    // no Map.get() is needed — just unbox/cast.
+
+    public static String getStringDirect(Object raw) {
+        if (raw instanceof String s) return s;
+        if (raw instanceof ComplexType ct) {
+            Object inner = ct.getValue();
+            return inner instanceof Map<?,?> m ? getString((Map<?,?>) m) : (inner != null ? inner.toString() : null);
+        }
+        return raw != null ? raw.toString() : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String getString(Map<?,?> m) {
+        // single-field string-constant-pool struct: return the one string value
+        if (m.size() == 1) {
+            Object v = m.values().iterator().next();
+            return v != null ? v.toString() : null;
+        }
+        return null;
+    }
+
+    public static Long getLongDirect(Object raw) {
+        if (raw instanceof Long l) return l;
+        if (raw instanceof Number n) return n.longValue();
+        return null;
+    }
+
+    public static Integer getIntegerDirect(Object raw) {
+        if (raw instanceof Integer i) return i;
+        if (raw instanceof Number n) return n.intValue();
+        return null;
+    }
+
+    public static Boolean getBooleanDirect(Object raw) {
+        if (raw instanceof Boolean b) return b;
+        return null;
+    }
+
+    public static Double getDoubleDirect(Object raw) {
+        if (raw instanceof Double d) return d;
+        if (raw instanceof Number n) return n.doubleValue();
+        return null;
+    }
+
+    public static Float getFloatDirect(Object raw) {
+        if (raw instanceof Float f) return f;
+        if (raw instanceof Number n) return n.floatValue();
+        return null;
+    }
+
+    public static Character getCharacterDirect(Object raw) {
+        if (raw instanceof Character c) return c;
+        if (raw instanceof Long l) return (char) l.longValue();
+        if (raw instanceof Integer i) return (char) i.intValue();
+        return null;
+    }
 }

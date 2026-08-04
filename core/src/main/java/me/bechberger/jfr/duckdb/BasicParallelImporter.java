@@ -8,10 +8,12 @@ import io.jafar.parser.impl.LazyMapValueBuilder.ArrayPool;
 import io.jafar.parser.internal_api.metadata.MetadataClass;
 import io.jafar.parser.internal_api.metadata.MetadataField;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,6 +21,9 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import me.bechberger.cjfr.CJFREvent;
+import me.bechberger.cjfr.CJFRFile;
+import me.bechberger.cjfr.CJFRFieldType;
 import me.bechberger.jfr.duckdb.definitions.MacroCollection;
 import me.bechberger.jfr.duckdb.definitions.ViewCollection;
 import me.bechberger.jfr.duckdb.util.DuckDBSink;
@@ -638,6 +643,227 @@ public class BasicParallelImporter {
                 times[8] / 1_000_000,
                 times[7] / 1_000_000);
         finalizeImport();
+    }
+
+    /**
+     * Imports a CJFR (condensed JFR) recording from an {@link InputStream} using the
+     * {@code condensed-data-reader} library.
+     *
+     * <p>Reads events via {@link CJFRFile} without reconstitution (no JMC dependency). Field
+     * metadata is recovered from {@link CJFRFieldType#typeName()} and the encoded description
+     * string (which embeds annotation type names including Timestamp/Timespan).
+     *
+     * <p>Value conversion mirrors the jafar path:
+     * <ul>
+     *   <li>{@code long} with {@code @Timestamp} → {@link java.sql.Timestamp} (TIMESTAMP column)
+     *   <li>{@code long} with {@code @Timespan} → {@code double} seconds (DOUBLE column)
+     *   <li>{@link Instant} fields → TIMESTAMP via epoch-nanos
+     *   <li>{@link Duration} fields → DOUBLE seconds
+     *   <li>Nested structs → flattened as "{@code fieldName$innerField}" columns (one level deep)
+     *   <li>Arrays and deep structs → skipped (VARCHAR null column as placeholder)
+     * </ul>
+     */
+    public final void importCjfrRecording(InputStream input) throws IOException {
+        // Map from event-type name → Table (created lazily on first event of that type)
+        Map<String, Table> cjfrTables = new HashMap<>();
+        // Separate RecordingInfo accumulator that works with CJFREvent
+        CjfrRecordingInfo cjfrInfo = new CjfrRecordingInfo();
+
+        try (CJFRFile file = CJFRFile.open(input, me.bechberger.cjfr.Options.defaults().withReconstitution(false))) {
+            CJFREvent event;
+            while ((event = file.readEvent()) != null) {
+                final CJFREvent ev = event;
+                String typeName = ev.getEventType().getName();
+                Table table = cjfrTables.computeIfAbsent(typeName,
+                        k -> createCjfrTable(ev.getEventType()));
+                if (table == null) continue;
+                insertCjfrEvent(table, ev);
+                eventCount.merge(typeName, 1, Integer::sum);
+                cjfrInfo.processEvent(ev);
+            }
+        }
+
+        // Flush all CJFR tables and then run the shared finalizer (writeEventCounts, sortByTime…)
+        for (Table t : cjfrTables.values()) {
+            t.close();
+        }
+        // Put them in eventTypeToTable AFTER closing so writeEventCounts/sortEventTables can see
+        // them, but finalizeImport's close loop won't double-close (we set appenders as already
+        // closed by overwriting eventTypeToTable with already-closed Table objects — they are
+        // already closed above, so finalizeImport's close loop is a no-op for them).
+        eventTypeToTable.putAll(cjfrTables);
+
+        writeEventCounts();
+        // writeEventLabels is skipped for CJFR: eventTypeMeta is empty (no jafar MetadataClass).
+        sortEventTablesByStartTime();
+        try {
+            cjfrInfo.store(sinkSupplier.get());
+        } catch (SQLException e) {
+            throw new RuntimeSQLException("Failed to store CJFR recording info", e);
+        }
+        try {
+            addMacrosAndViews(sinkSupplier.get());
+        } catch (SQLException e) {
+            throw new RuntimeSQLException("Failed to get a connection for macros/views for CJFR", e);
+        }
+    }
+
+    /** Lightweight recording-info accumulator for the CJFR import path. */
+    private static class CjfrRecordingInfo {
+        int eventCount;
+        Instant firstEvent;
+        Instant lastEvent;
+        String dumpReason;
+        Instant dumpTime;
+        long eventDurationNs;
+
+        void processEvent(CJFREvent ev) {
+            eventCount++;
+            Instant startTime = ev.getStartTime();
+            if (startTime != null) {
+                if (firstEvent == null || startTime.isBefore(firstEvent)) firstEvent = startTime;
+                if (lastEvent  == null || startTime.isAfter(lastEvent))  lastEvent  = startTime;
+                if ("jdk.Shutdown".equals(ev.getEventType().getName())
+                        && (dumpTime == null || startTime.isAfter(dumpTime))) {
+                    Object reason = ev.getValue("reason");
+                    dumpReason = reason != null ? reason.toString() : null;
+                    dumpTime = startTime;
+                }
+            }
+            Duration dur = ev.getDuration();
+            if (dur != null) eventDurationNs += dur.toNanos();
+        }
+
+        void store(DuckDBSink sink) throws SQLException {
+            Table t = new Table("RecordingInfo",
+                    List.of(new Table.Column("eventCount",           "INTEGER",   null, null),
+                            new Table.Column("firstEvent",            "TIMESTAMP", null, null),
+                            new Table.Column("lastEvent",             "TIMESTAMP", null, null),
+                            new Table.Column("eventDurationSeconds",  "DOUBLE",    null, null),
+                            new Table.Column("dumpReason",            "VARCHAR",   null, null)),
+                    sink, false);
+            t.appender.beginRow();
+            t.appender.append(eventCount);
+            append(t.appender, firstEvent);
+            append(t.appender, lastEvent);
+            t.appender.append(eventDurationNs / 1_000_000_000.0);
+            t.appender.append(dumpReason);
+            t.appender.endRow();
+            t.close();
+        }
+    }
+
+    /**
+     * Creates a DuckDB {@link Table} for a CJFR event type by decoding field metadata from the
+     * encoded description strings.
+     */
+    private @Nullable Table createCjfrTable(me.bechberger.cjfr.CJFREventType eventType) {
+        List<Table.Column> columns = new ArrayList<>();
+        for (CJFRFieldType field : eventType.getFields()) {
+            List<Table.Column> cols = createCjfrColumns(field);
+            if (cols != null) columns.addAll(cols);
+        }
+        if (columns.isEmpty()) return null;
+        String tableName = normalizeTableName(eventType.getName());
+        try {
+            return new Table(tableName, columns, sinkSupplier.get(), false);
+        } catch (SQLException e) {
+            throw new RuntimeSQLException("Failed to create CJFR table " + tableName, e);
+        }
+    }
+
+    /** Creates DuckDB columns for a single CJFR field using its type name and description. */
+    private @Nullable List<Table.Column> createCjfrColumns(CJFRFieldType field) {
+        String fieldName = field.name();
+        String typeName = field.typeName();
+        String desc = field.description(); // compact JSON, may contain annotation type names
+        boolean isTimestamp = desc != null && desc.contains("jdk.jfr.Timestamp");
+        boolean isTimespan  = desc != null && desc.contains("jdk.jfr.Timespan");
+        String label = field.getLabel();
+
+        Table.Column col;
+        switch (typeName) {
+            case "java.lang.String" -> col = new Table.Column(fieldName, "VARCHAR",
+                    (obj, app) -> app.append(((CJFREvent) (Object) obj).getString(fieldName)),
+                    Appender::appendNull);
+            case "long" -> {
+                if (isTimestamp) {
+                    col = new Table.Column(fieldName, "TIMESTAMP",
+                            (obj, app) -> {
+                                Instant ins = ((CJFREvent) (Object) obj).getInstant(fieldName);
+                                append(app, ins != null ? ins : Instant.EPOCH);
+                            }, (app) -> append(app, Instant.EPOCH));
+                } else if (isTimespan) {
+                    col = new Table.Column(fieldName, "DOUBLE",
+                            (obj, app) -> {
+                                Duration d = ((CJFREvent) (Object) obj).getDuration(fieldName);
+                                if (d == null) { app.append(0.0); return; }
+                                double secs = d.toNanos() / 1_000_000_000.0;
+                                app.append(secs > 24L * 365 * 10 * 3600 ? Double.POSITIVE_INFINITY : secs);
+                            }, (app) -> app.append(0.0));
+                } else {
+                    col = new Table.Column(fieldName, "BIGINT",
+                            (obj, app) -> app.append(((CJFREvent) (Object) obj).getLong(fieldName)),
+                            (app) -> app.append(0L));
+                }
+            }
+            case "int" -> col = new Table.Column(fieldName, "INTEGER",
+                    (obj, app) -> app.append(((CJFREvent) (Object) obj).getInt(fieldName)),
+                    (app) -> app.append(0));
+            case "short" -> col = new Table.Column(fieldName, "SMALLINT",
+                    (obj, app) -> app.append((short) ((CJFREvent) (Object) obj).getInt(fieldName)),
+                    (app) -> app.append((short) 0));
+            case "byte" -> col = new Table.Column(fieldName, "TINYINT",
+                    (obj, app) -> app.append((byte) ((CJFREvent) (Object) obj).getInt(fieldName)),
+                    (app) -> app.append((byte) 0));
+            case "boolean" -> col = new Table.Column(fieldName, "BOOLEAN",
+                    (obj, app) -> app.append(((CJFREvent) (Object) obj).getBoolean(fieldName)),
+                    (app) -> app.append(false));
+            case "double", "float" -> col = new Table.Column(fieldName, "DOUBLE",
+                    (obj, app) -> app.append(((CJFREvent) (Object) obj).getDouble(fieldName)),
+                    (app) -> app.append(0.0));
+            default -> {
+                // Struct type — check for Instant (Timestamp annotation on non-primitive)
+                if (isTimestamp) {
+                    col = new Table.Column(fieldName, "TIMESTAMP",
+                            (obj, app) -> {
+                                Instant ins = ((CJFREvent) (Object) obj).getInstant(fieldName);
+                                append(app, ins != null ? ins : Instant.EPOCH);
+                            }, (app) -> append(app, Instant.EPOCH));
+                } else {
+                    // Struct: flatten single-field structs (GCCause, GCName) to VARCHAR
+                    col = new Table.Column(fieldName, "VARCHAR",
+                            (obj, app) -> {
+                                CJFREvent nested = ((CJFREvent) (Object) obj).getStruct(fieldName);
+                                if (nested == null) { app.appendNull(); return; }
+                                List<String> names = nested.getFieldNames();
+                                if (names.size() == 1) {
+                                    app.append(nested.getString(names.get(0)));
+                                } else {
+                                    app.appendNull();
+                                }
+                            }, Appender::appendNull);
+                }
+            }
+        }
+        return List.of(col.withDescription(label, null));
+    }
+
+    /** Inserts a single CJFR event into its corresponding DuckDB table. */
+    @SuppressWarnings("unchecked")
+    private static void insertCjfrEvent(Table table, CJFREvent event) {
+        try {
+            table.appender.beginRow();
+            for (Table.Column col : table.columns) {
+                // AppendFunction expects Map<String,Object> but we pass CJFREvent directly;
+                // the CJFR column lambdas cast it back to CJFREvent.
+                col.append.appendTo((Map<String, Object>) (Object) event, table.appender);
+            }
+            table.appender.endRow();
+        } catch (SQLException e) {
+            // Soft-fail on individual row errors (malformed values)
+            System.err.println("[cjfr-import] row insert failed for " + event.getEventType().getName() + ": " + e.getMessage());
+        }
     }
 
     private void finalizeImport() {

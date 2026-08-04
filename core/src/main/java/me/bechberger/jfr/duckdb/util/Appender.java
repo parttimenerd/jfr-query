@@ -39,6 +39,12 @@ public interface Appender extends AutoCloseable {
     /** Append an array column (DuckDB array of integer). */
     void append(int[] arr) throws SQLException;
 
+    /**
+     * Hint to the appender about upcoming column names (for binary protocol optimisation).
+     * Default no-op — implementations that benefit from this override it.
+     */
+    default void setColumnNames(String[] names) {}
+
     @Override
     void close() throws SQLException;
 }
