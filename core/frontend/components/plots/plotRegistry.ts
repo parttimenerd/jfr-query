@@ -24,6 +24,8 @@ export const plotRegistry: Record<string, PlotRegistration<any>> = {
   [pieChartPlot.name]: pieChartPlot,
   [lineChartPlot.name]: lineChartPlot,
   [scatterPlot.name]: scatterPlot,
+  // SCATTER is an alias for SCATTER_PLOT (short form used in templates).
+  SCATTER: scatterPlot,
   [heatmapPlot.name]: heatmapPlot,
   [flameGraphPlot.name]: flameGraphPlot,
   // FLAME_GRAPH is an alias for FLAMEGRAPH (both spellings accepted).

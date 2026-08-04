@@ -30,7 +30,7 @@ describe('plotRegistry — showcase 18-plot coverage', () => {
 
     // Aliases that point at one of the canonical plots; allowed in the registry
     // but not counted as a distinct plot.
-    const aliasKeys = ['FLAME_GRAPH'];
+    const aliasKeys = ['FLAME_GRAPH', 'SCATTER'];
 
     it.each(expectedKeys)('registers %s', (name) => {
         expect(plotRegistry[name]).toBeDefined();

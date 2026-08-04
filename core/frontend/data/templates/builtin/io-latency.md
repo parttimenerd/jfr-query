@@ -36,7 +36,7 @@ SELECT * FROM "latencies-by-type"
 ```
 
 ```plot
-BAR_CHART(x: "Event Type", y: ["Total"], horizontal: true) TITLE "Total Blocking Time by Type"
+BAR_CHART(x: "Event Type", y: ["Total (s)"], horizontal: true) TITLE "Total Blocking Time by Type"
 ```
 
 ---

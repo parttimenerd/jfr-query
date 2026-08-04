@@ -1603,7 +1603,8 @@ SELECT
     format_duration(AVG(duration)) AS "Average",
     format_duration(P99(duration)) AS "P 99",
     format_duration(MAX(duration)) AS "Longest",
-    format_duration(SUM(duration)) AS "Total"
+    format_duration(SUM(duration)) AS "Total",
+    ROUND(SUM(duration), 3) AS "Total (s)"
 FROM (
     ${branches.join('\n    UNION ALL\n    ')}
 ) latencies
