@@ -144,7 +144,7 @@ ORDER BY 1
 ```
 
 ```plot
-LINE_CHART(x: "Second", y: ["Contention Events", "Total Wait (ms)"], layout: "grouped") TITLE "Monitor Contention per Second" LINK_X($start, $end) ZOOM
+LINE_CHART(x: "Second", y: ["Contention Events", "Total Wait (ms)"]) TITLE "Monitor Contention per Second" LINK_X($start, $end) ZOOM
 ```
 
 ---
