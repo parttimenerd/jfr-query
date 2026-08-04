@@ -741,7 +741,17 @@ public class BasicParallelImporter {
                 }
             }
             Duration dur = ev.getDuration();
-            if (dur != null) eventDurationNs += (long)(durationToSeconds(dur) * 1_000_000_000.0);
+            if (dur != null) {
+                double ns = durationToSeconds(dur) * 1_000_000_000.0;
+                if (Double.isFinite(ns) && ns >= 0 && ns < 1e18) {
+                    try {
+                        eventDurationNs = Math.addExact(eventDurationNs, (long) ns);
+                    } catch (ArithmeticException ignored) {
+                        // saturate on overflow
+                        eventDurationNs = Long.MAX_VALUE;
+                    }
+                }
+            }
         }
 
         void store(DuckDBSink sink) throws SQLException {
@@ -782,6 +792,21 @@ public class BasicParallelImporter {
         }
     }
 
+    /**
+     * Extracts the underlying Java primitive type from the CJFR field description JSON.
+     * The description is a JSON array: [underlyingType, contentAnnotation, annotations, ...].
+     * Returns null if the description is missing or not parseable.
+     */
+    private static @Nullable String cjfrUnderlyingType(@Nullable String desc) {
+        if (desc == null || !desc.startsWith("[\"")) return null;
+        // Fast path: grab the first JSON string value — it is the underlying Java type name.
+        int start = 1; // skip leading '['
+        if (desc.charAt(start) != '"') return null;
+        int end = desc.indexOf('"', start + 1);
+        if (end < 0) return null;
+        return desc.substring(start + 1, end);
+    }
+
     /** Creates DuckDB columns for a single CJFR field using its type name and description. */
     private @Nullable List<Table.Column> createCjfrColumns(CJFRFieldType field) {
         String fieldName = field.name();
@@ -791,8 +816,15 @@ public class BasicParallelImporter {
         boolean isTimespan  = desc != null && desc.contains("jdk.jfr.Timespan");
         String label = field.getLabel();
 
+        // For CJFR "compound" type names (e.g. "memory varint BYTES", "percentage",
+        // "jdk.jfr.Frequency") the description JSON encodes the real underlying primitive.
+        // For reference types (java.lang.Thread, java.lang.Class, jdk.types.*) the value
+        // stored by CJFR is the integer constant-pool ID — equivalent to JFR's UINTEGER.
+        String underlying = cjfrUnderlyingType(desc);
+
         Table.Column col;
         switch (typeName) {
+            // ── Primitive scalar types ──────────────────────────────────────────────
             case "java.lang.String" -> col = new Table.Column(fieldName, "VARCHAR",
                     (obj, app) -> app.append(((CJFREvent) (Object) obj).getString(fieldName)),
                     Appender::appendNull);
@@ -832,16 +864,75 @@ public class BasicParallelImporter {
             case "double", "float" -> col = new Table.Column(fieldName, "DOUBLE",
                     (obj, app) -> app.append(((CJFREvent) (Object) obj).getDouble(fieldName)),
                     (app) -> app.append(0.0));
+
+            // ── CJFR compound numeric types ────────────────────────────────────────
+            // "memory varint BYTES" → unsigned long (byte amounts)
+            // "uint1" → unsigned byte
+            // "jdk.jfr.Frequency" → long (Hz counts)
+            // "jdk.jfr.DataAmount" → double (rates) or long (sizes)
+            // "percentage" → float
+            // "event type name" → long (constant-pool ID)
+            case "memory varint BYTES", "jdk.jfr.Frequency", "event type name" ->
+                col = new Table.Column(fieldName, "BIGINT",
+                    (obj, app) -> app.append(cjfrSafeLong((CJFREvent) (Object) obj, fieldName)),
+                    (app) -> app.append(0L));
+            case "uint1" -> col = new Table.Column(fieldName, "TINYINT",
+                    (obj, app) -> app.append((byte) cjfrSafeInt((CJFREvent) (Object) obj, fieldName)),
+                    (app) -> app.append((byte) 0));
+            case "percentage" -> col = new Table.Column(fieldName, "FLOAT",
+                    (obj, app) -> app.append((float) cjfrSafeDouble((CJFREvent) (Object) obj, fieldName)),
+                    (app) -> app.append(0.0f));
+            case "jdk.jfr.DataAmount" -> {
+                // DataAmount can be a double (rate in bytes/second) or long (byte size).
+                // Use the underlying primitive from the description to decide.
+                if ("double".equals(underlying)) {
+                    col = new Table.Column(fieldName, "DOUBLE",
+                            (obj, app) -> app.append(cjfrSafeDouble((CJFREvent) (Object) obj, fieldName)),
+                            (app) -> app.append(0.0));
+                } else {
+                    col = new Table.Column(fieldName, "BIGINT",
+                            (obj, app) -> app.append(cjfrSafeLong((CJFREvent) (Object) obj, fieldName)),
+                            (app) -> app.append(0L));
+                }
+            }
+
+            // ── JFR reference/pointer types ────────────────────────────────────────
+            // In JFR these are constant-pool IDs (UINTEGER). In CJFR they are stored as
+            // full structs. We keep them as VARCHAR (stringified struct) since we cannot
+            // store a struct as an integer — exact type match with JFR is not possible here.
+            case "java.lang.Thread", "java.lang.Class",
+                 "jdk.types.Method", "jdk.types.ClassLoader", "jdk.types.Package",
+                 "jdk.types.Module", "jdk.types.OldObject", "jdk.types.OldObjectGcRoot" -> {
+                col = new Table.Column(fieldName, "VARCHAR",
+                    (obj, app) -> {
+                        CJFREvent nested = ((CJFREvent) (Object) obj).getStruct(fieldName);
+                        if (nested == null) { app.appendNull(); return; }
+                        List<String> names = nested.getFieldNames();
+                        // Try to extract a meaningful single-value representation
+                        if (names.size() == 1) {
+                            app.append(nested.getString(names.get(0)));
+                        } else if (names.contains("javaName")) {
+                            app.append(nested.getString("javaName"));
+                        } else if (names.contains("name")) {
+                            app.append(nested.getString("name"));
+                        } else {
+                            app.append(nested.toString());
+                        }
+                    }, Appender::appendNull);
+            }
+
             default -> {
-                // Struct type — check for Timestamp or Timespan annotation on non-primitive
-                if (isTimestamp) {
+                // If typeName starts with "array<" it is a combined/aggregated CJFR field.
+                // Peek at the underlying primitive from the description to decide storage type.
+                if (typeName.startsWith("array<")) {
+                    col = buildCjfrArrayColumn(fieldName, underlying);
+                } else if (isTimestamp) {
                     col = new Table.Column(fieldName, "TIMESTAMP",
                             (obj, app) -> {
                                 Instant ins = ((CJFREvent) (Object) obj).getInstant(fieldName);
                                 append(app, ins != null ? ins : Instant.EPOCH);
                             }, (app) -> append(app, Instant.EPOCH));
                 } else if (isTimespan) {
-                    // Non-primitive field with @Timespan (stores Duration, not ReadStruct)
                     col = new Table.Column(fieldName, "DOUBLE",
                             (obj, app) -> {
                                 Duration d = ((CJFREvent) (Object) obj).getDuration(fieldName);
@@ -856,7 +947,6 @@ public class BasicParallelImporter {
                                 Object raw = ((CJFREvent) (Object) obj).getValue(fieldName);
                                 if (raw == null) { app.appendNull(); return; }
                                 if (!(raw instanceof me.bechberger.condensed.ReadStruct)) {
-                                    // Unexpected type (e.g. Duration without @Timespan) — stringify
                                     app.append(raw.toString());
                                     return;
                                 }
@@ -875,6 +965,37 @@ public class BasicParallelImporter {
         return List.of(col.withDescription(label, null));
     }
 
+    /**
+     * Builds a DuckDB column for a CJFR "array<...>" aggregated field. These fields combine
+     * many original JFR events into a single aggregated value; the actual stored value is
+     * numeric. We use the underlying primitive from the description to pick the SQL type.
+     */
+    private static Table.Column buildCjfrArrayColumn(String fieldName, @Nullable String underlying) {
+        return switch (underlying == null ? "" : underlying) {
+            case "double", "float" -> new Table.Column(fieldName, "DOUBLE",
+                    (obj, app) -> app.append(((CJFREvent) (Object) obj).getDouble(fieldName)),
+                    (app) -> app.append(0.0));
+            case "long" -> new Table.Column(fieldName, "BIGINT",
+                    (obj, app) -> app.append(((CJFREvent) (Object) obj).getLong(fieldName)),
+                    (app) -> app.append(0L));
+            case "int" -> new Table.Column(fieldName, "INTEGER",
+                    (obj, app) -> app.append(((CJFREvent) (Object) obj).getInt(fieldName)),
+                    (app) -> app.append(0));
+            // Reference types in array columns are structs — stringify them
+            case "java.lang.Thread", "java.lang.Class", "jdk.types.Method" ->
+                    new Table.Column(fieldName, "VARCHAR",
+                            (obj, app) -> {
+                                CJFREvent nested = ((CJFREvent) (Object) obj).getStruct(fieldName);
+                                app.append(nested != null ? nested.toString() : null);
+                            }, Appender::appendNull);
+            default -> new Table.Column(fieldName, "VARCHAR",
+                    (obj, app) -> {
+                        Object raw = ((CJFREvent) (Object) obj).getValue(fieldName);
+                        app.append(raw != null ? raw.toString() : null);
+                    }, Appender::appendNull);
+        };
+    }
+
     /** Inserts a single CJFR event into its corresponding DuckDB table. */
     @SuppressWarnings("unchecked")
     private static void insertCjfrEvent(Table table, CJFREvent event) {
@@ -890,6 +1011,24 @@ public class BasicParallelImporter {
             // Soft-fail on individual row errors (malformed values)
             System.err.println("[cjfr-import] row insert failed for " + event.getEventType().getName() + ": " + e.getMessage());
         }
+    }
+
+    private static long cjfrSafeLong(CJFREvent ev, String field) {
+        Object v = ev.getValue(field);
+        if (v instanceof Number n) return n.longValue();
+        return 0L;
+    }
+
+    private static int cjfrSafeInt(CJFREvent ev, String field) {
+        Object v = ev.getValue(field);
+        if (v instanceof Number n) return n.intValue();
+        return 0;
+    }
+
+    private static double cjfrSafeDouble(CJFREvent ev, String field) {
+        Object v = ev.getValue(field);
+        if (v instanceof Number n) return n.doubleValue();
+        return 0.0;
     }
 
     private void finalizeImport() {

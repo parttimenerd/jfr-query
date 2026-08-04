@@ -505,12 +505,16 @@ final class BinaryAppender implements Appender {
         }
     }
 
+    private static final long INSTANT_USEC_MIN = -62135596800_000_000L; // 0001-01-01T00:00:00Z
+    private static final long INSTANT_USEC_MAX =  253402300799_999_999L; // 9999-12-31T23:59:59.999999Z
+
     @Override
     public void append(Instant v) {
         if (schemaFrozen && inHotPathBounds(currentCol)) {
             int c = currentCol; int row = numRows;
             if (v != null) {
-                longData[c][row] = v.getEpochSecond() * 1_000_000L + v.getNano() / 1_000L;
+                long usec = safeInstantUsec(v);
+                longData[c][row] = usec;
                 nullBitmaps[c][row >> 3] |= (byte)(1 << (row & 7));
             }
             currentCol++;
@@ -519,10 +523,18 @@ final class BinaryAppender implements Appender {
         ensureCol(TYPE_INSTANT); ensureStorage();
         int c = currentCol; int row = numRows;
         if (v != null) {
-            longData[c][row] = v.getEpochSecond() * 1_000_000L + v.getNano() / 1_000L;
+            longData[c][row] = safeInstantUsec(v);
             markValid(c, row);
         }
         currentCol++;
+    }
+
+    private static long safeInstantUsec(Instant v) {
+        long epochSec = v.getEpochSecond();
+        // Clamp to DuckDB TIMESTAMP range [0001-01-01, 9999-12-31] to prevent overflow.
+        if (epochSec > 253402300799L) return INSTANT_USEC_MAX;
+        if (epochSec < -62135596800L) return INSTANT_USEC_MIN;
+        return epochSec * 1_000_000L + v.getNano() / 1_000L;
     }
 
     // ── serialization ─────────────────────────────────────────────────────────
@@ -600,9 +612,10 @@ final class BinaryAppender implements Appender {
         }
         long t1 = System.nanoTime();
 
-        // Pass raw bytes directly as a byte[] — GraalVM @JS.Coerce bridges this as an
-        // Int8Array view into WASM linear memory (zero-copy, no String allocation).
-        loadColumnarData(conn, db, tableName, buf.b, buf.pos);
+        // GraalVM WASM does not support coercing byte[] directly to JS.
+        // Encode as base64 String (which GraalVM coerces to a JS string), then decode on the JS side.
+        String b64 = encodeBase64(buf.b, buf.pos);
+        loadColumnarData(conn, db, tableName, b64, buf.pos);
         long t2 = System.nanoTime();
 
         totalSerializeNs += t1 - t0;
@@ -750,11 +763,8 @@ final class BinaryAppender implements Appender {
                         List, Field, TimestampMicrosecond } = globalThis.__arrow;
                 if (!tableFromArrays) throw new Error('globalThis.__arrow not set');
 
-                // b64 is an Int8Array bridged from Java byte[] via GraalVM @JS.Coerce.
-                // Copy into a fresh Uint8Array (one typed-array copy, no charCodeAt loop)
-                // so that all offset arithmetic below works correctly against offset 0.
-                const raw = new Uint8Array(byteLen);
-                raw.set(new Uint8Array(b64.buffer, b64.byteOffset, byteLen));
+                // b64 is a base64-encoded Java String. Decode to Uint8Array.
+                const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
 
                 const dv = new DataView(raw.buffer);
                 let off = 0;
@@ -889,5 +899,5 @@ final class BinaryAppender implements Appender {
             }
         })();
         """)
-    static native void loadColumnarData(JSObject conn, JSObject db, String tableName, byte[] b64, int byteLen);
+    static native void loadColumnarData(JSObject conn, JSObject db, String tableName, String b64, int byteLen);
 }
