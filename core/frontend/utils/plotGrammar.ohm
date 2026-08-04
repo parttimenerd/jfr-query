@@ -74,7 +74,7 @@ PlotDSL {
   // ---------------------------------------------------------------------------
 
   // OnHoverTooltipClause must be listed BEFORE OnClause (more-specific first).
-  // BrushTwoVarClause must be listed BEFORE BrushClause (more-specific first).
+  // BrushTwoVarClause must be listed BEFORE BrushClause BEFORE BrushBareClause (more-specific first).
   // LinkScrollClause before LinkXYClause before LinkXClause / LinkYClause: longer prefix first.
   // ZoomXClause before ZoomClause: ZOOM_X is longer than ZOOM.
   Clause
@@ -96,6 +96,7 @@ PlotDSL {
     | TooltipColumnsClause
     | BrushTwoVarClause
     | BrushClause
+    | BrushBareClause
     | NameClause
     | DatasetClause
     | LetClause
@@ -171,6 +172,9 @@ PlotDSL {
   // BRUSH "$var"  MODE  X|Y|XY  (single-var form)
   BrushClause = caseInsensitive<"BRUSH"> (stringLit | varRef) caseInsensitive<"MODE"> brushMode
   brushMode = caseInsensitive<"XY"> | caseInsensitive<"X"> | caseInsensitive<"Y">
+
+  // BRUSH "$var"  (single-var form without MODE, defaults to mode 'x')
+  BrushBareClause = caseInsensitive<"BRUSH"> (stringLit | varRef)
 
   // NAME "cellAlias"
   NameClause = caseInsensitive<"NAME"> stringLit

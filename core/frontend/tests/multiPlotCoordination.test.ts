@@ -151,6 +151,19 @@ describe('parsePlotCall — LINK_X and BRUSH parsing', () => {
         expect(result.brush?.mode).toBe('xy');
     });
 
+    it('parses bare BRUSH $var without MODE (defaults to x)', () => {
+        const result = parsePlotCall('BAR_CHART(x: "cause", y: ["cnt"]) BRUSH $selected_cause');
+        expect(result.brush?.name).toBe('$selected_cause');
+        expect(result.brush?.mode).toBe('x');
+        expect(result.mainConfig).toBe('BAR_CHART(x: "cause", y: ["cnt"])');
+    });
+
+    it('parses bare BRUSH "$var" (quoted) without MODE (defaults to x)', () => {
+        const result = parsePlotCall('BAR_CHART(x: "cause", y: ["cnt"]) BRUSH "$selected_cause"');
+        expect(result.brush?.name).toBe('$selected_cause');
+        expect(result.brush?.mode).toBe('x');
+    });
+
     it('parses LINK-Y with bare $ variable', () => {
         const result = parsePlotCall('LINE_CHART(x: ts, y: mem) LINK-Y $memDomain');
         expect(result.linkY).toBe('$memDomain');

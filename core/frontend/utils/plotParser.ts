@@ -189,6 +189,13 @@ function _buildSemantics(g: ReturnType<typeof ohmGrammar>): Semantics {
             if (!/^\$[A-Za-z_]\w*$/.test(name)) return; // invalid var name — skip
             (this.args as any).r.brush = { name, mode: (modeVal as any).sourceString.toLowerCase() as BrushSpec['mode'] };
         },
+        BrushBareClause(_kw, varOrStr) {
+            const src = (varOrStr as any).sourceString.trim() as string;
+            const name = src.startsWith('"') || src.startsWith("'") ? src.slice(1, -1) : src;
+            // Validate: name must match $<letter_or_underscore><word_chars>
+            if (!/^\$[A-Za-z_]\w*$/.test(name)) return; // invalid var name — skip
+            (this.args as any).r.brush = { name, mode: 'x' };
+        },
         NameClause(_kw, str) { (this.args as any).r.cellName = _extractStrValue(str); },
         DatasetClause(_kw, id) { (this.args as any).r.dataset = (id as any).sourceString; },
         AxisYClause(_kw, subs) {
@@ -329,6 +336,7 @@ const CLAUSES: ClauseSpec[] = [
     { key: 'onHoverTooltip', regex: /(?<!\w)ON\s+HOVER\s+TOOLTIP\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     { key: 'brush', regex: /(?<!\w)BRUSH\s+(\$[A-Za-z_][\w]*)\s+(\$[A-Za-z_][\w]*)\s*$/i, processor: (m, result): BrushSpec => { (result as any).brush2 = m[2]; return { name: m[1], mode: 'xy' }; } },
     { key: 'brush', regex: /(?<!\w)BRUSH\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)'|(\$[A-Za-z_][\w]*))\s+MODE\s+(X|Y|XY)\s*$/i, processor: (m): BrushSpec => ({ name: m[1] ?? m[2] ?? m[3], mode: m[4].toLowerCase() as BrushSpec['mode'] }) },
+    { key: 'brush', regex: /(?<!\w)BRUSH\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)'|(\$[A-Za-z_][\w]*))\s*$/i, processor: (m): BrushSpec => ({ name: m[1] ?? m[2] ?? m[3], mode: 'x' }) },
     { key: 'cellName', regex: /(?<!\w)NAME\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     { key: 'dataset', regex: /(?<!\w)DATASET\s+([A-Za-z_][\w.-]*)\s*$/i, processor: (m) => m[1] },
     { key: 'axisX', regex: buildAxisRegex('X'), processor: buildAxisProcessor('axisX'), merge: true },
