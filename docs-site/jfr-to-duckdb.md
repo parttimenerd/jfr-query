@@ -179,6 +179,42 @@ finished DuckDB database to a `.db` file beside the original (e.g. `recording.jf
 `recording.db`). Subsequent `query` or `serve` invocations that find an up-to-date `.db` file
 open it directly, skipping the import entirely. Pass `--no-cache` (`-n`) to suppress this.
 
+## CJFR format
+
+jfr-query also accepts **CJFR** (`.cjfr`) files produced by
+[condensed-data](https://github.com/parttimenerd/condensed-data). CJFR is a compressed format
+that can be 10–30× smaller than the equivalent `.jfr` file while preserving all event data.
+
+The CJFR importer builds the same DuckDB schema as the JFR importer, so all views, macros, and
+notebook templates work unchanged. There are two schema-level differences to be aware of:
+
+### Struct fields: inlined instead of referenced
+
+In a JFR recording, object reference types (`java.lang.Thread`, `java.lang.Class`,
+`jdk.types.Method`, etc.) are normalised into separate lookup tables and stored as `UINTEGER`
+foreign keys in event tables (see [Referenced structs](#referenced-structs) above).
+
+In CJFR, the same fields are inlined as `VARCHAR` strings containing the most meaningful value
+from the struct — for example, a thread field becomes the thread name, and a class field
+becomes the Java class name. This makes ad-hoc queries easier (no joins needed for human-readable
+values) but means you cannot join to the `Thread`, `Class`, or `Method` lookup tables.
+
+| Field example | JFR | CJFR |
+|---------------|-----|------|
+| `eventThread` | `UINTEGER` (FK → `Thread._id`) | `VARCHAR` (thread name) |
+| `method` | `UINTEGER` (FK → `Method._id`) | `VARCHAR` (qualified method name) |
+| `objectClass` | `UINTEGER` (FK → `Class._id`) | `VARCHAR` (Java class name) |
+
+The built-in views that reference these fields (e.g. `hot-methods`, `contention-by-site`) work
+correctly with both formats because they already join through the struct tables when available
+and fall back to direct columns otherwise.
+
+### Numeric types
+
+CJFR resolves `@Unsigned` annotations using the underlying primitive: an unsigned `long`
+field becomes `BIGINT` (matching JFR) and an unsigned `int` becomes `INTEGER`. CJFR-only
+compound types such as `uint2` (unsigned short) map to `SMALLINT`.
+
 ## See also
 
 - [Browser Architecture](browser-architecture.md) — how the same importer runs in the browser via GraalVM WebAssembly

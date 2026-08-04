@@ -2,7 +2,7 @@
 
 The jfr-query web UI is a browser-based notebook environment for analysing Java Flight Recorder (JFR) files using SQL, DuckDB, and a declarative plot DSL.
 
-Open a notebook, drop a `.jfr` file, and start writing SQL cells that query the recording. Each cell can render a table or one or more plots described with the plot DSL.
+Open a notebook, drop a `.jfr` or `.cjfr` file, and start writing SQL cells that query the recording. Each cell can render a table or one or more plots described with the plot DSL.
 
 ## Layout
 
@@ -29,7 +29,9 @@ The `name=` attribute gives the cell a stable handle that can be referenced from
 
 ## Working with data
 
-1. Drop a `.jfr` file onto the sidebar or use the file ingest UI.
+1. Drop a `.jfr` or `.cjfr` file onto the sidebar or use the file ingest UI.
+   - **JFR** (`.jfr`) — standard Java Flight Recorder format produced by `jcmd`, async-profiler, IntelliJ, or any JFR-capable tool.
+   - **CJFR** (`.cjfr`) — condensed JFR format produced by [condensed-data](https://github.com/parttimenerd/condensed-data). Typically 10–30× smaller than the equivalent `.jfr` file. jfr-query imports both formats into the same DuckDB schema so all queries and templates work unchanged. Note: CJFR inlines some struct fields (thread, class, method) as human-readable strings rather than FK references to lookup tables.
 2. jfr-query parses the recording into DuckDB tables. The schema browser lists every event type and column.
 3. Write a SQL cell. Aliases (`-- alias name`) let downstream cells and plots reference the result set by name.
 4. Add a plot cell using the plot DSL. By default a plot uses the query immediately preceding it.
@@ -81,7 +83,7 @@ The AI's access to your data is controlled by the visibility mode (shown in the 
 
 ## Sharing notebooks with embedded data
 
-Notebooks are plain Markdown files. By default they contain only SQL and plot config — opening them requires the original `.jfr` file.
+Notebooks are plain Markdown files. By default they contain only SQL and plot config — opening them requires the original `.jfr` or `.cjfr` file.
 
 To share results without the JFR file:
 
@@ -101,4 +103,5 @@ For complete reference material see:
 - [Plot DSL](plot-dsl.md) — all plot types, inner arguments, tail clauses, composite plots, query references.
 - [Variables](variables.md) — cell-local and notebook-level variables, substitution rules, live coupling.
 - [Built-in Views & Macros](views-macros.md) — every canned view and macro shipped with jfr-query.
+- [JFR to DuckDB Mapping](jfr-to-duckdb.md) — how event types, struct fields, and CJFR format map to DuckDB tables.
 - [AI Providers](ai-providers.md) — configure Anthropic, OpenAI, local models (Ollama, llama.cpp, SAP proxy), or in-browser inference.

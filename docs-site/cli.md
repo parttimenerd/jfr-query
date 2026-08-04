@@ -13,10 +13,11 @@ java -jar query.jar [-hV] [COMMAND]
 
 ## `import`
 
-Import a JFR recording into a DuckDB database file.
+Import a JFR or CJFR recording into a DuckDB database file.
 
 ```shell
 java -jar query.jar import recording.jfr output.db
+java -jar query.jar import recording.cjfr output.db
 ```
 
 ## `query`
@@ -41,10 +42,11 @@ When called without a query argument, `query` prints the list of available table
 
 ## `serve`
 
-Start the notebook web UI. Accepts a `.jfr` recording or an existing `.db` file.
+Start the notebook web UI. Accepts a `.jfr` or `.cjfr` recording, or an existing `.db` file.
 
 ```shell
 java -jar query.jar serve recording.jfr
+java -jar query.jar serve recording.cjfr
 java -jar query.jar serve recording.db --port 4244 --templates-dir ~/my-templates
 ```
 

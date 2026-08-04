@@ -38,4 +38,6 @@ java -jar query.jar serve path/to/recording.jfr
 # Open http://localhost:4244 in your browser
 ```
 
+Both `.jfr` (standard Java Flight Recorder) and `.cjfr` ([condensed JFR](https://github.com/parttimenerd/condensed-data)) files are accepted.
+
 Pass `--port` to change the port. Pass `--templates-dir` to load custom notebook templates.
