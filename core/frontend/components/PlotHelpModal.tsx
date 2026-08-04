@@ -106,8 +106,8 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose, onInsert
     useEffect(() => {
         if (!isOpen) return;
         const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
+        document.addEventListener('keydown', handler, true);
+        return () => document.removeEventListener('keydown', handler, true);
     }, [isOpen, onClose]);
     
     const multiQueryData = useMemo(() => {

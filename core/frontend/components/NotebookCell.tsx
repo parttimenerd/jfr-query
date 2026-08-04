@@ -1128,6 +1128,11 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
         setIsRequiresOpen(true);
     }, [currentRequires]);
 
+    const handlePlotHelpClose = useCallback(() => {
+        setIsPlotHelpModalOpen(false);
+        plotHelpInsertRef.current = null;
+    }, []);
+
     return (
         <div
             className={`group/cell rounded-lg border shadow-sm relative transition-opacity ${isConditionallyHidden ? 'bg-amber-950/20 border-amber-800/40' : 'bg-gray-800/40 border-gray-700/80'} ${isBeingDragged ? 'opacity-50' : ''}`}
@@ -1739,7 +1744,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 />
             </div>)}
             {isDraggingOver === 'bottom' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-cyan-400 z-10" />}
-            <PlotHelpModal isOpen={isPlotHelpModalOpen} onClose={() => { setIsPlotHelpModalOpen(false); plotHelpInsertRef.current = null; }} onInsertExample={plotHelpInsertRef.current ?? undefined} />
+            <PlotHelpModal isOpen={isPlotHelpModalOpen} onClose={handlePlotHelpClose} onInsertExample={plotHelpInsertRef.current ?? undefined} />
             {ctxMenu && <ContextMenu items={ctxMenuItems} x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)} />}
         </div>
     );

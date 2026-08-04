@@ -180,8 +180,8 @@ const TourOverlay: React.FC<TourOverlayProps> = ({ isOpen, onClose }) => {
             if (e.key === 'ArrowRight' || e.key === 'ArrowDown') handleNextRef.current();
             if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') handleBackRef.current();
         };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
+        document.addEventListener('keydown', handler, true);
+        return () => document.removeEventListener('keydown', handler, true);
     }, [isOpen, onClose]);
 
     if (!isOpen) return null;

@@ -18,8 +18,8 @@ interface ContextMenuProps {
 const ContextMenu: React.FC<ContextMenuProps> = ({ items, x, y, onClose }) => {
     useEffect(() => {
         const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
+        document.addEventListener('keydown', handler, true);
+        return () => document.removeEventListener('keydown', handler, true);
     }, [onClose]);
 
     return ReactDOM.createPortal(
