@@ -5,6 +5,7 @@ import NotebookCell from './NotebookCell';
 import SettingsPanel from './SettingsPanel';
 import { PlusIcon } from './icons/PlusIcon';
 import SQLEditor from './SQLEditor';
+import { NotebookTOC } from './NotebookTOC';
 import { parseCellContent, parseCellDirective, requiresAttrToConditionSql, tokenizeCellContent } from '../utils/notebookParser';
 import { cellHandle } from '../utils/cellHandle';
 import { resolveCellVisibility } from '../utils/cellVisibility';
@@ -52,6 +53,19 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     } = props;
 
     const settingsPanelRef = useRef<{ focusVariable: (name: string) => void }>(null);
+    const [tocOpen, setTocOpen] = useState(false);
+
+    // Ctrl+Shift+T toggles TOC
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 't' || e.key === 'T')) {
+                e.preventDefault();
+                setTocOpen(prev => !prev);
+            }
+        };
+        window.addEventListener('keydown', handler, true);
+        return () => window.removeEventListener('keydown', handler, true);
+    }, []);
 
     // B-033: persist per-cell collapse state across raw-mode remounts.
     const cellCollapseStateRef = useRef<Map<string, boolean>>(new Map());
@@ -254,7 +268,30 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     }
 
     return (
-        <div className="p-4 md:p-6 space-y-4">
+        <div className="relative p-4 md:p-6 space-y-4">
+            {/* TOC toggle button — fixed top-right, only when not in presenter mode */}
+            {!presenterMode && (
+                <button
+                    onClick={() => setTocOpen(prev => !prev)}
+                    aria-label="Toggle table of contents"
+                    aria-pressed={tocOpen}
+                    title="Table of Contents (Ctrl+Shift+T)"
+                    className={[
+                        'fixed top-14 right-4 z-40 p-1.5 rounded-md border text-xs transition-colors shadow',
+                        tocOpen
+                            ? 'bg-gray-700 border-cyan-500 text-cyan-300'
+                            : 'bg-gray-800 border-gray-600 text-gray-400 hover:text-gray-200 hover:border-gray-500',
+                    ].join(' ')}
+                >
+                    ☰
+                </button>
+            )}
+            {/* TOC panel */}
+            {tocOpen && !presenterMode && (
+                <div className="fixed top-20 right-4 z-40">
+                    <NotebookTOC cells={cells} onClose={() => setTocOpen(false)} />
+                </div>
+            )}
             {metadata.title && (
               <h1 className="text-2xl font-semibold mb-1">{metadata.title}</h1>
             )}
