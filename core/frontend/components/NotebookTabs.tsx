@@ -74,8 +74,8 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
             }
         };
 
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
+        window.addEventListener('keydown', onKeyDown, true);
+        return () => window.removeEventListener('keydown', onKeyDown, true);
     }, [tabs, activeTabId, onNewTab, onCloseTab, onSelectTab]);
 
     return (
