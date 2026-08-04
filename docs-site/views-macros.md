@@ -36,25 +36,45 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 - `gc-concurrent-phases-detail`
 - `gc-configuration`
 - `gc-cpu-time`
+- `gc-allocation-by-class`
+- `gc-consecutive-full`
+- `gc-duration-buckets`
 - `gc-efficiency`
+- `gc-eden-size`
+- `gc-humongous`
+- `gc-memory-size`
+- `gc-old-gen-growth`
+- `gc-object-stats`
 - `gc-overhead`
 - `gc-parallel-phases`
+- `gc-pause-cause-over-time`
+- `gc-pause-over-time`
 - `gc-pause-distribution`
 - `gc-pause-phases`
 - `gc-pauses`
 - `gc-phase-breakdown`
+- `gc-phase-stats`
+- `gc-promotion-rate`
 - `gc-references`
+- `gc-safepoint-distribution`
+- `gc-safepoint-summary`
 - `gc-throughput`
+- `gc-thread-allocation`
+- `gc-time-split`
 - `gc-top-pauses`
+- `gc-young-old-time`
 - `gc-young-vs-old`
+- `g1-heap-regions` *(conditional — requires `G1HeapSummary` events)*
 - `heap-committed-vs-used`
 - `heap-configuration`
 - `heap-summary-over-time`
+- `metaspace-over-time` *(conditional — requires `MetaspaceSummary` events)*
 - `blocked-by-system-gc`
 - `native-memory-committed`
 - `native-memory-reserved`
 - `object-statistics`
 - `finalizers`
+- `tenuring-distribution` *(conditional — requires `TenuringDistribution` events)*
 - `tlab-efficiency`
 - `tlabs`
 - `safepoints`
@@ -63,6 +83,7 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 
 ### CPU & Threads
 
+- `cpu-flamegraph`
 - `cpu-information`
 - `cpu-load`
 - `cpu-load-samples`
@@ -105,6 +126,7 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 
 ### Allocation & Leaks
 
+- `alloc-flamegraph`
 - `allocation-by-class`
 - `allocation-by-class-detail`
 - `allocation-by-site`
@@ -119,6 +141,7 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 - `contention-by-class`
 - `contention-by-site`
 - `contention-by-thread`
+- `lock-flamegraph`
 - `monitor-inflation`
 
 ### Exceptions
@@ -127,6 +150,8 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 - `exception-by-site`
 - `exception-by-type`
 - `exception-count`
+- `exception-flamegraph`
+- `native-flamegraph`
 
 ### Container
 
@@ -146,6 +171,9 @@ SELECT P95(duration_ms) FROM gc
 
 ### Statistical
 
+- `P25(col)` — 25th percentile.
+- `P50(col)` — 50th percentile (median).
+- `P75(col)` — 75th percentile.
 - `P90(col)` — 90th percentile.
 - `P95(col)` — 95th percentile.
 - `P99(col)` — 99th percentile.
@@ -160,7 +188,8 @@ SELECT P95(duration_ms) FROM gc
 
 - `format_decimals(num, decimals)` — fixed decimal places.
 - `format_percentage(num, decimals:=2)` — render as percentage.
-- `format_memory(bytes, decimals:=2)` — humanised byte count.
+- `format_memory(bytes, decimals:=2)` — humanised byte count (B, KB, MB, GB).
+- `format_rate(bytes_per_sec, decimals:=2)` — humanised throughput (B/s, KB/s, MB/s, GB/s).
 - `format_duration(seconds, decimals:=2)` — humanised duration from seconds.
 - `format_human_duration(sec)` — coarse humanised duration.
 - `format_hex(i)` — hexadecimal representation.
@@ -170,14 +199,16 @@ SELECT P95(duration_ms) FROM gc
 - `before_gc(ts)` — GC event immediately before `ts`.
 - `after_gc(ts)` — GC event immediately after `ts`.
 - `duration_since_last_gc(ts)` — time since previous GC.
-- `HEAP_BEFORE_GC(gc_id)` — heap usage before a GC by id.
-- `HEAP_AFTER_GC(gc_id)` — heap usage after a GC by id.
+- `HEAP_BEFORE_GC(gc_id)` — heap usage in bytes before a GC by id.
+- `HEAP_AFTER_GC(gc_id)` — heap usage in bytes after a GC by id.
 - `GC_TYPE(gc_id)` — GC type label for an id.
+- `reclaim_mb(gc_id)` — megabytes reclaimed by a GC (heap before minus heap after).
 - `recording_start()` — timestamp of the first event.
 - `recording_end()` — timestamp of the last event.
 - `relative_ms(ts)` — milliseconds since `recording_start()`.
 - `time_since(prev_ts, ts)` — elapsed time between two timestamps.
-- `bucket_ms(ts, width_ms)` — bucket a timestamp into fixed-width windows of `width_ms` milliseconds.
+- `bucket_ms(ts, width_ms)` — bucket a timestamp into fixed-width windows, returning an epoch integer.
+- `bucket_time(ts, width_ms)` — same as `bucket_ms` but returns a `TIMESTAMP`, suitable for time-axis plots.
 - `in_range(ts, t_start, t_end)` — boolean range test.
 
 ### Event & stack helpers
