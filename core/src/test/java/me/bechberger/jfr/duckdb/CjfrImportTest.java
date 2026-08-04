@@ -44,6 +44,26 @@ class CjfrImportTest {
     }
 
     @Test
+    void importProfileCjfrSucceeds() throws IOException, SQLException {
+        InputStream is = getClass().getClassLoader().getResourceAsStream("profile.cjfr");
+        assertThat(is).as("profile.cjfr must be on the test classpath").isNotNull();
+        DuckDBConnection conn = (DuckDBConnection)
+                DriverManager.getConnection("jdbc:duckdb:" + tmpDbFile.toAbsolutePath());
+        try (is) {
+            new BasicParallelImporter(
+                    () -> new JdbcDuckDBSink((DuckDBConnection) conn.duplicate()),
+                    new Options())
+                    .importCjfrRecording(is);
+        }
+        try (Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery("SELECT sum(count) FROM Events")) {
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong(1)).isGreaterThan(0L);
+        }
+        conn.close();
+    }
+
+    @Test
     void importCjfrPopulatesEventsTable() throws IOException, SQLException {
         DuckDBConnection conn = (DuckDBConnection)
                 DriverManager.getConnection("jdbc:duckdb:" + tmpDbFile.toAbsolutePath());
