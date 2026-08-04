@@ -30,17 +30,17 @@ describe('annotateVariables — variableRef (single $)', () => {
         annotateVariables(root, makeInput({ cellVariables: new Map([['limit', '100']]) }));
         const vars = findAll(root, 'variableRef');
         expect(vars[0]?.annotations.resolves?.kind).toBe('variable');
-        expect(vars[0]?.annotations.resolves?.name).toBe('limit');
-        expect(vars[0]?.annotations.resolves?.value).toBe('100');
-        expect(vars[0]?.annotations.resolves?.source).toBe('cell');
+        expect((vars[0]?.annotations.resolves as any)?.name).toBe('limit');
+        expect((vars[0]?.annotations.resolves as any)?.value).toBe('100');
+        expect((vars[0]?.annotations.resolves as any)?.source).toBe('cell');
     });
 
     it('falls back to workspace when not in cell variables', () => {
         const { root } = parse('SELECT $threshold FROM events');
         annotateVariables(root, makeInput({ workspaceVariables: new Map([['threshold', '500']]) }));
         const vars = findAll(root, 'variableRef');
-        expect(vars[0]?.annotations.resolves?.source).toBe('workspace');
-        expect(vars[0]?.annotations.resolves?.value).toBe('500');
+        expect((vars[0]?.annotations.resolves as any)?.source).toBe('workspace');
+        expect((vars[0]?.annotations.resolves as any)?.value).toBe('500');
     });
 
     it('leaves unresolved when variable not found anywhere', () => {
@@ -57,8 +57,8 @@ describe('annotateVariables — variableRef (single $)', () => {
             workspaceVariables: new Map([['v', 'workspace-value']]),
         }));
         const vars = findAll(root, 'variableRef');
-        expect(vars[0]?.annotations.resolves?.value).toBe('cell-value');
-        expect(vars[0]?.annotations.resolves?.source).toBe('cell');
+        expect((vars[0]?.annotations.resolves as any)?.value).toBe('cell-value');
+        expect((vars[0]?.annotations.resolves as any)?.source).toBe('cell');
     });
 });
 
@@ -68,8 +68,8 @@ describe('annotateVariables — doubleDollarRef ($$)', () => {
         annotateVariables(root, makeInput({ workspaceVariables: new Map([['start', '0']]) }));
         const vars = findAll(root, 'doubleDollarRef');
         expect(vars[0]?.annotations.resolves?.kind).toBe('variable');
-        expect(vars[0]?.annotations.resolves?.source).toBe('workspace');
-        expect(vars[0]?.annotations.resolves?.value).toBe('0');
+        expect((vars[0]?.annotations.resolves as any)?.source).toBe('workspace');
+        expect((vars[0]?.annotations.resolves as any)?.value).toBe('0');
     });
 
     it('does not resolve $$var from cell variables', () => {
@@ -95,8 +95,8 @@ describe('annotateVariables — crossCellRef ($cell.var)', () => {
         annotateVariables(root, makeInput({ cellExports: exports }));
         const vars = findAll(root, 'crossCellRef');
         expect(vars[0]?.annotations.resolves?.kind).toBe('variable');
-        expect(vars[0]?.annotations.resolves?.value).toBe('1000');
-        expect(vars[0]?.annotations.resolves?.source).toBe('cell');
+        expect((vars[0]?.annotations.resolves as any)?.value).toBe('1000');
+        expect((vars[0]?.annotations.resolves as any)?.source).toBe('cell');
     });
 
     it('marks $cell.brush as gesture source', () => {
@@ -104,7 +104,7 @@ describe('annotateVariables — crossCellRef ($cell.var)', () => {
         annotateVariables(root, makeInput({ cellsWithBrush: new Set(['gc']) }));
         const vars = findAll(root, 'crossCellRef');
         if (vars[0]) {
-            expect(vars[0].annotations.resolves?.source).toBe('gesture');
+            expect((vars[0].annotations.resolves as any)?.source).toBe('gesture');
         }
     });
 
@@ -125,7 +125,7 @@ describe('annotateVariables — general', () => {
         }
         annotateVariables(root, makeInput({ cellVariables: new Map([['v', 'new']]) }));
         // Should NOT overwrite
-        expect(vars[0]?.annotations.resolves?.value).toBe('existing');
+        expect((vars[0]?.annotations.resolves as any)?.value).toBe('existing');
     });
 
     it('handles SQL with no variable refs without throwing', () => {

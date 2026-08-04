@@ -6,16 +6,16 @@ import type { AliasAnnotatorInput } from '../../../../components/editor/sql/anno
 const eventsTable = {
     name: 'events',
     columns: [
-        { name: 'ts', dataType: 'BIGINT' },
-        { name: 'cause', dataType: 'VARCHAR' },
-        { name: 'duration', dataType: 'DOUBLE' },
+        { name: 'ts', type: 'BIGINT' },
+        { name: 'cause', type: 'VARCHAR' },
+        { name: 'duration', type: 'DOUBLE' },
     ],
 };
 
 const heapTable = {
     name: 'heap',
     columns: [
-        { name: 'used', dataType: 'BIGINT' },
+        { name: 'used', type: 'BIGINT' },
     ],
 };
 
@@ -109,7 +109,7 @@ describe('annotateAliases — views', () => {
     });
 
     it('resolves a column from a view', () => {
-        const viewSchema = { name: 'myview', columns: [{ name: 'id', dataType: 'INTEGER' }] };
+        const viewSchema = { name: 'myview', query: '', columns: [{ name: 'id', type: 'INTEGER' }] };
         const { root } = parse('SELECT id FROM myview');
         expect(() => annotateAliases(root, { tables: [], views: [viewSchema] })).not.toThrow();
     });

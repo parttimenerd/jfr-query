@@ -24,7 +24,7 @@ describe('annotateConstants', () => {
         const { root } = annotate('LET @limit = 50\nTABLE()');
         const letNode = root.children.find(n => n.kind === 'letStatement');
         expect(letNode?.annotations.resolves?.kind).toBe('constant');
-        expect(letNode?.annotations.resolves?.name).toBe('limit');
+        expect((letNode?.annotations.resolves as any)?.name).toBe('limit');
     });
 
     it('resolves @ref in a later plotCall to the declared constant', () => {
@@ -38,8 +38,8 @@ describe('annotateConstants', () => {
         // Skip first child (letStatement) and search the plot
         if (root.children[1]) findRef(root.children[1]);
         expect(constRef?.annotations.resolves?.kind).toBe('constant');
-        expect(constRef?.annotations.resolves?.name).toBe('bins');
-        expect(constRef?.annotations.resolves?.valueText).toBe('20');
+        expect((constRef?.annotations.resolves as any)?.name).toBe('bins');
+        expect((constRef?.annotations.resolves as any)?.valueText).toBe('20');
     });
 
     it('registers multiple constants in declaration order', () => {

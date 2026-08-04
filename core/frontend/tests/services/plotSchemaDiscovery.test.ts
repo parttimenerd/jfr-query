@@ -3,8 +3,8 @@ import { PlotSchemaDiscovery } from '../../services/plotSchemaDiscovery';
 import type { ColumnSchema } from '../../components/editor/plot/ast';
 
 const SAMPLE_COLS: ColumnSchema[] = [
-    { name: 'time', type: 'BIGINT' },
-    { name: 'duration', type: 'BIGINT' },
+    { name: 'time', dataType: 'BIGINT' },
+    { name: 'duration', dataType: 'BIGINT' },
 ];
 
 function makeService(opts?: {

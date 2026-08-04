@@ -85,7 +85,7 @@ describe('splitInlineExprs — code span protection', () => {
         const result = splitInlineExprs('Use `${SELECT 1}` here');
         // The whole string should come back as a single text segment since
         // the ${…} is inside a code span
-        const text = result.map(s => s.value ?? '').join('');
+        const text = result.map(s => (s as any).value ?? '').join('');
         expect(text).toContain('${SELECT 1}');
         // No expr segments
         expect(result.every(s => s.type === 'text')).toBe(true);

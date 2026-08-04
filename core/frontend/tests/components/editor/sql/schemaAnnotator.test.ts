@@ -7,9 +7,9 @@ import { Scope } from '../../../../components/editor/sql/scope';
 const eventsTable = {
     name: 'events',
     columns: [
-        { name: 'ts', dataType: 'BIGINT' },
-        { name: 'cause', dataType: 'VARCHAR' },
-        { name: 'duration', dataType: 'DOUBLE' },
+        { name: 'ts', type: 'BIGINT' },
+        { name: 'cause', type: 'VARCHAR' },
+        { name: 'duration', type: 'DOUBLE' },
     ],
 };
 
@@ -38,14 +38,14 @@ describe('annotateSchema — column resolution', () => {
         const idents = findAll(root, 'identifier');
         const tsIdent = idents.find(n => n.text === 'ts' && n.annotations.resolves);
         expect(tsIdent?.annotations.resolves?.kind).toBe('column');
-        expect(tsIdent?.annotations.resolves?.column).toBe('ts');
+        expect((tsIdent?.annotations.resolves as any)?.column).toBe('ts');
     });
 
     it('resolves multiple columns', () => {
         const root = run('SELECT ts, cause FROM events');
         const idents = findAll(root, 'identifier');
         const resolved = idents.filter(n => n.annotations.resolves?.kind === 'column');
-        const names = resolved.map(n => n.annotations.resolves?.column);
+        const names = resolved.map(n => (n.annotations.resolves as any)?.column);
         expect(names).toContain('ts');
         expect(names).toContain('cause');
     });
@@ -55,7 +55,7 @@ describe('annotateSchema — column resolution', () => {
         const idents = findAll(root, 'identifier');
         const tableIdent = idents.find(n => n.text === 'events' && n.annotations.resolves?.kind === 'table');
         expect(tableIdent).toBeDefined();
-        expect(tableIdent?.annotations.resolves?.name).toBe('events');
+        expect((tableIdent?.annotations.resolves as any)?.name).toBe('events');
     });
 
     it('does not annotate identifiers in SELECT alias position', () => {
@@ -83,7 +83,7 @@ describe('annotateSchema — column resolution', () => {
 
 describe('annotateSchema — views', () => {
     it('resolves table name from view as kind=view', () => {
-        const viewSchema = { name: 'summary', columns: [{ name: 'total', dataType: 'INTEGER' }] };
+        const viewSchema = { name: 'summary', query: '', columns: [{ name: 'total', type: 'INTEGER' }] };
         const { root } = parse('SELECT total FROM summary');
         const scopes = annotateAliases(root, { tables: [], views: [viewSchema] });
         annotateSchema(root, { tables: [], views: [viewSchema], scopeById: scopes });

@@ -1103,7 +1103,8 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                             }
                             // Apply ZOOM / ZOOM_X to individual leaf plots inside composites.
                             if (leaf.zoom || leaf.zoomX) {
-                                const z = leaf.zoom, zx = leaf.zoomX;
+                                const z = typeof leaf.zoom === 'number' ? leaf.zoom : undefined;
+                                const zx = leaf.zoomX;
                                 return (
                                     <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
                                         <div style={{
@@ -1145,7 +1146,8 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                         mainConfig = parsedCall.mainConfig;
                         outerClauses = singleConfig.substring(mainConfig.length);
 
-                        const { width, height, zoom, zoomX, title, linkX, linkXClamp, linkXMaster, linkScroll } = parsedCall;
+                        const { width, height, zoomX, title, linkX, linkXClamp, linkXMaster, linkScroll } = parsedCall;
+                        const zoom = typeof parsedCall.zoom === 'number' ? parsedCall.zoom : undefined;
                         const plotTypeName = normalizePlotName(mainConfig.match(/^(\w+)/)?.[1] || 'TABLE');
                         const reg = plotRegistry[plotTypeName];
                         if (!reg) throw new Error(`Unknown plot type "${plotTypeName}". Available types: ${Object.keys(plotRegistry).filter(k => k !== 'FLAME_GRAPH').join(', ')}.`);

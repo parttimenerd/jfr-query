@@ -35,8 +35,8 @@ describe('annotateColumns', () => {
         const idents = findNodes(root, n => n.kind === 'ident');
         const tsIdent = idents.find(n => n.name === 'ts');
         expect(tsIdent?.annotations.resolves?.kind).toBe('column');
-        expect(tsIdent?.annotations.resolves?.name).toBe('ts');
-        expect(tsIdent?.annotations.resolves?.dataType).toBe('BIGINT');
+        expect((tsIdent?.annotations.resolves as any)?.name).toBe('ts');
+        expect((tsIdent?.annotations.resolves as any)?.dataType).toBe('BIGINT');
     });
 
     it('resolves a column in the y clause', () => {
@@ -44,7 +44,7 @@ describe('annotateColumns', () => {
         const idents = findNodes(root, n => n.kind === 'ident');
         const durIdent = idents.find(n => n.name === 'duration');
         expect(durIdent?.annotations.resolves?.kind).toBe('column');
-        expect(durIdent?.annotations.resolves?.dataType).toBe('DOUBLE');
+        expect((durIdent?.annotations.resolves as any)?.dataType).toBe('DOUBLE');
     });
 
     it('does not resolve an unknown column', () => {
@@ -82,6 +82,6 @@ describe('annotateColumns', () => {
         const idents = findNodes(root, n => n.kind === 'ident');
         const causeIdent = idents.find(n => n.name === 'cause');
         expect(causeIdent?.annotations.resolves?.kind).toBe('column');
-        expect(causeIdent?.annotations.resolves?.dataType).toBe('VARCHAR');
+        expect((causeIdent?.annotations.resolves as any)?.dataType).toBe('VARCHAR');
     });
 });

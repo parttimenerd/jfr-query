@@ -93,6 +93,6 @@ describe('parseAndAnnotate — shape registry', () => {
         const plotCalls = findAll(root, 'plotCall');
         const annotated = plotCalls.find(n => n.annotations.resolves?.kind === 'plotShape');
         expect(annotated).toBeDefined();
-        expect(annotated?.annotations.resolves?.name).toBe('line');
+        expect((annotated?.annotations.resolves as any)?.name).toBe('line');
     });
 });

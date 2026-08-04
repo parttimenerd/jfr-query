@@ -20,11 +20,13 @@ import type { Tool } from '../../services/ai/tools/index';
 const SAMPLE_TOOLS: Tool[] = [
     {
         name: 'runQuery',
+        kind: 'read',
         description: 'Execute SQL query',
         inputSchema: { type: 'object', properties: { sql: { type: 'string' } }, required: ['sql'] },
     },
     {
         name: 'readCell',
+        kind: 'read',
         description: 'Read cell content',
         inputSchema: { type: 'object', properties: { cellId: { type: 'string' } }, required: ['cellId'] },
     },

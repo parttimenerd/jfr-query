@@ -26,7 +26,7 @@ describe('executeTool — unknown tool', () => {
     it('returns error for an unknown tool name', async () => {
         const result = await executeTool('noSuchTool', {}, mockDeps());
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('noSuchTool');
+        if (!result.ok) expect((result as any).error).toContain('noSuchTool');
     });
 });
 
@@ -36,7 +36,7 @@ describe('executeTool — validation', () => {
     it('returns error when required args are missing', async () => {
         const result = await executeTool('runQuery', {}, mockDeps());
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('sql');
+        if (!result.ok) expect((result as any).error).toContain('sql');
     });
 
     it('returns error when arg type is wrong', async () => {
@@ -66,7 +66,7 @@ describe('executeTool — runQuery', () => {
     it('rejects SQL containing $ai_providers', async () => {
         const result = await executeTool('runQuery', { sql: 'SELECT * FROM $ai_providers' }, mockDeps());
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('$ai_providers');
+        if (!result.ok) expect((result as any).error).toContain('$ai_providers');
     });
 
     it('uses the declared limit in the response', async () => {
@@ -126,7 +126,7 @@ describe('executeTool — addCell', () => {
         });
         const result = await executeTool('addCell', { type: 'sql', content: 'SELECT 1' }, deps);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('rejected');
+        if (!result.ok) expect((result as any).error).toContain('rejected');
     });
 
     it('returns error for multiple SQL statements in sql cell', async () => {
@@ -134,7 +134,7 @@ describe('executeTool — addCell', () => {
         const multiSql = 'SELECT 1; SELECT 2';
         const result = await executeTool('addCell', { type: 'sql', content: multiSql }, deps);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('statement');
+        if (!result.ok) expect((result as any).error).toContain('statement');
     });
 
     it('allows multiple statements in markdown cell', async () => {
@@ -253,7 +253,7 @@ describe('executeTool — previewPlot', () => {
             plotConfig: 'NOT_A_PLOT_CONFIG',
         }, deps);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('plot DSL');
+        if (!result.ok) expect((result as any).error).toContain('plot DSL');
     });
 
     it('rejects when visibility is no-data', async () => {
@@ -263,7 +263,7 @@ describe('executeTool — previewPlot', () => {
             plotConfig: 'TABLE()',
         }, deps);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('no-data');
+        if (!result.ok) expect((result as any).error).toContain('no-data');
     });
 });
 
@@ -419,7 +419,7 @@ describe('executeTool — describeTable', () => {
         const deps = mockDeps();
         const result = await executeTool('describeTable', { name: '$ai_providers' }, deps);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('$ai_providers');
+        if (!result.ok) expect((result as any).error).toContain('$ai_providers');
     });
 });
 
@@ -488,7 +488,7 @@ describe('executeTool — screenshotPlot', () => {
     it('returns error when screenshotPreview not provided', async () => {
         const result = await executeTool('screenshotPlot', { previewId: 'p1' }, mockDeps());
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('not supported');
+        if (!result.ok) expect((result as any).error).toContain('not supported');
     });
 
     it('returns error when provider does not support images', async () => {
@@ -498,7 +498,7 @@ describe('executeTool — screenshotPlot', () => {
         });
         const result = await executeTool('screenshotPlot', { previewId: 'p1' }, deps);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('not supported by the current AI provider');
+        if (!result.ok) expect((result as any).error).toContain('not supported by the current AI provider');
     });
 
     it('returns error when visibility is not full', async () => {
@@ -509,7 +509,7 @@ describe('executeTool — screenshotPlot', () => {
         });
         const result = await executeTool('screenshotPlot', { previewId: 'p1' }, deps);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain("full");
+        if (!result.ok) expect((result as any).error).toContain("full");
     });
 
     it('returns image data when all conditions are met', async () => {
@@ -562,7 +562,7 @@ describe('executeTool — explainCell', () => {
         const deps = mockDeps({ listCells: vi.fn(() => []) });
         const result = await executeTool('explainCell', { cellId: 'missing' }, deps);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('not found');
+        if (!result.ok) expect((result as any).error).toContain('not found');
     });
 });
 
@@ -592,7 +592,7 @@ describe('executeTool — suggestPlot', () => {
         });
         const result = await executeTool('suggestPlot', { cellId: 'md1' }, deps);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('not a SQL cell');
+        if (!result.ok) expect((result as any).error).toContain('not a SQL cell');
     });
 
     it('returns error when cell not found', async () => {
@@ -607,7 +607,7 @@ describe('executeTool — suggestPlot', () => {
         });
         const result = await executeTool('suggestPlot', { cellId: 'c1' }, deps);
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('$ai_providers');
+        if (!result.ok) expect((result as any).error).toContain('$ai_providers');
     });
 });
 
@@ -644,7 +644,7 @@ describe('executeTool — query_data (legacy alias)', () => {
             deps,
         );
         expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toContain('table not found');
+        if (!result.ok) expect((result as any).error).toContain('table not found');
     });
 
     it('calls checkQueryPermission when provided', async () => {

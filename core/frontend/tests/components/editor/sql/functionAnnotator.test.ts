@@ -38,9 +38,9 @@ describe('annotateFunctions', () => {
         annotateFunctions(root);
         expect(fn.annotations.resolves).toBeDefined();
         expect(fn.annotations.resolves?.kind).toBe('function');
-        expect(fn.annotations.resolves?.name).toBe('COUNT');
-        expect(typeof fn.annotations.resolves?.signature).toBe('string');
-        expect(fn.annotations.resolves?.signature).toContain('COUNT');
+        expect((fn.annotations.resolves as any)?.name).toBe('COUNT');
+        expect(typeof (fn.annotations.resolves as any)?.signature).toBe('string');
+        expect((fn.annotations.resolves as any)?.signature).toContain('COUNT');
     });
 
     it('also resolves the inner identifier node', () => {
@@ -50,7 +50,7 @@ describe('annotateFunctions', () => {
         annotateFunctions(root);
         expect(nameNode.annotations.resolves).toBeDefined();
         expect(nameNode.annotations.resolves?.kind).toBe('function');
-        expect(nameNode.annotations.resolves?.name).toBe('SUM');
+        expect((nameNode.annotations.resolves as any)?.name).toBe('SUM');
     });
 
     it('is case-insensitive: lowercase count resolves', () => {
@@ -81,7 +81,7 @@ describe('annotateFunctions', () => {
         const root = wrapInQuery([fn]);
         annotateFunctions(root);
         // Pre-existing annotation should be preserved.
-        expect(fn.annotations.resolves?.name).toBe('CUSTOM');
+        expect((fn.annotations.resolves as any)?.name).toBe('CUSTOM');
     });
 
     it('annotates multiple function calls in the same query', () => {
@@ -89,15 +89,17 @@ describe('annotateFunctions', () => {
         const fn2 = funcCallNode('MAX');
         const root = wrapInQuery([fn1, fn2]);
         annotateFunctions(root);
-        expect(fn1.annotations.resolves?.name).toBe('MIN');
-        expect(fn2.annotations.resolves?.name).toBe('MAX');
+        expect(fn1.annotations.resolves?.kind).toBe('function');
+        expect((fn1.annotations.resolves as any)?.name).toBe('MIN');
+        expect(fn2.annotations.resolves?.kind).toBe('function');
+        expect((fn2.annotations.resolves as any)?.name).toBe('MAX');
     });
 
     it('annotates AVG correctly', () => {
         const fn = funcCallNode('AVG');
         const root = wrapInQuery([fn]);
         annotateFunctions(root);
-        expect(fn.annotations.resolves?.signature).toContain('AVG');
+        expect((fn.annotations.resolves as any)?.signature).toContain('AVG');
     });
 
     it('does not annotate non-functionCall nodes', () => {

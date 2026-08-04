@@ -3,7 +3,7 @@ import { extractInputSignals } from '../../../services/ml/candidates';
 import type { TypedColumn } from '../../../services/ml/candidates';
 
 // Helper to get individual tags from the space-separated output
-function tags(sql: string, cols: (string | TypedColumn)[]): string[] {
+function tags(sql: string, cols: string[] | TypedColumn[]): string[] {
     return extractInputSignals(sql, cols).split(' ');
 }
 

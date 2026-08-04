@@ -26,5 +26,8 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "scripts/training"
+  ]
 }

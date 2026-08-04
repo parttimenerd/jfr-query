@@ -146,7 +146,7 @@ import { hasHoleAncestor } from '../../components/editor/sql/lint';
 import type { Node } from '../../components/editor/sql/ast';
 
 function mkNode(kind: string, parent?: Node): Node {
-    return { kind: kind as any, from: 0, to: 0, src: '', children: [], parent } as Node;
+    return { kind: kind as any, from: 0, to: 0, text: '', children: [], parent, annotations: {} } as Node;
 }
 
 describe('hasHoleAncestor', () => {

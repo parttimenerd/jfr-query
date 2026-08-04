@@ -21,8 +21,8 @@ describe('annotateVariables', () => {
         const varRefs = findNodes(root, n => n.kind === 'varRef');
         const limitRef = varRefs.find(n => n.dollar?.name === 'limit');
         expect(limitRef?.annotations.resolves?.kind).toBe('variable');
-        expect(limitRef?.annotations.resolves?.parsed?.kind).toBe('variableRef');
-        expect(limitRef?.annotations.resolves?.parsed?.name).toBe('limit');
+        expect((limitRef?.annotations.resolves as any)?.parsed?.kind).toBe('variableRef');
+        expect((limitRef?.annotations.resolves as any)?.parsed?.name).toBe('limit');
     });
 
     it('resolves a $cell.brush cross-cell reference', () => {
@@ -31,7 +31,7 @@ describe('annotateVariables', () => {
         const varRefs = findNodes(root, n => n.kind === 'varRef');
         const brushRef = varRefs.find(n => n.dollar?.kind === 'crossCellRef' && n.dollar.name === 'gc');
         expect(brushRef?.annotations.resolves?.kind).toBe('variable');
-        expect(brushRef?.annotations.resolves?.parsed?.kind).toBe('crossCellRef');
+        expect((brushRef?.annotations.resolves as any)?.parsed?.kind).toBe('crossCellRef');
     });
 
     it('resolves $$global references', () => {

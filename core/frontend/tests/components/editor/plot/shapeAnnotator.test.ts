@@ -61,7 +61,7 @@ describe('annotateShapes', () => {
         annotateShapes(root, lineRegistry);
         expect(call.annotations.resolves).toBeDefined();
         expect(call.annotations.resolves?.kind).toBe('plotShape');
-        expect(call.annotations.resolves?.name).toBe('line');
+        expect((call.annotations.resolves as any)?.name).toBe('line');
     });
 
     it('leaves annotations undefined for an unknown shape', () => {
@@ -75,14 +75,14 @@ describe('annotateShapes', () => {
         const call = plotCallNode('line');
         const root = scriptNode([call]);
         annotateShapes(root, lineRegistry);
-        expect(call.annotations.resolves?.validClauses).toEqual(['x', 'y', 'color']);
+        expect((call.annotations.resolves as any)?.validClauses).toEqual(['x', 'y', 'color']);
     });
 
     it('resolves requiredClauses from registry entry', () => {
         const call = plotCallNode('line');
         const root = scriptNode([call]);
         annotateShapes(root, lineRegistry);
-        expect(call.annotations.resolves?.requiredClauses).toEqual(['x', 'y']);
+        expect((call.annotations.resolves as any)?.requiredClauses).toEqual(['x', 'y']);
     });
 
     it('annotates clauseRef children with clauseDef resolves', () => {
@@ -100,9 +100,9 @@ describe('annotateShapes', () => {
         annotateShapes(root, registryWithDefs);
         const cref = xClause.children[0];
         expect(cref.annotations.resolves?.kind).toBe('clauseDef');
-        expect(cref.annotations.resolves?.clauseKey).toBe('x');
-        expect(cref.annotations.resolves?.paramType).toBe('column');
-        expect(cref.annotations.resolves?.required).toBe(true);
+        expect((cref.annotations.resolves as any)?.clauseKey).toBe('x');
+        expect((cref.annotations.resolves as any)?.paramType).toBe('column');
+        expect((cref.annotations.resolves as any)?.required).toBe(true);
     });
 
     it('annotates clauseRef without explicit clauseDef by inferring from columnClauses', () => {
@@ -112,7 +112,7 @@ describe('annotateShapes', () => {
         annotateShapes(root, lineRegistry); // no clauseDefs, only columnClauses
         const cref = xClause.children[0];
         expect(cref.annotations.resolves?.kind).toBe('clauseDef');
-        expect(cref.annotations.resolves?.paramType).toBe('column');
+        expect((cref.annotations.resolves as any)?.paramType).toBe('column');
     });
 
     it('does not annotate nodes without a shape field', () => {
@@ -142,6 +142,6 @@ describe('annotateShapes', () => {
         const call = plotCallNode('line');
         const root = scriptNode([call]);
         annotateShapes(root, lineRegistry);
-        expect(call.annotations.resolves?.description).toBe('Line chart');
+        expect((call.annotations.resolves as any)?.description).toBe('Line chart');
     });
 });

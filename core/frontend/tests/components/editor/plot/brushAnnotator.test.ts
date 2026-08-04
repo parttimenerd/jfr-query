@@ -63,36 +63,37 @@ describe('annotateBrush', () => {
         const n = makeVarRef(d);
         annotateBrush(n, makeCtx({ gc: { xType: 'timestamp', yType: 'number' } }));
         expect(n.annotations.resolves).toBeDefined();
-        expect(n.annotations.resolves!.kind).toBe('variable');
-        expect(n.annotations.resolves!.source).toBe('brush');
-        expect(n.annotations.resolves!.dataType).toBe('timestamp');
+        const r = n.annotations.resolves as any;
+        expect(r.kind).toBe('variable');
+        expect(r.source).toBe('brush');
+        expect(r.dataType).toBe('timestamp');
     });
 
     it('resolves .brush.lo to the plot xType', () => {
         const d: ParsedDollar = { kind: 'crossCellRef', name: 'gc', path: ['brush', 'lo'], raw: '$gc.brush.lo' };
         const n = makeVarRef(d);
         annotateBrush(n, makeCtx({ gc: { xType: 'number', yType: 'number' } }));
-        expect(n.annotations.resolves!.dataType).toBe('number');
+        expect((n.annotations.resolves as any).dataType).toBe('number');
     });
 
     it('resolves .brush.hi to the plot xType', () => {
         const d: ParsedDollar = { kind: 'crossCellRef', name: 'gc', path: ['brush', 'hi'], raw: '$gc.brush.hi' };
         const n = makeVarRef(d);
         annotateBrush(n, makeCtx({ gc: { xType: 'number', yType: 'number' } }));
-        expect(n.annotations.resolves!.dataType).toBe('number');
+        expect((n.annotations.resolves as any).dataType).toBe('number');
     });
 
     it('resolves .brush.field to "string" regardless of xType', () => {
         const d: ParsedDollar = { kind: 'crossCellRef', name: 'gc', path: ['brush', 'field'], raw: '$gc.brush.field' };
         const n = makeVarRef(d);
         annotateBrush(n, makeCtx({ gc: { xType: 'timestamp', yType: 'number' } }));
-        expect(n.annotations.resolves!.dataType).toBe('string');
+        expect((n.annotations.resolves as any).dataType).toBe('string');
     });
 
     it('attaches the parsed dollar to the resolution', () => {
         const d: ParsedDollar = { kind: 'crossCellRef', name: 'gc', path: ['brush'], raw: '$gc.brush' };
         const n = makeVarRef(d);
         annotateBrush(n, makeCtx({ gc: { xType: 'timestamp', yType: 'number' } }));
-        expect(n.annotations.resolves!.parsed).toBe(d);
+        expect((n.annotations.resolves as any).parsed).toBe(d);
     });
 });

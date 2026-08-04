@@ -341,7 +341,7 @@ describe('setParents', () => {
     function buildTree() {
         const child1 = makeNode('ident', 4, 7, 'BAR');
         const child2 = makeNode('ident', 8, 11, 'baz');
-        const root = makeNode('call', 0, 12, 'BAR(baz)', { children: [child1, child2] });
+        const root = makeNode('plotCall', 0, 12, 'BAR(baz)', { children: [child1, child2] });
         return { root, child1, child2 };
     }
 
@@ -360,8 +360,8 @@ describe('setParents', () => {
 
     it('sets parents recursively for nested children', () => {
         const grandchild = makeNode('ident', 5, 6, 'x');
-        const child = makeNode('call', 4, 7, 'f(x)', { children: [grandchild] });
-        const root = makeNode('call', 0, 8, 'g(f(x))', { children: [child] });
+        const child = makeNode('plotCall', 4, 7, 'f(x)', { children: [grandchild] });
+        const root = makeNode('plotCall', 0, 8, 'g(f(x))', { children: [child] });
         setParents(root);
         expect(grandchild.parent).toBe(child);
         expect(child.parent).toBe(root);

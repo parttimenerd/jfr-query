@@ -6,15 +6,16 @@ import type { Node } from '../../../../components/editor/sql/ast';
 const eventsTable = {
     name: 'events',
     columns: [
-        { name: 'ts', dataType: 'BIGINT' },
-        { name: 'cause', dataType: 'VARCHAR' },
-        { name: 'duration', dataType: 'DOUBLE' },
+        { name: 'ts', type: 'BIGINT' },
+        { name: 'cause', type: 'VARCHAR' },
+        { name: 'duration', type: 'DOUBLE' },
     ],
 };
 
 const logsView = {
     name: 'logs',
-    columns: [{ name: 'msg', dataType: 'VARCHAR' }],
+    query: '',
+    columns: [{ name: 'msg', type: 'VARCHAR' }],
 };
 
 function findAll(root: Node, kind: string): Node[] {

@@ -205,7 +205,7 @@ describe('BrowserModelProvider — streamChatWithTools message conversion', () =
         const stream = p.streamChatWithTools(
             [
                 { role: 'user', content: 'run it' },
-                { role: 'tool', content: 'result data', tool_use_id: 'x' },
+                { role: 'tool', content: 'result data', toolResults: [{ id: 'x', name: 'runQuery', result: 'ok' }] } as any,
                 { role: 'assistant', content: 'done' },
             ],
             [],

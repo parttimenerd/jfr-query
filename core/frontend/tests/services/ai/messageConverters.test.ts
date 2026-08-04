@@ -44,6 +44,7 @@ describe('openAiMessagesFromTool', () => {
         const msgs: ToolChatMessage[] = [
             {
                 role: 'tool',
+                content: '',
                 toolResults: [{ id: 'call-1', name: 'runQuery', result: [{ a: 1 }] }],
             },
         ];
@@ -57,6 +58,7 @@ describe('openAiMessagesFromTool', () => {
         const msgs: ToolChatMessage[] = [
             {
                 role: 'tool',
+                content: '',
                 toolResults: [{ id: 'call-1', name: 'runQuery', result: [{ a: 1 }] }],
             },
         ];
@@ -115,6 +117,7 @@ describe('geminiContentsFromTool', () => {
         const msgs: ToolChatMessage[] = [
             {
                 role: 'tool',
+                content: '',
                 toolResults: [{ id: 'tc-1', name: 'runQuery', result: { rows: [] } }],
             },
         ];
@@ -146,6 +149,7 @@ describe('geminiContentsFromTool', () => {
         const msgs: ToolChatMessage[] = [
             {
                 role: 'tool',
+                content: '',
                 toolResults: [{ id: 'tc-1', name: 'runQuery', result: 'simple string' }],
             },
         ];
