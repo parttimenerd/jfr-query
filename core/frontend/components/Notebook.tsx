@@ -66,6 +66,21 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     // cellConditions: evaluate each cell's SQL predicate to decide visibility.
     const [cellVisibility, setCellVisibility] = useState<Record<string, boolean | null | undefined>>({});
 
+    // Names of cells that have a `requires` attribute. Used in render to treat
+    // cells not yet in cellVisibility as null (pending) instead of undefined
+    // (visible), preventing a one-render window where auto-run fires before the
+    // async visibility check populates the map.
+    const cellsWithRequires = useMemo(() => {
+        const set = new Set<string>();
+        for (let idx = 0; idx < cells.length; idx++) {
+            const c = cells[idx];
+            const name = cellHandle(c, idx);
+            const directive = parseCellDirective(c.content);
+            if (directive?.rest?.requires?.trim()) set.add(name);
+        }
+        return set;
+    }, [cells]);
+
     // Ref-stabilise onRunPreviewQuery so the visibility effect doesn't re-run
     // every time the underlying DuckDB query function gets a new reference
     // (which happens on every dbState change).
@@ -192,7 +207,10 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                             // null = pending requires check → block auto-run but don't hide visually
                             // true = visible (requires satisfied)
                             // false = hidden (requires not satisfied)
-                            const visibility = cellVisibility[name];
+                            // If a cell has requires but isn't in the map yet, treat as null (pending)
+                            // to prevent auto-run firing before the async check resolves.
+                            const rawVisibility = cellVisibility[name];
+                            const visibility = rawVisibility === undefined && cellsWithRequires.has(name) ? null : rawVisibility;
                             const isConditionallyHidden = visibility === null ? undefined : (visibility === false ? true : false);
                             return (
                                 <NotebookCell
@@ -268,7 +286,10 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                 // null = pending requires check → block auto-run but don't hide visually
                 // true = visible (requires satisfied)
                 // false = hidden (requires not satisfied)
-                const visibility = cellVisibility[name];
+                // If a cell has requires but isn't in the map yet, treat as null (pending)
+                // to prevent auto-run firing before the async check resolves.
+                const rawVisibility = cellVisibility[name];
+                const visibility = rawVisibility === undefined && cellsWithRequires.has(name) ? null : rawVisibility;
                 const isConditionallyHidden = visibility === null ? undefined : (visibility === false ? true : false);
                 return (
                     <NotebookCell
