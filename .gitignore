@@ -52,6 +52,9 @@ wasm/web/
 /metal.db
 /out.db
 
+# Generated DuckDB files derived from JFR test fixtures
+core/jfr_files/*.db
+
 # Generated data + ML artifacts
 /data/
 /jfr/
@@ -71,5 +74,20 @@ core/frontend/test-complex*.md
 # Playwright test artifacts and screenshots dumped at repo root
 /live-playwright-test/
 /*.png
+/*.jpeg
 core/frontend/test-results/
 .playwright-mcp/
+
+# Temporary QA / debug scripts with hardcoded local paths
+core/frontend/e2e/cjfr-debug*.mjs
+core/frontend/e2e/cjfr-qa*.mjs
+core/frontend/e2e/cjfr-upload-test.ts
+core/frontend/e2e/cjfr-import.spec.ts
+core/frontend/e2e/run-visual-qa.mjs
+core/frontend/e2e/visual-qa-temp.ts
+
+# Temporary test resources (local JFR/CJFR files for integration tests)
+core/src/test/resources/
+
+# Schema diff diagnostic (not a real test)
+core/src/test/java/me/bechberger/jfr/duckdb/SchemaDiffTest.java
