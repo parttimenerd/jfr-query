@@ -30,6 +30,9 @@ declare global {
     JFRImporter?: {
       importJfrIntoDuckDB(bytes: Uint8Array, conn: unknown, db: unknown, stacktraceDepth: number, tablePrefix: string): void;
     };
+    CJFRImporter?: {
+      importCjfrIntoDuckDB(bytes: Uint8Array, conn: unknown, db: unknown, tablePrefix: string): void;
+    };
     _jfrCsvPending?: number;
     _jfrStacktraceDepth?: number;
     __arrow?: typeof import('apache-arrow');
@@ -70,8 +73,11 @@ self.addEventListener('message', (e: MessageEvent) => {
   }
 
   if (msg.type === 'import') {
+    const isCjfr = !!(msg.isCjfr as boolean);
     importQueue = importQueue.then(() =>
-      handleImport(msg.bytes as Uint8Array, msg.stacktraceDepth as number, (msg.tablePrefix as string) ?? '')
+      isCjfr
+        ? handleCjfrImport(msg.bytes as Uint8Array, (msg.tablePrefix as string) ?? '')
+        : handleImport(msg.bytes as Uint8Array, msg.stacktraceDepth as number, (msg.tablePrefix as string) ?? '')
     ).catch(() => {});
   }
 });
@@ -113,7 +119,7 @@ if (globalThis.__jfrPrecompiledModule) { try { config.wasm_module = globalThis._
     }
   });
 
-  // Wait for JFRImporter global
+  // Wait for JFRImporter global (CJFRImporter is registered in the same main() call)
   await new Promise<void>((resolve, reject) => {
     const start = Date.now();
     const wait = () => {
@@ -177,6 +183,65 @@ async function handleImport(bytes: Uint8Array, stacktraceDepth: number, tablePre
     });
 
     (self as any).JFRImporter.importJfrIntoDuckDB(bytes, fakeConn, fakeDb, stacktraceDepth, tablePrefix);
+
+    while (((self as any).__jfrPendingValue ?? 0) > 0) {
+      await new Promise(r => setTimeout(r, 10));
+    }
+
+    self.postMessage({ type: 'done' });
+  } catch (e: unknown) {
+    self.postMessage({ type: 'error', message: String(e) });
+  }
+}
+
+async function handleCjfrImport(bytes: Uint8Array, tablePrefix = '') {
+  try {
+    if (!wasmInitPromise) {
+      wasmInitPromise = loadWasm(null, null);
+    }
+    await wasmInitPromise;
+
+    (self as any).__jfrPendingValue = 0;
+
+    const fakeConn = {
+      query(sql: string) {
+        const reqId = ++reqIdCounter;
+        const resultPromise = new Promise<unknown>((resolve, reject) => {
+          pending.set(reqId, { resolve, reject });
+        });
+        self.postMessage({ type: 'query', reqId, sql });
+        return resultPromise;
+      },
+      async insertArrowTable(arrowTable: unknown, opts: { name: string; create: boolean }) {
+        const { tableToIPC } = (self as any).__arrow as typeof import('apache-arrow');
+        const ipcBytes: Uint8Array = tableToIPC(arrowTable as any, 'stream');
+        const reqId = ++reqIdCounter;
+        const resultPromise = new Promise<unknown>((resolve, reject) => {
+          pending.set(reqId, { resolve, reject });
+        });
+        const buf = ipcBytes.byteOffset === 0 && ipcBytes.byteLength === ipcBytes.buffer.byteLength
+          ? ipcBytes.buffer
+          : ipcBytes.slice().buffer;
+        (self as unknown as Worker).postMessage(
+          { type: 'insert', reqId, tableName: opts.name, ipcBytes: buf },
+          [buf],
+        );
+        return resultPromise;
+      },
+    };
+    const fakeDb = {};
+
+    Object.defineProperty(self, '_jfrCsvPending', {
+      get() { return (self as any).__jfrPendingValue ?? 0; },
+      set(v: number) {
+        const prev = (self as any).__jfrPendingValue ?? 0;
+        (self as any).__jfrPendingValue = v;
+        self.postMessage({ type: 'pending', delta: v - prev });
+      },
+      configurable: true,
+    });
+
+    (self as any).CJFRImporter.importCjfrIntoDuckDB(bytes, fakeConn, fakeDb, tablePrefix);
 
     while (((self as any).__jfrPendingValue ?? 0) > 0) {
       await new Promise(r => setTimeout(r, 10));

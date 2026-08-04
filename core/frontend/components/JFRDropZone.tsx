@@ -59,8 +59,10 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
         setFileName(file.name);
         setFileBytes(file.size);
         const isJfr = file.name.toLowerCase().endsWith('.jfr');
+        const isCjfr = file.name.toLowerCase().endsWith('.cjfr');
         const sizeMb = file.size / (1024 * 1024);
 
+        // Show depth selector only for large .jfr files — CJFR has no stack depth option.
         if (isJfr && sizeMb > LARGE_FILE_THRESHOLD_MB) {
             setPending({ file, name: file.name, sizeMb });
         } else {
@@ -77,7 +79,7 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
-        accept: { 'application/octet-stream': ['.jfr', '.duckdb', '.db'] },
+        accept: { 'application/octet-stream': ['.jfr', '.cjfr', '.duckdb', '.db'] },
         multiple: false,
         disabled: isImporting || !!pending,
     });

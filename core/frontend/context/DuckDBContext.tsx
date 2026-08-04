@@ -2,7 +2,7 @@ import React, { createContext, useState, useCallback, useMemo, ReactNode, useEff
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
 import { TableSchema, ViewSchema, MacroSchema } from '../types';
 import { initDuckDBWasm, loadDuckDbFileIntoWasm } from '../utils/duckdbWasmLoader';
-import { loadJfrIntoWasm, resetWasmDatabase } from '../utils/jfrToWasmLoader';
+import { loadJfrIntoWasm, loadCjfrIntoWasm, resetWasmDatabase } from '../utils/jfrToWasmLoader';
 import { DEMO_SETUP_SQL } from '../data/demoNotebook';
 import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL, CONDITIONAL_VIEWS_SQL } from '../data/builtinSql';
 
@@ -425,8 +425,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       const conn = wasmConnRef.current!;
       const isJfr = fileName.toLowerCase().endsWith('.jfr');
+      const isCjfr = fileName.toLowerCase().endsWith('.cjfr');
       if (isJfr) {
         await loadJfrIntoWasm(source, conn, wasmDbRef.current!, stacktraceDepth, setImportProgress);
+      } else if (isCjfr) {
+        await loadCjfrIntoWasm(source, conn, wasmDbRef.current!, setImportProgress);
       } else {
         const bytes = source instanceof File ? new Uint8Array(await source.arrayBuffer()) : source;
         await loadDuckDbFileIntoWasm(wasmDbRef.current!, conn, bytes);

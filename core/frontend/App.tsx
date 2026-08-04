@@ -393,11 +393,13 @@ const App: React.FC = () => {
     const [pendingJfrDepth, setPendingJfrDepth] = useState(10);
 
     const JFR_MAGIC = [0x46, 0x4c, 0x52, 0x00];
+    const CJFR_MAGIC = [0x0D, 0x0C, 0x43, 0x6F];
     const DUCKDB_MAGIC = [0x44, 0x55, 0x43, 0x4b];
-    const sniffFile = async (f: File): Promise<'jfr' | 'duckdb' | 'unknown'> => {
+    const sniffFile = async (f: File): Promise<'jfr' | 'cjfr' | 'duckdb' | 'unknown'> => {
         const buf = await f.slice(0, 4).arrayBuffer();
         const b = new Uint8Array(buf);
         if (JFR_MAGIC.every((v, i) => b[i] === v)) return 'jfr';
+        if (CJFR_MAGIC.every((v, i) => b[i] === v)) return 'cjfr';
         if (DUCKDB_MAGIC.every((v, i) => b[i] === v)) return 'duckdb';
         return 'unknown';
     };
@@ -446,13 +448,13 @@ const App: React.FC = () => {
             // Only handle data-file drops when the notebook is already loaded —
             // JFRDropZone owns the drop target during the landing/import phase.
             if (dbState !== DBState.READY) return;
-            const dataFile = files.find(f => /\.(jfr|duckdb|db)$/i.test(f.name));
+            const dataFile = files.find(f => /\.(jfr|cjfr|duckdb|db)$/i.test(f.name));
             if (dataFile) {
                 e.preventDefault();
                 void (async () => {
                     const kind = await sniffFile(dataFile);
                     if (kind === 'unknown') {
-                        setInvalidFileToast(`Unrecognised file: "${dataFile.name}". Drop a .jfr or .duckdb file.`);
+                        setInvalidFileToast(`Unrecognised file: "${dataFile.name}". Drop a .jfr, .cjfr, or .duckdb file.`);
                         return;
                     }
                     const sizeMb = dataFile.size / (1024 * 1024);
@@ -466,7 +468,7 @@ const App: React.FC = () => {
             } else if (files.length > 0) {
                 e.preventDefault();
                 const name = files[0].name;
-                setInvalidFileToast(`Unsupported file type: "${name}". Drop a .jfr or .duckdb file.`);
+                setInvalidFileToast(`Unsupported file type: "${name}". Drop a .jfr, .cjfr, or .duckdb file.`);
             }
         };
         window.addEventListener('dragover', onDragOver);

@@ -842,6 +842,150 @@ export async function resetWasmDatabase(conn: AsyncDuckDBConnection): Promise<vo
 }
 
 /**
+ * Imports a CJFR (condensed JFR) byte array into the given DuckDB WASM connection.
+ *
+ * CJFR is a single-stream format — no chunk splitting needed. A single worker is
+ * created, the bytes are passed verbatim to CJFRImporter.importCjfrIntoDuckDB, and
+ * the SQL registration phase runs exactly as for JFR.
+ *
+ * @param onProgress Optional callback (0–1) called at key checkpoints.
+ */
+export async function loadCjfrIntoWasm(
+  source: File | Uint8Array,
+  conn: AsyncDuckDBConnection,
+  db: AsyncDuckDB,
+  onProgress?: (pct: number) => void,
+): Promise<void> {
+  if (!(window as any).__arrow) {
+    (window as any).__arrow = await import('apache-arrow');
+  }
+
+  onProgress?.(0.01);
+
+  const bytes = source instanceof File ? new Uint8Array(await source.arrayBuffer()) : source;
+
+  const [wasmModule, importerSrc] = await Promise.all([getPrecompiledModule(), getImporterSrc()]);
+  onProgress?.(0.03);
+
+  insertSemaphore = new InsertSemaphore(2);
+
+  const pooled = await createPooledWorker(db, wasmModule, importerSrc);
+  onProgress?.(0.05);
+
+  try {
+    const insertPromises = await (async () => {
+      const localInserts: Promise<void>[] = [];
+      await new Promise<void>((resolve, reject) => {
+        const { worker } = pooled;
+
+        const onMsg = async (e: MessageEvent) => {
+          const msg = e.data;
+
+          if (msg.type === 'query') {
+            try { await pooled.conn.query(msg.sql as string); } catch { /* suppress */ }
+            worker.postMessage({ type: 'query-result', reqId: msg.reqId, rows: [] });
+            return;
+          }
+
+          if (msg.type === 'insert') {
+            const p = insertSemaphore.acquire().then(() =>
+              pooled.conn.insertArrowFromIPCStream(
+                new Uint8Array(msg.ipcBytes as ArrayBuffer),
+                { name: msg.tableName as string, create: false },
+              ).catch((err) => console.warn('[cjfr-worker] insert failed for', msg.tableName, err))
+                .finally(() => insertSemaphore.release()),
+            );
+            localInserts.push(p);
+            worker.postMessage({ type: 'insert-result', reqId: msg.reqId });
+            return;
+          }
+
+          if (msg.type === 'done') { worker.removeEventListener('message', onMsg); resolve(); return; }
+          if (msg.type === 'error') { worker.removeEventListener('message', onMsg); reject(new Error(msg.message as string)); return; }
+        };
+
+        worker.addEventListener('message', onMsg);
+        worker.onerror = (ev) => {
+          worker.removeEventListener('message', onMsg);
+          reject(new Error(`CJFR import worker error: ${ev.message}`));
+        };
+
+        const buf = bytes.buffer.byteLength === bytes.byteLength ? bytes.buffer : bytes.slice().buffer;
+        worker.postMessage({ type: 'import', bytes: new Uint8Array(buf), isCjfr: true, tablePrefix: '' }, [buf]);
+      });
+
+      return localInserts;
+    })();
+
+    onProgress?.(0.70);
+    await Promise.all(insertPromises);
+    onProgress?.(0.85);
+  } finally {
+    pooled.worker.terminate();
+    await pooled.conn.close().catch(() => {});
+  }
+
+  // No merge pass needed — CJFR produces unprefixed tables directly.
+  // Tables named without chunk prefix are already final.
+  onProgress?.(0.90);
+
+  // Register built-in macros and views (same as JFR path).
+  const PARALLELISM = new URL(location.href).searchParams.has('sqlSerial') ? 1 : 4;
+  const runSql = (c: typeof conn, sql: string, isMacro = false) =>
+    c.query(sql).catch((e: any) => {
+      const msg = String(e?.message ?? e);
+      const suppress = msg.includes('Catalog Error') || (isMacro && msg.includes('Binder Error'));
+      if (!suppress) console.warn('builtin sql failed:', e);
+    });
+
+  for (const sql of BUILTIN_MACROS_SQL) {
+    await runSql(conn, sql, true);
+  }
+
+  const extraConns: typeof conn[] = [];
+  try {
+    for (let i = 0; i < PARALLELISM - 1; i++) {
+      extraConns.push(await db.connect());
+    }
+    const conns = [conn, ...extraConns];
+    const chunkSize = Math.ceil(BUILTIN_VIEWS_SQL.length / PARALLELISM);
+    await Promise.allSettled(
+      conns.map((c, ci) => {
+        const slice = BUILTIN_VIEWS_SQL.slice(ci * chunkSize, (ci + 1) * chunkSize);
+        return slice.reduce(
+          (chain, sql) => chain.then(() => runSql(c, sql)),
+          Promise.resolve(),
+        );
+      }),
+    );
+  } finally {
+    for (const c of extraConns) {
+      c.close().catch(() => {});
+    }
+  }
+
+  const allTableNames = (await conn.query(`SELECT table_name FROM duckdb_tables()`).catch(() => ({ toArray: () => [] })))
+    .toArray()
+    .map((r: any) => r.table_name as string);
+  const allTableNamesSet = new Set<string>(allTableNames);
+  const allViewNames = new Set<string>(
+    (await conn.query(`SELECT view_name FROM duckdb_views()`).catch(() => ({ toArray: () => [] })))
+      .toArray()
+      .map((r: any) => r.view_name as string),
+  );
+  const hasSource = (name: string): boolean =>
+    allViewNames.has(name) || allTableNames.some(t => t === name || t.endsWith(`_${name}`));
+  for (const { requires, sql, buildSql } of CONDITIONAL_VIEWS_SQL) {
+    if (hasSource(requires)) {
+      const stmt = sql ?? buildSql?.(allTableNamesSet);
+      if (stmt) await runSql(conn, stmt);
+    }
+  }
+
+  onProgress?.(1.0);
+}
+
+/**
  * Imports a JFR file or byte array into the given DuckDB WASM connection via Web Workers.
  *
  * Multi-chunk JFR files (common for recordings >~5 MB) are parsed into their
