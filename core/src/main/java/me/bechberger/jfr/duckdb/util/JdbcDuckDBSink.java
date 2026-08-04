@@ -26,7 +26,7 @@ public final class JdbcDuckDBSink implements DuckDBSink {
 
     @Override
     public Appender createAppender(String table) throws SQLException {
-        return new JdbcAppender(connection.createAppender(table));
+        return new JdbcAppender(connection.createAppender("", table));
     }
 
     @Override

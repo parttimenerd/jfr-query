@@ -483,7 +483,7 @@ public class MacroCollection {
                 """);
             stmt.execute("DELETE FROM macros;");
         }
-        try (var appender = connection.createAppender("macros")) {
+        try (var appender = connection.createAppender("", "macros")) {
             for (Macro macro : macros) {
                 appender.beginRow();
                 appender.append(macro.name());

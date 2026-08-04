@@ -2778,16 +2778,35 @@ public class ViewCollection {
                                             + ";");
                         }
                     } catch (SQLException e) {
-                        throw new RuntimeSQLException(alternative, e);
+                        if (isPartialSchemaError(e)) {
+                            System.err.println(
+                                    "[ViewCollection] Skipping view '"
+                                            + view.name()
+                                            + "' (alternative): "
+                                            + e.getMessage().lines().findFirst().orElse(e.getMessage()));
+                        } else {
+                            throw new RuntimeSQLException(alternative, e);
+                        }
                     }
                 }
             } else {
                 try {
                     connection.createStatement().execute(view.definition());
                 } catch (SQLException e) {
-                    throw new RuntimeSQLException(
-                            "Error creating view " + view.name() + "   " + view.referencedTables(),
-                            e);
+                    // Partial event schemas (e.g. CJFR recordings) may have tables with fewer
+                    // columns than expected, or JOIN targets that weren't imported. Skip views
+                    // that can't be created rather than aborting the entire import.
+                    if (isPartialSchemaError(e)) {
+                        System.err.println(
+                                "[ViewCollection] Skipping view '"
+                                        + view.name()
+                                        + "': "
+                                        + e.getMessage().lines().findFirst().orElse(e.getMessage()));
+                    } else {
+                        throw new RuntimeSQLException(
+                                "Error creating view " + view.name() + "   " + view.referencedTables(),
+                                e);
+                    }
                 }
             }
         }
@@ -2802,7 +2821,7 @@ public class ViewCollection {
                     definition VARCHAR
                 )
                 """);
-        try (var appender = connection.createAppender("jfr$views")) {
+        try (var appender = connection.createAppender("", "jfr$views")) {
             for (View view : getViews()) {
                 appender.beginRow();
                 appender.append(view.name());
@@ -2812,6 +2831,23 @@ public class ViewCollection {
                 appender.endRow();
             }
         }
+    }
+
+    /**
+     * Returns true when a view-creation failure is caused by a partial event schema — e.g. a CJFR
+     * recording that has the primary table but is missing columns or JOIN targets. These failures
+     * are acceptable: the view is simply skipped.
+     */
+    private static boolean isPartialSchemaError(SQLException e) {
+        String msg = e.getMessage();
+        if (msg == null) return false;
+        // Column referenced in SELECT not present in the imported table
+        if (msg.contains("not found in FROM clause")) return true;
+        // JOIN target table was not imported (not in the recording)
+        if (msg.contains("does not exist") || msg.contains("Catalog Error")) return true;
+        // A column that should be numeric is VARCHAR because its JFR type was not mapped
+        if (msg.contains("No function matches the given name and argument types")) return true;
+        return false;
     }
 
     public static Map<String, List<View>> getViewsByCategory() {

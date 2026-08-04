@@ -46,12 +46,22 @@ import org.jetbrains.annotations.Nullable;
 @SuppressWarnings("CodeBlock2Expr")
 public class BasicParallelImporter {
 
-    static final Function<Map<String, Object>, Map<String, Object>> IDENTITY_FUNCTION = (o) -> o;
+    @SuppressWarnings("unchecked")
+    static final Function<Object, Map<String, Object>> IDENTITY_FUNCTION = (o) -> (Map<String, Object>) o;
 
     @FunctionalInterface
     interface AppendFunction {
-        /** Appends the value of the field to the Appender. */
-        void appendTo(Map<String, Object> object, Appender appender) throws SQLException;
+        /**
+         * Appends the value of the field to the Appender.
+         *
+         * <p>The {@code object} parameter is typed as {@link Object} rather than {@code
+         * Map<String,Object>} so that CJFR event objects (which are {@code CJFREvent} instances,
+         * not Maps) can be passed through without a checked cast that fails under GraalVM WASM GC's
+         * strict type checking. Callers in the JFR path pass a {@code Map<String,Object>}; callers
+         * in the CJFR path pass a {@code CJFREvent}. Each lambda implementation casts {@code object}
+         * to the concrete type it expects.
+         */
+        void appendTo(Object object, Appender appender) throws SQLException;
     }
 
     @FunctionalInterface
@@ -669,7 +679,7 @@ public class BasicParallelImporter {
         // Separate RecordingInfo accumulator that works with CJFREvent
         CjfrRecordingInfo cjfrInfo = new CjfrRecordingInfo();
 
-        try (CJFRFile file = CJFRFile.open(input, me.bechberger.cjfr.Options.defaults().withReconstitution(false))) {
+        try (CJFRFile file = CJFRFile.open(input, me.bechberger.cjfr.Options.defaults())) {
             CJFREvent event;
             while ((event = file.readEvent()) != null) {
                 final CJFREvent ev = event;
@@ -731,7 +741,7 @@ public class BasicParallelImporter {
                 }
             }
             Duration dur = ev.getDuration();
-            if (dur != null) eventDurationNs += dur.toNanos();
+            if (dur != null) eventDurationNs += (long)(durationToSeconds(dur) * 1_000_000_000.0);
         }
 
         void store(DuckDBSink sink) throws SQLException {
@@ -798,7 +808,7 @@ public class BasicParallelImporter {
                             (obj, app) -> {
                                 Duration d = ((CJFREvent) (Object) obj).getDuration(fieldName);
                                 if (d == null) { app.append(0.0); return; }
-                                double secs = d.toNanos() / 1_000_000_000.0;
+                                double secs = durationToSeconds(d);
                                 app.append(secs > 24L * 365 * 10 * 3600 ? Double.POSITIVE_INFINITY : secs);
                             }, (app) -> app.append(0.0));
                 } else {
@@ -807,7 +817,7 @@ public class BasicParallelImporter {
                             (app) -> app.append(0L));
                 }
             }
-            case "int" -> col = new Table.Column(fieldName, "INTEGER",
+            case "int", "jdk.jfr.Unsigned" -> col = new Table.Column(fieldName, "INTEGER",
                     (obj, app) -> app.append(((CJFREvent) (Object) obj).getInt(fieldName)),
                     (app) -> app.append(0));
             case "short" -> col = new Table.Column(fieldName, "SMALLINT",
@@ -823,17 +833,33 @@ public class BasicParallelImporter {
                     (obj, app) -> app.append(((CJFREvent) (Object) obj).getDouble(fieldName)),
                     (app) -> app.append(0.0));
             default -> {
-                // Struct type — check for Instant (Timestamp annotation on non-primitive)
+                // Struct type — check for Timestamp or Timespan annotation on non-primitive
                 if (isTimestamp) {
                     col = new Table.Column(fieldName, "TIMESTAMP",
                             (obj, app) -> {
                                 Instant ins = ((CJFREvent) (Object) obj).getInstant(fieldName);
                                 append(app, ins != null ? ins : Instant.EPOCH);
                             }, (app) -> append(app, Instant.EPOCH));
+                } else if (isTimespan) {
+                    // Non-primitive field with @Timespan (stores Duration, not ReadStruct)
+                    col = new Table.Column(fieldName, "DOUBLE",
+                            (obj, app) -> {
+                                Duration d = ((CJFREvent) (Object) obj).getDuration(fieldName);
+                                if (d == null) { app.append(0.0); return; }
+                                double secs = durationToSeconds(d);
+                                app.append(secs > 24L * 365 * 10 * 3600 ? Double.POSITIVE_INFINITY : secs);
+                            }, (app) -> app.append(0.0));
                 } else {
                     // Struct: flatten single-field structs (GCCause, GCName) to VARCHAR
                     col = new Table.Column(fieldName, "VARCHAR",
                             (obj, app) -> {
+                                Object raw = ((CJFREvent) (Object) obj).getValue(fieldName);
+                                if (raw == null) { app.appendNull(); return; }
+                                if (!(raw instanceof me.bechberger.condensed.ReadStruct)) {
+                                    // Unexpected type (e.g. Duration without @Timespan) — stringify
+                                    app.append(raw.toString());
+                                    return;
+                                }
                                 CJFREvent nested = ((CJFREvent) (Object) obj).getStruct(fieldName);
                                 if (nested == null) { app.appendNull(); return; }
                                 List<String> names = nested.getFieldNames();
@@ -855,9 +881,9 @@ public class BasicParallelImporter {
         try {
             table.appender.beginRow();
             for (Table.Column col : table.columns) {
-                // AppendFunction expects Map<String,Object> but we pass CJFREvent directly;
+                // AppendFunction.appendTo now takes Object so CJFREvent can be passed directly;
                 // the CJFR column lambdas cast it back to CJFREvent.
-                col.append.appendTo((Map<String, Object>) (Object) event, table.appender);
+                col.append.appendTo(event, table.appender);
             }
             table.appender.endRow();
         } catch (SQLException e) {
@@ -952,7 +978,7 @@ public class BasicParallelImporter {
 
     private List<Table.Column> createColumnsForType(
             MetadataField descriptor,
-            Function<Map<String, Object>, Map<String, Object>> getBaseObject) {
+            Function<Object, Map<String, Object>> getBaseObject) {
         if (JafarValues.isArray(descriptor)) {
             throw new IllegalStateException("Array types not supported");
         }
@@ -1043,7 +1069,7 @@ public class BasicParallelImporter {
     @SuppressWarnings("RedundantLabeledSwitchRuleCodeBlock")
     private List<Table.Column> createColumnsForTypeIgnoringArrays(
             MetadataField descriptor,
-            Function<Map<String, Object>, Map<String, Object>> getBaseObject) {
+            Function<Object, Map<String, Object>> getBaseObject) {
         String fieldName = descriptor.getName();
         String typeName = descriptor.getType().getName();
         // String-constant-pool entries (jafar's Symbol/Class.name surface here) — flatten to VARCHAR.
@@ -1426,7 +1452,7 @@ public class BasicParallelImporter {
      */
     private List<Table.Column> createStackTraceColumns(
             MetadataField field,
-            Function<Map<String, Object>, Map<String, Object>> getBaseObject) {
+            Function<Object, Map<String, Object>> getBaseObject) {
         String fieldName = field.getName();
         List<Table.Column> cols = new ArrayList<>();
         // Ensure the Method table is created first by resolving frames[].method.
@@ -1434,7 +1460,7 @@ public class BasicParallelImporter {
         MetadataField methodField = getField(framesField, "method");
         getTableForMiscType(methodField);
 
-        BiConsumer<Function<Map<String, Object>, Map<String, Object>>, String> addFrameColumn =
+        BiConsumer<Function<Object, Map<String, Object>>, String> addFrameColumn =
                 (frameObtainer, name) -> {
                     cols.add(
                             new Table.Column(
@@ -1475,12 +1501,12 @@ public class BasicParallelImporter {
                 };
 
         addFrameColumn.accept(stackTrace -> {
-            Object[] arr = getFramesCached(stackTrace);
+            Object[] arr = getFramesCached((Map<String, Object>) stackTrace);
             return (arr != null && arr.length > 0) ? JafarValues.unwrapStruct(arr[0]) : null;
         }, "topMethod");
         addFrameColumn.accept(
                 stackTrace -> {
-                    Object[] arr = getFramesCached(stackTrace);
+                    Object[] arr = getFramesCached((Map<String, Object>) stackTrace);
                     if (arr == null) return null;
                     for (Object e : arr) {
                         Map<String, Object> f = JafarValues.unwrapStruct(e);
@@ -1499,7 +1525,7 @@ public class BasicParallelImporter {
                 "topApplicationMethod");
         addFrameColumn.accept(
                 stackTrace -> {
-                    Object[] arr = getFramesCached(stackTrace);
+                    Object[] arr = getFramesCached((Map<String, Object>) stackTrace);
                     if (arr == null) return null;
                     for (Object e : arr) {
                         Map<String, Object> f = JafarValues.unwrapStruct(e);
@@ -1581,7 +1607,7 @@ public class BasicParallelImporter {
      */
     private List<Table.Column> createStructColumns(
             MetadataField descriptor,
-            Function<Map<String, Object>, Map<String, Object>> getBaseObject) {
+            Function<Object, Map<String, Object>> getBaseObject) {
         List<MetadataField> structFields = descriptor.getType().getFields();
         boolean isObjectReference =
                 (structFields.size() > 1 && !structFields.stream().allMatch(this::isNumericField));
@@ -1650,7 +1676,7 @@ public class BasicParallelImporter {
                                 "javaName",
                                 "VARCHAR",
                                 (obj, app) -> {
-                                    String n = JafarValues.getString(obj, "name");
+                                    String n = JafarValues.getString((Map<String, Object>) obj, "name");
                                     app.append(decodeBytecodeClassName(n));
                                 },
                                 Appender::appendNull));
@@ -1661,7 +1687,7 @@ public class BasicParallelImporter {
                                 "javaName",
                                 "VARCHAR",
                                 (obj, app) -> {
-                                    Map<String, Object> type = JafarValues.getStruct(obj, "type");
+                                    Map<String, Object> type = JafarValues.getStruct((Map<String, Object>) obj, "type");
                                     if (type != null) {
                                         String n = JafarValues.getString(type, "name");
                                         app.append(
@@ -1855,5 +1881,16 @@ public class BasicParallelImporter {
         } catch (SQLException e) {
             throw new RuntimeSQLException("Failed to add views to database", e);
         }
+    }
+
+    /**
+     * Converts a {@link Duration} to seconds as a {@code double} without calling
+     * {@link Duration#toNanos()}, which throws {@link ArithmeticException} on overflow for very
+     * large/small durations (e.g. sentinel values like {@code Long.MAX_VALUE} nanoseconds).
+     * <p>Uses {@link Duration#getSeconds()} + {@link Duration#getNano()} decomposition.
+     */
+    static double durationToSeconds(Duration d) {
+        if (d == null) return 0.0;
+        return d.getSeconds() + d.getNano() / 1_000_000_000.0;
     }
 }
