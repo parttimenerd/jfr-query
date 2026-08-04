@@ -69,6 +69,12 @@ describe('executeTool — runQuery', () => {
         if (!result.ok) expect((result as any).error).toContain('$ai_providers');
     });
 
+    it('rejects SQL containing quoted "$ai_providers"', async () => {
+        const result = await executeTool('runQuery', { sql: 'SELECT * FROM "$ai_providers"' }, mockDeps());
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect((result as any).error).toContain('$ai_providers');
+    });
+
     it('uses the declared limit in the response', async () => {
         const deps = mockDeps({
             duckdbQuery: vi.fn(async (_sql: string, opts?: { limit?: number }) => ({

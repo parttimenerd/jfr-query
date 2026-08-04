@@ -65,7 +65,7 @@ export type ToolResult =
  * tool calls.
  */
 function isForbiddenSql(sql: string): boolean {
-    return /\$ai_providers\b/i.test(sql);
+    return /"?\$ai_providers"?\b/i.test(sql);
 }
 
 /**
