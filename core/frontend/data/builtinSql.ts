@@ -1872,9 +1872,18 @@ LIMIT 500`,
     // Top allocating classes from ObjectAllocationSample. weight is the
     // estimated bytes allocated for the sampled object population.
     requires: 'ObjectAllocationSample',
-    sql: `CREATE OR REPLACE VIEW "gc-allocation-by-class" AS
+    buildSql: (tables) => tables.has('Class') ? `CREATE OR REPLACE VIEW "gc-allocation-by-class" AS
 SELECT
-    o.objectClass AS "Class",
+    COALESCE(c.javaName, CAST(o.objectClass AS VARCHAR)) AS "Class",
+    COUNT(*) AS "Samples",
+    round(SUM(o.weight) / 1048576.0, 2) AS "Approx MB"
+FROM ObjectAllocationSample o
+LEFT JOIN Class c ON c._id = o.objectClass
+GROUP BY COALESCE(c.javaName, CAST(o.objectClass AS VARCHAR))
+ORDER BY SUM(o.weight) DESC
+LIMIT 30` : `CREATE OR REPLACE VIEW "gc-allocation-by-class" AS
+SELECT
+    CAST(o.objectClass AS VARCHAR) AS "Class",
     COUNT(*) AS "Samples",
     round(SUM(o.weight) / 1048576.0, 2) AS "Approx MB"
 FROM ObjectAllocationSample o
