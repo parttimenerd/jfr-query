@@ -293,6 +293,21 @@ describe('parseCellDirective', () => {
         expect(result).not.toBeNull();
         expect(result!.name).toBe('x');
     });
+
+    it('parses autorun=false to false', () => {
+        const result = parseCellDirective('<!-- @cell autorun="false" -->\n# H');
+        expect(result!.autorun).toBe(false);
+    });
+
+    it('parses autorun=true to true', () => {
+        const result = parseCellDirective('<!-- @cell autorun="true" -->\n# H');
+        expect(result!.autorun).toBe(true);
+    });
+
+    it('leaves autorun undefined when not present', () => {
+        const result = parseCellDirective('<!-- @cell name="x" -->\n# H');
+        expect(result!.autorun).toBeUndefined();
+    });
 });
 
 // ─── stripCellDirective ───────────────────────────────────────────────────────

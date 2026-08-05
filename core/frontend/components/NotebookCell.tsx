@@ -216,6 +216,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const segmentsRef = useRef(segments);
     segmentsRef.current = segments;
     const parsed = useMemo(() => parseCellContent(segments), [segments]);
+    const cellDirective = useMemo(() => parseCellDirective(cell.content), [cell.content]);
     const parsedTitleRef = useRef<string | undefined>(parsed.title);
     parsedTitleRef.current = parsed.title;
 
@@ -818,7 +819,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     useEffect(() => {
         const prevSqls = prevSqlBlocksRef.current;
         const prevVars = prevVariablesRef.current;
-        if (!isAutoRunEnabled || isConditionallyHidden !== false) {
+        if (!isAutoRunEnabled || isConditionallyHidden !== false || cellDirective?.autorun === false) {
             Object.values(runTimersRef.current).forEach(clearTimeout); runTimersRef.current = {}; setPendingRunStates({});
             prevSqlBlocksRef.current = parsedSqlBlocks;
             prevVariablesRef.current = allVariables;
@@ -892,7 +893,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             prevSqlBlocksRef.current = [];
             prevVariablesRef.current = {};
         };
-    }, [parsedSqlBlocks, allVariables, isAutoRunEnabled, isConditionallyHidden]);
+    }, [parsedSqlBlocks, allVariables, isAutoRunEnabled, isConditionallyHidden, cellDirective]);
 
     useEffect(() => () => { Object.values(runTimersRef.current).forEach(clearTimeout); }, []);
     useEffect(() => () => { if (copiedSqlTimerRef.current) clearTimeout(copiedSqlTimerRef.current); }, []);

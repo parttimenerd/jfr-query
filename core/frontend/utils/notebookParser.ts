@@ -729,6 +729,7 @@ export const parseCellContent = (segments: CellSegment[]): ParsedContent => {
 export interface ParsedCellDirective {
     name?: string;
     collapsed?: boolean;
+    autorun?: boolean;
     rest: Record<string, string>;
     /** Length of the matched directive line including the trailing newline. */
     matchLength: number;
@@ -746,6 +747,7 @@ export const parseCellDirective = (content: string): ParsedCellDirective | null 
     const rest: Record<string, string> = {};
     let name: string | undefined;
     let collapsed: boolean | undefined;
+    let autorun: boolean | undefined;
 
     // Tokenize key=value pairs. Values may be quoted ("..." or '...') or bare.
     const attrRe = /([A-Za-z_][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"']+))/g;
@@ -755,10 +757,11 @@ export const parseCellDirective = (content: string): ParsedCellDirective | null 
         const value = am[2] ?? am[3] ?? am[4] ?? '';
         if (key === 'name') name = value;
         else if (key === 'collapsed') collapsed = value === 'true';
+        else if (key === 'autorun') autorun = value !== 'false';
         else rest[key] = value;
     }
 
-    return { name, collapsed, rest, matchLength: m[0].length, raw };
+    return { name, collapsed, autorun, rest, matchLength: m[0].length, raw };
 };
 
 /**
