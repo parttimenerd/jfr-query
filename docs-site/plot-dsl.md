@@ -792,6 +792,10 @@ BAR_CHART(x: "cause", y: ["avg_ms"])
 - `BRUSH $var MODE X | Y | XY` — capture user brush selection into `$var`. `$var.brush.lo` / `$var.brush.hi` hold the range for X/Y; `$var.brush.x_lo` / `$var.brush.x_hi` / `$var.brush.y_lo` / `$var.brush.y_hi` for XY.
 - `BRUSH $rowVar $colVar` — two-variable form for CROSSTAB: writes the clicked row label to `$rowVar.selection` and the clicked column label to `$colVar.selection`.
 
+**Interaction gestures for `LINK_X` charts:** drag to pan · Shift+scroll to zoom in/out · Shift+drag to select a range. A **reset** button appears in the chart corner when zoomed in.
+
+**Interaction gestures for `BRUSH` charts:** drag across the chart to set the selection range. Drag with no movement to clear the selection.
+
 ### Axes
 
 - `AXIS_X DOMAIN [min, max]` — fixed X domain.

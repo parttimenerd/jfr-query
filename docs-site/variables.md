@@ -114,8 +114,8 @@ SELECT * FROM gc WHERE duration_ms > $limit ORDER BY duration_ms DESC
 
 Interactive plot clauses write to variables:
 
-- `BRUSH $var MODE X | Y | XY` — user drag on the plot updates `$var`.
-- `LINK_X($start, $end, [master], [clamp])` — zoom/pan updates `$start` and `$end`.
+- `BRUSH $var MODE X | Y | XY` — drag across the chart to set `$var.brush.lo` / `$var.brush.hi`. Drag with no movement to clear the selection.
+- `LINK_X($start, $end, [master], [clamp])` — writes the current zoom domain to `$start` and `$end` on pointer-up. Gestures: **drag** to pan, **Shift+scroll** to zoom, **Shift+drag** to select a range. A **reset** button appears when zoomed in.
 - `LINK_Y($var)` — Y axis zoom updates `$var`.
 - `ON HOVER TOOLTIP "..."` — customises the tooltip display string using `{col}` placeholders; does not write to variables.
 

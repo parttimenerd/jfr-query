@@ -2232,6 +2232,41 @@ None new.
 
 ---
 
+## Session 21 — 2026-08-06
+
+**Scope:** Full QA pass — unit tests, demo notebook, Heap Allocation template, Container & Cloud template, GC Pause Analysis template, all interactive features (variables panel, LINK_X zoom, command palette, SQL autocomplete, schema explorer, Run All, help modal), console errors, UI polish, BUGS.md/docs-site audit.
+
+### Fixes applied
+
+- **docs-site/plot-dsl.md** — added user interaction gestures note after LINK_X/BRUSH clause descriptions (drag=pan, Shift+scroll=zoom, Shift+drag=select for LINK_X; drag to select, drag-no-movement to clear for BRUSH).
+- **docs-site/variables.md** — expanded Live Coupling section with concrete gesture descriptions for BRUSH and LINK_X.
+
+### Test results
+
+- **Unit tests:** 256/257 passed (1 pre-existing skip, 0 failures)
+- **Demo notebook (fresh localStorage):** ✅ PASS — 0 DOM errors
+- **Heap Allocation template:** ✅ PASS — 0 DOM errors
+- **Container & Cloud template:** ✅ PASS — 0 DOM errors (all cells hidden; requires container events not in demo data)
+- **GC Pause Analysis template:** ✅ PASS — 0 DOM errors; 13 recharts rendered
+- **Variables panel:** `$session_start`/`$session_end` visible and editable ✅
+- **LINK_X zoom:** 3× Shift+scroll on GC Pause Analysis chart; "reset" button appeared; zoom confirmed ✅
+- **Command palette (⇧⇧):** opened with search input placeholder "Search commands, cells, tables, columns…" ✅
+- **SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`):** `GarbageCollection · table · 20 rows` popup appeared in preview pane ✅
+- **Schema explorer click:** clicking GarbageCollection updated preview table with gcId/name/startTime columns ✅
+- **Run All:** executed, 0 DOM errors, 0 spinners stuck ✅
+- **Help modal:** `Keyboard Shortcuts & Tips` modal opened with shortcuts ✅
+- **Console errors:** 0 JS errors (181 total messages, all warnings)
+- **DOM error scan:** 0 Catalog Error / Parser Error / Binder Error / Invalid plot
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
 ## Session 17 — 2026-08-05
 
 **Scope:** Full QA pass — unit tests, demo notebook, Recording Overview template, I/O & Latency template, interactive features, console check, UI polish, BUGS.md/docs-site audit.
