@@ -1788,3 +1788,53 @@ None. All features working correctly.
 - **B-205** (LATERAL join scope in completions): still open, complex, low user impact.
 - **BRUSH demo notebook**: no built-in template demonstrates BRUSH end-to-end.
 - **BIG_NUMBER not showcased**: implemented and unit-tested but no built-in template uses it directly.
+
+---
+
+## QA pass — 2026-08-05 (session 6)
+
+**Scope:** Full QA sweep — unit tests, all 12 templates, demo notebook interactive features.
+
+**Test environment:** WASM mode, demo `.jfr` file, Chrome via Playwright MCP, `localhost:3001`.
+
+### Unit tests
+**6203 passed, 7 skipped, 0 failed** — all green.
+
+### Templates (all 12 — zero DOM errors)
+
+| Template | SVGs | Tables | Result |
+|---|---|---|---|
+| Recording Overview | 359 | 2 | ✅ PASS |
+| GC Deep Dive | 518 | 1 | ✅ PASS |
+| Container & Cloud | 225 | 1 | ✅ PASS |
+| CPU Profiling | 204 | 1 | ✅ PASS |
+| Exceptions & Errors | 162 | 1 | ✅ PASS |
+| GC Pause Analysis | 919 | 2 | ✅ PASS |
+| Heap Allocation | 162 | 1 | ✅ PASS |
+| I/O & Latency | 246 | 1 | ✅ PASS |
+| JVM Internals | 265 | 1 | ✅ PASS |
+| Memory Leak Detection | 183 | 1 | ✅ PASS |
+| Threading & Contention | 273 | 1 | ✅ PASS |
+| Comprehensive Feature Test | 304 | 1 | ✅ PASS |
+
+### Demo notebook interactive features
+
+- **DOM error scan** ✅ — 0 errors
+- **Collapse All** ✅ — 0 recharts surfaces after collapse
+- **Expand All** ✅ — 5 charts restored
+- **Run All** ✅ — all cells ran, 0 errors
+- **Schema Explorer** ✅ — GarbageCollection click shows 2 tables in preview
+- **Command Palette** ✅ — ⌘K opens, Escape closes
+- **Help modal** ✅ — opens with keyboard shortcut list
+- **Chart tooltip** ✅ — tooltip element present on hover
+
+### Console errors
+Only the 2 expected ONNX runtime CPU-node-assignment warnings (non-actionable). Zero JS errors.
+
+### Bugs found
+None. No regressions from prior sessions.
+
+### Deferred (carry-forward)
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **BRUSH demo notebook**: no built-in template exercises BRUSH interactively.
+- **BIG_NUMBER not showcased**: implemented and unit-tested, no template uses it.
