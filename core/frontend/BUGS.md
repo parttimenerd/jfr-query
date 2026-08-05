@@ -1838,3 +1838,38 @@ None. No regressions from prior sessions.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
 - **BRUSH demo notebook**: no built-in template exercises BRUSH interactively.
 - **BIG_NUMBER not showcased**: implemented and unit-tested, no template uses it.
+
+---
+
+## QA pass — 2026-08-05 (session 7)
+
+**Scope:** Unit tests, GC Pause Analysis + Comprehensive Feature Test templates, UI polish (Recharts width(-1) warnings), docs audit.
+
+**Test environment:** WASM mode, demo `.jfr` file, Chrome via Playwright MCP, `localhost:3001`.
+
+### Unit tests
+**6203 passed, 7 skipped, 0 failed** — all green.
+
+### Templates tested
+
+| Template | Result |
+|---|---|
+| GC Pause Analysis | ✅ PASS (0 DOM errors) |
+| Comprehensive Feature Test | ✅ PASS (0 DOM errors) |
+
+### Bugs fixed
+
+- **ViolinPlot outer wrapper `h-full` collapses to zero** — `ViolinPlot.tsx:108` outer div used `h-full` which inherited zero height when the parent flex layout had no explicit height, triggering Recharts `width(-1) height(-1)` warnings. Changed to `style={{ minHeight: 200 }}` to match all other plot components. ✅ FIXED (commit `8e6c632`)
+
+### Docs audit
+`docs-site/*.md` checked against current code — all plot types (RANGE, GANTT, TREEMAP, WATERFALL, VIOLIN_PLOT, SUNBURST, SANKEY, BIG_NUMBER), all tail clauses (BRUSH, LINK_X, LINK_Y, PALETTE, LEGEND, TOOLTIP COLUMNS), and the variables doc — all accurate.
+
+### Console warnings (remaining)
+- 2 ONNX runtime warnings — not actionable
+- 2 "conditional view failed" (DuckDB column-name variant detection) — not actionable
+- ~10 transient Recharts `width(-1) height(-1)` warnings — these fire at initial browser-layout before `ResizablePlotContainer` (320px default) paints. They self-correct and do not affect rendered output. Investigation confirmed: all plot outer wrappers now have `minHeight: 200`; the warnings originate from the timing window between React mounting and browser layout completing for new cells.
+
+### Deferred (carry-forward)
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **BRUSH demo notebook**: no built-in template exercises BRUSH interactively.
+- **BIG_NUMBER not showcased**: implemented and unit-tested, no template uses it.
