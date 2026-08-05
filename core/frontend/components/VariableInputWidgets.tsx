@@ -1,7 +1,7 @@
 import React from 'react';
 
 export interface VariableInputWidgetProps {
-    inputType: 'slider' | 'dropdown' | 'datetime';
+    inputType: 'slider' | 'dropdown' | 'datetime' | 'text' | 'button';
     varName: string;
     currentValue: string;
     attrs: Record<string, string>;
@@ -65,6 +65,43 @@ export const VariableInputWidget: React.FC<VariableInputWidgetProps> = ({
                     onChange={e => onChange(varName, e.target.value)}
                     className="bg-gray-800 border border-gray-600 text-gray-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-cyan-500"
                 />
+            </div>
+        );
+    }
+
+    if (inputType === 'text') {
+        return (
+            <div className="flex items-center gap-3 py-2">
+                <span className="text-xs text-gray-400 min-w-[80px]">{label}</span>
+                <input
+                    type="text"
+                    value={currentValue}
+                    placeholder={attrs.placeholder ?? ''}
+                    onChange={e => onChange(varName, e.target.value)}
+                    className="flex-1 bg-gray-800 border border-gray-600 text-gray-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-cyan-500"
+                />
+            </div>
+        );
+    }
+
+    if (inputType === 'button') {
+        const options = (attrs.options ?? '').split(',').map(s => s.trim()).filter(Boolean);
+        return (
+            <div className="flex items-center gap-3 py-2 flex-wrap">
+                <span className="text-xs text-gray-400 min-w-[80px]">{label}</span>
+                <div className="flex gap-1 flex-wrap">
+                    {options.map(opt => (
+                        <button
+                            key={opt}
+                            onClick={() => onChange(varName, opt)}
+                            className={`text-xs px-2 py-1 rounded border transition-colors ${
+                                currentValue === opt
+                                    ? 'bg-cyan-600 border-cyan-500 text-white'
+                                    : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'
+                            }`}
+                        >{opt}</button>
+                    ))}
+                </div>
             </div>
         );
     }

@@ -566,6 +566,56 @@ const PlotHelpModal: React.FC<PlotHelpModalProps> = ({ isOpen, onClose, onInsert
                             </div>
                         );
                     })}
+
+                    {/* ── Interactive Cells ──────────────────────────────────────── */}
+                    <div className="mt-8 border border-gray-700 rounded-lg overflow-hidden">
+                        <h3 className="px-4 py-2 font-semibold text-lg text-gray-200 bg-gray-900/50 border-b border-gray-700">Interactive Cells</h3>
+                        <div className="p-4 space-y-5 text-sm text-gray-300">
+                            <p className="text-gray-400">
+                                Add an <code className="bg-gray-700 text-cyan-300 px-1 rounded">input="TYPE"</code> attribute to any <code className="bg-gray-700 text-cyan-300 px-1 rounded">@cell</code> directive to render an interactive control that writes to a notebook variable. Changes immediately re-run dependent cells.
+                            </p>
+                            <div className="space-y-4">
+                                {([
+                                    {
+                                        type: 'slider',
+                                        example: '<!-- @cell name=threshold input="slider" var="$$threshold_ms" min="0" max="500" step="10" default="50" label="Pause threshold (ms)" -->',
+                                        desc: 'Numeric range slider. Attributes: min, max, step, default, label.',
+                                    },
+                                    {
+                                        type: 'dropdown',
+                                        example: '<!-- @cell name=limit input="dropdown" var="$$limit" options="10,20,50,100" default="20" label="Row limit" -->',
+                                        desc: 'Select box with preset options. Attributes: options (comma-separated), default, label.',
+                                    },
+                                    {
+                                        type: 'button',
+                                        example: '<!-- @cell name=granularity input="button" var="$$bucket_ms" options="1000,5000,10000,30000" default="5000" label="Bucket (ms)" -->',
+                                        desc: 'Row of buttons — clicking one sets the variable to that value. Active button is highlighted. Attributes: options, default, label.',
+                                    },
+                                    {
+                                        type: 'text',
+                                        example: '<!-- @cell name=filter input="text" var="$$class_filter" default="%" label="Class filter" placeholder="e.g. java.util.*" -->',
+                                        desc: 'Free-text input box. Attributes: default, label, placeholder.',
+                                    },
+                                    {
+                                        type: 'datetime',
+                                        example: '<!-- @cell name=start input="datetime" var="$$start_time" label="From" -->',
+                                        desc: 'Date and time picker. Attributes: default (ISO-8601), label.',
+                                    },
+                                ] as const).map(({ type, example, desc }) => (
+                                    <div key={type} className="border border-gray-700/60 rounded p-3 bg-gray-900/30">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="font-mono text-xs text-cyan-300 bg-cyan-900/20 px-1.5 py-0.5 rounded">{type}</span>
+                                            <span className="text-xs text-gray-400">{desc}</span>
+                                        </div>
+                                        <pre className="text-xs font-mono text-gray-300 bg-gray-950/60 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all">{example}</pre>
+                                    </div>
+                                ))}
+                            </div>
+                            <p className="text-xs text-gray-500">
+                                Variables prefixed with <code className="text-cyan-300">$$</code> are notebook-level and shared across all cells. Single-dollar variables (<code className="text-cyan-300">$name</code>) are cell-local.
+                            </p>
+                        </div>
+                    </div>
                     </>}
                 </main>
             </div>

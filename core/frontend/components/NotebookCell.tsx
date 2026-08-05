@@ -1302,7 +1302,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
 
                 {(() => {
                     const d = parseCellDirective(cell.content);
-                    const inputType = d?.rest?.input as 'slider' | 'dropdown' | 'datetime' | undefined;
+                    const inputType = d?.rest?.input as 'slider' | 'dropdown' | 'datetime' | 'text' | 'button' | undefined;
                     const varName = d?.rest?.var as string | undefined;
                     if (!inputType || !varName) return null;
                     const currentVal = (allVariables[varName] ?? d?.rest?.default ?? '') as string;
@@ -1312,7 +1312,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                             varName={varName}
                             currentValue={currentVal}
                             attrs={d?.rest as Record<string, string>}
-                            onChange={(vn, val) => handleCellVariableChange({ ...parsed.variables, [vn]: val })}
+                            onChange={(vn, val) => {
+                                if (vn.startsWith('$$')) {
+                                    void onMetadataChange({ ...metadata, variables: { ...(metadata.variables ?? {}), [vn]: val } });
+                                } else {
+                                    handleCellVariableChange({ ...parsed.variables, [vn]: val });
+                                }
+                            }}
                         />
                     );
                 })()}
