@@ -1,5 +1,5 @@
 import React, { useContext } from 'react';
-import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from 'recharts';
+import { ComposedChart, ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList, Line } from 'recharts';
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
@@ -8,6 +8,7 @@ import { buildParserSpec, findColumn, isDurationColumnName, formatDurationNs, sa
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 import { formatTimestamp } from '../../utils/timeFormatter';
+import { regressionLinear } from 'd3-regression';
 import { PlotTooltip } from './PlotTooltip';
 
 interface ScatterPlotConfig {
@@ -17,6 +18,7 @@ interface ScatterPlotConfig {
   color?: string;
   category?: string;
   label?: string;
+  trendline?: boolean;
 }
 
 const params: PlotParameter[] = [
@@ -26,6 +28,7 @@ const params: PlotParameter[] = [
     { name: 'color', type: 'column', description: 'Column whose distinct values determine point color (one series per value).' },
     { name: 'category', type: 'column', aliasFor: 'color', deprecated: true, description: 'Deprecated alias for "color".' },
     { name: 'label', type: 'column', description: 'Optional column whose values are shown as text labels next to each point.' },
+    { name: 'trendline', type: 'boolean', defaultValue: false, description: 'If true, adds a linear regression trendline over the scatter points.' },
 ];
 
 const parseConfig = createConfigParser<ScatterPlotConfig>(buildParserSpec(params));
@@ -88,12 +91,33 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
   const xDomain = xDomainFromClause || domainX || (isTimeX ? ['dataMin', 'dataMax'] : undefined);
   const xLabelFormatter = isTimeX ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined;
 
+  const trendlineData = React.useMemo(() => {
+    if (!config.trendline || transformedData.length < 2) return null;
+    let resolvedX: string;
+    let resolvedY: string;
+    try { resolvedX = findColumn(config.x, Object.keys(transformedData[0])); } catch { resolvedX = config.x; }
+    try { resolvedY = findColumn(config.y, Object.keys(transformedData[0])); } catch { resolvedY = config.y; }
+    const pairs = transformedData
+      .map(d => [d[resolvedX], d[resolvedY]] as [number, number])
+      .filter(([x, y]) => typeof x === 'number' && typeof y === 'number' && isFinite(x) && isFinite(y));
+    if (pairs.length < 2) return null;
+    const regressor = regressionLinear().x((d: [number, number]) => d[0]).y((d: [number, number]) => d[1]);
+    const result = regressor(pairs);
+    const xs = pairs.map(p => p[0]);
+    const xMin = Math.min(...xs);
+    const xMax = Math.max(...xs);
+    return [
+      { [resolvedX]: xMin, __trend__: result.predict(xMin) },
+      { [resolvedX]: xMax, __trend__: result.predict(xMax) },
+    ];
+  }, [config.trendline, config.x, config.y, transformedData]);
+
   if (!data || data.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">No data.</div>;
 
   return (
     <div style={{ width: '100%', minHeight: 200 }}>
       <ResponsiveContainer width="100%" minHeight={200}>
-        <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+        <ComposedChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
           <XAxis allowDataOverflow type="number" dataKey={config.x} name={config.x} tickFormatter={xTickFormatter} scale={mapAxisScale(clauses?.axisX)} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={xDomain} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined} />
           <YAxis type="number" dataKey={config.y} name={config.y} tickFormatter={makeTickFormatter(clauses?.axisY) ?? yFormatter} scale={mapAxisScale(clauses?.axisY)} stroke="#9ca3af" tick={{ fontSize: 12 }} domain={yDomainFromClause || domainY} allowDataOverflow label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined} />
@@ -105,7 +129,22 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
               {config.label && <LabelList dataKey={config.label} position="top" style={{ fontSize: 10, fill: '#9ca3af' }} />}
             </Scatter>
           ))}
-        </ScatterChart>
+          {trendlineData && (
+            <Line
+              data={trendlineData}
+              dataKey="__trend__"
+              type="linear"
+              dot={false}
+              activeDot={false}
+              stroke="#facc15"
+              strokeWidth={1.5}
+              strokeDasharray="5 3"
+              name="trendline"
+              legendType="none"
+              isAnimationActive={false}
+            />
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

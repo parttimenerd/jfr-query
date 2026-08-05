@@ -35,3 +35,30 @@ describe('ScatterPlot — label param', () => {
         }))).not.toThrow();
     });
 });
+
+describe('ScatterPlot — trendline param', () => {
+    it('parses trendline=true from config', async () => {
+        const { scatterPlot } = await import('../../components/plots/ScatterPlot');
+        const config = scatterPlot.parseConfig('SCATTER_PLOT(x:"x",y:"y",trendline:true)', data);
+        expect(config.trendline).toBe(true);
+    });
+
+    it('renders without error when trendline=true', async () => {
+        const { scatterPlot } = await import('../../components/plots/ScatterPlot');
+        const config = scatterPlot.parseConfig('SCATTER_PLOT(x:"x",y:"y",trendline:true)', data);
+        expect(() => render(React.createElement(scatterPlot.component as any, {
+            config, data,
+            clauses: { mainConfig: 'SCATTER_PLOT(x:"x",y:"y",trendline:true)' } as ParsedPlotCall,
+        }))).not.toThrow();
+    });
+
+    it('renders without error when trendline=false (default)', async () => {
+        const { scatterPlot } = await import('../../components/plots/ScatterPlot');
+        const config = scatterPlot.parseConfig('SCATTER_PLOT(x:"x",y:"y")', data);
+        expect(config.trendline).toBeFalsy();
+        expect(() => render(React.createElement(scatterPlot.component as any, {
+            config, data,
+            clauses: { mainConfig: 'SCATTER_PLOT(x:"x",y:"y")' } as ParsedPlotCall,
+        }))).not.toThrow();
+    });
+});
