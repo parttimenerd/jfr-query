@@ -17,6 +17,7 @@ import { violinPlot } from './ViolinPlot';
 import { sunburstPlot } from './SunburstPlot';
 import { sankeyPlot } from './SankeyPlot';
 import { crosstabPlot } from './CrosstabPlot';
+import { bigNumberPlot } from './BigNumberPlot';
 
 export const plotRegistry: Record<string, PlotRegistration<any>> = {
   [tablePlot.name]: tablePlot,
@@ -41,4 +42,5 @@ export const plotRegistry: Record<string, PlotRegistration<any>> = {
   [sunburstPlot.name]: sunburstPlot,
   [sankeyPlot.name]: sankeyPlot,
   [crosstabPlot.name]: crosstabPlot,
+  [bigNumberPlot.name]: bigNumberPlot,
 };
