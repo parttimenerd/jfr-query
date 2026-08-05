@@ -98,18 +98,7 @@ const HeatmapComponent: React.FC<{ config: HeatmapConfig; data: any[]; isAnimati
           />
           <Tooltip
             cursor={{ strokeDasharray: '3 3' }}
-            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
-            itemStyle={{ color: '#e5e7eb' }}
-            content={
-              (clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0))
-                ? (props: any) => <PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />
-                : undefined
-            }
-            formatter={(value, name, props) => [props?.payload?.[valueCol] ?? value, valueCol]}
-            labelFormatter={(label, payload) => {
-                if(payload && payload[0]?.payload) return `${x}: ${payload[0].payload[x]}, ${y}: ${payload[0].payload[y]}`;
-                return '';
-            }}
+            content={(props: any) => <PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns?.length ? clauses.tooltipColumns : undefined} />}
             allowEscapeViewBox={{ x: true, y: true }}
             isAnimationActive={isAnimationActive}
             animationDuration={animationDuration}

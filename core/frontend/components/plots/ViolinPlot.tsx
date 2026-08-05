@@ -8,6 +8,7 @@ import { SettingsContext } from '../../context/SettingsContext';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
+import { PlotTooltip } from './PlotTooltip';
 
 const DEFAULT_COLORS = ['#60a5fa', '#34d399', '#f59e0b', '#f87171', '#a78bfa', '#fb923c'];
 
@@ -129,9 +130,14 @@ const ViolinComponent: React.FC<{
                                 <YAxis type="number" dataKey="x" domain={['dataMin', 'dataMax']}
                                     width={40} tick={{ fontSize: 10, fill: '#9ca3af' }} />
                                 <Tooltip
-                                    formatter={(val: number) => Math.abs(val).toFixed(3)}
-                                    labelFormatter={(l: number) => `value: ${Number(l).toFixed(2)}`}
-                                    contentStyle={{ background: '#1f2937', border: 'none', fontSize: 11 }}
+                                    content={(props: any) => <PlotTooltip
+                                        {...props}
+                                        entryFormatter={(val, name) => {
+                                            const abs = Math.abs(Number(val));
+                                            return [abs.toFixed(3), name === 'pos' || name === 'neg' ? 'density' : name];
+                                        }}
+                                        labelFormatter={(l: any) => `value: ${Number(l).toFixed(2)}`}
+                                    />}
                                 />
                                 <Area type="monotone" dataKey="pos"
                                     fill={color} stroke={color} fillOpacity={0.6}

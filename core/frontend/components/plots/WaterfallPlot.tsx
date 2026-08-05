@@ -5,6 +5,7 @@ import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 import { SettingsContext } from '../../context/SettingsContext';
+import { PlotTooltip } from './PlotTooltip';
 
 interface WaterfallConfig {
     category: string;
@@ -119,10 +120,16 @@ const WaterfallComponent: React.FC<{
                     <XAxis dataKey="name" />
                     <YAxis />
                     <Tooltip
-                        formatter={(value: any, name: string, entry: any) => {
-                            if (name === 'base') return null;
-                            return [entry?.payload?.rawDelta, entry?.payload?.name];
-                        }}
+                        content={(props: any) => <PlotTooltip
+                            {...props}
+                            onHoverTooltip={clauses?.onHoverTooltip}
+                            tooltipColumns={clauses?.tooltipColumns?.length ? clauses.tooltipColumns : undefined}
+                            entryFormatter={(value, name, entry) => {
+                                if (name === 'base') return null;
+                                const raw = (entry as any)?.payload;
+                                return [String(raw?.rawDelta ?? value), raw?.name ?? name];
+                            }}
+                        />}
                         filterNull
                     />
                     {/* Invisible base bar — transparent spacer */}

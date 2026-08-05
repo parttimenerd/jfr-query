@@ -3,6 +3,7 @@ import { SunburstChart, Tooltip } from 'recharts';
 import type { SunburstData } from 'recharts/types/chart/SunburstChart';
 import type { PlotRegistration, PlotParameter } from './plotTypes';
 import { withCommonParams } from './plotTypes';
+import { PlotTooltip } from './PlotTooltip';
 import { SettingsContext } from '../../context/SettingsContext';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, getPaletteColors } from '../../utils/plotUtils';
@@ -168,8 +169,7 @@ const SunburstComponent: React.FC<{
                     onClick={navigate}
                 >
                     <Tooltip
-                        formatter={(v: number) => v.toLocaleString()}
-                        contentStyle={{ background: '#1f2937', border: 'none', fontSize: 11 }}
+                        content={(props: any) => <PlotTooltip {...props} entryFormatter={(v) => [Number(v).toLocaleString(), 'value']} />}
                     />
                 </SunburstChart>
             </div>

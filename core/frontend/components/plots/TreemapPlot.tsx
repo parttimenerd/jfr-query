@@ -3,6 +3,7 @@ import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { createConfigParser } from '../../utils/plotConfigParser';
+import { PlotTooltip } from './PlotTooltip';
 import { buildParserSpec, findColumn, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
 
@@ -123,7 +124,7 @@ const TreemapComponent: React.FC<{
                         />
                     )}
                 >
-                    <Tooltip formatter={(v: any, name: any) => [v, name]} />
+                    <Tooltip content={(props: any) => <PlotTooltip {...props} />} />
                 </Treemap>
             </ResponsiveContainer>
         </div>

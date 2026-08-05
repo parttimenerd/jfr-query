@@ -1,8 +1,6 @@
-import React, { useContext, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
-import { SettingsContext } from '../../context/SettingsContext';
-import { formatNumber } from '../../utils/numberFormatter';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, findColumn, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
@@ -37,7 +35,6 @@ const params: PlotParameter[] = [
 const parseConfig = createConfigParser<PieChartConfig>(buildParserSpec(params));
 
 const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; clauses?: ParsedPlotCall; }> = ({ config, data, isAnimationActive, animationDuration, clauses }) => {
-  const { settings } = useContext(SettingsContext);
   const colors = getPaletteColors(clauses?.palette, COLORS);
   const legendPos = clauses?.legend;
   const showLegend = legendPos !== 'none';
@@ -94,16 +91,7 @@ const PieChartComponent: React.FC<{ config: PieChartConfig; data: any[]; isAnima
           >
             {chartData.map((_, index) => <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />)}
           </Pie>
-          <Tooltip
-            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
-            itemStyle={{ color: '#e5e7eb' }}
-            formatter={(value: number) => formatNumber(value, settings.decimalPlaces)}
-            content={
-              (clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0))
-                ? (props: any) => <PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />
-                : undefined
-            }
-          />
+          <Tooltip content={(props: any) => <PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns?.length ? clauses.tooltipColumns : undefined} />}/>
           {showLegend && <Legend wrapperStyle={{fontSize: "12px"}} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'}/>}
         </PieChart>
       </ResponsiveContainer>

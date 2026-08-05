@@ -3,6 +3,7 @@ import { Sankey, Tooltip, Layer, Rectangle } from 'recharts';
 import type { PlotRegistration, PlotParameter } from './plotTypes';
 import { withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
+import { PlotTooltip } from './PlotTooltip';
 import { createConfigParser } from '../../utils/plotConfigParser';
 import { buildParserSpec, getPaletteColors } from '../../utils/plotUtils';
 import type { ParsedPlotCall } from '../../utils/plotParser';
@@ -207,8 +208,7 @@ const SankeyComponent: React.FC<{
                     onClick={handleNodeClick as any}
                 >
                     <Tooltip
-                        formatter={(v: number) => v.toLocaleString()}
-                        contentStyle={{ background: '#1f2937', border: 'none', fontSize: 11 }}
+                        content={(props: any) => <PlotTooltip {...props} entryFormatter={(v) => [Number(v).toLocaleString(), 'flow']} />}
                     />
                 </Sankey>
             </div>
