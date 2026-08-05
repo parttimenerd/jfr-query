@@ -2134,3 +2134,29 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 17 — 2026-08-05
+
+**Scope:** Full QA pass — unit tests, demo notebook, Recording Overview template, I/O & Latency template, interactive features, console check, UI polish, BUGS.md/docs-site audit.
+
+### Fixes applied
+
+1. **`variables.md` stale `ON HOVER TOOLTIP` claim** — line 120 incorrectly stated the clause "hover writes to variables referenced in the format string." Fixed to: "customises the tooltip display string using `{col}` placeholders; does not write to variables."
+
+### Test results
+
+- **Unit tests:** all passed
+- **Demo notebook:** loaded and ran without errors; DOM scan 0 errors
+- **Recording Overview template:** ✅ PASS — 0 DOM errors
+- **I/O & Latency template:** ✅ PASS — 0 DOM errors
+- **Interactive features:** variables ✅, BRUSH ✅, LINK_X zoom ✅, command palette ✅, SQL autocomplete ✅, schema explorer ✅, Run All ✅, help modal ✅
+- **Console:** 2 expected ONNX warnings, 0 JS errors
+- **UI polish:** 0 zero-height wrappers, 0 stuck spinners, 0 stray overlays
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-205** (LATERAL join scope in completions): still open, deferred.

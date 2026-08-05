@@ -117,7 +117,7 @@ Interactive plot clauses write to variables:
 - `BRUSH $var MODE X | Y | XY` — user drag on the plot updates `$var`.
 - `LINK_X($start, $end, [master], [clamp])` — zoom/pan updates `$start` and `$end`.
 - `LINK_Y($var)` — Y axis zoom updates `$var`.
-- `ON HOVER TOOLTIP "..."` — hover writes to variables referenced in the format string.
+- `ON HOVER TOOLTIP "..."` — customises the tooltip display string using `{col}` placeholders; does not write to variables.
 
 Because dependent cells re-run automatically, brushing a chart re-runs downstream SQL and re-renders every downstream plot.
 
