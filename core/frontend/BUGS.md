@@ -2137,6 +2137,38 @@ None new.
 
 ---
 
+## Session 18 — 2026-08-06
+
+**Scope:** Full QA pass — unit tests, demo notebook, CPU Profiling template, Comprehensive Feature Test template, interactive features, console check, UI polish, BUGS.md/docs-site audit.
+
+### Fixes applied
+
+None.
+
+### Test results
+
+- **Unit tests:** 6210 passed, 0 failed
+- **Demo notebook:** 0 DOM errors
+- **CPU Profiling template:** ✅ PASS — 0 DOM errors
+- **Comprehensive Feature Test template:** ✅ PASS — 0 DOM errors
+- **Variables panel:** `$limit = 50` ✅
+- **Command palette (⌘K):** opened with correct placeholder ✅
+- **SQL autocomplete:** `GarbageCollection · table · 20 rows` ✅
+- **Schema explorer:** click updated preview pane ✅
+- **Run All:** executed, 0 DOM errors ✅
+- **Help modal:** `Keyboard Shortcuts & Tips` content visible ✅
+- **LINK_X zoom:** Alt+scroll on chart performed ✅
+- **Console:** 2 expected ONNX warnings, 0 JS errors
+- **UI polish:** 0 zero-height wrappers, 0 stuck spinners, 0 stray overlays
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+
+
 ## Session 17 — 2026-08-05
 
 **Scope:** Full QA pass — unit tests, demo notebook, Recording Overview template, I/O & Latency template, interactive features, console check, UI polish, BUGS.md/docs-site audit.
