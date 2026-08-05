@@ -53,13 +53,13 @@
 
 ---
 
-### 🔴 [H-004] Loading medium.jfr a second time (without page reload) crashes the browser
+### ✅ [H-004] Loading medium.jfr a second time (without page reload) crashes the browser
 
 **Where:** File import pipeline / DuckDB-WASM instance
 **Repro:** Load medium.jfr successfully. Wait for notebook. Drop medium.jfr again via file input.
-**Observed:** Browser tab crashes immediately on the second load attempt. The crash is reproducible.
-**Expected:** Second load should replace the schema (or show a warning), not crash.
-**Notes:** The demo → medium.jfr sequence also crashes, confirming this is a general "re-import while already loaded" crash, not specific to the same file.
+**Observed:** Browser tab crashed immediately on the second load attempt.
+**Root cause:** `resetWasmDatabase` dropped tables/views but kept ~600 MB of WASM linear memory allocated. A second large JFR file on top exceeded the browser's memory limit.
+**Fix:** On re-import, the old DuckDB connection and instance are fully terminated (`db.terminate()`) before creating a fresh WASM instance. This frees the entire WASM heap prior to the new import. Applied to both `loadFile` and `loadDemo` paths in `DuckDBContext.tsx`.
 
 ---
 
