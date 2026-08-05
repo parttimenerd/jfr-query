@@ -133,8 +133,9 @@ const ViolinComponent: React.FC<{
                                     content={(props: any) => <PlotTooltip
                                         {...props}
                                         entryFormatter={(val, name) => {
+                                            if (name === 'neg') return null; // hide mirrored duplicate
                                             const abs = Math.abs(Number(val));
-                                            return [abs.toFixed(3), name === 'pos' || name === 'neg' ? 'density' : name];
+                                            return [abs.toFixed(3), 'density'];
                                         }}
                                         labelFormatter={(l: any) => `value: ${Number(l).toFixed(2)}`}
                                     />}
