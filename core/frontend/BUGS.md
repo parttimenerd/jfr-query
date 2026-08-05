@@ -2157,6 +2157,3 @@ None new.
 
 ### Bugs found
 None new.
-
-### Deferred (carry-forward)
-- **B-205** (LATERAL join scope in completions): still open, deferred.
