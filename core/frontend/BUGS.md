@@ -1,6 +1,6 @@
 # jfr-query bugs and UX issues
 
-Last triaged: 2026-06-29
+Last triaged: 2026-08-05
 Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, PlotConfigEditor.tsx, PlotRenderer.tsx, Sidebar.tsx, SettingsModal.tsx, SettingsPanel.tsx, ChatPanel.tsx, notebookParser.ts, variableSubstitution.ts, useHistoryState.ts) plus a live Playwright probe against http://localhost:3003 with `default.jfr`. Extended: plot autocomplete pipeline (parser.ts, ast.ts, lint.ts, aiPlotSource.ts, aiPlotContext.ts, schemaProvider.tsx, annotators/), AI chat integration (tools/runtime.ts, visibility.ts, BrowserModelProvider.ts, AiService.ts), local ML models (heuristicPlot.ts, classifyColumns.ts, PlotGenerationService.ts), date selectors (FilterModal.tsx, RangeSlider.tsx), SQL autocomplete (dispatcher.ts, providers/). B-194–B-200: deep audit of DuckDBContext, AiService tool loop, RangeSlider, PlotRenderer brush subscriptions, and InlineChat/ChatPanel cancellation.
 
 ## Severity legend
@@ -1726,3 +1726,40 @@ None. The vitest pool fix was the only issue, and it's now committed.
 - **B-205** (LATERAL join inner-subquery scope not tracked in completions): still open, complex, low user impact.
 - **BRUSH demo notebook**: no built-in template demonstrates BRUSH end-to-end; unit-tested only.
 - **BIG_NUMBER not showcased**: implemented and unit-tested but no built-in template uses it directly.
+
+## QA pass — 2026-08-05 (session 3)
+
+### Unit tests
+All 6203 tests passed, 7 skipped — no regressions. `pool: 'forks'` fix from prior session still in effect.
+
+### Templates tested (automated via in-browser JS runner)
+All 12 built-in templates loaded with the demo JFR dataset, ran all queries, and were checked for error strings. **12/12 PASS, 0 errors.**
+
+| Template | Status | Charts | Tables |
+|---|---|---|---|
+| Recording Overview | PASS | 359 SVGs | 2 |
+| GC Deep Dive | PASS | 518 SVGs | 1 |
+| Container & Cloud | PASS | 225 SVGs | 1 |
+| CPU Profiling | PASS | 204 SVGs | 1 |
+| Exceptions & Errors | PASS | 162 SVGs | 1 |
+| GC Pause Analysis | PASS | 919 SVGs | 2 |
+| Heap Allocation | PASS | 162 SVGs | 1 |
+| I/O & Latency | PASS | 246 SVGs | 1 |
+| JVM Internals | PASS | 265 SVGs | 1 |
+| Memory Leak Detection | PASS | 188 SVGs | 1 |
+| Threading & Contention | PASS | 273 SVGs | 1 |
+| Comprehensive Feature Test | PASS | 335 SVGs | 5 |
+
+### Interactive features
+- **Run All**: ✅ triggered successfully from toolbar
+- **Collapse All / Expand All**: ✅ charts hidden after collapse (0 recharts-surface SVGs visible), restored after expand
+- **Schema Explorer**: ✅ GarbageCollection table visible, refresh schema works
+- **Command Palette**: ✅ opens, shows fuzzy search, 28 items visible, Escape closes
+- **Variable chip editing**: ✅ clicking `$session_start` chip opens datetime-local input pre-populated with current value
+- **No React error boundaries triggered**: ✅
+- **No "No data" placeholders**: ✅
+- **No "No matching y-axis columns" warnings**: ✅
+- **Console errors**: 0 errors, 32 warnings (all expected: ONNX/canvas/AI proxy)
+
+### Bugs found
+None. All features working correctly.
