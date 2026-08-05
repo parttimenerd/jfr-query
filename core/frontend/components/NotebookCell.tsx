@@ -49,6 +49,7 @@ import { DocumentFormattingIcon } from './icons/DocumentFormattingIcon';
 import { ClipboardIcon } from './icons/ClipboardIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import CollapsibleBlock from './CollapsibleBlock';
+import { VariableInputWidget } from './VariableInputWidgets';
 
 interface NotebookCellProps {
     cell: NotebookCellData;
@@ -1294,6 +1295,23 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     presenterMode={presenterMode}
                     allCells={allCells}
                 />
+
+                {(() => {
+                    const d = parseCellDirective(cell.content);
+                    const inputType = d?.rest?.input as 'slider' | 'dropdown' | 'datetime' | undefined;
+                    const varName = d?.rest?.var as string | undefined;
+                    if (!inputType || !varName) return null;
+                    const currentVal = (allVariables[varName] ?? d?.rest?.default ?? '') as string;
+                    return (
+                        <VariableInputWidget
+                            inputType={inputType}
+                            varName={varName}
+                            currentValue={currentVal}
+                            attrs={d?.rest as Record<string, string>}
+                            onChange={(vn, val) => handleCellVariableChange({ ...parsed.variables, [vn]: val })}
+                        />
+                    );
+                })()}
 
                 {!presenterMode && (Object.keys(parsed.variables||{}).length > 0 || (parsed.variableWarnings?.length ?? 0) > 0)
                     ? <CollapsibleBlock title={`Variables (${Object.keys(parsed.variables||{}).length})`} isCollapsed={isVariablesCollapsed} onToggle={()=>setIsVariablesCollapsed(!isVariablesCollapsed)} preview="" controls={<button onClick={handleAddVariable} className="flex items-center gap-1.5 text-xs px-2 py-1 bg-gray-700/80 rounded-md"><PlusIcon className="w-3 h-3"/> Add</button>}><div className="p-2"><div className="space-y-2">{Object.entries(parsed.variables||{}).map(([k,v])=><VariableEditor key={k} varKey={k} varValue={v} usedIn={variableUsage[k]} onChange={handleVariableChange} onDelete={handleDeleteVariable} inputRef={el => { variableInputRefs.current[k] = el; }}/>)}</div>{parsed.variableWarnings?.map((w,i)=><p key={i} className="text-xs text-yellow-400 mt-1 font-mono">{w}</p>)}</div></CollapsibleBlock>
