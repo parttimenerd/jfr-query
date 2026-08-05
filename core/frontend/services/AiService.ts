@@ -166,45 +166,147 @@ class AiService {
     }
 
     private generatePlottingDocsPrompt(): string {
-        let doc = 'PLOTTING DOCUMENTATION:\n\n';
-        doc += 'You can render plots using function-call syntax. You can arrange them in a grid.\n';
-        doc += '- Side-by-side: `PLOT_A(...); PLOT_B(...)` (use semicolon or single newline).\n';
-        doc += '- New row: `PLOT_A(...)` then an empty line, then `PLOT_B(...)`.\n\n';
-        doc += 'ADVANCED SYNTAX (appended to a plot call):\n';
-        doc += '- `... TITLE "My Title"`: Add a title above the plot.\n';
-        doc += '- `... ON query_ref`: Specify which query result to use. `query_ref` is a 1-based index (e.g., `ON 1`) or a query alias defined with `CREATE VIEW ...`.\n';
-        doc += '- `... ON q1, q2`: For supported plots, combine data from multiple queries.\n';
-        doc += '- `... WIDTH size`: Set width (e.g., `WIDTH 300px`, `WIDTH 50%`).\n';
-        doc += '- `... HEIGHT size`: Set height (e.g., `HEIGHT 300px`).\n';
-        doc += '- `... ZOOM factor`: Scale the plot visually (e.g., `ZOOM 0.9` for 90%).\n';
-        doc += '- `... ZOOM_X factor`: Scale only the horizontal axis (e.g., `ZOOM_X 1.5`).\n';
-        doc += '- `... LEGEND AT RIGHT|LEFT|TOP|BOTTOM|NONE`: Position the legend. Use `LEGEND HIDDEN` to suppress it.\n';
-        doc += '- `... PALETTE "palette_name"`: Set color palette. Named: category10, tableau10, pastel1, dark2, set2. Or hex list: `"#e41a1c,#377eb8"`.\n';
-        doc += '- `... AXIS_X TYPE time FORMAT "HH:mm" LABEL "label" DOMAIN [min,max]`: Configure X axis. TYPE: linear|log|time|band.\n';
-        doc += '- `... AXIS_Y TYPE log DOMAIN [0, 100]`: Configure Y axis. Same sub-clauses as AXIS_X.\n';
-        doc += '- `... BRUSH $var MODE X|Y|XY`: Add a brush overlay; for X/Y mode writes `$var.brush.lo`/`$var.brush.hi`; for XY mode writes `$var.brush.x_lo`, `$var.brush.x_hi`, `$var.brush.y_lo`, `$var.brush.y_hi`. Use in SQL like `WHERE col BETWEEN $$var.brush.lo AND $$var.brush.hi`.\n';
-        doc += '- `... LINK_X($start, $end, [master], [clamp])`: Links a plot\'s X-axis to local variables for interactive zooming and panning. All plots linked to the same variables are synchronized.\n';
-        doc += '  - `master`: This plot will set the initial values of the variables to its full data range.\n';
-        doc += '  - `clamp`: Prevents zooming or panning beyond this plot\'s own data range.\n';
-        doc += '- `... LINK_Y $var`: Link Y-axis viewport to a cell variable for shared Y-range.\n';
-        doc += '- `... LINK_SCROLL "group"`: Synchronise scroll position with other plots in the same named group.\n';
-        doc += '- `... TOOLTIP COLUMNS [col1, col2]`: Limit hover tooltip to specific columns.\n';
-        doc += '- `... ON HOVER TOOLTIP "{col1}: {col2}"`: Custom tooltip template with {column} placeholders.\n';
-        doc += '- `... DATASET table_name`: Use a DuckDB table/view as data source instead of query result.\n';
-        doc += '- `... DISABLED`: Suppress rendering of this plot — shows a placeholder. Use to temporarily hide without deleting config.\n\n';
-        doc += 'AVAILABLE PLOT FUNCTIONS:\n---\n';
+        // Build the dynamic per-plot section from the registry.
+        let plotFunctionDocs = '';
         for (const plot of Object.values(plotRegistry) as PlotRegistration[]) {
-            doc += `FUNCTION: ${plot.name}${generateSignature(plot.params)}\nDESCRIPTION: ${plot.description}\n`;
-            if (plot.supportsMultiQuery) doc += 'SUPPORTS MULTIPLE QUERIES: Yes\n';
+            plotFunctionDocs += `FUNCTION: ${plot.name}${generateSignature(plot.params)}\nDESCRIPTION: ${plot.description}\n`;
+            if (plot.supportsMultiQuery) plotFunctionDocs += 'SUPPORTS MULTIPLE QUERIES: Yes\n';
             if (plot.params.length > 0) {
-                doc += 'PARAMETERS:\n' + plot.params.map(p => `  - ${p.name} (${p.type}): ${p.description} ${p.required ? '(Required)' : ''}`).join('\n') + '\n';
+                plotFunctionDocs += 'PARAMETERS:\n' + plot.params.map(p => `  - ${p.name} (${p.type}): ${p.description} ${p.required ? '(Required)' : ''}`).join('\n') + '\n';
             }
             if (plot.examples.length > 0) {
-                doc += 'EXAMPLES:\n' + plot.examples.map(ex => `  - ${ex.description}\n    \`\`\`plot\n    ${ex.code}\n    \`\`\``).join('\n') + '\n';
+                plotFunctionDocs += 'EXAMPLES:\n' + plot.examples.map(ex => `  - ${ex.description}\n    ${ex.code}`).join('\n') + '\n';
             }
-            doc += '---\n';
+            plotFunctionDocs += '---\n';
         }
-        return doc;
+
+        return `PLOTTING DOCUMENTATION:
+
+## Layout
+- Side-by-side on one row: \`PLOT_A(...); PLOT_B(...)\` (semicolon or single newline separator)
+- New row: blank line between plot calls
+- Example: two charts side by side then a table below:
+  \`\`\`
+  BAR_CHART(x: "cause", y: ["count"]) TITLE "By Cause"; PIE_CHART(category: "cause", value: "count")
+
+  TABLE()
+  \`\`\`
+
+## Chart Type Selection Guide
+Choose the right chart based on the data shape:
+
+| Data shape | Best chart |
+|---|---|
+| Time column + 1-4 numeric series | LINE_CHART |
+| Time column + many stacked series | AREA_CHART with layout: "stacked" |
+| Category + 1 numeric (rank/compare) | BAR_CHART (use horizontal: true for long labels) |
+| Category + multiple numerics | BAR_CHART with layout: "grouped" or "stacked" |
+| Distribution of one numeric | HISTOGRAM |
+| Two numeric columns (correlation) | SCATTER_PLOT |
+| Part-of-whole (≤8 categories) | PIE_CHART |
+| Tabular / many columns / raw events | TABLE |
+| Single KPI number | BIG_NUMBER |
+| Time + heat intensity grid | HEATMAP |
+| Events with start+duration (Gantt-like) | GANTT |
+| Raw data rows always visible | TABLE |
+
+**Never** use PIE_CHART with more than 8 categories — use BAR_CHART instead.
+**Always** prefer LINE_CHART over SCATTER_PLOT when x is a timestamp.
+Use HISTOGRAM when you want to show the distribution/spread, not rank.
+
+## Available Plot Functions
+---
+${plotFunctionDocs}
+## TABLE() Modifiers
+TABLE() accepts tail clauses to control display:
+- \`TABLE() SORT ASC|DESC\` — default sort direction
+- \`TABLE() LIMIT 50\` — cap rows shown (default 200)
+- \`TABLE() TITLE "My Table"\`
+- \`TABLE() ON alias\` — bind to a named query
+
+## BAR_CHART Special Parameters
+- \`horizontal: true\` — rotate bars (essential when category labels are long strings)
+- \`layout: "stacked"\` — stack multiple y series
+- \`layout: "grouped"\` — group multiple y series side by side
+- \`SORT DESC LIMIT 20\` — show top-N bars only
+
+## AREA_CHART Special Parameters
+- \`layout: "stacked"\` — stacked area (for part-of-whole over time)
+- \`layout: "normalized"\` — 100% stacked area
+- \`color: "col"\` — color series by a column (for stacked areas per category)
+- \`y2: "col"\` — secondary Y axis for a second metric
+
+## LINE_CHART Tips
+- Use \`color: "col"\` to split a single y series into per-category lines
+- Use \`AXIS_Y DOMAIN [0, 100] LABEL "%"\` for percentage axes
+- Use \`AXIS_Y TYPE log\` for data spanning many orders of magnitude
+
+## SCATTER_PLOT Tips
+- Use \`color: "col"\` to distinguish categories
+- Use \`size: "col"\` to encode a third dimension as point size
+- Use \`trendline: "linear"\` to overlay a linear regression line
+
+## HISTOGRAM Tips
+- Use \`logBins: true\` for data spanning many orders of magnitude (e.g. latency)
+- The x column must be numeric
+
+## HEATMAP Tips
+- Requires exactly: x (category/time), y (category), value (numeric)
+- Best for showing activity density over a two-dimensional grid
+
+## Tail Clauses (append to any plot call)
+- \`TITLE "text"\` — title above the chart
+- \`ON alias\` — bind to a named SQL query (e.g. \`-- alias foo\` in a SQL cell)
+- \`ON #1\` — bind to query by 1-based index
+- \`WIDTH 50%\` or \`WIDTH 300px\` — fixed or relative width
+- \`HEIGHT 300px\` — fixed height
+- \`LEGEND AT RIGHT|LEFT|TOP|BOTTOM|NONE\` — legend position
+- \`LEGEND HIDDEN\` — hide legend entirely
+- \`PALETTE "tableau10"\` — named palette: category10, tableau10, pastel1, dark2, set2, spectral
+- \`PALETTE "#e41a1c,#377eb8,#4daf4a"\` — custom hex palette
+- \`AXIS_X LABEL "Time" TYPE time FORMAT "HH:mm"\` — X axis: label, type (linear|log|time|band), format
+- \`AXIS_Y LABEL "ms" DOMAIN [0, 500] TYPE log FORMAT ".1f"\` — Y axis config
+- \`AXIS_Y DOMAIN [0, 100] LABEL "%"\` — percentage Y axis
+- \`ZOOM\` — enable scroll/pinch zoom on the chart
+- \`LINK_X($start, $end)\` — link X pan/zoom to variables; add \`master\` on the primary chart
+- \`LINK_X($start, $end, master)\` — this chart sets the initial range for all linked charts
+- \`LINK_Y $var\` — link Y viewport
+- \`BRUSH $sel MODE X\` — drag-to-select region, writes \`$sel.brush.lo\` / \`$sel.brush.hi\`
+- \`BRUSH $sel MODE XY\` — 2D brush, writes \`$sel.brush.x_lo\`, \`$sel.brush.y_lo\`, etc.
+- \`TOOLTIP COLUMNS ["col1", "col2"]\` — limit tooltip columns
+- \`ON HOVER TOOLTIP "{col1}: {col2}"\` — custom tooltip template
+- \`DATASET view_name\` — data source is a DuckDB view/table, not a query result
+- \`DISABLED\` — placeholder, suppresses rendering
+
+## Practical Examples
+
+### Timeline with linked zoom + brush
+\`\`\`plot
+SCATTER_PLOT(x: "startTime", y: "duration_ms", color: "cause") TITLE "GC Pause Timeline" LINK_X($start, $end, master) ZOOM AXIS_Y LABEL "ms"
+
+LINE_CHART(x: "Window", y: ["Throughput %"]) TITLE "GC Throughput" LINK_X($start, $end) AXIS_Y DOMAIN [0, 100] LABEL "%"
+\`\`\`
+
+### Stacked area by category
+\`\`\`plot
+AREA_CHART(x: "Window", y: ["Pause (ms)"], color: "Cause", layout: "stacked") TITLE "Pause by Cause" ZOOM
+\`\`\`
+
+### Histogram of latency (log scale)
+\`\`\`plot
+HISTOGRAM(x: "duration_ms", logBins: true) TITLE "Pause Duration Distribution" AXIS_X LABEL "ms"
+\`\`\`
+
+### Horizontal bar — top N
+\`\`\`plot
+BAR_CHART(x: "class", y: ["alloc_mb"], horizontal: true) TITLE "Top Allocating Classes" SORT DESC LIMIT 20 AXIS_Y LABEL "MB"
+\`\`\`
+
+### Side-by-side summary cards
+\`\`\`plot
+BIG_NUMBER(value: "total_pauses", label: "Total GC Pauses"); BIG_NUMBER(value: "worst_pause_ms", label: "Worst Pause (ms)")
+\`\`\`
+`;
     }
     
     private getModelFor(tier: AiTier, feature?: AiFeature): string {

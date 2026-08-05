@@ -309,6 +309,24 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
           boost: 5,
         });
       }
+
+      // SELECT aliases (e.g. COUNT(*) AS cnt) surface in HAVING and ORDER BY
+      // at higher priority than raw columns since they're the most relevant.
+      if (sqlCtx.clause === 'having' || sqlCtx.clause === 'order_by') {
+        for (const alias of sqlCtx.selectAliases) {
+          const key = alias.toLowerCase();
+          if (seenCol.has(key)) continue;
+          if (lc && !key.startsWith(lc)) continue;
+          seenCol.add(key);
+          options.push({
+            label: alias,
+            detail: 'select alias',
+            type: 'variable',
+            apply: wrap(alias, isQuoted),
+            boost: 7,
+          });
+        }
+      }
     }
 
     // --- Aliases as completions (e.g. typing `t` after `FROM RecordingInfo t, ...`) ---
@@ -1323,6 +1341,30 @@ export function plotCompletionSource(deps: PlotCompletionDeps) {
       root = result.root;
     } catch (err) {
       if ((import.meta as any).env?.DEV) console.warn('[plotCompletionSource] parse failed:', err);
+      // Parse failed (e.g. unclosed parens). Fall back to tail-clause keyword
+      // suggestions if the partial token could be a clause keyword.
+      if (partial.text.length >= 1 && /^[A-Z_$]/.test(partial.text)) {
+        const tailOptions: Completion[] = [
+          { label: 'TITLE', detail: 'TITLE "text"', type: 'keyword', apply: 'TITLE "', boost: 3 },
+          { label: 'SORT', detail: 'SORT ASC|DESC', type: 'keyword', apply: 'SORT DESC', boost: 2 },
+          { label: 'LIMIT', detail: 'LIMIT N', type: 'keyword', apply: 'LIMIT ', boost: 2 },
+          { label: 'ZOOM', detail: 'enable scroll zoom', type: 'keyword', apply: 'ZOOM', boost: 2 },
+          { label: 'AXIS_Y', detail: 'AXIS_Y LABEL "ms" DOMAIN [0,100]', type: 'keyword', apply: 'AXIS_Y ', boost: 2 },
+          { label: 'AXIS_X', detail: 'AXIS_X LABEL "text"', type: 'keyword', apply: 'AXIS_X ', boost: 1 },
+          { label: 'LEGEND', detail: 'LEGEND AT RIGHT|LEFT|TOP|BOTTOM|NONE', type: 'keyword', apply: 'LEGEND AT ', boost: 1 },
+          { label: 'PALETTE', detail: 'PALETTE "tableau10"', type: 'keyword', apply: 'PALETTE "', boost: 1 },
+          { label: 'ON', detail: 'ON query_alias', type: 'keyword', apply: 'ON ', boost: 1 },
+          { label: 'LINK_X', detail: 'LINK_X($start, $end)', type: 'keyword', apply: 'LINK_X(', boost: 1 },
+          { label: 'BRUSH', detail: 'BRUSH $var MODE X', type: 'keyword', apply: 'BRUSH ', boost: 1 },
+          { label: 'DISABLED', detail: 'suppress rendering', type: 'keyword', apply: 'DISABLED', boost: 0 },
+        ].filter(o => o.label.toLowerCase().startsWith(partial.text.toLowerCase()));
+        if (tailOptions.length > 0) return { from: partial.from, options: tailOptions, validFor: /^[A-Z_]+$/i };
+      }
+      // Variable completions still work even after a parse error.
+      if (partial.text.startsWith('$')) {
+        const options = buildVariableOptions(deps, scope, partial.text);
+        return options.length > 0 ? { from: partial.from, options, validFor: /^\$\$?\w*$/ } : null;
+      }
       return null;
     }
 

@@ -44,6 +44,11 @@ export interface SqlContext {
   /** Clause the cursor is currently inside. */
   clause: SqlClause;
   /**
+   * Column aliases defined in the SELECT clause (e.g. `COUNT(*) AS cnt`).
+   * Surfaced as completions in HAVING and ORDER BY.
+   */
+  selectAliases: string[];
+  /**
    * If the cursor is right after `alias.`, this is the alias text (lowercased).
    * Triggers alias-scoped column completion.
    */
@@ -115,6 +120,26 @@ function parseCtes(stmt: string): Map<string, SqlCte> {
 }
 
 /**
+ * Extracts column aliases from the SELECT clause.
+ * Handles: `expr AS name`, `expr AS "quoted name"`, simple `name` columns.
+ * Returns alias names (unquoted, case-preserved).
+ */
+function parseSelectAliases(stmt: string): string[] {
+  // Grab text between SELECT and FROM (roughly).
+  const selMatch = stmt.match(/\bSELECT\b([\s\S]*?)(?:\bFROM\b|$)/i);
+  if (!selMatch) return [];
+  const selText = selMatch[1];
+  const aliases: string[] = [];
+  // Match `... AS alias` or `... AS "alias"` patterns.
+  const asRe = /\bAS\s+(?:"([^"]+)"|(\w+))/gi;
+  let m: RegExpExecArray | null;
+  while ((m = asRe.exec(selText)) !== null) {
+    aliases.push(m[1] ?? m[2]!);
+  }
+  return aliases;
+}
+
+/**
  * Detects whether the cursor sits inside `<col> = '<partial>` or `<col> IN ('a',
  * '<partial>`, and returns the column being filtered. Returns null otherwise.
  */
@@ -135,8 +160,8 @@ function detectStringValueColumn(stmt: string): { column: string; table: string 
   if (inside % 2 !== 0) return null;
   // Walk back from the opening quote to find an operator and column reference.
   const head = before.replace(/\s+$/, '');
-  // Allow `=`, `<>`, `!=`, `IN (`, `LIKE`, `ILIKE`
-  const m = head.match(/(\w+|"[^"]+")(?:\.(\w+|"[^"]+"))?\s*(?:=|<>|!=|LIKE|ILIKE|IN\s*\(\s*(?:'[^']*'\s*,\s*)*)\s*$/i);
+  // Allow `=`, `<>`, `!=`, `>=`, `<=`, `IN (`, `NOT IN (`, `LIKE`, `NOT LIKE`, `ILIKE`, `BETWEEN ... AND`
+  const m = head.match(/(\w+|"[^"]+")(?:\.(\w+|"[^"]+"))?\s*(?:=|<>|!=|>=?|<=?|NOT\s+LIKE|NOT\s+ILIKE|LIKE|ILIKE|NOT\s+IN\s*\(\s*(?:'[^']*'\s*,\s*)*|IN\s*\(\s*(?:'[^']*'\s*,\s*)*|BETWEEN\s+'[^']*'\s+AND)\s*$/i);
   if (!m) return null;
   const left = unquote(m[1]);
   const right = m[2] ? unquote(m[2]) : null;
@@ -207,6 +232,7 @@ export function parseSqlContext(textUpToCursor: string, fullDocText?: string): S
   for (const name of ctes.keys()) referenced.add(name);
 
   const clause = detectClause(textUpToCursor);
+  const selectAliases = parseSelectAliases(fullStmt);
 
   // qualifierAlias: did the user just type `foo.`?
   const qmatch = stmt.match(/(\w+)\.$/);
@@ -220,6 +246,7 @@ export function parseSqlContext(textUpToCursor: string, fullDocText?: string): S
     aliases,
     ctes,
     clause,
+    selectAliases,
     qualifierAlias,
     insideStringForColumn,
     insideFunctionArgs,

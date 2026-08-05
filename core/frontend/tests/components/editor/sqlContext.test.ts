@@ -134,3 +134,87 @@ describe('parseSqlContext', () => {
         expect(ctx.aliases.get('t')?.target).toBe('EventTable');
     });
 });
+
+// ---------------------------------------------------------------------------
+// SELECT alias extraction (new feature)
+// ---------------------------------------------------------------------------
+describe('parseSqlContext — selectAliases', () => {
+    it('extracts AS aliases from SELECT clause', () => {
+        const ctx = parseSqlContext(
+            'SELECT host, COUNT(*) AS cnt, AVG(cpu) AS avg_cpu FROM events GROUP BY host HAVING cnt > '
+        );
+        expect(ctx.selectAliases).toContain('cnt');
+        expect(ctx.selectAliases).toContain('avg_cpu');
+    });
+
+    it('extracts quoted aliases', () => {
+        const ctx = parseSqlContext(
+            'SELECT COUNT(*) AS "Total Events" FROM t ORDER BY '
+        );
+        expect(ctx.selectAliases).toContain('Total Events');
+    });
+
+    it('returns empty array when no AS aliases in SELECT', () => {
+        const ctx = parseSqlContext('SELECT host, cpu FROM t ORDER BY ');
+        expect(ctx.selectAliases).toEqual([]);
+    });
+
+    it('does not include table aliases as selectAliases', () => {
+        // FROM clause alias should not appear in selectAliases
+        const ctx = parseSqlContext('SELECT t.host FROM events t ORDER BY ');
+        expect(ctx.selectAliases).not.toContain('t');
+    });
+
+    it('handles multiple aliases in one SELECT', () => {
+        const ctx = parseSqlContext(
+            'SELECT SUM(duration) AS total_ms, MAX(duration) AS max_ms, MIN(duration) AS min_ms FROM gc ORDER BY '
+        );
+        expect(ctx.selectAliases).toEqual(['total_ms', 'max_ms', 'min_ms']);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// detectStringValueColumn — extended operator support
+// ---------------------------------------------------------------------------
+describe('detectStringValueColumn — extended operators', () => {
+    it('detects = operator (existing)', () => {
+        const ctx = parseSqlContext("SELECT * FROM t WHERE status = '");
+        expect(ctx.insideStringForColumn?.column).toBe('status');
+    });
+
+    it('detects IN ( operator', () => {
+        const ctx = parseSqlContext("SELECT * FROM t WHERE status IN ('");
+        expect(ctx.insideStringForColumn?.column).toBe('status');
+    });
+
+    it('detects NOT IN ( operator', () => {
+        const ctx = parseSqlContext("SELECT * FROM t WHERE status NOT IN ('");
+        expect(ctx.insideStringForColumn?.column).toBe('status');
+    });
+
+    it('detects LIKE operator', () => {
+        const ctx = parseSqlContext("SELECT * FROM t WHERE name LIKE '");
+        expect(ctx.insideStringForColumn?.column).toBe('name');
+    });
+
+    it('detects NOT LIKE operator', () => {
+        const ctx = parseSqlContext("SELECT * FROM t WHERE name NOT LIKE '");
+        expect(ctx.insideStringForColumn?.column).toBe('name');
+    });
+
+    it('detects ILIKE operator', () => {
+        const ctx = parseSqlContext("SELECT * FROM t WHERE name ILIKE '");
+        expect(ctx.insideStringForColumn?.column).toBe('name');
+    });
+
+    it('detects BETWEEN ... AND operator', () => {
+        const ctx = parseSqlContext("SELECT * FROM t WHERE status BETWEEN 'a' AND '");
+        expect(ctx.insideStringForColumn?.column).toBe('status');
+    });
+
+    it('detects table-qualified column', () => {
+        const ctx = parseSqlContext("SELECT * FROM events e WHERE e.cause = '");
+        expect(ctx.insideStringForColumn?.column).toBe('cause');
+        expect(ctx.insideStringForColumn?.table).toBe('e');
+    });
+});
