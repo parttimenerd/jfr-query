@@ -11,7 +11,7 @@ const TARGET = Number(process.env.AUTOCOMPLETE_TARGET ?? 5000);
 const BATCH_SIZE = 25; // examples per Haiku call
 const OUT = resolve(process.cwd(), 'data/autocomplete-train.jsonl');
 
-type Scenario = 'where' | 'select' | 'join' | 'function-arg' | 'cte' | 'dollar';
+type Scenario = 'where' | 'select' | 'join' | 'function-arg' | 'cte' | 'dollar' | 'plot';
 
 export interface AutocompleteExample {
     context: string;
@@ -20,7 +20,7 @@ export interface AutocompleteExample {
     scenario: Scenario;
 }
 
-const SCENARIOS: Scenario[] = ['where', 'select', 'join', 'function-arg', 'cte', 'dollar'];
+const SCENARIOS: Scenario[] = ['where', 'select', 'join', 'function-arg', 'cte', 'dollar', 'plot'];
 
 const SYSTEM = `You generate realistic DuckDB SQL autocomplete training examples for a JFR (Java Flight Recorder) GC-analysis notebook.
 
@@ -28,13 +28,17 @@ Tables include: ActiveRecording, GarbageCollection, GcPhasePause, GcHeapSummary,
 Common columns: gcId, cause, duration, startTime, name, eventType, heapUsed, heapSize, threadName, allocSize.
 Variables use the form \${var} or $$crossCellRef.
 
+SQL view names (hyphenated, used in FROM clauses): gc-pauses, gc-overhead, gc-throughput, gc-efficiency, heap-committed-vs-used, gc-allocation-by-class, gc-top-pauses, gc-old-gen-growth, thread-start, cpu-hot-methods, safepoints, tlab-efficiency.
+
+Plot DSL clauses (used after plot function calls like LINE_CHART(...)): TITLE, ZOOM, LINK_X, LINK_Y, AXIS_X, AXIS_Y, DOMAIN, LABEL, FORMAT, TYPE, LEGEND, PALETTE, BRUSH, TOOLTIP, ON, WIDTH, HEIGHT, SORT, LIMIT.
+
 Output STRICT JSON array (no prose) of examples. Each example MUST have exactly:
 - context: SQL string with a cursor marker '|' replaced by an empty position (do NOT include the '|' literally in the final 'context' field; instead, compute the 0-based byte offset and put it in cursorPos)
 - cursorPos: integer 0-based offset where completion should fire
 - expectedTopK: array of 3-8 plausible completion strings ranked best-first
-- scenario: one of "where"|"select"|"join"|"function-arg"|"cte"|"dollar"
+- scenario: one of "where"|"select"|"join"|"function-arg"|"cte"|"dollar"|"plot"
 
-Diversify cursor positions: after SELECT comma, inside WHERE column slot, inside WHERE literal slot, after JOIN ON, inside function args, after WITH cte name AS (...), after $ for variable refs.`;
+Diversify cursor positions: after SELECT comma, inside WHERE column slot, inside WHERE literal slot, after JOIN ON, inside function args, after WITH cte name AS (...), after $ for variable refs, after plot function call clauses.`;
 
 function buildUserPrompt(scenario: Scenario, n: number): string {
     return `Generate ${n} examples for scenario "${scenario}". Return ONLY a JSON array.`;

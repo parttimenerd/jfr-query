@@ -19,6 +19,9 @@ export interface RankerFeatures {
     aggContext: number;        // 1 if context has an aggregate function before cursor
     // V3 features
     inValuePos: number;        // 1 if cursor is after = / LIKE / BETWEEN / IS (value position, not column)
+    // V4 features
+    isViewName: number;        // 1 if candidate is a known builtin SQL view name (hyphenated)
+    plotClause: number;        // 1 if candidate is a known plot DSL clause keyword
 }
 
 export type Weights = Record<keyof RankerFeatures, number>;
@@ -35,6 +38,31 @@ const JFR_COLUMN_RE = /^(?:gc|heap|pause|alloc|tlab|cpu|thread|method|stack|fram
 
 // JFR table/view names
 const JFR_TABLE_RE = /^(?:GarbageCollection|GcHeap|GcPhase|ObjectAllocation|CpuLoad|ThreadCpu|JfrEvent|ActiveRecording|gc_pauses|gc_heap|gc_phases|heap_usage|cpu_load|cpu_hot|thread_states|lock_contention|object_alloc)/i;
+
+// Known builtin view names (hyphenated SQL view names from builtinSql.ts)
+const VIEW_NAMES = new Set([
+    'gc', 'gc-pauses', 'gc-pause-distribution', 'gc-pause-phases', 'gc-phase-breakdown',
+    'gc-phase-stats', 'gc-young-vs-old', 'gc-young-old-time', 'gc-pause-cause-over-time',
+    'gc-pause-over-time', 'gc-top-pauses', 'gc-time-split', 'gc-throughput', 'gc-overhead',
+    'gc-allocation-trigger', 'gc-consecutive-full', 'gc-efficiency', 'gc-concurrent-phases',
+    'gc-concurrent-phases-detail', 'gc-configuration', 'gc-memory-size', 'gc-object-stats',
+    'gc-parallel-phases', 'gc-promotion-rate', 'gc-references', 'gc-safepoint-distribution',
+    'gc-safepoint-summary', 'gc-eden-size', 'gc-old-gen-growth', 'gc-cpu-time',
+    'gc-allocation-by-class', 'gc-thread-allocation', 'gc-duration-buckets',
+    'heap-committed-vs-used', 'heap-summary-over-time', 'metaspace-over-time',
+    'g1-heap-regions', 'tenuring-distribution', 'tlab-efficiency', 'tlabs', 'finalizers',
+    'thread-cpu', 'thread-start', 'thread-states', 'thread-contention', 'thread-allocation',
+    'cpu-hot-methods', 'cpu-flamegraph', 'cpu-flamegraph-wall', 'safepoints',
+    'safepoint-overhead', 'vm-operations', 'allocation-by-site',
+]);
+
+// Plot DSL clause keywords
+const PLOT_CLAUSES = new Set([
+    'TITLE', 'ZOOM', 'ZOOM_X', 'WIDTH', 'HEIGHT', 'ON', 'LEGEND', 'PALETTE',
+    'LINK_X', 'LINK_Y', 'LINK_XY', 'LINK_SCROLL', 'BRUSH', 'AXIS_X', 'AXIS_Y',
+    'DOMAIN', 'LABEL', 'TYPE', 'FORMAT', 'NAME', 'DATASET', 'TOOLTIP', 'DISABLED',
+    'MASTER', 'CLAMP', 'LET', 'SORT', 'LIMIT', 'HORIZONTAL',
+]);
 
 // Aggregate function names — if context has SUM/AVG/COUNT etc. the cursor is
 // likely in a numeric column slot.
@@ -77,6 +105,7 @@ export function featurize(
     else if (scenario === 'join' && isCol) scenarioBoost = 0.8;
     else if (scenario === 'cte' && isKw) scenarioBoost = 0.4;
     else if (scenario === 'dollar' && candidate.startsWith('$')) scenarioBoost = 1;
+    else if (scenario === 'plot' && PLOT_CLAUSES.has(candidate.toUpperCase())) scenarioBoost = 1.2;
 
     // Prefix depth: how many chars of the cursor word match the candidate prefix.
     // Normalized to [0,1] by dividing by 4 (≥4 chars = maximum signal).
@@ -99,6 +128,8 @@ export function featurize(
         isTable: JFR_TABLE_RE.test(candidate) ? 1 : 0,
         aggContext: AGG_FN_RE.test(contextBefore) ? 1 : 0,
         inValuePos: inValuePos ? 1 : 0,
+        isViewName: VIEW_NAMES.has(candidate) ? 1 : 0,
+        plotClause: PLOT_CLAUSES.has(candidate.toUpperCase()) ? 1 : 0,
     };
 }
 
@@ -116,6 +147,8 @@ export function score(features: RankerFeatures, w: Weights): number {
         (w.exactMatch ?? 0) * features.exactMatch +
         (w.isTable ?? 0) * features.isTable +
         (w.aggContext ?? 0) * features.aggContext +
-        (w.inValuePos ?? 0) * features.inValuePos
+        (w.inValuePos ?? 0) * features.inValuePos +
+        (w.isViewName ?? 0) * features.isViewName +
+        (w.plotClause ?? 0) * features.plotClause
     );
 }
