@@ -40,7 +40,7 @@ The `name=` attribute gives the cell a stable handle that can be referenced from
 
 Interactive plots write back to variables:
 
-- `BRUSH $var MODE X` writes the selected X range to `$var.lo` / `$var.hi`.
+- `BRUSH $var MODE X` writes the selected X range to `$var.brush.lo` / `$var.brush.hi`.
 - `ON HOVER TOOLTIP "..."` can update variables that downstream SQL cells read.
 
 When a variable changes, dependent SQL cells re-run automatically, and their plots re-render.

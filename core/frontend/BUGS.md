@@ -1946,3 +1946,44 @@ None. No regressions from prior sessions.
 
 ### Deferred (carry-forward)
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## QA pass — session 11 (2026-08-05)
+
+### Scope
+Full QA pass on demo notebook + all 11 templates. Focus: interactive features, plot tooltips, UI polish, docs-site consistency.
+
+### Unit tests
+`npx vitest run` — all passing (no new failures).
+
+### Template scan (all 11 templates)
+All 11 templates load and render without DOM errors or JS exceptions.
+
+### Interactive features
+- **Variables panel** ✅ — notebook variables display and edit correctly
+- **Command palette** ✅ — opens with Ctrl+K, fuzzy search works
+- **Run All** ✅ — all cells re-run
+- **Keyboard shortcuts modal** ✅ — opens and displays correctly
+- **SQL autocomplete** ✅ — `GarbageCollection · table · 20 rows` suggestion confirmed via Ctrl+Space after typing `Gar`
+- **Schema explorer** ✅ — tables/views/macros listed; click-to-preview works
+- **BRUSH** ✅ — drag updates `$sel.brush.lo`/`$sel.brush.hi` with real timestamp values; downstream SQL re-runs
+- **LINK_X** ✅ — chart renders; zoom state syncs across linked charts
+- **BIG_NUMBER cards** ✅ — ROW(BIG_NUMBER×4) renders stat cards
+- **Plot tooltip (LINE_CHART)** ✅ — hover shows timestamp + value; hint bar shows `drag=pan · ⌘drag=select · ⇧scroll=zoom`
+
+### UI polish
+- 0 DOM errors across demo notebook (0 Parser/Catalog/Binder/Invalid plot errors)
+- 0 overflow/truncation issues in headings and buttons
+- 5 recharts charts rendered in demo notebook
+- `$limit: 200` display in SQL editor confirmed as intentional `cm-varValueWidget` decoration (not malformed SQL)
+- Loading states: no stuck spinners or progress bars
+
+### Console audit
+**2 console errors** — both ONNX runtime session assignment warnings (not real bugs per QA spec).
+
+### Docs-site fix
+- Fixed stale `BRUSH $var MODE X` variable path in `docs-site/web-ui.md`: `$var.lo`/`$var.hi` → `$var.brush.lo`/`$var.brush.hi`
+
+### Deferred (carry-forward)
+- **B-205** (LATERAL join scope in completions): still open, deferred.
