@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, fireEvent, cleanup } from '@testing-library/react';
 import { NotebookTOC } from '../../components/NotebookTOC';
 import type { NotebookCellData } from '../../types';
+
+afterEach(cleanup);
 
 const makeCell = (id: string, title: string): NotebookCellData =>
     ({ id, title, content: `## ${title}\n`, name: null } as any);

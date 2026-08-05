@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import { AiModeCards } from '../components/SettingsModal';
+
+afterEach(cleanup);
 
 describe('AiModeCards', () => {
     it('renders all three mode labels', () => {
