@@ -842,7 +842,7 @@ SELECT
     CASE
         WHEN j.ts_start IS NULL THEN 'unknown'
         WHEN j.te_start IS NULL THEN 'infinity'
-        ELSE format_duration(epoch(j.te_start - j.ts_start))
+        ELSE format_duration((epoch_ms(j.te_start::TIMESTAMP) - epoch_ms(j.ts_start::TIMESTAMP)) / 1000.0)
     END AS "Duration"
 FROM Thread t
 JOIN (
@@ -874,7 +874,7 @@ ORDER BY
         WHEN j.te_start IS NULL AND j.ts_start IS NOT NULL THEN 0
         ELSE 1
     END,
-    (j.te_start - j.ts_start) DESC NULLS LAST, j.ts_start ASC`,
+    (epoch_ms(j.te_start::TIMESTAMP) - epoch_ms(j.ts_start::TIMESTAMP)) DESC NULLS LAST, j.ts_start ASC`,
 
   `CREATE OR REPLACE VIEW "vm-operations" AS
 SELECT
