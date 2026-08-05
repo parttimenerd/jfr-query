@@ -865,11 +865,71 @@ function completeTailValue(
 
   // PALETTE: suggest known palette names.
   if (tailUpper === 'PALETTE') {
-    const palettes = ['category10', 'tableau10', 'pastel1', 'dark2', 'set2'];
+    const palettes = ['category10', 'tableau10', 'pastel1', 'dark2', 'set2', 'spectral', 'rdylgn'];
     const lc = partial.toLowerCase().replace(/^"/, '');
     for (const p of palettes) {
       if (lc && !p.startsWith(lc)) continue;
       options.push({ label: `"${p}"`, detail: 'palette', type: 'keyword', apply: `"${p}"`, boost: 5 });
+    }
+    return options.length > 0 ? { from, options } : null;
+  }
+
+  // AXIS_X / AXIS_Y: suggest sub-clause keywords.
+  if (tailUpper === 'AXIS_X' || tailUpper === 'AXIS_Y') {
+    const subs = [
+      { label: 'DOMAIN', detail: '[min, max]', info: 'Fix axis range, e.g. DOMAIN [0, 100]' },
+      { label: 'LABEL', detail: '"text"', info: 'Axis label, e.g. LABEL "ms"' },
+      { label: 'TYPE', detail: 'LINEAR|LOG|TIME|BAND', info: 'Scale type' },
+      { label: 'FORMAT', detail: '"fmt"', info: 'Tick format, e.g. FORMAT ".2f"' },
+    ];
+    const lc = partial.toLowerCase();
+    for (const s of subs) {
+      if (lc && !s.label.toLowerCase().startsWith(lc)) continue;
+      options.push({ label: s.label, detail: s.detail, info: s.info, type: 'keyword', apply: `${s.label} `, boost: 5 });
+    }
+    return options.length > 0 ? { from, options } : null;
+  }
+
+  // SORT: suggest direction.
+  if (tailUpper === 'SORT') {
+    const dirs = [
+      { label: 'DESC', detail: 'highest first', info: 'Sort bars descending (largest first)' },
+      { label: 'ASC', detail: 'lowest first', info: 'Sort bars ascending (smallest first)' },
+    ];
+    const lc = partial.toLowerCase();
+    for (const d of dirs) {
+      if (lc && !d.label.toLowerCase().startsWith(lc)) continue;
+      options.push({ label: d.label, detail: d.detail, info: d.info, type: 'keyword', boost: 5 });
+    }
+    return options.length > 0 ? { from, options } : null;
+  }
+
+  // BRUSH: suggest $var then MODE.
+  if (tailUpper === 'BRUSH') {
+    if (!partial || partial.startsWith('$')) {
+      // Suggest variables first
+      options.push(...buildVariableOptions(deps, scope, partial));
+      if (options.length > 0) return { from, options };
+    }
+    // Suggest MODE keyword
+    const lc = partial.toLowerCase();
+    if (!lc || 'mode'.startsWith(lc)) {
+      options.push({ label: 'MODE', detail: 'X|Y|XY', info: 'Brush axis: X for horizontal, Y for vertical, XY for rectangular', type: 'keyword', apply: 'MODE ', boost: 5 });
+    }
+    return options.length > 0 ? { from, options } : null;
+  }
+
+  // Detect BRUSH MODE → suggest X / Y / XY.
+  if (/\bBRUSH\s+\$\w+\s+MODE$/i.test(hint.tail ?? '') || tailUpper === 'BRUSH MODE') {
+    const modes = [
+      { label: 'X', info: 'Horizontal selection range' },
+      { label: 'Y', info: 'Vertical selection range' },
+      { label: 'XY', info: 'Rectangular 2D selection' },
+    ];
+    const lc = partial.toLowerCase();
+    for (const m of modes) {
+      if (lc && !m.label.toLowerCase().startsWith(lc)) continue;
+      options.push({ label: m.label, info: m.info, type: 'keyword', boost: 5 });
     }
     return options.length > 0 ? { from, options } : null;
   }
