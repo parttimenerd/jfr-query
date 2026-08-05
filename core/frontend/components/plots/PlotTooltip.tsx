@@ -14,6 +14,8 @@ export interface PlotTooltipProps {
     onHoverTooltip?: string;
     tooltipColumns?: string[];
     labelFormatter?: (label: unknown) => string;
+    /** Optional per-entry formatter: receives (value, name, entry) and returns [displayValue, displayName]. */
+    entryFormatter?: (value: unknown, name: string, entry: PlotTooltipEntry) => [string, string] | null;
 }
 
 export function formatTooltipValue(val: unknown): string {
@@ -64,7 +66,7 @@ const formatPlaceholders = (fmt: string, payload: PlotTooltipEntry[]): string =>
     });
 
 export const PlotTooltip: React.FC<PlotTooltipProps> = ({
-    active, payload, label, onHoverTooltip, tooltipColumns, labelFormatter,
+    active, payload, label, onHoverTooltip, tooltipColumns, labelFormatter, entryFormatter,
 }) => {
     if (!active || !payload || payload.length === 0) return null;
 
@@ -103,7 +105,14 @@ export const PlotTooltip: React.FC<PlotTooltipProps> = ({
         );
     }
 
-    // Default: show all payload entries.
+    // Default: show all payload entries, applying entryFormatter if provided.
+    const entries = entryFormatter
+        ? payload.map(e => {
+            const formatted = entryFormatter(e.value, e.name, e);
+            return formatted ? { ...e, name: formatted[1], displayValue: formatted[0] } : null;
+          }).filter(Boolean) as Array<PlotTooltipEntry & { displayValue: string }>
+        : payload.map(e => ({ ...e, displayValue: formatTooltipValue(e.value) }));
+
     return (
         <div className={boxCls}>
             {label !== undefined && (
@@ -112,12 +121,12 @@ export const PlotTooltip: React.FC<PlotTooltipProps> = ({
                 </div>
             )}
             <div className="space-y-0.5">
-                {payload.map((e) => (
+                {entries.map((e) => (
                     <div key={e.dataKey} className="flex items-center justify-between gap-2">
                         <span className={labelCls} style={{ color: e.color ? `${e.color}cc` : undefined }}>
                             {e.name.replace(/_/g, ' ')}
                         </span>
-                        <span className={valueCls}>{formatTooltipValue(e.value)}</span>
+                        <span className={valueCls}>{e.displayValue}</span>
                     </div>
                 ))}
             </div>

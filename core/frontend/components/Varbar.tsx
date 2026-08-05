@@ -7,6 +7,19 @@ interface VarbarProps {
     onTogglePause: () => void;
 }
 
+/** Format a brush range object to a readable string, or return null if not a brush shape. */
+function formatBrushObj(obj: Record<string, unknown>): string | null {
+    const fmt6 = (n: number) => Number(n.toPrecision(6));
+    if (typeof obj.x_lo === 'number' && typeof obj.x_hi === 'number' &&
+        typeof obj.y_lo === 'number' && typeof obj.y_hi === 'number') {
+        return `x:${fmt6(obj.x_lo)}…${fmt6(obj.x_hi)} y:${fmt6(obj.y_lo)}…${fmt6(obj.y_hi)}`;
+    }
+    if (typeof obj.lo === 'number' && typeof obj.hi === 'number') {
+        return `${fmt6(obj.lo)} … ${fmt6(obj.hi)}`;
+    }
+    return null;
+}
+
 /** Format a variable value for display in a pill. */
 function formatValue(value: unknown): string {
     if (value === null || value === undefined) return '';
@@ -14,14 +27,16 @@ function formatValue(value: unknown): string {
         if (value.startsWith('{')) {
             try {
                 const obj = JSON.parse(value) as Record<string, unknown>;
-                if (typeof obj.lo === 'number' && typeof obj.hi === 'number') {
-                    const lo = Number(obj.lo.toPrecision(6));
-                    const hi = Number(obj.hi.toPrecision(6));
-                    return `${lo} … ${hi}`;
-                }
-                return value;
+                return formatBrushObj(obj) ?? value;
             } catch {
                 return value;
+            }
+        }
+        // ISO timestamp → short readable local time
+        if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+            const d = new Date(value);
+            if (!isNaN(d.getTime())) {
+                return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
             }
         }
         return value;
@@ -29,12 +44,7 @@ function formatValue(value: unknown): string {
     if (typeof value === 'number' || typeof value === 'boolean') return String(value);
     if (typeof value === 'object') {
         const obj = value as Record<string, unknown>;
-        if (typeof obj.lo === 'number' && typeof obj.hi === 'number') {
-            const lo = Number(obj.lo.toPrecision(6));
-            const hi = Number(obj.hi.toPrecision(6));
-            return `${lo} … ${hi}`;
-        }
-        return JSON.stringify(value);
+        return formatBrushObj(obj) ?? JSON.stringify(value);
     }
     return String(value);
 }
@@ -45,7 +55,13 @@ function isVisible(value: unknown): boolean {
     return true;
 }
 
+// Sub-keys are system-generated components of a brush variable (e.g. $sel.brush.lo,
+// $sel.brush.hi). Filter them out — the parent variable ($sel) already shows a
+// formatted summary. Only filter keys that look like known system suffixes so
+// user-created nested variables are still visible.
+const BRUSH_SUB_KEY_RE = /\.brush\.(lo|hi|x_lo|x_hi|y_lo|y_hi)$/;
 function isSubKey(key: string, allKeys: string[]): boolean {
+    if (BRUSH_SUB_KEY_RE.test(key)) return true;
     return allKeys.some(k => k !== key && key.startsWith(k + '.'));
 }
 

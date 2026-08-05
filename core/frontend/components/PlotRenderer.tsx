@@ -289,11 +289,35 @@ const InteractivePlotWrapper: React.FC<{
     }, []);
 
     // Subscribe to linkXStore for cross-cell sync (sibling plots sharing same vars).
+    // The subscribe() call also replays the current stored value immediately, so if a
+    // sibling has already published a domain this plot will pick it up on mount.
     useEffect(() => {
         return linkXStore.subscribe(linkX, domain => {
             setLocalDomain(domain);
         });
     }, [linkX[0], linkX[1]]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // On first mount only: if the linkXStore has no value yet (no sibling has
+    // published), try to initialize localDomain from metadata.variables.
+    // This restores zoom state across cell refreshes and page reloads.
+    useEffect(() => {
+        if (linkXStore.get(linkX) !== null) return; // store already has a value — subscription replay covers us
+        const [minVar, maxVar] = linkX;
+        const rawMin = allVariables[minVar] ?? allVariables[`$$${minVar.replace(/^\$/, '')}`];
+        const rawMax = allVariables[maxVar] ?? allVariables[`$$${maxVar.replace(/^\$/, '')}`];
+        if (rawMin && rawMax) {
+            const t0 = new Date(rawMin).getTime();
+            const t1 = new Date(rawMax).getTime();
+            if (!isNaN(t0) && !isNaN(t1) && t0 < t1) {
+                const domain: [number, number] = [t0, t1];
+                setLocalDomain(domain);
+                if (shouldPublishLinkX(linkX, linkXMaster)) {
+                    linkXStore.publish(linkX, domain);
+                }
+            }
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // intentionally run once on mount only
 
     // Sync reset signal from metadata.variables: when another cell writes '' to reset.
     useEffect(() => {
@@ -509,12 +533,13 @@ const BrushModeWrapper: React.FC<{
             }
         }
         dragRef.current = null;
-        // Keep selectBox visible briefly then clear on next interaction
+        setSelectBox(null);
     }, [dataRange, gestureName, onVariableChange]);
 
     const handleMouseLeave = useCallback(() => {
         if (dragRef.current) {
             dragRef.current = null;
+            setSelectBox(null);
         }
     }, []);
 

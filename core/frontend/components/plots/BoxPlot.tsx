@@ -98,23 +98,22 @@ const Box = (props: any) => {
 const CustomBoxPlotTooltip: React.FC<any> = ({ active, payload, label, formatter }) => {
     if (active && payload && payload.length && payload[0].payload.stats) {
         const { min, q1, median, q3, max } = payload[0].payload.stats;
-        const StatLine: React.FC<{ label: string, value: number }> = ({ label, value }) => (
-            <li className="flex justify-between items-center">
-                <span>{label}:</span>
-                <span className="font-mono ml-4">{formatter(value)}</span>
-            </li>
+        const StatLine: React.FC<{ label: string, value: number }> = ({ label: statLabel, value }) => (
+            <div className="flex items-center justify-between gap-2">
+                <span className="text-gray-400">{statLabel}</span>
+                <span className="text-gray-100 font-mono font-medium text-right">{formatter(value)}</span>
+            </div>
         );
-
         return (
-            <div className="p-2 bg-gray-700/80 border border-gray-600 rounded-md shadow-lg backdrop-blur-sm text-sm min-w-[120px]">
-                <p className="font-semibold text-gray-200 mb-2">{label}</p>
-                <ul className="text-gray-300 space-y-1">
+            <div className="bg-gray-900/95 border border-gray-600/70 text-xs rounded-lg shadow-xl px-3 py-2 min-w-[120px] max-w-[280px] backdrop-blur-sm">
+                <div className="text-gray-300 font-semibold border-b border-gray-700 pb-1 mb-1.5 truncate">{label}</div>
+                <div className="space-y-0.5">
                     <StatLine label="Max" value={max} />
                     <StatLine label="Q3" value={q3} />
                     <StatLine label="Median" value={median} />
                     <StatLine label="Q1" value={q1} />
                     <StatLine label="Min" value={min} />
-                </ul>
+                </div>
             </div>
         );
     }
@@ -168,7 +167,7 @@ const BoxPlotComponent: React.FC<{ config: BoxPlotConfig; data: any[]; isAnimati
                     <XAxis dataKey="category" stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={makeTickFormatter(clauses?.axisX) ?? undefined} scale={mapAxisScale(clauses?.axisX)} label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined} />
                     <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} tickFormatter={makeTickFormatter(clauses?.axisY) ?? numberFormatter} scale={mapAxisScale(clauses?.axisY) === 'log' ? undefined : mapAxisScale(clauses?.axisY)} domain={(domainY ?? yDomainFromClause) ?? ['dataMin', 'dataMax']} allowDataOverflow label={yLabelFromClause ? { value: yLabelFromClause, angle: -90, position: 'insideLeft', fill: '#9ca3af', fontSize: 12 } : undefined} />
                     <Tooltip
-                        content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />) : <CustomBoxPlotTooltip formatter={numberFormatter} />}
+                        content={(clauses?.onHoverTooltip || clauses?.tooltipColumns?.length) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns?.length ? clauses.tooltipColumns : undefined} />) : <CustomBoxPlotTooltip formatter={numberFormatter} />}
                         cursor={{ fill: 'rgba(130, 202, 157, 0.1)' }}
                         isAnimationActive={isAnimationActive}
                         animationDuration={animationDuration}

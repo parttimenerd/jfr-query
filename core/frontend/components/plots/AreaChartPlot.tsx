@@ -229,12 +229,7 @@ const AreaChartComponent: React.FC<{
               allowDataOverflow
             />
           )}
-          <Tooltip
-            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
-            formatter={(v, n) => [yFormatter(v), String(n).replace(/_/g, ' ')]}
-            labelFormatter={isTime ? (l) => formatTimestamp(l, settings.timeFormat) : undefined}
-            content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} labelFormatter={isTime ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined} />) : undefined}
-          />
+          <Tooltip content={(props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns?.length ? clauses.tooltipColumns : undefined} labelFormatter={isTime ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined} />)}/>
           {showLegend && <Legend wrapperStyle={{ fontSize: '12px' }} formatter={v => String(v).replace(/_/g, ' ')} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'} />}
           {config.stack !== undefined && warnDeprecated('AREA_CHART', 'stack', 'layout') as never}
           {allY.map((y, i) => {

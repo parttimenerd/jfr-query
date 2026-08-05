@@ -132,14 +132,6 @@ const GanttChartComponent: React.FC<{
     ? (v: any) => formatTimestamp(v, 'HH:mm:ss.SS')
     : (v: any) => numberFormatter(v));
 
-  const tooltipFormatter = (_value: any, _name: string, props: any) => {
-    const row = props?.payload;
-    if (!row) return [_value, _name];
-    const startFmt = isTime ? formatTimestamp(getTimeValue(row.__startRaw), settings.timeFormat) : numberFormatter(row.__startRaw);
-    const endFmt = isTime ? formatTimestamp(getTimeValue(row.__endRaw), settings.timeFormat) : numberFormatter(row.__endRaw);
-    return [`${startFmt} → ${endFmt}`, 'Range'];
-  };
-
   if (chartData.length === 0) {
     return <div className="p-4 text-center text-gray-500 text-sm">No data.</div>;
   }
@@ -175,10 +167,22 @@ const GanttChartComponent: React.FC<{
             width={95}
           />
           <Tooltip
-            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
-            formatter={tooltipFormatter}
-            labelFormatter={(l) => String(l)}
-            content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} />) : undefined}
+            content={(props: any) => (<PlotTooltip
+              {...props}
+              onHoverTooltip={clauses?.onHoverTooltip}
+              tooltipColumns={clauses?.tooltipColumns?.length ? clauses.tooltipColumns : undefined}
+              entryFormatter={(v, n, item) => {
+                const row = (item as any)?.payload;
+                if (!row) return null;
+                if (n === '__offset') return null; // hide transparent offset bar
+                if (n === '__duration' || n === 'Duration') {
+                  const startFmt = isTime ? formatTimestamp(getTimeValue(row.__startRaw), settings.timeFormat) : numberFormatter(row.__startRaw);
+                  const endFmt = isTime ? formatTimestamp(getTimeValue(row.__endRaw), settings.timeFormat) : numberFormatter(row.__endRaw);
+                  return [`${startFmt} → ${endFmt}`, 'Range'];
+                }
+                return null;
+              }}
+            />)}
           />
           {/* Transparent offset bar — pushes the duration bar to the correct start position */}
           <Bar

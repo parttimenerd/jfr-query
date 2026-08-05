@@ -131,20 +131,23 @@ const RangePlotComponent: React.FC<{
             }
           />
           <Tooltip
-            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
-            formatter={(v: any, n: any, item: any) => {
-              if (n === '__rangeLow') return [numberFormatter(v), `Low (${lowKey})`];
-              // For the band height, display the absolute high value from __rangeHighAbs
-              if (n === '__rangeHigh') {
-                const absHigh = item?.payload?.__rangeHighAbs;
-                const display = (absHigh != null && !isNaN(absHigh)) ? absHigh : v + (item?.payload?.__rangeLow ?? 0);
-                return [numberFormatter(display), `High (${highKey})`];
-              }
-              if (n === '__center') return [numberFormatter(v), centerKey ? `Center (${centerKey})` : 'Center'];
-              return [numberFormatter(v), String(n).replace(/_/g, ' ')];
-            }}
-            labelFormatter={isTime ? (l) => formatTimestamp(l, settings.timeFormat) : undefined}
-            content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} labelFormatter={isTime ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined} />) : undefined}
+            content={(props: any) => (<PlotTooltip
+              {...props}
+              onHoverTooltip={clauses?.onHoverTooltip}
+              tooltipColumns={clauses?.tooltipColumns?.length ? clauses.tooltipColumns : undefined}
+              labelFormatter={isTime ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined}
+              entryFormatter={(v, n, item) => {
+                const fmt = (val: unknown) => numberFormatter(val);
+                if (n === '__rangeLow') return [fmt(v), `Low (${lowKey})`];
+                if (n === '__rangeHigh') {
+                  const absHigh = (item as any)?.payload?.__rangeHighAbs;
+                  const display = (absHigh != null && !isNaN(absHigh)) ? absHigh : Number(v) + ((item as any)?.payload?.__rangeLow ?? 0);
+                  return [fmt(display), `High (${highKey})`];
+                }
+                if (n === '__center') return [fmt(v), centerKey ? `Center (${centerKey})` : 'Center'];
+                return null;
+              }}
+            />)}
           />
           {showLegend && <Legend
             wrapperStyle={{ fontSize: '12px' }}

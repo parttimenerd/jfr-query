@@ -37,24 +37,6 @@ const params: PlotParameter[] = [
 
 const parseConfig = createConfigParser<BarChartConfig>(buildParserSpec(params));
 
-const CustomTooltip: React.FC<any> = ({ active, payload, label, formatter }) => {
-    if (active && payload && payload.length) {
-        return React.createElement(
-            'div',
-            { className: "p-2 bg-gray-700/80 border border-gray-600 rounded-md shadow-lg backdrop-blur-sm text-sm" },
-            React.createElement('p', { className: "font-semibold text-gray-200" }, label),
-            React.createElement('ul', { className: "mt-1" },
-                ...payload.map((pld: any, index: number) => (
-                    React.createElement('li', { key: index, style: { color: pld.color || pld.stroke } },
-                        `${pld.name}: ${formatter(pld.value)}`
-                    )
-                ))
-            )
-        );
-    }
-    return null;
-};
-
 const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnimationActive?: boolean; animationDuration?: number; domainX?: [any, any]; domainY?: [number, number]; clauses?: ParsedPlotCall; }> = ({ config, data, isAnimationActive, animationDuration, domainX, domainY, clauses }) => {
     const { settings } = useContext(SettingsContext);
     const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
@@ -235,7 +217,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
     const chartChildren = [
         React.createElement(CartesianGrid, { key: 'grid', strokeDasharray: "3 3", stroke: "#4a5568" }),
         ...axisElements,
-        React.createElement(Tooltip, { key: 'tooltip', content: (clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => React.createElement(PlotTooltip, { ...props, onHoverTooltip: clauses?.onHoverTooltip, tooltipColumns: clauses?.tooltipColumns }) : (props: any) => React.createElement(CustomTooltip, { ...props, formatter: numberFormatter }) }),
+        React.createElement(Tooltip, { key: 'tooltip', content: (props: any) => React.createElement(PlotTooltip, { ...props, onHoverTooltip: clauses?.onHoverTooltip, tooltipColumns: clauses?.tooltipColumns?.length ? clauses.tooltipColumns : undefined }) }),
         ...(showLegend ? [React.createElement(Legend as any, { key: 'legend', wrapperStyle: { fontSize: "12px" }, formatter: (v: string) => String(v).replace(/_/g, ' '), verticalAlign: legendPos === 'top' ? 'top' : 'bottom', align: legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center' })] : []),
         ...barElements,
         ...lineElements,
