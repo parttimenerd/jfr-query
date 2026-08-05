@@ -338,6 +338,76 @@ describe('stripCellDirective', () => {
     });
 });
 
+// ─── parseCellDirective — Ohm.js grammar ──────────────────────────────────────
+
+describe('parseCellDirective — Ohm.js grammar', () => {
+    it('parses a slider directive with double-quoted attrs', () => {
+        const input = '<!-- @cell name="threshold" input="slider" var="$$threshold_ms" min="0" max="500" default="50" -->\n';
+        const d = parseCellDirective(input);
+        expect(d).not.toBeNull();
+        expect(d!.name).toBe('threshold');
+        expect(d!.rest.input).toBe('slider');
+        expect(d!.rest.var).toBe('$$threshold_ms');
+        expect(d!.rest.min).toBe('0');
+        expect(d!.rest.max).toBe('500');
+        expect(d!.rest.default).toBe('50');
+        expect(d!.matchLength).toBe(input.length);
+    });
+
+    it('parses a bare (unquoted) name attr', () => {
+        const d = parseCellDirective('<!-- @cell name=intro -->\n');
+        expect(d).not.toBeNull();
+        expect(d!.name).toBe('intro');
+    });
+
+    it('parses collapsed=true', () => {
+        const d = parseCellDirective('<!-- @cell name=x collapsed=true -->');
+        expect(d).not.toBeNull();
+        expect(d!.collapsed).toBe(true);
+    });
+
+    it('parses autorun=false', () => {
+        const d = parseCellDirective('<!-- @cell name=x autorun=false -->');
+        expect(d).not.toBeNull();
+        expect(d!.autorun).toBe(false);
+    });
+
+    it('handles leading whitespace before the comment', () => {
+        const input = '\n\n<!-- @cell name=test -->\n';
+        const d = parseCellDirective(input);
+        expect(d).not.toBeNull();
+        expect(d!.name).toBe('test');
+        expect(d!.matchLength).toBe(input.length);
+    });
+
+    it('returns null for non-directive content', () => {
+        expect(parseCellDirective('## Some heading\n')).toBeNull();
+        expect(parseCellDirective('SELECT 1')).toBeNull();
+    });
+
+    it('parses button input with options attr', () => {
+        const d = parseCellDirective('<!-- @cell name=lim input="button" var="$$limit" options="10,20,50" default="20" -->');
+        expect(d).not.toBeNull();
+        expect(d!.rest.input).toBe('button');
+        expect(d!.rest.options).toBe('10,20,50');
+    });
+
+    it('parses text input type', () => {
+        const d = parseCellDirective('<!-- @cell name=filter input="text" var="$$class_filter" default="%" label="Class filter" -->');
+        expect(d).not.toBeNull();
+        expect(d!.rest.input).toBe('text');
+        expect(d!.rest.var).toBe('$$class_filter');
+        expect(d!.rest.label).toBe('Class filter');
+    });
+
+    it('parses single-quoted values', () => {
+        const d = parseCellDirective("<!-- @cell name='myCell' input='dropdown' -->");
+        expect(d).not.toBeNull();
+        expect(d!.name).toBe('myCell');
+        expect(d!.rest.input).toBe('dropdown');
+    });
+});
+
 // ─── resultSnapshots roundtrip ────────────────────────────────────────────────
 
 describe('resultSnapshots — front matter roundtrip', () => {

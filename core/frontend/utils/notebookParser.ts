@@ -1,5 +1,6 @@
 import * as ohm from 'ohm-js';
 import requiresGrammarSrc from './requiresGrammar.ohm?raw';
+import cellDirectiveSrc from './cellDirectiveGrammar.ohm?raw';
 import type { CustomView, CustomMacro, NotebookMetadata as NotebookMetadataType } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -7,6 +8,30 @@ import type { CustomView, CustomMacro, NotebookMetadata as NotebookMetadataType 
 // ---------------------------------------------------------------------------
 const _requiresGrammar = ohm.grammar(requiresGrammarSrc);
 const _requiresSemantics = _requiresGrammar.createSemantics();
+
+// ---------------------------------------------------------------------------
+// Ohm grammar for <!-- @cell ... --> directives
+// ---------------------------------------------------------------------------
+const _cellDirectiveGrammar = ohm.grammar(cellDirectiveSrc);
+const _cellDirectiveSemantics = _cellDirectiveGrammar.createSemantics();
+
+// Returns a flat Record<string, string> of all parsed attributes.
+_cellDirectiveSemantics.addOperation<Record<string, string>>('attrs', {
+    Directive(_ws, _open, _ws2, _atCell, _ws3, attrs, _ws4, _close, _nl) {
+        return attrs.attrs();
+    },
+    AttrList(attrs) {
+        return Object.assign({}, ...attrs.children.map((a: any) => a.attrs()));
+    },
+    Attr(key, _eq, val, _ws) {
+        return { [key.sourceString]: val.attrs() };
+    },
+    AttrValue_dq(_open, chars, _close) { return chars.sourceString; },
+    AttrValue_sq(_open, chars, _close) { return chars.sourceString; },
+    AttrValue_bare(chars)              { return chars.sourceString; },
+    _iter(...children: any[])          { return children.map((c: any) => c.attrs()); },
+    _terminal()                        { return this.sourceString; },
+});
 
 _requiresSemantics.addOperation<string>('toSql', {
     Expr(e)                    { return e.toSql(); },
@@ -737,31 +762,35 @@ export interface ParsedCellDirective {
     raw: string;
 }
 
-const CELL_DIRECTIVE_RE = /^[\s\r\n]*(<!--\s*@cell\s+([^>]*?)\s*-->)\s*(\r?\n)?/;
+const CELL_DIRECTIVE_RE = /^([\s\r\n]*<!--\s*@cell\b[^>]*-->)([ \t]*)(\r?\n)?/;
 
 export const parseCellDirective = (content: string): ParsedCellDirective | null => {
+    // Quick pre-screen with regex to find the raw match and measure matchLength
+    // without running the full grammar on every line.
     const m = content.match(CELL_DIRECTIVE_RE);
     if (!m) return null;
-    const raw = m[1];
-    const attrString = m[2];
+
+    const raw = m[1].replace(/^[\s\r\n]*/, ''); // stripped comment without leading whitespace
+    const matchLength = m[0].length;
+
+    const match = _cellDirectiveGrammar.match(m[0].trimEnd() + (m[3] ?? ''), 'Directive');
+    if (match.failed()) return null;
+
+    const attrs = _cellDirectiveSemantics(match).attrs() as Record<string, string>;
+
     const rest: Record<string, string> = {};
     let name: string | undefined;
     let collapsed: boolean | undefined;
     let autorun: boolean | undefined;
 
-    // Tokenize key=value pairs. Values may be quoted ("..." or '...') or bare.
-    const attrRe = /([A-Za-z_][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"']+))/g;
-    let am: RegExpExecArray | null;
-    while ((am = attrRe.exec(attrString)) !== null) {
-        const key = am[1];
-        const value = am[2] ?? am[3] ?? am[4] ?? '';
+    for (const [key, value] of Object.entries(attrs)) {
         if (key === 'name') name = value;
         else if (key === 'collapsed') collapsed = value === 'true';
         else if (key === 'autorun') autorun = value !== 'false';
         else rest[key] = value;
     }
 
-    return { name, collapsed, autorun, rest, matchLength: m[0].length, raw };
+    return { name, collapsed, autorun, rest, matchLength, raw };
 };
 
 /**

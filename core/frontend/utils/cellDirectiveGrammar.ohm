@@ -1,0 +1,33 @@
+// Ohm.js PEG grammar for <!-- @cell ... --> directive comments.
+//
+// Parses the full comment including surrounding whitespace and the optional
+// trailing newline, producing a list of key=value attributes.
+//
+// All rules are LEXICAL (lowercase) so whitespace is handled explicitly.
+CellDirective {
+  // Top-level: optional leading whitespace, the comment, optional trailing newline.
+  Directive = ws "<!--" ws "@cell" ws AttrList ws "-->" trailingNewline?
+
+  AttrList = Attr*
+
+  // Each attribute: name=value followed by any amount of whitespace.
+  Attr = attrName "=" AttrValue ws
+
+  // Attribute value: double-quoted, single-quoted, or bare (no spaces/quotes/>).
+  AttrValue = "\"" doubleChars "\""  -- dq
+            | "'" singleChars "'"    -- sq
+            | bareChars              -- bare
+
+  doubleChars = (~"\"" any)*
+  singleChars = (~"'" any)*
+  // Bare values stop at whitespace, >, " or '
+  bareChars   = (~(space | ">" | "\"" | "'") any)+
+
+  // Attribute name: letter or underscore, then alnum/underscore/hyphen
+  attrName = (letter | "_") (alnum | "_" | "-")*
+
+  // Explicit whitespace (spaces, tabs, newlines) — zero or more
+  ws = (space)*
+
+  trailingNewline = "\r\n" | "\n"
+}
