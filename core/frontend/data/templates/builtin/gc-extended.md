@@ -36,6 +36,8 @@ This template focuses on the **causes and mechanisms** behind GC pressure — go
 **Variables:**
 - `$$threshold_ms` — long-pause threshold (default 50 ms); adjust with the slider below.
 
+---
+
 <!-- @cell name=threshold input="slider" var="$$threshold_ms" min="0" max="500" default="50" -->
 
 ---
