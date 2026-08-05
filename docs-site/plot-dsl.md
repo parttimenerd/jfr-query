@@ -686,7 +686,7 @@ SELECT
 FROM gc
 ```
 ```plot
-BIG_NUMBER(value: "pauses", label: "Total GC Pauses", delta: "delta")
+BIG_NUMBER(value: "pauses", label: "Total GC Pauses", previousValue: "delta")
   ON summary
   TITLE "Pause Count"
 ```
@@ -698,7 +698,7 @@ BIG_NUMBER(value: "pauses", label: "Total GC Pauses", delta: "delta")
 |----------|------|-------------|
 | `value` | column | Column whose value is displayed as the large number. Required. |
 | `label` | string | Descriptive text shown below the number. |
-| `delta` | column | Column whose value is shown as a ±change badge. Positive = green, negative = red. |
+| `previousValue` | column | Column whose value is shown as a ±change badge (% delta from this value to `value`). Positive = red, negative = green. |
 | `format` | string | d3-format string for the main value (e.g. `".1f"`, `",.0f"`). |
 
 ---
