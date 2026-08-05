@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useContext } from 'react';
+import { SettingsContext } from '../../context/SettingsContext';
 
 export interface PlotTooltipEntry {
     name: string;
@@ -18,13 +19,13 @@ export interface PlotTooltipProps {
     entryFormatter?: (value: unknown, name: string, entry: PlotTooltipEntry) => [string, string] | null;
 }
 
-export function formatTooltipValue(val: unknown): string {
+export function formatTooltipValue(val: unknown, decimalPlaces = 3): string {
     if (typeof val === 'number') {
         if (!isFinite(val)) return String(val);
         if (Math.abs(val) > 0 && Math.abs(val) < 0.01) {
-            return val.toPrecision(3);
+            return val.toPrecision(Math.max(2, decimalPlaces));
         }
-        return val.toLocaleString('en-US', { maximumFractionDigits: 3 });
+        return val.toLocaleString('en-US', { maximumFractionDigits: decimalPlaces });
     }
     return String(val ?? '');
 }
@@ -69,6 +70,10 @@ export const PlotTooltip: React.FC<PlotTooltipProps> = ({
     active, payload, label, onHoverTooltip, tooltipColumns, labelFormatter, entryFormatter,
 }) => {
     if (!active || !payload || payload.length === 0) return null;
+
+    const { settings } = useContext(SettingsContext);
+    const dp = settings?.decimalPlaces ?? 3;
+    const fmt = (v: unknown) => formatTooltipValue(v, dp);
 
     if (onHoverTooltip) {
         return <div className={boxCls}>{formatPlaceholders(onHoverTooltip, payload)}</div>;

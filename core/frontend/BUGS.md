@@ -1696,3 +1696,33 @@ None. All previously tracked bugs remain fixed. No regressions detected.
 - **B-205** (LATERAL join inner-subquery scope not tracked in completions): still open, complex, low user impact.
 - **BRUSH demo notebook**: no built-in template demonstrates BRUSH end-to-end; unit-tested only.
 - **BIG_NUMBER not showcased**: implemented and unit-tested but no built-in template uses it directly.
+
+---
+
+## Session — 2026-08-05
+
+### Unit tests
+Fixed: 3 tests (`barChartSort`, `lineChartBrush`, `scatterLabel`) were timing out intermittently when run in the default `threads` pool due to `vi.mock()` + dynamic import contention between test workers. Added `pool: 'forks'` to `vitest.config.ts` — all 6203 tests now pass reliably (was 6200 with 3 failing).
+
+### Demo notebook
+Loaded via "▶ Try the demo". All cells ran without errors. DOM scan: 0 error strings. Variables panel: `$limit` changed 200→50, SQL updated and re-ran correctly. Command palette (⌘K): opened, showed all actions. Help modal (?): opened, showed shortcuts + hidden features. Run All: triggered, no errors. Schema explorer: clicked GCHeapSummary → preview appeared in sidebar.
+
+### Templates tested (zero DOM errors each)
+- **CPU Profiling**: loaded and ran; area chart + flame graph (hidden badge, expected) rendered correctly.
+- **Memory Leak Detection**: loaded and ran; line chart with PlotTooltip showing "Heap Used MB: 290" on hover — tooltip working correctly post-unification.
+
+### Interactive features
+- Variables panel: ✅ change value triggers re-run
+- Command palette: ✅ opens with ⌘K, shows all actions
+- Help modal: ✅ opens via ? button, correct content
+- Run All: ✅ no errors
+- Schema explorer: ✅ click to preview
+- PlotTooltip: ✅ hover shows formatted values in Memory Leak Detection chart
+
+### Bugs found
+None. The vitest pool fix was the only issue, and it's now committed.
+
+### Bugs deferred (carry-forward)
+- **B-205** (LATERAL join inner-subquery scope not tracked in completions): still open, complex, low user impact.
+- **BRUSH demo notebook**: no built-in template demonstrates BRUSH end-to-end; unit-tested only.
+- **BIG_NUMBER not showcased**: implemented and unit-tested but no built-in template uses it directly.
