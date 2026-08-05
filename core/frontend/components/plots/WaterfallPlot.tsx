@@ -101,7 +101,7 @@ const WaterfallComponent: React.FC<{
     isAnimationActive?: boolean;
     animationDuration?: number;
     clauses?: ParsedPlotCall;
-}> = ({ config, data, isAnimationActive, animationDuration }) => {
+}> = ({ config, data, isAnimationActive, animationDuration, clauses }) => {
     const { settings } = useContext(SettingsContext);
 
     const showValues = config.showValues ?? true;
