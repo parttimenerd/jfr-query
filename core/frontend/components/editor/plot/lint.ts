@@ -55,7 +55,9 @@ export function lintPlot(source: string, deps: PlotLintDeps): Diagnostic[] {
     });
 
     const diagnostics: Diagnostic[] = [];
-    const known = new Set(Object.keys(deps.shapeRegistry));
+    // node.shape is lowercased by the parser (SHAPE_NORMALIZE[lcShape] ?? lcShape),
+    // so normalise registry keys to lowercase for the membership check.
+    const known = new Set(Object.keys(deps.shapeRegistry).map(k => k.toLowerCase()));
     // Always include parser's KNOWN_SHAPES — those are syntactically recognized
     // even if the registry isn't fully populated.
     for (const s of KNOWN_SHAPES) known.add(s);
