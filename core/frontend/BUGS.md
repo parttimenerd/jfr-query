@@ -1587,4 +1587,50 @@ All pages reviewed. Found and fixed one stale entry:
 ### Open issues
 
 - **B-205** (LATERAL join scope): still open, deferred.
+
+---
+
+## QA full-coverage pass — 2026-08-05 (session 3)
+
+**Scope:** All remaining untested templates, interactive feature verification (variables panel, LINK_X, command palette, Run All, Help modal), UI polish (tooltips, resize handles, truncation, console errors).
+
+**Test environment:** WASM mode, demo `.jfr` file, Chrome via Playwright, `localhost:3001`.
+
+### Templates tested (zero DOM errors each)
+
+| Template | Result |
+|----------|--------|
+| GC Pause Analysis | ✅ No errors; charts rendered, variables panel shows 4 vars |
+| Recording Overview | ✅ No errors; TABLE() shows recording start/end/duration |
+| Heap Allocation | ✅ No errors; top-allocating-classes query executes |
+| I/O & Latency | ✅ No errors |
+| Threading & Contention | ✅ No errors |
+| Exceptions & Errors | ✅ No errors |
+| Memory Leak Detection | ✅ No errors |
+| Container & Cloud | ✅ No errors |
+
+All 11 built-in templates now verified clean (zero DOM-visible errors).
+
+### Interactive features
+
+- **Variables panel** ✅ — Opened via Notebook Settings · 4 vars; changed `$$threshold_ms` from 100 → 50; description text updated to "50 ms" immediately; cells re-ran (console log confirmed ~100 new entries); LINK_X zoom populated `$start`, `$end`, `$$start`, `$$end` dynamically (panel showed 8 vars after interaction)
+- **LINK_X zoom/pan** ✅ — LINE_CHART with `LINK_X($start, $end) ZOOM`: drag pans the chart (crosshair + tooltip shows correct values e.g. "After GC: 260 / Before GC: 460"); hint chip "drag=pan · ⌥drag=select · ⌥scroll=zoom" visible; x-axis variables updated in notebook-variables panel
+- **Chart tooltips** ✅ — Hovering bar chart at x=460,y=130 triggered tooltip: "Evacuate Collection Set / Median (ms): 15.415 / P90 (ms): 21.579 / P99 (ms): 25.233 / Max (ms): 25.64" — formatted values confirmed
+- **Command palette** ✅ — Cmd+K opens; shows Actions (Format all cells, Run all queries, Add new cell, Collapse/Expand all, Clear all results, Save notebook, Open template gallery, Undo); typing "gc" filters to matching cells (GC Analysis, GC & Heap Configuration, GC Pause Summary, etc.)
+- **Run All** ✅ — Clicked "Run All Queries" toolbar button; all cells executed; DOM scan afterwards: zero errors
+- **Help modal** ✅ — "Keyboard Shortcuts & Tips (?)" button opens modal with Global/Queries/Tabs/Command Palette Prefixes/Hidden Features sections; "Take the guided tour" CTA present
+- **Plot resize handles** ✅ — ns-resize handle at chart bottom dragged down 80px; container grew from 322px → 402px (confirmed functional)
+
+### UI polish
+
+- **Console errors** ✅ — Zero JS errors during entire session; only the expected 2 ONNX runtime CPU-node-assignment warnings
+- **Failed fetches** ✅ — Zero failed network requests (transferSize=0 fetch list empty)
+- **Table header truncation** ✅ — All visible table headers fit within their cells (scrollWidth == clientWidth)
+- **Sidebar truncation** ✅ — Schema items (GarbageCollection, GCHeapSummary, etc.) fit without overflow
+- **BRUSH** — No built-in template currently uses BRUSH in a live interactive way (verified: BRUSH is implemented in PlotRenderer.tsx and tested in unit tests but no template notebook demonstrates it end-to-end); deferred
+
+### Open issues
+
+- **B-205** (LATERAL join scope): still open, deferred.
+- **BRUSH live demo**: no template exercises BRUSH; feature is unit-tested but lacks an end-to-end notebook demo.
 - **BIG_NUMBER not in any template**: The chart type is implemented and tested but not showcased in any builtin template. Low priority — the heuristic auto-suggests it for scalar queries.
