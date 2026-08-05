@@ -9,6 +9,7 @@ import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { parsePlotCall, parseComposite, validateComposite, type ParsedPlotCall } from '../utils/plotParser';
 import { CompositeRenderer } from './plots/CompositeRenderer';
 import { expandPlotConstants } from '../utils/plotConstants';
+import { substituteVariables, toSqlVariables } from '../utils/variableSubstitution';
 import { getTimeValue } from '../utils/plotUtils';
 import { LockClosedIcon } from './icons/LockClosedIcon';
 import { LockOpenIcon } from './icons/LockOpenIcon';
@@ -1005,9 +1006,12 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
              return <div className="p-3 text-xs text-gray-500 italic">Query has errors — see SQL editor above.</div>;
         }
 
+        // Substitute $var / $$var references in the plot config before parsing
+        // so clauses like `LIMIT $$limit` or `TITLE "threshold=$$threshold_ms"` resolve.
+        const substitutedConfig = substituteVariables(config?.trim() || 'TABLE()', toSqlVariables(allVariables));
         // Expand `LET @name = value` constants before any further parsing so
         // both validation and rendering see the substituted form.
-        const expansion = expandPlotConstants(config?.trim() || 'TABLE()');
+        const expansion = expandPlotConstants(substitutedConfig || 'TABLE()');
         if (expansion.errors.length > 0) {
             throw new Error(expansion.errors.join('\n'));
         }
