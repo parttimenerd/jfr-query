@@ -29,6 +29,7 @@ import { suggestPlot as runSuggestPlot, cancel as cancelSuggestPlot, type PlotSu
 import SQLEditor from './SQLEditor';
 import PlotConfigEditor from './PlotConfigEditor';
 import PlotRenderer from './PlotRenderer';
+import DataTable from './DataTable';
 import InlineChat from './InlineChat';
 import PlotHelpModal from './PlotHelpModal';
 import StaticCodeHighlighter from './StaticCodeHighlighter';
@@ -176,6 +177,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const [runningStates, setRunningStates] = useState<Record<number, boolean>>({});
     const [pendingRunStates, setPendingRunStates] = useState<Record<number, boolean>>({});
     const [collapsedStates, setCollapsedStates] = useState<Record<string, boolean>>({});
+    const [tableViewStates, setTableViewStates] = useState<Record<string, boolean>>({});
     const [activeChat, setActiveChat] = useState<string | null>(null);
     const [isPlotHelpModalOpen, setIsPlotHelpModalOpen] = useState(false);
     const plotHelpInsertRef = useRef<((code: string) => void) | null>(null);
@@ -1566,27 +1568,37 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                     // Show plot result (both in edit mode and presenter mode).
                                     const standaloneIsCollapsed = !presenterMode && (collapsedStates[`standalone-plot-${si}`] ?? false);
                                     if (standaloneData && !standaloneIsCollapsed) {
+                                        const standaloneViewKey = `standalone-result-${si}`;
+                                        const standaloneIsTableView = tableViewStates[standaloneViewKey] ?? false;
                                         items.push(
-                                            <div key={`standalone-result-${si}`}
+                                            <div key={standaloneViewKey}
                                                 className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative"
                                                 style={{ height: `${resultHeight}px` }}>
-                                                <button title="Download as PNG" aria-label="Download as PNG" className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-standalone-${si}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-standalone-${si + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                                </button>
+                                                <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover/result:opacity-100 transition-opacity z-10">
+                                                    <button title={standaloneIsTableView ? 'Show chart' : 'Show as table'} aria-label={standaloneIsTableView ? 'Show chart' : 'Show as table'} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200" onClick={() => setTableViewStates(prev => ({ ...prev, [standaloneViewKey]: !prev[standaloneViewKey] }))}>
+                                                        {standaloneIsTableView ? <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>}
+                                                    </button>
+                                                    <button title="Download as PNG" aria-label="Download as PNG" className="bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-standalone-${si}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-standalone-${si + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                    </button>
+                                                </div>
                                                 <div id={`result-container-${cell.id}-standalone-${si}`} className="flex-grow overflow-hidden">
-                                                    <PlotRenderer
-                                                        config={configToRender}
-                                                        data={standaloneData}
-                                                        dataByQueryRef={dataByQueryRef}
-                                                        sql={''}
-                                                        cellContext={cellContext}
-                                                        onApplyFix={c => handleStandalonePlotChange(c)}
-                                                        isAiFeatureActive={isAiFeatureActive}
-                                                        metadata={metadata}
-                                                        onMetadataChange={onMetadataChange}
-                                                        onCellVariableChange={handleCellVariableChange}
-                                                        allVariables={allVariables}
-                                                    />
+                                                    {standaloneIsTableView
+                                                        ? <DataTable data={standaloneData} />
+                                                        : <PlotRenderer
+                                                            config={configToRender}
+                                                            data={standaloneData}
+                                                            dataByQueryRef={dataByQueryRef}
+                                                            sql={''}
+                                                            cellContext={cellContext}
+                                                            onApplyFix={c => handleStandalonePlotChange(c)}
+                                                            isAiFeatureActive={isAiFeatureActive}
+                                                            metadata={metadata}
+                                                            onMetadataChange={onMetadataChange}
+                                                            onCellVariableChange={handleCellVariableChange}
+                                                            allVariables={allVariables}
+                                                        />
+                                                    }
                                                 </div>
                                             </div>
                                         );
@@ -1687,13 +1699,23 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                 // Hide result when plot block is collapsed (unless in presenter mode where editor is hidden).
                                 const plotIsCollapsed = !presenterMode && (collapsedStates[`plot-${plotUid}`] !== undefined ? !!collapsedStates[`plot-${plotUid}`] : !config.trim());
                                 if (resolvedData && !plotIsCollapsed) {
+                                    const pairedViewKey = `result-${cell.id}-${plotUid}`;
+                                    const pairedIsTableView = tableViewStates[pairedViewKey] ?? false;
                                     items.push(
-                                        <div key={`result-${cell.id}-${plotUid}`} className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative" style={{ height: `${resultHeight}px` }}>
-                                            <button title="Download as PNG" aria-label="Download as PNG" className="absolute top-1 right-1 opacity-0 group-hover/result:opacity-100 transition-opacity bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200 z-10" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-${plotUid}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-${plotUid + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                            </button>
+                                        <div key={pairedViewKey} className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative" style={{ height: `${resultHeight}px` }}>
+                                            <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover/result:opacity-100 transition-opacity z-10">
+                                                <button title={pairedIsTableView ? 'Show chart' : 'Show as table'} aria-label={pairedIsTableView ? 'Show chart' : 'Show as table'} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200" onClick={() => setTableViewStates(prev => ({ ...prev, [pairedViewKey]: !prev[pairedViewKey] }))}>
+                                                    {pairedIsTableView ? <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>}
+                                                </button>
+                                                <button title="Download as PNG" aria-label="Download as PNG" className="bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200" onClick={() => { const container = document.getElementById(`result-container-${cell.id}-${plotUid}`); if (!container) return; const svg = container.querySelector('svg'); if (svg) { const serializer = new XMLSerializer(); const svgStr = serializer.serializeToString(svg); const canvas = document.createElement('canvas'); const rect = svg.getBoundingClientRect(); const scale = window.devicePixelRatio || 1; canvas.width = rect.width * scale; canvas.height = rect.height * scale; const ctx = canvas.getContext('2d')!; ctx.scale(scale, scale); const img = new Image(); const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }); const url = URL.createObjectURL(blob); img.onload = () => { ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, rect.width, rect.height); ctx.drawImage(img, 0, 0, rect.width, rect.height); URL.revokeObjectURL(url); canvas.toBlob(b => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `plot-${cell.id}-${plotUid + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }, 'image/png'); }; img.src = url; } }}>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                </button>
+                                            </div>
                                             <div id={`result-container-${cell.id}-${plotUid}`} className="flex-grow overflow-hidden">
-                                                <PlotRenderer config={configToRender} data={resolvedData} dataByQueryRef={dataByQueryRef} sql={resolvedSql} cellContext={cellContext} onApplyFix={c => handleApplyPlotFix(c, defaultSqlIndex)} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange} onCellVariableChange={handleCellVariableChange} allVariables={allVariables} />
+                                                {pairedIsTableView
+                                                    ? <DataTable data={resolvedData} />
+                                                    : <PlotRenderer config={configToRender} data={resolvedData} dataByQueryRef={dataByQueryRef} sql={resolvedSql} cellContext={cellContext} onApplyFix={c => handleApplyPlotFix(c, defaultSqlIndex)} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange} onCellVariableChange={handleCellVariableChange} allVariables={allVariables} />
+                                                }
                                             </div>
                                         </div>
                                     );
