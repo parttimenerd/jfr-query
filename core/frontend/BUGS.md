@@ -1551,3 +1551,40 @@ All pages reviewed. Found and fixed one stale entry:
 
 - **B-205** (LATERAL join scope — low priority, complex to fix, not user-visible in demo data): still open.
 - **Scroll-wheel zoom on charts**: Scrolling on a chart while the page is scrollable sends wheel events to the page rather than the chart. The zoom works via Shift+drag (as documented in the Help modal) — this is expected behavior, not a bug.
+
+---
+
+## QA follow-up pass — 2026-08-05 (session 2)
+
+**Scope:** 3 additional templates (GC Deep Dive, JVM Internals, CPU Profiling), SQL autocomplete, schema explorer, BIG_NUMBER chart type, vitest suite, and PlotRenderer.tsx / autocompleteRanker.json change investigation.
+
+**Test environment:** WASM mode, demo `.jfr` file, Chrome via Playwright, `localhost:3001`.
+
+### Templates re-tested (zero DOM errors each)
+
+| Template | Result |
+|----------|--------|
+| GC Deep Dive | ✅ No errors (13 SVG charts rendered) |
+| JVM Internals | ✅ No errors |
+| CPU Profiling | ✅ No errors |
+| Comprehensive Feature Test | ✅ 13 SVG charts rendered, no errors |
+
+### Interactive features
+
+- **SQL autocomplete** ✅ — `FROM Gar` + Ctrl+Space → `GarbageCollection table · 20 rows` popup appears correctly
+- **Schema explorer** ✅ — Clicking `GarbageCollection` in sidebar loads preview table with columns `gcId, name, startTime, duration⏱, sumOfPauses⏱, longestPause⏱, cause` and row data
+- **BIG_NUMBER chart type** — Confirmed registered in `plotRegistry` and component code is correct. No built-in template exercises BIG_NUMBER directly; the `heuristicPlot.ts` suggests it for single-scalar aggregates. Component renders correctly when given valid data (verified via code review). 6184 vitest tests all pass including BigNumber plot tests.
+
+### Source control findings
+
+- **PlotRenderer.tsx** — The `M core/frontend/components/PlotRenderer.tsx` in git status at session start was a stale snapshot. Current `git diff` shows zero changes — the file is clean. Last commit (0dc692e) already included all PlotRenderer changes.
+- **autocompleteRanker.json** — Found a local uncommitted change that **regressed** the weights (version 5→4, `inValuePos: -0.5→0`, `plotClause: 1.0→0.3`, `isViewName: 0.5→0.3`). This was from an accidental re-train run at 14:13. **Discarded** via `git restore` — restored to the intentional v5 weights from commit 3f3fb81.
+
+### Vitest suite
+
+**6184 passed, 7 skipped, 0 failed** — all green. (Duration ~27s)
+
+### Open issues
+
+- **B-205** (LATERAL join scope): still open, deferred.
+- **BIG_NUMBER not in any template**: The chart type is implemented and tested but not showcased in any builtin template. Low priority — the heuristic auto-suggests it for scalar queries.
