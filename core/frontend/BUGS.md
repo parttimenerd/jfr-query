@@ -2397,3 +2397,34 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 19 — 2026-08-06
+
+**Scope:** Full QA pass — unit tests, demo notebook, CPU Profiling + Heap Allocation templates, GC Pause Analysis interactive features, console check, UI polish, BUGS.md/docs-site audit.
+
+### Test results
+
+- **Unit tests:** 6210 passed, 0 failed
+- **Demo notebook:** localStorage cleared; loaded clean; DOM scan 0 errors
+- **CPU Profiling template:** ✅ PASS — 0 DOM errors (cells hidden, no ExecutionSample data in demo)
+- **Heap Allocation template:** ✅ PASS — 2 charts rendered, 0 DOM errors
+- **GC Pause Analysis template:** ✅ PASS — loaded for interactive feature testing
+- **Interactive features:**
+  - Variables panel ✅ — `$session_start` header button clickable, opens edit widget
+  - LINK_X zoom ✅ — 5 wheel events on `.group` div zoomed chart; reset button appeared
+  - Command palette ✅ — Cmd+K opens search; Escape closes
+  - SQL autocomplete ✅ — Ctrl+Space after `SELECT * FROM Gar` suggested `GarbageCollection`
+  - Schema explorer ✅ — GarbageCollection expanded; gcId, startTime, cause columns shown
+  - Run All ✅ — executed all cells, 0 DOM errors after
+  - Help modal ✅ — "Keyboard Shortcuts & Tips (?)" button opens modal correctly
+- **Console:** 0 JS errors (2 expected /api/query 500s on fresh load only)
+- **UI polish:** 0 zero-height cells, 0 truncated text, 0 stuck spinners; chart tooltips ✅; 22 resize handles ✅
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
