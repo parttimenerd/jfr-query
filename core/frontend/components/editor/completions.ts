@@ -13,6 +13,8 @@ import {
   SQL_KEYWORDS_AFTER_SELECT,
   SQL_KEYWORDS_AFTER_WHERE,
   SQL_KEYWORDS_AT_TOP,
+  SQL_KEYWORDS_TYPES,
+  SQL_KEYWORDS_WINDOW,
 } from './sqlFunctions';
 import {
   type DistinctValuesRunner,
@@ -52,6 +54,21 @@ export interface SqlCompletionDeps {
 
 const rankCache = new Map<string, string[]>();
 const RANK_CACHE_LIMIT = 80;
+
+// Cache the flattened all-columns fallback list keyed by schema object identity.
+// Avoids O(tables*cols) flatMap on every keystroke when no FROM clause is present.
+let _fallbackColsSchema: SchemaForCompletion | null = null;
+let _fallbackCols: Array<{ name: string; type: string; sourceName: string }> = [];
+
+function getFallbackCols(schema: SchemaForCompletion) {
+  if (schema === _fallbackColsSchema) return _fallbackCols;
+  _fallbackColsSchema = schema;
+  _fallbackCols = [
+    ...schema.tables.flatMap(t => t.columns.map(c => ({ name: c.name, type: c.type, sourceName: t.name }))),
+    ...schema.views.flatMap(v => v.columns.map(c => ({ name: c.name, type: c.type, sourceName: v.name }))),
+  ];
+  return _fallbackCols;
+}
 
 function rerank(options: Completion[], context: string): Completion[] {
   const cached = rankCache.get(context);
@@ -277,11 +294,7 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
 
     if (inColumnCtx) {
       const cols = collectColumns(schema, sqlCtx);
-      const candidateList = cols.length > 0 ? cols : (
-        // No FROM yet — fall back to every column in every table.
-        [...schema.tables.flatMap(t => t.columns.map(c => ({ name: c.name, type: c.type, sourceName: t.name }))),
-         ...schema.views.flatMap(v => v.columns.map(c => ({ name: c.name, type: c.type, sourceName: v.name })))]
-      );
+      const candidateList = cols.length > 0 ? cols : getFallbackCols(schema);
       const seenCol = new Set<string>();
       for (const c of candidateList) {
         const key = c.name.toLowerCase();
@@ -380,6 +393,22 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
           apply: fn.signature.startsWith(fn.name + '(') ? `${fn.name}(` : fn.name,
           boost: fn.boost ?? 1,
         });
+      }
+    }
+
+    // --- CAST AS type completions: suggest data types after CAST(x AS or ::  ---
+    if (/\bCAST\s*\([^)]*\bAS\s+$/i.test(upTo) || /\b::\s*$/.test(upTo)) {
+      for (const t of SQL_KEYWORDS_TYPES) {
+        if (lc && !t.toLowerCase().startsWith(lc)) continue;
+        options.push({ label: t, detail: 'type', type: 'keyword', boost: 1 });
+      }
+    }
+
+    // --- OVER/PARTITION BY/WINDOW keywords after aggregate or ranking functions ---
+    if (/\b(OVER|PARTITION)\s*$/i.test(upTo) || /\)\s+OVER\s*$/i.test(upTo)) {
+      for (const kw of SQL_KEYWORDS_WINDOW) {
+        if (lc && !kw.toLowerCase().startsWith(lc)) continue;
+        options.push({ label: kw, detail: 'window keyword', type: 'keyword', apply: kw + ' ', boost: 1 });
       }
     }
 
