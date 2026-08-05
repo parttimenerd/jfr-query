@@ -419,9 +419,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           wasmConnRef.current = await wasmDbRef.current.connect();
         }
       } else {
-        // DB already loaded — drop all existing tables/views before the new import
-        // to avoid doubled memory usage (old tables + new tables simultaneously).
+        // DB already loaded — fully terminate the old DuckDB instance and create a
+        // fresh one. Dropping tables (resetWasmDatabase) keeps the WASM linear memory
+        // allocated; large files like 90 MB JFR load the WASM heap to ~600 MB and a
+        // second load on top of that causes OOM. A full terminate + reinit releases all
+        // memory before the new import begins (H-004 fix).
         await resetWasmDatabase(wasmConnRef.current!);
+        wasmConnRef.current!.close().catch(() => {});
+        wasmDbRef.current!.terminate().catch(() => {});
+        wasmDbRef.current = null;
+        wasmConnRef.current = null;
+        wasmInitPromiseRef.current = null;
+        wasmDbRef.current = await initDuckDBWasm();
+        wasmConnRef.current = await wasmDbRef.current.connect();
       }
       const conn = wasmConnRef.current!;
       const isJfr = fileName.toLowerCase().endsWith('.jfr');
@@ -462,7 +472,16 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           wasmConnRef.current = await wasmDbRef.current.connect();
         }
       } else {
+        // Same full-teardown approach as loadFile (H-004 fix): release WASM linear
+        // memory by terminating the old instance before initialising a fresh one.
         await resetWasmDatabase(wasmConnRef.current!);
+        wasmConnRef.current!.close().catch(() => {});
+        wasmDbRef.current!.terminate().catch(() => {});
+        wasmDbRef.current = null;
+        wasmConnRef.current = null;
+        wasmInitPromiseRef.current = null;
+        wasmDbRef.current = await initDuckDBWasm();
+        wasmConnRef.current = await wasmDbRef.current.connect();
       }
       const conn = wasmConnRef.current!;
       // Execute each statement in DEMO_SETUP_SQL individually
