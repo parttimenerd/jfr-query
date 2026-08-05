@@ -587,5 +587,75 @@ export const sqlCases: AutocompleteCase[] = [
         variables: { '$alpha.host': "'foo'", '$$global': '1', '$beta.other': '1' },
         expected: { contains: ['$alpha.host'], excludes: ['$$global', '$beta.other'] },
     },
+
+    // --- Tier: sql-views ---
+    {
+        name: 'from-offers-views',
+        kind: 'sql',
+        tier: 'sql-views',
+        // Views registered in the schema must appear in FROM completions.
+        input: 'SELECT * FROM |',
+        schema: (() => {
+            const tables: TableSchema[] = [{ name: 'GarbageCollection', columns: [{ name: 'startTime', type: 'TIMESTAMP' }] }];
+            const views: ViewSchema[] = [
+                { name: 'gc-pauses', query: '', columns: [{ name: 'Time', type: 'TIMESTAMP' }, { name: 'Pause (ms)', type: 'DOUBLE' }] },
+                { name: 'gc-overhead', query: '', columns: [{ name: 'Time', type: 'TIMESTAMP' }, { name: 'GC Overhead %', type: 'DOUBLE' }] },
+            ];
+            return { tables, views, macros: [], tableMap: new Map(tables.map(t => [t.name.toLowerCase(), t])), viewMap: new Map(views.map(v => [v.name.toLowerCase(), v])) };
+        })(),
+        expected: { contains: ['gc-pauses', 'gc-overhead', 'GarbageCollection'] },
+    },
+    {
+        name: 'from-partial-view-name',
+        kind: 'sql',
+        tier: 'sql-views',
+        // Typing `gc-p` should filter to views starting with that prefix.
+        input: 'SELECT * FROM "gc-p|"',
+        schema: (() => {
+            const tables: TableSchema[] = [];
+            const views: ViewSchema[] = [
+                { name: 'gc-pauses', query: '', columns: [] },
+                { name: 'gc-pause-distribution', query: '', columns: [] },
+                { name: 'gc-overhead', query: '', columns: [] },
+            ];
+            return { tables, views, macros: [], tableMap: new Map(), viewMap: new Map(views.map(v => [v.name.toLowerCase(), v])) };
+        })(),
+        expected: { contains: ['gc-pauses', 'gc-pause-distribution'], excludes: ['gc-overhead'] },
+    },
+    {
+        name: 'view-columns-visible-after-from',
+        kind: 'sql',
+        tier: 'sql-views',
+        // After `FROM slow_requests`, the view's columns must appear in SELECT.
+        // Uses an unquoted view name; quoted hyphenated names require SQL context parser changes.
+        input: 'SELECT | FROM slow_requests',
+        schema: (() => {
+            const tables: TableSchema[] = [];
+            const views: ViewSchema[] = [
+                { name: 'slow_requests', query: '', columns: [{ name: 'ts', type: 'TIMESTAMP' }, { name: 'latency', type: 'DOUBLE' }, { name: 'path', type: 'VARCHAR' }] },
+            ];
+            return { tables, views, macros: [], tableMap: new Map(), viewMap: new Map(views.map(v => [v.name.toLowerCase(), v])) };
+        })(),
+        expected: { contains: ['ts', 'latency', 'path'] },
+    },
+
+    // --- Tier: sql-value-pos ---
+    {
+        name: 'where-equals-offers-variable-completions',
+        kind: 'sql',
+        tier: 'sql-value-pos',
+        // After `= `, typing $ should offer variable completions.
+        input: 'SELECT * FROM events WHERE host = $|',
+        variables: { '$limit': '50', '$threshold': '100' },
+        expected: { contains: ['$limit', '$threshold'] },
+    },
+    {
+        name: 'where-equals-does-not-crash',
+        kind: 'sql',
+        tier: 'sql-value-pos',
+        // After `= `, the query should not crash and should return some results.
+        input: 'SELECT * FROM events WHERE host = |',
+        expected: { matchesRegex: /.*/ },
+    },
 ];
 

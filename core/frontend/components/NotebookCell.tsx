@@ -1305,6 +1305,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     const inputType = d?.rest?.input as 'slider' | 'dropdown' | 'datetime' | 'text' | 'button' | undefined;
                     const varName = d?.rest?.var as string | undefined;
                     if (!inputType || !varName) return null;
+                    // Validate: var must start with $ (notebook-level $$) or $ (cell-local).
+                    // Raw values like var="50" are a common mistake; surface a clear error.
+                    if (!varName.startsWith('$')) {
+                        return (
+                            <div className="text-xs text-yellow-400 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1 my-1">
+                                Invalid <code className="font-mono">var="{varName}"</code> — must start with <code className="font-mono">$$</code> (notebook variable) or <code className="font-mono">$</code> (cell variable)
+                            </div>
+                        );
+                    }
                     const currentVal = (allVariables[varName] ?? d?.rest?.default ?? '') as string;
                     return (
                         <VariableInputWidget

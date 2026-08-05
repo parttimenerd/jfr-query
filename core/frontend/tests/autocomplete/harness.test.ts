@@ -18,6 +18,8 @@ const TIER_FLOORS: Record<string, number> = {
     'sql-macro': 1.0,
     'sql-window': 1.0,
     'sql-complex': 1.0,
+    'sql-views': 1.0,
+    'sql-value-pos': 1.0,
     'plot-toplevel': 1.0,
     'plot-body': 1.0,
     'plot-clause': 1.0,

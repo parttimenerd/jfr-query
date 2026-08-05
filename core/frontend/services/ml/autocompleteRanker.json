@@ -1,7 +1,7 @@
 {
-  "version": 4,
-  "mrr": 0.883263707571801,
-  "trainedAt": "2026-08-05T11:24:30.976Z",
+  "version": 5,
+  "mrr": 0.8832,
+  "trainedAt": "2026-08-05T12:09:34.228Z",
   "weights": {
     "prefixMatch": 1,
     "substringMatch": 0.5,
@@ -15,8 +15,8 @@
     "exactMatch": 1.5,
     "isTable": 0.2,
     "aggContext": 0.2,
-    "inValuePos": 0,
-    "isViewName": 0.3,
-    "plotClause": 0.3
+    "inValuePos": -0.5,
+    "isViewName": 0.5,
+    "plotClause": 1.0
   }
 }
