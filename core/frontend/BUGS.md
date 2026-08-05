@@ -1902,3 +1902,47 @@ None. No regressions from prior sessions.
 
 ### Deferred (carry-forward)
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## QA pass — 2026-08-05 (session 9)
+
+**Scope:** Full regression sweep — unit tests, demo notebook, 9 templates (CPU Profiling, Heap Allocation, I/O & Latency, JVM Internals, Memory Leak Detection, Exceptions & Errors, Container & Cloud, Comprehensive Feature Test, Threading & Contention), interactive features (variables panel, BRUSH, LINK_X, command palette, SQL autocomplete, schema explorer, Run All, keyboard shortcuts modal).
+
+**Test environment:** WASM mode, demo `.jfr` file, Chrome via Playwright MCP, `localhost:3001`.
+
+### Unit tests
+**6203 passed, 7 skipped, 0 failed** — all green.
+
+### Templates tested (zero DOM errors each)
+
+| Template | Result |
+|----------|--------|
+| Threading & Contention | ✅ No errors |
+| CPU Profiling | ✅ No errors |
+| Heap Allocation | ✅ No errors |
+| I/O & Latency | ✅ No errors |
+| JVM Internals | ✅ No errors |
+| Memory Leak Detection | ✅ No errors |
+| Exceptions & Errors | ✅ No errors |
+| Container & Cloud | ✅ No errors |
+| Comprehensive Feature Test | ✅ No errors |
+
+### Interactive features
+
+- **Variables panel** ✅ — Notebook Settings shows 6 vars: `$limit=20`, `$min_pause_ms=5`, `$sel.brush.lo=0`, `$sel.brush.hi=999999999999`, `$session_start`, `$session_end`
+- **Command palette** ✅ — Cmd+K opens cleanly with full action list (Format, Run all, Add cell, Collapse/Expand, etc.)
+- **Run All** ✅ — Triggered via command palette "Run all queries"; all cells completed with 0 DOM errors
+- **Keyboard Shortcuts modal** ✅ — Opens from toolbar; renders all sections (Global, Queries, Tabs, Command Palette Prefixes, Hidden Features)
+- **SQL autocomplete** ✅ — Typing `GarbageC` in SQL editor shows `GarbageCollection` dropdown suggestion
+- **Schema explorer** ✅ — Clicking GarbageCollection in sidebar updates preview pane with `SELECT * FROM "GarbageCollection" LIMIT 20` and results
+- **BRUSH** ✅ — Drag on "Pause Timeline" chart updates variables, downstream BETWEEN query re-ran (366ms shown); empty result for selected window is correct behavior
+- **LINK_X** ✅ — "Heap MB Over Time" chart renders with Used MB / Committed MB sawtooth pattern; `LINK_X($start, $end)` config visible
+- **BIG_NUMBER cards** ✅ — ROW(BIG_NUMBER×4) renders: GC Events=20, Total Pause=790.8ms, Avg Pause=39.54ms, Max Pause=224.4ms
+- **Scatter plot** ✅ — "Reclaimed vs Pause Time" scatter color-coded by GC cause (3 distinct categories)
+
+### Console audit
+**0 JS errors** across the full session (198 total console entries, all warnings/info).
+
+### Deferred (carry-forward)
+- **B-205** (LATERAL join scope in completions): still open, deferred.
