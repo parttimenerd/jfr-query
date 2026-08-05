@@ -2168,6 +2168,35 @@ None new.
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
 
+---
+
+## Session 19 — 2026-08-06
+
+**Scope:** Full QA pass — unit tests, all 12 templates, demo notebook interactive features, console, BUGS.md/docs audit.
+
+### Fixes applied
+
+None.
+
+### Test results
+
+- **Unit tests:** 6210 passed, 0 failed
+- **All 12 templates:** ✅ PASS — 0 DOM errors each (overview, gc-analysis, gc-extended, cpu-profiling, heap-allocation, io-latency, jvm-internals, memory-leaks, threading, exceptions, container, comprehensive-test)
+- **Demo notebook DOM scan:** 0 errors
+- **Variables panel:** `$limit` changed to 75 ✅
+- **Run All:** executed ✅
+- **Collapse All / Expand All:** both work ✅
+- **Schema Explorer:** GarbageCollection click updated preview pane ✅
+- **Console:** 2 expected ONNX warnings, 0 JS errors
+- **Docs audit:** no stale claims found
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+
 
 ## Session 17 — 2026-08-05
 
