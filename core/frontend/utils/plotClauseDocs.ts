@@ -192,5 +192,21 @@ export const plotClauseDocs: Record<string, ClauseDoc> = {
         signature: 'DISABLED',
         description: 'Suppresses rendering of this plot — shows a placeholder instead. Useful for temporarily hiding a chart without deleting its config.',
         params: []
-    }
+    },
+    SORT: {
+        name: 'SORT',
+        signature: 'SORT ASC | SORT DESC',
+        description: 'Sorts bars in a BAR_CHART by value before rendering. ASC = lowest first, DESC = highest first (useful for top-N charts).',
+        params: [
+            { name: 'direction', type: 'string', required: true, description: '`ASC` for ascending (lowest first) or `DESC` for descending (highest first).' }
+        ]
+    },
+    LIMIT: {
+        name: 'LIMIT',
+        signature: 'LIMIT n',
+        description: 'Caps the number of rows/bars rendered to the first n entries (after any SORT). Applies to BAR_CHART and TABLE.',
+        params: [
+            { name: 'n', type: 'number', required: true, description: 'Maximum number of entries to render, e.g. `LIMIT 10`.' }
+        ]
+    },
 };
