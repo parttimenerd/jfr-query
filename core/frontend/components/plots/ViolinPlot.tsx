@@ -105,7 +105,7 @@ const ViolinComponent: React.FC<{
     }
 
     return (
-        <div className="w-full h-full flex gap-2 overflow-x-auto">
+        <div className="w-full flex gap-2 overflow-x-auto" style={{ minHeight: 200 }}>
             {violins.map((v, idx) => {
                 const color = colors[idx % colors.length];
                 const chartData = v.kde.map(k => ({
