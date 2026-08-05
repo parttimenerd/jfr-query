@@ -59,7 +59,7 @@ Each point is one safepoint — a moment when all application threads were pause
 ```sql
 SELECT
   B.startTime AS "Time",
-  round(epoch_ms(E.startTime - B.startTime), 1) AS "Duration (ms)",
+  round((epoch_ms(E.startTime::TIMESTAMP) - epoch_ms(B.startTime::TIMESTAMP)), 1) AS "Duration (ms)",
   round(S.duration * 1000, 1) AS "Sync (ms)",
   B.totalThreadCount AS "Threads"
 FROM SafepointBegin B
@@ -88,7 +88,7 @@ Total STW time per second — shows when the JVM spent the most time stopped. Su
 SELECT
   time_bucket(INTERVAL '1 second', B.startTime) AS "Second",
   COUNT(*) AS "Count",
-  round(SUM(epoch_ms(E.startTime - B.startTime)), 1) AS "Total STW (ms)"
+  round(SUM(epoch_ms(E.startTime::TIMESTAMP) - epoch_ms(B.startTime::TIMESTAMP)), 1) AS "Total STW (ms)"
 FROM SafepointBegin B
 JOIN SafepointEnd E ON B.safepointId = E.safepointId
 GROUP BY 1
