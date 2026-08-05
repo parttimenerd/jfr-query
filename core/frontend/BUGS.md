@@ -2267,6 +2267,44 @@ None new.
 
 ---
 
+## Session 22 — 2026-08-06
+
+**Scope:** Full QA pass — unit tests, demo notebook (fresh localStorage), CPU Profiling template, JVM Internals template, GC Pause Analysis template, all interactive features, console errors, UI polish, BUGS.md/docs-site audit.
+
+### Fixes applied
+
+- **docs-site/plot-dsl.md** — clarified `ZOOM factor` docs: it's a CSS scale transform, not an interaction enabler; scroll-zoom (Shift+scroll) is always available on line/area/scatter charts and does not require the ZOOM clause.
+
+### Test results
+
+- **Unit tests:** 6210 passed, 0 failed
+- **Demo notebook (fresh localStorage):** ✅ PASS — 0 DOM errors; 2 charts, 2 tables rendered
+- **CPU Profiling template:** ✅ PASS — 0 DOM errors (cells hidden; CPULoad/Method events not in demo data — expected)
+- **JVM Internals template:** ✅ PASS — 0 DOM errors (Safepoints, VMOperations cells visible)
+- **GC Pause Analysis template:** ✅ PASS — 0 DOM errors; LINK_X charts rendered
+- **Variables panel:** `$session_start`/`$session_end` visible ✅
+- **LINK_X zoom:** 5× Shift+scroll → "reset" button appeared ✅
+- **Command palette (⇧⇧):** opened with "Search commands, cells, tables, columns…" ✅
+- **SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`):** `GarbageCollection · table · 20 rows` ✅
+- **Schema explorer click:** GarbageCollection → preview shows gcId/name/startTime columns ✅
+- **Run All:** no errors, no stuck spinners ✅
+- **Help modal:** `Keyboard Shortcuts & Tips` opened ✅
+- **Console errors:** 0 JS errors (194 total messages, all warnings)
+- **DOM error scan:** 0 Catalog Error / Parser Error / Binder Error / Invalid plot
+
+### Docs finding (not a runtime bug)
+
+`ZOOM` used bare in templates (e.g. `LINK_X($start,$end) ZOOM`) has no effect — scroll-zoom always activates on supported chart types regardless. The `ZOOM factor` clause is for CSS grid scaling only. Updated `plot-dsl.md` to clarify.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
 ## Session 17 — 2026-08-05
 
 **Scope:** Full QA pass — unit tests, demo notebook, Recording Overview template, I/O & Latency template, interactive features, console check, UI polish, BUGS.md/docs-site audit.

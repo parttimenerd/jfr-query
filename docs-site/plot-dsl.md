@@ -752,7 +752,7 @@ Tail clauses come after the closing paren of the plot type and each other, in an
 - `TITLE "text"` — chart title. Overrides the `title=` inner argument if both are given.
 - `WIDTH size` — CSS width (`400px`, `50%`, `100%`).
 - `HEIGHT size` — CSS height.
-- `ZOOM factor` — uniform scale factor within the current grid cell (e.g. `ZOOM 1.5`).
+- `ZOOM factor` — uniform CSS scale factor within the current grid cell (e.g. `ZOOM 1.5`). Note: scroll-zoom interaction (Shift+scroll) is always available on line/area/scatter charts when an x-column is present — it does not require this clause.
 - `ZOOM_X factor` — scale only the X axis (stretches the chart horizontally).
 
 ### Data source
