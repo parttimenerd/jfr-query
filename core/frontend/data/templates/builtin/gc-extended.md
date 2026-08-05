@@ -53,7 +53,7 @@ SELECT
     format_duration(SUM(sumOfPauses)) AS "Total STW Time",
     format_duration(AVG(sumOfPauses)) AS "Avg Pause",
     format_duration(MAX(longestPause)) AS "Worst Pause",
-    ROUND(100.0 * SUM(sumOfPauses) / (MAX(startTime) - MIN(startTime)), 2) AS "GC Overhead %"
+    ROUND(100.0 * SUM(sumOfPauses) / ((MAX(epoch_ms(startTime::TIMESTAMP)) - MIN(epoch_ms(startTime::TIMESTAMP))) / 1000.0), 2) AS "GC Overhead %"
 FROM GarbageCollection
 ```
 
