@@ -586,7 +586,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                 if (suggestion) aiErrorSuggestionCache.set(cacheKey, suggestion);
                 setAiErrorSuggestions(prev => ({ ...prev, [i]: suggestion }));
             }).catch(() => {
-                setAiErrorSuggestions(prev => ({ ...prev, [i]: null }));
+                setAiErrorSuggestions(prev => { const n = { ...prev }; delete n[i]; return n; });
             });
         });
     // eslint-disable-next-line react-hooks/exhaustive-deps

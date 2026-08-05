@@ -1494,3 +1494,9 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Repro:** `HEATMAP(x: "thread", y: "lock", value: "ms") TITLE "Lock Contention" LEGEND HIDDEN` — legend is still shown (or PALETTE clause is ignored).
 **Observed:** `HeatmapComponent`'s props interface and destructuring do not include `clauses?: ParsedPlotCall`. `PlotRenderer` passes `clauses` to every component at render time, but `HeatmapPlot` drops it silently. As a result, all cross-cutting clauses — PALETTE, LEGEND, AXIS-X LABEL/DOMAIN, AXIS-Y LABEL/DOMAIN — are no-ops on heatmaps.
 **Fix:** Added `clauses?: ParsedPlotCall` to `HeatmapComponent`'s props, extracted `xLabelFromClause` and `yLabelFromClause`, and wired them into the `XAxis`/`YAxis` `label` props.
+
+### 🟡 [B-249] `components/NotebookCell.tsx` — AI error suggestion spinner stays stuck when proxy is unavailable ✅ FIXED
+**Where:** `components/NotebookCell.tsx:589`
+**Repro:** With no AI proxy configured, run a query with a SQL error. The "AI suggestion loading…" pulsing text appears and never resolves.
+**Observed:** The `.catch()` handler set `aiErrorSuggestions[i]: null` (the "loading" sentinel) instead of clearing the entry, causing the spinner to stay visible indefinitely on proxy failure.
+**Fix:** Changed the catch block to delete the key from the map (`delete n[i]`), so `aiErrorSuggestions[i]` becomes `undefined` and the loading UI is hidden.
