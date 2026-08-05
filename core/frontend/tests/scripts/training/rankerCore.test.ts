@@ -192,7 +192,7 @@ describe('score', () => {
         prefixMatch: 1, substringMatch: 1, scenarioBoost: 1,
         lengthPenalty: 1, isKeyword: 1, isColumn: 1, isFunction: 1,
         prefixDepth: 1, jfrHint: 1, exactMatch: 1, isTable: 1,
-        aggContext: 1, inValuePos: 1,
+        aggContext: 1, inValuePos: 1, isViewName: 1, plotClause: 1,
     };
 
     it('returns 0 when all features are 0', () => {
@@ -200,7 +200,7 @@ describe('score', () => {
             prefixMatch: 0, substringMatch: 0, scenarioBoost: 0,
             lengthPenalty: 0, isKeyword: 0, isColumn: 0, isFunction: 0,
             prefixDepth: 0, jfrHint: 0, exactMatch: 0, isTable: 0,
-            aggContext: 0, inValuePos: 0,
+            aggContext: 0, inValuePos: 0, isViewName: 0, plotClause: 0,
         };
         expect(score(features, allOnes)).toBe(0);
     });
@@ -210,7 +210,7 @@ describe('score', () => {
             prefixMatch: 1, substringMatch: 1, scenarioBoost: 0,
             lengthPenalty: 0.5, isKeyword: 0, isColumn: 1, isFunction: 0,
             prefixDepth: 0.75, jfrHint: 1, exactMatch: 0, isTable: 0,
-            aggContext: 0, inValuePos: 0,
+            aggContext: 0, inValuePos: 0, isViewName: 0, plotClause: 0,
         };
         const expected = 1 + 1 + 0.5 + 1 + 0.75 + 1;
         expect(score(features, allOnes)).toBeCloseTo(expected);
@@ -221,7 +221,7 @@ describe('score', () => {
             prefixMatch: 1, substringMatch: 0, scenarioBoost: 0,
             lengthPenalty: 0, isKeyword: 0, isColumn: 0, isFunction: 0,
             prefixDepth: 0, jfrHint: 0, exactMatch: 0, isTable: 0,
-            aggContext: 0, inValuePos: 0,
+            aggContext: 0, inValuePos: 0, isViewName: 0, plotClause: 0,
         };
         const weights: Weights = { ...allOnes, prefixMatch: 3 };
         expect(score(features, weights)).toBe(3);

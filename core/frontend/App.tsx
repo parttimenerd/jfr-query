@@ -1174,6 +1174,9 @@ const App: React.FC = () => {
     }, [runQuery, query]);
     handleRunAllRef.current = handleRunAll;
 
+    // Debounce timer for variable-triggered re-runs (slider drag, button click, etc.)
+    const varRunTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     const handleClearResults = useCallback(() => {
         setResults({});
         setClearResultsTrigger(t => t + 1);
@@ -1288,9 +1291,18 @@ const App: React.FC = () => {
     }, [addCellFromTool]);
 
     const handleMetadataChange = useCallback(async (newMetadata: NotebookMetadata) => {
+        const prevVars = metadataRef.current.variables;
+        const newVars = newMetadata.variables;
+        const varsChanged = JSON.stringify(prevVars) !== JSON.stringify(newVars);
         const newNotebookMarkdown = reconstructNotebook({ metadata: newMetadata, content: cellsContent });
         setNotebookMarkdown(newNotebookMarkdown);
         await refreshSchema();
+        // Re-run all cells when notebook-level variables change (e.g. slider drag).
+        // Debounced at 300 ms so rapid slider drags don't flood queries.
+        if (varsChanged) {
+            if (varRunTimerRef.current) clearTimeout(varRunTimerRef.current);
+            varRunTimerRef.current = setTimeout(() => { void handleRunAllRef.current?.(); }, 300);
+        }
     }, [cellsContent, refreshSchema]);
 
     const handleNavigateRef = useCallback((ref: string) => {
