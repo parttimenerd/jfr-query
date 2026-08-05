@@ -138,7 +138,7 @@ const GanttChartComponent: React.FC<{
 
   const chartHeight = Math.max(320, new Set(chartData.map(r => r.__rowLabel)).size * 28 + 60);
   return (
-    <div style={{ width: '100%' }}>
+    <div style={{ width: '100%', minHeight: 200 }}>
       <ResponsiveContainer width="100%" height={chartHeight}>
         <ComposedChart
           layout="vertical"

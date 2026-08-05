@@ -1763,3 +1763,28 @@ All 12 built-in templates loaded with the demo JFR dataset, ran all queries, and
 
 ### Bugs found
 None. All features working correctly.
+
+---
+
+## QA pass — 2026-08-05 (session 5)
+
+**Scope:** LINK_X zoom and BRUSH clause variable sync verification, GanttChartPlot minHeight fix, unit test suite.
+
+**Test environment:** WASM mode, demo `.jfr` file, Chrome via Playwright MCP, `localhost:3001`.
+
+### Unit tests
+**6203 passed, 7 skipped, 0 failed** — all green.
+
+### Interactive features
+
+- **LINK_X zoom** ✅ — GC Pause Analysis template: shift+drag range-select on `LINE_CHART … LINK_X($start, $end) ZOOM` chart correctly wrote `$start`/`$end`/`$$start`/`$$end` to notebook variables (confirmed via React fiber inspection). "reset" button appeared after zoom. Chart X-axis narrowed from full range to selected window (11:00:15.14 → 11:00:43.17).
+- **BRUSH clause** ✅ — Custom cell `LINE_CHART … BRUSH "$gcRange" MODE X`: drag gesture wrote `$gcRange.brush.lo = 1710496818666.151` and `$gcRange.brush.hi = 1710496846693.2302` to allVariables (confirmed via fiber). Selection box overlay rendered during drag.
+
+### Bugs fixed
+
+- **GanttChartPlot outer wrapper missing `minHeight: 200`** — `GanttChartPlot.tsx:141` outer `<div>` lacked `minHeight: 200`, causing `ResponsiveContainer` to receive zero dimensions when the cell was in a collapsed state, generating Recharts `width(-1) height(-1)` console warnings. Added `minHeight: 200` to match all other plot wrappers. ✅ FIXED
+
+### Deferred (carry-forward)
+- **B-205** (LATERAL join scope in completions): still open, complex, low user impact.
+- **BRUSH demo notebook**: no built-in template demonstrates BRUSH end-to-end.
+- **BIG_NUMBER not showcased**: implemented and unit-tested but no built-in template uses it directly.
