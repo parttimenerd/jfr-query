@@ -283,10 +283,12 @@ describe('heuristicPlot — BAR_CHART', () => {
         expect(result).toContain('"p99"');
     });
 
-    it('empty sample with category → TABLE() (unknown cardinality)', () => {
+    it('empty sample with category → BAR_CHART (unknown cardinality assumes low)', () => {
+        // With no sample, cardinality is unknown. The heuristic now assumes a
+        // GROUP BY aggregate query and defaults to BAR_CHART instead of TABLE().
         const cols = [col('gcType', 'VARCHAR'), col('count', 'BIGINT')];
         const result = heuristicPlot(cols, []);
-        expect(result).toBe('TABLE()');
+        expect(result).toMatch(/^BAR_CHART\(/);
     });
 });
 

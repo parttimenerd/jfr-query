@@ -1,5 +1,14 @@
 import { classifyColumns, looksLikeStartName, looksLikeEndName, looksLikeRangeBound, type ColumnInfo } from './classifyColumns';
 
+/**
+ * Returns true for columns that look like row/entity identifiers (gcId,
+ * eventId, threadId, row_id, id, …). These are poor choices for a chart's
+ * y-axis or metric value — they carry no meaningful magnitude.
+ */
+function looksLikeId(name: string): boolean {
+    return /Id$/.test(name) || /_id$/i.test(name) || /^id$/i.test(name) || /^row_?num$/i.test(name);
+}
+
 /** Approximate the distinct value count for `colName` from the sample rows.
  *  When the sample is empty we conservatively assume the value is unknown and
  *  return `null` so callers can fall back to safe defaults. */
@@ -18,8 +27,12 @@ function distinctCount(sample: any[], colName: string): number | null {
 const STACKED_NAMES_RE = /pct|percent|share|portion|fraction|alloc|heap|eden|survivor|metaspace|reserved|committed|used|free|available/i;
 
 // Names that suggest the column is an aggregate/summary scalar rather than
-// a raw per-event measurement. Single columns matching these fall through to TABLE.
-const AGGREGATE_NAMES_RE = /^(count|total|sum|avg|average|mean|median|mode|n|num|number|frequency|occurrences?|events?|hits?|samples?)$/i;
+// a raw per-event measurement. Single columns matching these fall through to
+// BIG_NUMBER. The regex matches:
+//   • Exact aggregate words:  count, total, sum, avg, …
+//   • Compound names ending in aggregate: total_pauses, pause_count, event_sum
+//   • Compound names starting with aggregate: total_gc, avg_latency
+const AGGREGATE_NAMES_RE = /^(count|total|sum|avg|average|mean|median|mode|n|num|number|frequency|occurrences?|events?|hits?|samples?)$|(^|_)(count|total|sum|avg|num|n)(_|$)/i;
 
 // Column names that suggest a percentage or ratio (0-100 range typically).
 const PERCENT_NAMES_RE = /pct|percent|ratio|overhead|utilization|usage/i;
@@ -136,16 +149,22 @@ export function heuristicPlot(
     // or stacked data (e.g., they all sum to a meaningful whole).
     // For independent metric series (cpu, heap, gc, …) LINE_CHART is safer.
     if (time && numerics.length >= 3 && looksLikeStackedSeries(numerics)) {
-        const yCols = numerics.map(n => `"${n.name}"`).join(', ');
+        // Strip id-like columns from y-axis when real metrics are present.
+        const yMetrics = numerics.filter(n => !looksLikeId(n.name));
+        const yCandidates = yMetrics.length > 0 ? yMetrics : numerics;
+        const yCols = yCandidates.map(n => `"${n.name}"`).join(', ');
         return `AREA_CHART(x: "${time.name}", y: [${yCols}], layout: "stacked")`;
     }
 
     // Time + numerics → line chart (LINE_CHART(x:, y:[]))
     if (time && numerics.length >= 1) {
-        const yCols = numerics.map(n => `"${n.name}"`).join(', ');
+        // Strip id-like columns from y when at least one real metric is present.
+        const yMetrics = numerics.filter(n => !looksLikeId(n.name));
+        const yCandidates = yMetrics.length > 0 ? yMetrics : numerics;
+        const yCols = yCandidates.map(n => `"${n.name}"`).join(', ');
         let config = `LINE_CHART(x: "${time.name}", y: [${yCols}])`;
         // Add AXIS_Y DOMAIN hint for percentage columns.
-        if (numerics.length === 1 && PERCENT_NAMES_RE.test(numerics[0].name)) {
+        if (yCandidates.length === 1 && PERCENT_NAMES_RE.test(yCandidates[0].name)) {
             config += ` AXIS_Y DOMAIN [0, 100] FORMAT ".1f"`;
         }
         return config;
@@ -154,12 +173,17 @@ export function heuristicPlot(
     // Single category + single numeric.
     if (cats.length === 1 && numerics.length === 1) {
         const card = distinctCount(sample, cats[0].name);
-        if (card === null || card > 32) return 'TABLE()';
+        // When cardinality is unknown (empty sample) we assume the query was a
+        // GROUP BY aggregate — these almost always produce a handful of distinct
+        // values. Default to BAR_CHART rather than TABLE() so offline users see
+        // something useful immediately. If the column genuinely has >32 values
+        // the user can switch to TABLE manually.
+        if (card !== null && card > 32) return 'TABLE()';
         // Very low cardinality (≤4) and value column looks like percentage/share → PIE_CHART.
         if (card !== null && card <= 4 && PERCENT_NAMES_RE.test(numerics[0].name)) {
             return `PIE_CHART(category: "${cats[0].name}", value: "${numerics[0].name}")`;
         }
-        // Larger cardinality → BAR_CHART; horizontal when names are long.
+        // Larger cardinality (or unknown) → BAR_CHART; horizontal when names are long.
         const avgLen = avgCategoryLength(sample, cats[0].name);
         const horizontal = avgLen > 15 ? ', horizontal: true' : '';
         return `BAR_CHART(x: "${cats[0].name}", y: ["${numerics[0].name}"]${horizontal})`;
@@ -168,7 +192,7 @@ export function heuristicPlot(
     // Category + multiple numerics → grouped bar
     if (cats.length === 1 && numerics.length > 1) {
         const card = distinctCount(sample, cats[0].name);
-        if (card === null || card > 32) return 'TABLE()';
+        if (card !== null && card > 32) return 'TABLE()';
         const yCols = numerics.map(n => `"${n.name}"`).join(', ');
         const avgLen = avgCategoryLength(sample, cats[0].name);
         const horizontal = avgLen > 15 ? ', horizontal: true' : '';

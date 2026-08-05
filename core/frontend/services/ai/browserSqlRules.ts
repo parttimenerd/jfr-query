@@ -135,6 +135,20 @@ function q(name: string): string {
 }
 
 /**
+ * Returns true for columns that look like row identifiers (gcId, eventId,
+ * threadId, row_id, id, …). These are almost never useful in WHERE conditions
+ * or as the primary metric in a SELECT list — prefer skipping them when a
+ * better numeric is available.
+ */
+function looksLikeId(name: string): boolean {
+    // Matches: gcId, eventId, threadId (camelCase …Id suffix)
+    //          row_id, thread_id (snake_case _id suffix)
+    //          id (exact match)
+    //          rownum, row_num
+    return /Id$/.test(name) || /_id$/i.test(name) || /^id$/i.test(name) || /^row_?num$/i.test(name);
+}
+
+/**
  * Returns a single completion string, or null when no rule fires.
  * The browser provider wraps this in an `AIInlineResponse`.
  */
@@ -177,7 +191,10 @@ export function suggestNaiveSql(prompt: string): string | null {
         if (endsWithSpace) {
             // Right after SELECT keyword — suggest a starter expression.
             if (timeCols.length > 0 && numCols.length > 0) {
-                return `${q(timeCols[0].name)}, ${q(numCols[0].name)}`;
+                // Skip id-like columns (gcId, eventId, threadId…) when a
+                // more informative metric is available.
+                const bestNum = numCols.find(c => !looksLikeId(c.name)) ?? numCols[0];
+                return `${q(timeCols[0].name)}, ${q(bestNum.name)}`;
             }
             if (resultCols.length > 0) return q(resultCols[0].name);
             if (schemas.length > 0) return '*';
@@ -244,11 +261,15 @@ export function suggestNaiveSql(prompt: string): string | null {
     // --- WHERE / HAVING / ON (condition) ---
     if (clause === 'where' || clause === 'having' || clause === 'on') {
         if (endsWithSpace) {
-            // Right after WHERE — suggest first condition.
+            // Right after WHERE/HAVING/ON — suggest first condition.
             const isKeyword = /\b(WHERE|HAVING|ON)\s+$/i.test(prefix);
             if (isKeyword || /\b(AND|OR|NOT)\s+$/i.test(prefix)) {
-                // Suggest first numeric or category column > threshold.
-                const col = numCols[0] ?? catCols[0] ?? resultCols[0];
+                const bestNum = numCols.find(c => !looksLikeId(c.name)) ?? numCols.find(() => true);
+                // HAVING filters aggregate results → prefer numeric (e.g. count > 0).
+                // WHERE filters raw rows → prefer categorical columns (e.g. cause = '').
+                const col = clause === 'having'
+                    ? (bestNum ?? catCols[0] ?? resultCols[0])
+                    : (catCols[0] ?? bestNum ?? resultCols[0]);
                 if (col) {
                     const t = col.type.toUpperCase();
                     if (t.includes('VARCHAR') || t.includes('TEXT')) {

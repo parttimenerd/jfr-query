@@ -180,13 +180,16 @@ describe('heuristicPlot — BAR_CHART', () => {
         expect(result).toBe('TABLE()');
     });
 
-    it('returns TABLE() for category+numeric with no sample (unknown cardinality)', () => {
+    it('defaults to BAR_CHART for category+numeric with no sample (unknown cardinality)', () => {
+        // When no sample is available, cardinality is unknown. The heuristic
+        // assumes low cardinality (typical for GROUP BY aggregate queries)
+        // and defaults to BAR_CHART rather than TABLE().
         const cols: Col[] = [
             { name: 'cause', type: 'VARCHAR' },
             { name: 'count', type: 'BIGINT' },
         ];
         const result = heuristicPlot(cols, []);
-        expect(result).toBe('TABLE()');
+        expect(result).toMatch(/^BAR_CHART\(/);
     });
 
     it('produces grouped BAR_CHART for category + multiple numerics', () => {
@@ -256,5 +259,130 @@ describe('heuristicPlot — TABLE fallback', () => {
         const result = heuristicPlot(cols, [{ type: 'gc', subtype: 'young', count: 5 }]);
         // cats.length === 2, numerics.length === 1 → no explicit branch → TABLE()
         expect(result).toBe('TABLE()');
+    });
+});
+
+// ─── JFR-specific plot quality tests ─────────────────────────────────────────
+// These test the four scenarios from the task spec:
+//   a) bucket_time + COUNT → LINE_CHART
+//   b) cause + COUNT aggregate → BAR_CHART (with sample)
+//   c) single scalar aggregate with compound name → BIG_NUMBER
+//   d) heap columns → AREA_CHART stacked or LINE_CHART
+
+describe('heuristicPlot — JFR GC scenarios', () => {
+    // a) bucket_time(startTime, 5000) AS ts, COUNT(*) AS count
+    //    ts is BIGINT but name "ts" matches TIME_EXACT_NAMES_RE → time role
+    it('a) bucket + count query → LINE_CHART', () => {
+        const cols: Col[] = [
+            { name: 'ts', type: 'BIGINT' },
+            { name: 'count', type: 'BIGINT' },
+        ];
+        const result = heuristicPlot(cols, []);
+        expect(result).toMatch(/^LINE_CHART\(/);
+        expect(result).toContain('x: "ts"');
+        expect(result).toContain('"count"');
+    });
+
+    // b) cause + COUNT(*) — needs sample data for cardinality detection
+    it('b) cause + count with sample → BAR_CHART', () => {
+        const cols: Col[] = [
+            { name: 'cause', type: 'VARCHAR' },
+            { name: 'count', type: 'BIGINT' },
+        ];
+        const sample = [
+            { cause: 'G1 Young', count: 150 },
+            { cause: 'G1 Old', count: 12 },
+            { cause: 'G1 Concurrent GC', count: 88 },
+        ];
+        const result = heuristicPlot(cols, sample);
+        expect(result).toMatch(/^BAR_CHART\(/);
+        expect(result).toContain('x: "cause"');
+        expect(result).toContain('"count"');
+    });
+
+    // b2) cause + COUNT(*) without sample — currently returns TABLE() because
+    //     cardinality is unknown. This is MEDIOCRE: should assume low cardinality
+    //     for a well-known categorical column and return BAR_CHART.
+    it('b2) cause + count with NO sample → BAR_CHART (not TABLE)', () => {
+        const cols: Col[] = [
+            { name: 'cause', type: 'VARCHAR' },
+            { name: 'count', type: 'BIGINT' },
+        ];
+        // With no sample data, cardinality is unknown.
+        // A GC cause column never has more than ~10 distinct values in practice.
+        // The heuristic should assume low cardinality and suggest BAR_CHART.
+        const result = heuristicPlot(cols, []);
+        expect(result).toMatch(/^BAR_CHART\(/);
+    });
+
+    // c) Single scalar aggregate with compound name like total_pauses
+    it('c) single aggregate scalar with name total_pauses → BIG_NUMBER (no sample)', () => {
+        const cols: Col[] = [
+            { name: 'total_pauses', type: 'BIGINT' },
+        ];
+        // No sample: AGGREGATE_NAMES_RE doesn't match "total_pauses" because it
+        // doesn't match the anchored pattern. Should still be BIG_NUMBER.
+        const result = heuristicPlot(cols, []);
+        expect(result).toMatch(/^BIG_NUMBER\(/);
+    });
+
+    it('c2) single aggregate scalar with name pause_count → BIG_NUMBER (no sample)', () => {
+        const cols: Col[] = [
+            { name: 'pause_count', type: 'BIGINT' },
+        ];
+        const result = heuristicPlot(cols, []);
+        expect(result).toMatch(/^BIG_NUMBER\(/);
+    });
+
+    it('c3) single aggregate: total (exact) → BIG_NUMBER', () => {
+        const cols: Col[] = [
+            { name: 'total', type: 'BIGINT' },
+        ];
+        const result = heuristicPlot(cols, []);
+        expect(result).toMatch(/^BIG_NUMBER\(/);
+    });
+
+    // d) heap columns — heapUsed, heapCommitted, metaspaceUsed with time
+    it('d) time + heap region columns (stacked) → AREA_CHART', () => {
+        const cols: Col[] = [
+            { name: 'ts', type: 'BIGINT' },
+            { name: 'heapUsed', type: 'BIGINT' },
+            { name: 'heapCommitted', type: 'BIGINT' },
+            { name: 'metaspaceUsed', type: 'BIGINT' },
+        ];
+        const result = heuristicPlot(cols, []);
+        // heapUsed, heapCommitted, metaspaceUsed all match STACKED_NAMES_RE
+        expect(result).toMatch(/^AREA_CHART\(/);
+        expect(result).toContain('layout: "stacked"');
+    });
+});
+
+// ─── id-column stripping in y-axis ───────────────────────────────────────────
+
+describe('heuristicPlot — id-column stripping', () => {
+    it('GarbageCollection full schema: skips gcId in LINE_CHART y-axis', () => {
+        const cols: Col[] = [
+            { name: 'gcId', type: 'INTEGER' },
+            { name: 'startTime', type: 'TIMESTAMP' },
+            { name: 'duration', type: 'DOUBLE' },
+            { name: 'cause', type: 'VARCHAR' },
+        ];
+        const sample = [{ gcId: 1, startTime: new Date(), duration: 0.05, cause: 'G1 Young' }];
+        const result = heuristicPlot(cols, sample);
+        // gcId (an id column) should not appear in the y list
+        expect(result).toMatch(/^LINE_CHART\(/);
+        expect(result).not.toContain('"gcId"');
+        expect(result).toContain('"duration"');
+    });
+
+    it('time + id-only numerics: falls back to including id when no real metric available', () => {
+        const cols: Col[] = [
+            { name: 'ts', type: 'BIGINT' },
+            { name: 'eventId', type: 'INTEGER' },
+        ];
+        const result = heuristicPlot(cols, []);
+        // Only numeric is eventId — must still produce a chart, not TABLE()
+        expect(result).toMatch(/^LINE_CHART\(/);
+        expect(result).toContain('"eventId"');
     });
 });
