@@ -1949,7 +1949,44 @@ None. No regressions from prior sessions.
 
 ---
 
-## QA pass — session 12 (2026-08-05)
+## QA pass — session 13 (2026-08-05)
+
+### Scope
+Full QA pass continuing from session 12. Focus: interactive features (variables, LINK_X, BRUSH, command palette, autocomplete, schema explorer, Run All, help modal), UI polish, console errors, docs-site audit.
+
+### Unit tests
+6203 passed, 7 skipped ✅
+
+### Template scan
+- **GC Pause Analysis** ✅ (0 errors, 5 charts) — from session continuation
+- **Threading & Contention** ✅ (0 errors, 5 charts) — from session continuation
+
+### Interactive features (demo notebook)
+- **Variables panel** ✅ — `$limit` visible, change to `10` triggers re-run
+- **LINK_X zoom** ✅ — Shift+drag on LINE_CHART zooms x-axis; reset button appears; tooltip still works after zoom
+- **Command palette** ✅ — opens with Cmd+K, input placeholder "Search commands, cells, tables, columns…", closes with Escape
+- **SQL autocomplete** ✅ — `GarbageCollection · table · 20 rows` via Ctrl+Space after `SELECT * FROM Gar` in preview pane
+- **Schema explorer** ✅ — columns shown with type indicators (duration⏱ etc.)
+- **Run All** ✅ — "Run All Queries" button found and triggered, 0 errors after run
+- **Help modal** ✅ — "Keyboard Shortcuts & Tips (?)" button opens modal with full shortcuts content, closes with Escape
+- **Plot tooltip (BAR_CHART)** ✅ — "G1 Evacuation Pause / count: 14 / avg ms: 11.286"
+- **Plot tooltip (LINE_CHART)** ✅ — "11:00:30.10 / duration ms 6.7"
+
+### Bugs found & fixed
+- **New bug (unnamed)**: `cm-lintRange-error` squiggles on valid `BIG_NUMBER`, `SCATTER_PLOT`, `VIOLIN_PLOT`, `SANKEY`, etc. in plot cells.
+  - Root cause: linter built `known` set from raw `plotRegistry` keys (uppercase like `BIG_NUMBER`) but `node.shape` from parser is always lowercase (`big_number`). `known.has('big_number')` = false → lint error.
+  - Fix: `lint.ts` line 60 — `.map(k => k.toLowerCase())` when building the `known` set.
+  - Commit: `c3bc776`
+
+### Docs-site fix
+- Fixed `docs-site/plot-dsl.md` BIG_NUMBER parameter: `delta:` → `previousValue:` (wrong parameter name vs. implementation). Also corrected sign description (positive = red, negative = green). Commit: `7f6b6e2`
+
+### Console audit
+- After clean reload: only 2 ONNX runtime warnings (expected, not bugs) ✅
+- Mid-session HMR reload showed transient `ganttChartPlot`/`violinPlot` TDZ errors — confirmed as hot-reload artifacts, not real runtime bugs ✅
+
+### Deferred (carry-forward)
+- **B-205** (LATERAL join scope in completions): still open, deferred.
 
 ### Unit tests
 `npx vitest run` — 6203 passed, 7 skipped. No regressions.
