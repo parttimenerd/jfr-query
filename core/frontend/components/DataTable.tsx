@@ -96,9 +96,10 @@ interface DataTableProps {
     columnWidths?: (string | number | undefined)[];
     csvFilename?: string;
     compact?: boolean;
+    onSortChange?: (col: string, dir: 'asc' | 'desc') => void;
 }
 
-const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers, columnWidths, csvFilename = 'data.csv', compact = false }) => {
+const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers, columnWidths, csvFilename = 'data.csv', compact = false, onSortChange }) => {
   const displaySettings = useDisplaySettings();
   const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const [filterTerm, setFilterTerm] = useState('');
@@ -178,7 +179,13 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
     window.addEventListener('mouseup', handleGlobalMouseUp);
   }, [handleMouseMove, handleMouseUp]);
 
-  const requestSort = (key: string) => setSortConfig(c => c.key === key ? { key, direction: c.direction === 'ascending' ? 'descending' : 'ascending' } : { key, direction: 'ascending' });
+  const requestSort = (key: string) => {
+    const next = sortConfig.key === key
+        ? { key, direction: sortConfig.direction === 'ascending' ? 'descending' as const : 'ascending' as const }
+        : { key, direction: 'ascending' as const };
+    setSortConfig(next);
+    onSortChange?.(key, next.direction === 'ascending' ? 'asc' : 'desc');
+  };
 
   const formatCell = useCallback((value: any, header: string): string => {
     if (value === null || value === undefined) return '';

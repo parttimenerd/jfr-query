@@ -27,6 +27,7 @@ export const buildPlotLanguage = (plotRegistry: Record<string, PlotRegistration<
     'LEGEND', 'PALETTE', 'BRUSH',
     'AXIS_X', 'AXIS_Y', 'AXIS-X', 'AXIS-Y',
     'TOOLTIP',
+    'SORT', 'LIMIT',
   ]);
   const subKeywords = new Set([
     // AXIS sub-clauses
@@ -43,6 +44,8 @@ export const buildPlotLanguage = (plotRegistry: Record<string, PlotRegistration<
     'RIGHT', 'LEFT', 'TOP', 'BOTTOM', 'NONE',
     // BRUSH mode values
     'X', 'Y', 'XY',
+    // SORT direction values
+    'ASC', 'DESC',
   ]);
 
   const lang = StreamLanguage.define({

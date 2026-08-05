@@ -93,20 +93,32 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
                     entry[sk] = row[yc];
                 }
             }
+            let pivotData = Array.from(xMap.values());
+            if (clauses?.limit !== undefined) pivotData = pivotData.slice(0, clauses.limit);
             return {
                 xCol: xC,
                 yCols: seriesKeys,
                 lineYCols: [] as string[],
-                chartData: Array.from(xMap.values()),
+                chartData: pivotData,
             };
         }
 
-        return {
-            xCol: findColumn(config.x, allColumns),
-            yCols: config.y ? Array.from(new Set(config.y.flatMap(col => findColumns(col, allColumns)))) : [],
-            lineYCols: config.lineY ? Array.from(new Set(config.lineY.flatMap(col => findColumns(col, allColumns)))) : [],
-            chartData: data,
-        };
+        const resolvedYCols = config.y ? Array.from(new Set(config.y.flatMap(col => findColumns(col, allColumns)))) : [];
+        const resolvedXCol = findColumn(config.x, allColumns);
+        const resolvedLineYCols = config.lineY ? Array.from(new Set(config.lineY.flatMap(col => findColumns(col, allColumns)))) : [];
+
+        let sortedData = data;
+        if (clauses?.barSort && resolvedYCols.length > 0) {
+            const firstY = resolvedYCols[0];
+            sortedData = [...data].sort((a, b) => {
+                const av = Number(a[firstY] ?? 0);
+                const bv = Number(b[firstY] ?? 0);
+                return clauses.barSort === 'desc' ? bv - av : av - bv;
+            });
+        }
+        const finalData = clauses?.limit !== undefined ? sortedData.slice(0, clauses.limit) : sortedData;
+
+        return { xCol: resolvedXCol, yCols: resolvedYCols, lineYCols: resolvedLineYCols, chartData: finalData };
     }, [data, config]);
 
     if (!data || data.length === 0) {

@@ -17,7 +17,7 @@ const params: PlotParameter[] = [
 const parseConfig = createConfigParser<TablePlotConfig>(buildParserSpec(params));
 
 
-const TablePlotComponent: React.FC<{ config: TablePlotConfig; data: any[], domainX?: [any, any]; clauses?: import('../../utils/plotParser').ParsedPlotCall }> = ({ config, data, clauses }) => {
+const TablePlotComponent: React.FC<{ config: TablePlotConfig; data: any[], domainX?: [any, any]; clauses?: import('../../utils/plotParser').ParsedPlotCall; onCellVariableChange?: (vars: Record<string, string>) => void }> = ({ config, data, clauses, onCellVariableChange }) => {
     let resolvedHeaders = config.headers;
     if (config.headers && data && data.length > 0) {
         const allColumns = Object.keys(data[0]);
@@ -40,14 +40,24 @@ const TablePlotComponent: React.FC<{ config: TablePlotConfig; data: any[], domai
         ? title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.csv'
         : 'data.csv';
 
+    const sort = clauses?.sort;
+    const handleSortChange = sort && onCellVariableChange
+        ? (col: string, dir: 'asc' | 'desc') => {
+            onCellVariableChange({ [sort.colVar]: col, [sort.dirVar]: dir });
+          }
+        : undefined;
+
+    const displayData = clauses?.limit !== undefined ? data.slice(0, clauses.limit) : data;
+
     return React.createElement(
         'div',
         { className: "h-full" },
         React.createElement(DataTable, {
-            data: data,
+            data: displayData,
             headers: resolvedHeaders,
             columnWidths: widths,
             csvFilename,
+            onSortChange: handleSortChange,
         })
     );
 };

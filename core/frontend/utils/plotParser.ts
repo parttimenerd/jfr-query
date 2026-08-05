@@ -48,6 +48,21 @@ export interface ParsedPlotCall {
      * `SELECT * FROM <name>` and uses the result as its data source.
      */
     dataset?: string;
+    /**
+     * SORT clause — emitted by TABLE() when a column header is clicked.
+     * `$colVar` receives the column name; `$dirVar` receives "asc" or "desc".
+     * Both variables are written to the cell's variable block so dependent SQL
+     * cells can ORDER BY $sortCol $sortDir.
+     */
+    sort?: { colVar: string; dirVar: string };
+    /**
+     * LIMIT n clause — caps rendered rows/bars to the first n entries.
+     */
+    limit?: number;
+    /**
+     * Render-time sort direction for BAR_CHART. SORT DESC = highest-first.
+     */
+    barSort?: 'asc' | 'desc';
     composite?: {
         direction: 'row' | 'col' | 'overlay';
         children: ParsedPlotCall[];
@@ -198,6 +213,15 @@ function _buildSemantics(g: ReturnType<typeof ohmGrammar>): Semantics {
         },
         NameClause(_kw, str) { (this.args as any).r.cellName = _extractStrValue(str); },
         DatasetClause(_kw, id) { (this.args as any).r.dataset = (id as any).sourceString; },
+        SortClause(_kw, colVar, dirVar) {
+            (this.args as any).r.sort = { colVar: (colVar as any).sourceString, dirVar: (dirVar as any).sourceString };
+        },
+        BarSortClause(_kw, dir) {
+            (this.args as any).r.barSort = (dir as any).sourceString.toLowerCase() as 'asc' | 'desc';
+        },
+        LimitClause(_kw, n) {
+            (this.args as any).r.limit = parseInt((n as any).sourceString, 10);
+        },
         AxisYClause(_kw, subs) {
             const spec: AxisSpec = (this.args as any).r.axisY ?? {};
             (subs.children as any[]).forEach(sub => (sub as any).applyAxisSub(spec));
@@ -339,6 +363,9 @@ const CLAUSES: ClauseSpec[] = [
     { key: 'brush', regex: /(?<!\w)BRUSH\s+(?:"(\$[A-Za-z_][\w]*)"|'(\$[A-Za-z_][\w]*)'|(\$[A-Za-z_][\w]*))\s*$/i, processor: (m): BrushSpec => ({ name: m[1] ?? m[2] ?? m[3], mode: 'x' }) },
     { key: 'cellName', regex: /(?<!\w)NAME\s+(?:"([^"]*)"|'([^']*)')\s*$/i, processor: (m) => m[1] ?? m[2] },
     { key: 'dataset', regex: /(?<!\w)DATASET\s+([A-Za-z_][\w.-]*)\s*$/i, processor: (m) => m[1] },
+    { key: 'barSort', regex: /(?<!\w)SORT\s+(ASC|DESC)\s*$/i, processor: (m) => m[1].toLowerCase() as 'asc' | 'desc' },
+    { key: 'sort', regex: /(?<!\w)SORT\s+(\$[A-Za-z_][\w]*)\s+(\$[A-Za-z_][\w]*)\s*$/i, processor: (m): { colVar: string; dirVar: string } => ({ colVar: m[1], dirVar: m[2] }) },
+    { key: 'limit', regex: /(?<!\w)LIMIT\s+(\d+)\s*$/i, processor: (m) => parseInt(m[1], 10) },
     { key: 'axisX', regex: buildAxisRegex('X'), processor: buildAxisProcessor('axisX'), merge: true },
     { key: 'axisY', regex: buildAxisRegex('Y'), processor: buildAxisProcessor('axisY'), merge: true },
     {

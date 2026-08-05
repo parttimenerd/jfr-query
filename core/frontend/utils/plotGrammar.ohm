@@ -64,6 +64,10 @@ PlotDSL {
     | caseInsensitive<"AXIS_Y">
     | caseInsensitive<"AXIS-X">
     | caseInsensitive<"AXIS-Y">
+    | caseInsensitive<"SORT">
+    | caseInsensitive<"LIMIT">
+    | caseInsensitive<"ASC">
+    | caseInsensitive<"DESC">
     | caseInsensitive<"LET">
 
   // Characters that may appear in an identifier (used for word-boundary checks).
@@ -99,6 +103,9 @@ PlotDSL {
     | BrushBareClause
     | NameClause
     | DatasetClause
+    | SortClause
+    | BarSortClause
+    | LimitClause
     | LetClause
 
   // TITLE "..."
@@ -181,6 +188,17 @@ PlotDSL {
 
   // DATASET <identifier>
   DatasetClause = caseInsensitive<"DATASET"> ident
+
+  // SORT $colVar $dirVar
+  SortClause = caseInsensitive<"SORT"> varRef varRef
+
+  // SORT ASC | SORT DESC — render-time sort direction for bar charts
+  BarSortClause = caseInsensitive<"SORT"> sortDir
+  sortDir = caseInsensitive<"ASC"> | caseInsensitive<"DESC">
+
+  // LIMIT n — cap rendered rows/bars to first n entries
+  LimitClause = caseInsensitive<"LIMIT"> intLit
+  intLit = digit+
 
   // AXIS_Y / AXIS-Y  <sub-clauses>+
   AxisYClause = axisYKw AxisSubClause+

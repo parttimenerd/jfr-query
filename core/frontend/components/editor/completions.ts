@@ -456,6 +456,7 @@ const UPPERCASE_TAILS_DEFAULT: ReadonlyArray<string> = [
   'BRUSH', 'LEGEND', 'PALETTE', 'DATASET', 'DISABLED',
   'AXIS_X', 'AXIS_Y', 'LET',
   'TOOLTIP COLUMNS', 'ON HOVER TOOLTIP',
+  'SORT', 'LIMIT',
 ];
 
 const LINK_POSITIONAL_KEYWORDS = ['master', 'clamp'];
