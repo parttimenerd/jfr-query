@@ -485,16 +485,24 @@ function lintTail(
         }
         return;
     }
-    // ON — bare idents should resolve to known plot names.
+    // ON — bare idents should resolve to known plot names or SQL query aliases.
     if (upperKey === 'ON') {
-        void deps;
         const list = node.children.find(c => c.kind === 'list');
         if (!list) return;
+        // Build set of valid SQL aliases from the notebook scope's query refs.
+        const knownSqlAliases = new Set(
+            (deps.notebookScope?.queryRefs ?? [])
+                .map(q => q.alias)
+                .filter((a): a is string => !!a)
+                .map(a => a.toLowerCase()),
+        );
         for (const a of list.children) {
             if (a.kind !== 'ident' || !a.name) continue;
             const n = a.name.toLowerCase();
             if (knownPlotNames.has(n)) continue;
-            const closest = closestMatch(n, [...knownPlotNames]);
+            if (knownSqlAliases.has(n)) continue;
+            const candidates = [...knownPlotNames, ...knownSqlAliases];
+            const closest = closestMatch(n, candidates);
             const actions: Action[] = [];
             if (closest) {
                 actions.push(replaceAction(`Replace with '${closest}'`, a.from, a.to, closest));
@@ -503,7 +511,7 @@ function lintTail(
                 from: a.from,
                 to: a.to,
                 severity: 'error',
-                message: `Unknown plot reference '${a.name}' in ON.${knownPlotNames.size ? ` Known: ${[...knownPlotNames].slice(0, 5).join(', ')}.` : ''}`,
+                message: `Unknown plot or alias '${a.name}' in ON.${candidates.length ? ` Known: ${candidates.slice(0, 5).join(', ')}.` : ''}`,
                 actions,
             });
         }
