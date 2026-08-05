@@ -73,6 +73,12 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
         return Array.from(set).sort();
     }, [templates]);
 
+    // Primary filter tags shown as buttons — high-level categories only.
+    // Sub-tags (performance, latency, leaks, etc.) remain searchable but don't
+    // clutter the bar.
+    const PRIMARY_TAGS = ['gc', 'cpu', 'io', 'memory', 'threads', 'jvm', 'container', 'allocation', 'exceptions'];
+    const filterTags = useMemo(() => PRIMARY_TAGS.filter(t => allTags.includes(t)), [allTags]);
+
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
         return templates.filter(t => {
@@ -146,7 +152,7 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
                                         className={`text-xs px-2 py-0.5 rounded ${tagFilter === null ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-300'}`}>
                                         all
                                     </button>
-                                    {allTags.map(t => (
+                                    {filterTags.map(t => (
                                         <button key={t}
                                             onClick={() => setTagFilter(t)}
                                             aria-pressed={tagFilter === t}
