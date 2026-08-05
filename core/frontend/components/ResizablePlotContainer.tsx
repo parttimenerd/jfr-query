@@ -36,7 +36,7 @@ export const ResizablePlotContainer: React.FC<Props> = ({ id, className = '', ch
     return (
         <div
             id={id}
-            className={`relative overflow-hidden ${className}`}
+            className={`relative overflow-hidden shrink-0 ${className}`}
             style={{ height, minHeight: MIN_HEIGHT }}>
             {children}
             <div

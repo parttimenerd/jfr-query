@@ -1170,6 +1170,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                                 clauses={parsedCall}
                                 isAnimationActive={true}
                                 animationDuration={300}
+                                onCellVariableChange={onCellVariableChange}
                                 {...(singleBrushVarName ? {
                                     gestureName: singleBrushVarName.replace(/^\$/, ''),
                                     onVariableChange: singleBrushHandler,
