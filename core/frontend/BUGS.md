@@ -2197,6 +2197,40 @@ None new.
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
 
+---
+
+## Session 20 — 2026-08-06
+
+**Scope:** Full QA pass — unit tests, GC Pause Analysis template, Comprehensive Feature Test template, all interactive features (variables panel, LINK_X zoom, BRUSH, command palette, SQL autocomplete, schema explorer, Run All, help modal), console errors, UI polish, BUGS.md/docs-site audit.
+
+### Fixes applied
+
+- **docs-site/web-ui.md** — added user interaction gestures for LINK_X and BRUSH charts (`drag=pan`, `Shift+scroll=zoom`, `Shift+drag=select`, reset button); BRUSH drag description clarified.
+
+### Test results
+
+- **Unit tests:** 6210 passed, 0 failed
+- **GC Pause Analysis template:** ✅ PASS — 0 DOM errors
+- **Comprehensive Feature Test template:** ✅ PASS — 0 DOM errors
+- **Variables panel:** `$sel.brush.lo`/`$sel.brush.hi` visible with brush-set epoch-ms values ✅
+- **LINK_X zoom:** Shift+scroll zoomed "Heap Used MB" chart; "reset" button appeared; x-axis narrowed to ~35s window ✅
+- **BRUSH clause:** drag on "Pause Timeline" chart set `$sel.brush.lo`/`hi`; Query 2 re-ran with `WHERE t BETWEEN … AND …` ✅
+- **Command palette (⌘K):** opened with Actions list ✅
+- **SQL autocomplete:** `FROM Garbag` → `GarbageCollection · table · 20 rows` popup ✅
+- **Schema explorer search:** "Garbage" filtered to 1 table ✅
+- **Run All:** executed, 0 DOM errors ✅
+- **Help modal:** `Keyboard Shortcuts & Tips` modal opened with GLOBAL/QUERIES sections ✅
+- **Console errors:** 0 JS errors
+- **DOM error scan:** 0 Catalog Error / Parser Error / Binder Error / Invalid plot
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
 
 ## Session 17 — 2026-08-05
 
