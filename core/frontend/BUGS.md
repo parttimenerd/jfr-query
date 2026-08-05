@@ -2364,3 +2364,36 @@ None new.
 
 ### Bugs found
 None new.
+
+---
+
+## Session 18 — 2026-08-06
+
+**Scope:** Full QA pass — unit tests, demo notebook, Threading & Contention + Memory Leak Detection templates, Comprehensive Feature Test (BRUSH), interactive features, console check, UI polish, BUGS.md/docs-site audit.
+
+### Test results
+
+- **Unit tests:** 6210 passed, 0 failed
+- **Demo notebook:** loaded, DOM scan 0 errors
+- **Threading & Contention template:** ✅ PASS — 0 DOM errors
+- **Memory Leak Detection template:** ✅ PASS — 0 DOM errors
+- **GC Pause Analysis template:** ✅ PASS — loaded for LINK_X / variables testing
+- **Comprehensive Feature Test template:** ✅ PASS — BRUSH $sel verified end-to-end
+- **Interactive features:**
+  - Variables panel ✅ — changed `$limit`, dependent cell re-ran
+  - LINK_X zoom ✅ — 5 wheel events zoomed chart; reset button appeared; linked chart followed
+  - BRUSH clause ✅ — drag on crosshair div wrote epoch-ms values to `$sel.brush.lo`/`$sel.brush.hi`
+  - Command palette ✅ — Cmd+K opens; Escape closes
+  - SQL autocomplete ✅ — Ctrl+Space after `SELECT * FROM Gar` suggested `GarbageCollection`
+  - Schema explorer ✅ — expanded GarbageCollection; gcId, name, startTime, duration, sumOfPauses columns shown
+  - Run All ✅ — executed all cells without errors
+  - Help modal ✅ — "Keyboard Shortcuts & Tips" modal opened correctly
+- **Console:** 0 JS errors, 22 expected warnings (ONNX/AI proxy)
+- **UI polish:** 0 zero-height cells, 0 truncated text, 0 stuck spinners; chart tooltips on hover ✅; sidebar resize handles ✅; DOM error scan 0 errors
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
