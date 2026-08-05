@@ -20,12 +20,15 @@ const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088FE', '#00C49F'
 interface Config {
   x: string;
   y: string[];
+  y2?: string[];
   color?: string;
   layout?: 'stacked' | 'overlay';
   stack?: boolean;
   opacity: number;
   yAxisLabel?: string;
+  y2AxisLabel?: string;
   yScale: 'linear' | 'log';
+  y2Scale: 'linear' | 'log';
   connectNulls: boolean;
   xRefLines?: any[];
 }
@@ -33,12 +36,15 @@ interface Config {
 const params: PlotParameter[] = [
   { name: 'x', type: 'column', required: true, description: 'Column for the X-axis.' },
   { name: 'y', type: 'column[]', required: true, description: 'One or more numeric columns for the area series.' },
+  { name: 'y2', type: 'column[]', description: 'Optional. One or more numeric columns rendered as areas on a secondary right Y-axis.' },
   { name: 'color', type: 'column', description: 'Optional column whose distinct values group areas by color (one series per value).' },
   { name: 'layout', type: 'string', options: ['stacked', 'overlay'], defaultValue: 'overlay', description: 'Layout for multiple `y` series: "stacked" (areas stacked) or "overlay" (areas drawn over each other).' },
   { name: 'stack', type: 'boolean', deprecated: true, description: 'Deprecated. Use layout: "stacked" or layout: "overlay".' },
   { name: 'opacity', type: 'number', defaultValue: 0.6, description: 'Fill opacity for the area (0–1).' },
-  { name: 'yAxisLabel', type: 'string', description: 'Label for the Y-axis.' },
-  { name: 'yScale', type: 'string', defaultValue: 'linear', options: ['linear', 'log'], description: 'Scale for the Y-axis: "linear" or "log".' },
+  { name: 'yAxisLabel', type: 'string', description: 'Label for the primary Y-axis.' },
+  { name: 'y2AxisLabel', type: 'string', description: 'Label for the secondary Y-axis.' },
+  { name: 'yScale', type: 'string', defaultValue: 'linear', options: ['linear', 'log'], description: 'Scale for the primary Y-axis: "linear" or "log".' },
+  { name: 'y2Scale', type: 'string', defaultValue: 'linear', options: ['linear', 'log'], description: 'Scale for the secondary Y-axis: "linear" or "log".' },
   { name: 'connectNulls', type: 'boolean', defaultValue: false, description: 'Connect lines over null/missing values.' },
   { name: 'xRefLines', type: 'referenceLine[]', description: 'Vertical reference lines.' },
 ];
@@ -67,9 +73,9 @@ const AreaChartComponent: React.FC<{
   const legendPos = clauses?.legend;
   const showLegend = legendPos !== 'none';
 
-  const { chartData, isTime, allY, finalXCol, originalYCols } = useMemo(() => {
+  const { chartData, isTime, allY, allY2, finalXCol, originalYCols } = useMemo(() => {
     if (!data || !data.length || !data[0] || !config.x) {
-      return { chartData: data, isTime: false, allY: [], finalXCol: config.x, originalYCols: [] as string[] };
+      return { chartData: data, isTime: false, allY: [], allY2: [] as string[], finalXCol: config.x, originalYCols: [] as string[] };
     }
 
     const allColumns = Object.keys(data[0]);
@@ -81,6 +87,10 @@ const AreaChartComponent: React.FC<{
 
     const allYCols = config.y
       ? Array.from(new Set(config.y.flatMap(col => findColumns(col, allColumns))))
+      : [];
+
+    const allY2Cols = config.y2
+      ? Array.from(new Set(config.y2.flatMap(col => findColumns(col, allColumns))))
       : [];
 
     const transformedData = isTimeAxis
@@ -118,7 +128,7 @@ const AreaChartComponent: React.FC<{
             const av = a[xCol], bv = b[xCol];
             return av < bv ? -1 : av > bv ? 1 : 0;
         });
-        return { chartData: pivoted, isTime: isTimeAxis, allY: seriesKeys, finalXCol: xCol, originalYCols: yColsForColor };
+        return { chartData: pivoted, isTime: isTimeAxis, allY: seriesKeys, allY2: [] as string[], finalXCol: xCol, originalYCols: yColsForColor };
     }
 
     // W13 — LTTB decimation when over the soft cap (time-axis only).
@@ -143,12 +153,13 @@ const AreaChartComponent: React.FC<{
         }
     }
 
-    return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, finalXCol: xCol, originalYCols: allYCols };
-  }, [data, config.x, config.y, config.color]);
+    return { chartData: decimated, isTime: isTimeAxis, allY: allYCols, allY2: allY2Cols, finalXCol: xCol, originalYCols: allYCols };
+  }, [data, config.x, config.y, config.y2, config.color]);
 
   const yIsDuration = allY.length > 0 && originalYCols.every(isDurationColumnName) && sampleLooksLikeNanoseconds(chartData, allY);
   const yFormatter = yIsDuration ? formatDurationNs : numberFormatter;
   const colors = getPaletteColors(clauses?.palette, COLORS);
+  const y2Formatter = numberFormatter;
 
   if (!chartData || chartData.length === 0 || allY.length === 0) {
     return <div className="p-4 text-center text-gray-500 text-sm">No valid data.</div>;
@@ -184,6 +195,7 @@ const AreaChartComponent: React.FC<{
             label={xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined}
           />
           <YAxis
+            yAxisId="left"
             stroke="#9ca3af"
             tick={{ fontSize: 12 }}
             tickFormatter={yTickFmt ?? yFormatter}
@@ -204,6 +216,19 @@ const AreaChartComponent: React.FC<{
             }
             allowDataOverflow
           />
+          {allY2.length > 0 && (
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              stroke="#82ca9d"
+              tick={{ fontSize: 12 }}
+              tickFormatter={y2Formatter}
+              label={config.y2AxisLabel ? { value: config.y2AxisLabel, angle: 90, position: 'insideRight', fill: '#82ca9d', fontSize: 12 } : undefined}
+              scale={config.y2Scale === 'log' ? 'log' : 'auto'}
+              domain={config.y2Scale === 'log' ? [0.1, 'dataMax'] : undefined}
+              allowDataOverflow
+            />
+          )}
           <Tooltip
             contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }}
             formatter={(v, n) => [yFormatter(v), String(n).replace(/_/g, ' ')]}
@@ -219,6 +244,7 @@ const AreaChartComponent: React.FC<{
               key={y}
               type="monotone"
               dataKey={y}
+              yAxisId="left"
               stackId={isStacked ? 'stack' : undefined}
               stroke={colors[i % colors.length]}
               fill={colors[i % colors.length]}
@@ -229,6 +255,20 @@ const AreaChartComponent: React.FC<{
             />
             );
           })}
+          {allY2.map((y, i) => (
+            <Area
+              key={`y2-${y}`}
+              type="monotone"
+              dataKey={y}
+              yAxisId="right"
+              stroke={colors[(allY.length + i) % colors.length]}
+              fill={colors[(allY.length + i) % colors.length]}
+              fillOpacity={config.opacity * 0.5}
+              connectNulls={config.connectNulls}
+              isAnimationActive={isAnimationActive}
+              animationDuration={animationDuration}
+            />
+          ))}
           {gestureName && <Brush key={brushKey} dataKey={finalXCol} height={20} stroke="#4b5563" fill="#1f2937" onChange={(range) => gestures.onBrushChange(range as any, chartData, finalXCol)}/>}
         </AreaChart>
       </ResponsiveContainer>
