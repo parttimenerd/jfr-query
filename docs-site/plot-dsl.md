@@ -673,6 +673,7 @@ Inner arguments go inside the parentheses after the plot type. All are optional;
 | `bins` | VIOLIN_PLOT, HISTOGRAM | Number of density/frequency bins (default 20). |
 | `color` | most types | Column used to derive series/category colours. |
 | `size` | SCATTER | Column used to derive marker size. |
+| `trendline` | SCATTER_PLOT | `true` to draw a linear regression trendline over the scatter points. |
 | `title` | any | Inline title. Equivalent to the `TITLE` tail clause. |
 
 Values are column names from the bound query. String literals are wrapped in double quotes.
@@ -686,7 +687,8 @@ Tail clauses come after the closing paren of the plot type and each other, in an
 - `TITLE "text"` — chart title. Overrides the `title=` inner argument if both are given.
 - `WIDTH size` — CSS width (`400px`, `50%`, `100%`).
 - `HEIGHT size` — CSS height.
-- `ZOOM factor` — scale factor within the current grid cell (e.g. `ZOOM 1.5`).
+- `ZOOM factor` — uniform scale factor within the current grid cell (e.g. `ZOOM 1.5`).
+- `ZOOM_X factor` — scale only the X axis (stretches the chart horizontally).
 
 ### Data source
 
@@ -706,6 +708,8 @@ Tail clauses come after the closing paren of the plot type and each other, in an
 
 - `LINK_X($start, $end, [master], [clamp])` — link the X zoom range to variables `$start` and `$end`. Optional `master` marks this plot as the driver. Optional `clamp` prevents zooming beyond the data domain.
 - `LINK_Y($var)` — link Y axis zoom to a variable.
+- `LINK_XY($var)` — link both X and Y axes to the same variable (useful for scatter zoom sync).
+- `LINK_SCROLL "group"` — synchronise horizontal scroll position with all other plots in the same named group.
 - `BRUSH $var MODE X | Y | XY` — capture user brush selection into `$var`. `$var.brush.lo` / `$var.brush.hi` hold the range for X/Y; `$var.brush.x_lo` / `$var.brush.x_hi` / `$var.brush.y_lo` / `$var.brush.y_hi` for XY.
 - `BRUSH $rowVar $colVar` — two-variable form for CROSSTAB: writes the clicked row label to `$rowVar.selection` and the clicked column label to `$colVar.selection`.
 

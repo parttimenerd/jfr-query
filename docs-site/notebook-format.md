@@ -73,7 +73,7 @@ customSystemPrompt: |
 ---
 ```
 
-## Cell delimiters
+## Cell directives
 
 Cells are delimited by an HTML comment:
 
@@ -84,6 +84,14 @@ Cells are delimited by an HTML comment:
 - `name=` is required. The handle must match `[A-Za-z_]\w*` (letters, digits, underscores; may not start with a digit).
 - Cells are ordered top-to-bottom in the file.
 - Content before the first delimiter belongs to an implicit intro cell.
+
+Optional attributes on the directive:
+
+| Attribute | Example | Behaviour |
+|-----------|---------|-----------|
+| `name=` | `name=intro` | Cell handle — required. |
+| `requires=` | `requires="GarbageCollection"` | Visibility condition; see Cell visibility conditions below. |
+| `autorun="false"` | `<!-- @cell name=heavy autorun="false" -->` | Suppress automatic query execution when the notebook loads. The cell still runs when manually triggered or when the user clicks Run. Useful for expensive queries that should only run on demand. |
 
 Cell handles are used by:
 
