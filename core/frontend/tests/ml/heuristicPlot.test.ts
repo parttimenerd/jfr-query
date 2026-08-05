@@ -11,14 +11,114 @@ describe('heuristicPlot — TABLE fallback', () => {
         expect(heuristicPlot([], [])).toBe('TABLE()');
     });
 
-    it('single numeric column → TABLE()', () => {
-        expect(heuristicPlot([col('count', 'BIGINT')], [])).toBe('TABLE()');
+    it('single aggregate column (count) → BIG_NUMBER', () => {
+        const result = heuristicPlot([col('count', 'BIGINT')], []);
+        expect(result).toMatch(/^BIG_NUMBER\(/);
+        expect(result).toContain('"count"');
     });
 
     it('no matching rule → TABLE()', () => {
         // Multiple categories, no numerics — no supported chart type
         const cols = [col('phase', 'VARCHAR'), col('state', 'VARCHAR')];
         expect(heuristicPlot(cols, rows({ phase: 'G1', state: 'running' }))).toBe('TABLE()');
+    });
+});
+
+// ── BIG_NUMBER ────────────────────────────────────────────────────────────────
+describe('heuristicPlot — BIG_NUMBER', () => {
+    it('single row result → BIG_NUMBER', () => {
+        const result = heuristicPlot([col('total_pauses', 'BIGINT')], [{ total_pauses: 42 }]);
+        expect(result).toMatch(/^BIG_NUMBER\(/);
+        expect(result).toContain('"total_pauses"');
+    });
+
+    it('aggregate name pattern (avg) → BIG_NUMBER', () => {
+        const result = heuristicPlot([col('avg', 'DOUBLE')], []);
+        expect(result).toMatch(/^BIG_NUMBER\(/);
+    });
+
+    it('single-row label+metric → BIG_NUMBER with label', () => {
+        const result = heuristicPlot(
+            [col('label', 'VARCHAR'), col('total', 'BIGINT')],
+            [{ label: 'GC', total: 10 }],
+        );
+        expect(result).toMatch(/^BIG_NUMBER\(/);
+        expect(result).toContain('label: "label"');
+    });
+});
+
+// ── PIE_CHART ─────────────────────────────────────────────────────────────────
+describe('heuristicPlot — PIE_CHART', () => {
+    it('4 categories + percent column → PIE_CHART', () => {
+        const sampleRows = [
+            { region: 'US', pct: 40 }, { region: 'EU', pct: 30 },
+            { region: 'APAC', pct: 20 }, { region: 'Other', pct: 10 },
+        ];
+        const result = heuristicPlot(
+            [col('region', 'VARCHAR'), col('pct', 'DOUBLE')],
+            sampleRows,
+        );
+        expect(result).toMatch(/^PIE_CHART\(/);
+        expect(result).toContain('category: "region"');
+        expect(result).toContain('value: "pct"');
+    });
+
+    it('5 categories + non-percent column → BAR_CHART not PIE', () => {
+        const sampleRows = Array.from({ length: 5 }, (_, i) => ({ gc: `G${i}`, count: i + 1 }));
+        const result = heuristicPlot(
+            [col('gc', 'VARCHAR'), col('count', 'BIGINT')],
+            sampleRows,
+        );
+        expect(result).toMatch(/^BAR_CHART\(/);
+    });
+});
+
+// ── BAR_CHART horizontal ──────────────────────────────────────────────────────
+describe('heuristicPlot — BAR_CHART horizontal', () => {
+    it('long category names → horizontal: true', () => {
+        const sampleRows = [
+            { classname: 'com.example.VeryLongClassName', count: 5 },
+            { classname: 'org.apache.another.LongName', count: 3 },
+        ];
+        const result = heuristicPlot(
+            [col('classname', 'VARCHAR'), col('count', 'BIGINT')],
+            sampleRows,
+        );
+        expect(result).toMatch(/^BAR_CHART\(/);
+        expect(result).toContain('horizontal: true');
+    });
+
+    it('short category names → no horizontal', () => {
+        const sampleRows = [
+            { gc: 'G1', count: 5 }, { gc: 'ZGC', count: 3 },
+        ];
+        const result = heuristicPlot(
+            [col('gc', 'VARCHAR'), col('count', 'BIGINT')],
+            sampleRows,
+        );
+        expect(result).toMatch(/^BAR_CHART\(/);
+        expect(result).not.toContain('horizontal');
+    });
+});
+
+// ── LINE_CHART with AXIS_Y hint ───────────────────────────────────────────────
+describe('heuristicPlot — LINE_CHART AXIS_Y for percentage', () => {
+    it('time + pct column → AXIS_Y DOMAIN [0, 100]', () => {
+        const result = heuristicPlot(
+            [col('bucket', 'BIGINT'), col('gcOverhead', 'DOUBLE')],
+            [],
+        );
+        // gcOverhead is a numeric/duration name, not percent
+        expect(result).toMatch(/^LINE_CHART\(/);
+    });
+
+    it('time + overhead column → LINE_CHART with AXIS_Y DOMAIN', () => {
+        const result = heuristicPlot(
+            [col('bucket', 'BIGINT'), col('overhead', 'DOUBLE')],
+            [],
+        );
+        expect(result).toMatch(/^LINE_CHART\(/);
+        expect(result).toContain('AXIS_Y DOMAIN [0, 100]');
     });
 });
 

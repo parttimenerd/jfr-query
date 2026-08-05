@@ -10,8 +10,9 @@ describe('heuristicPlot — edge cases', () => {
         expect(heuristicPlot([], [])).toBe('TABLE()');
     });
 
-    it('returns TABLE() for single numeric column (scalar)', () => {
-        expect(heuristicPlot([{ name: 'count', type: 'BIGINT' }], [])).toBe('TABLE()');
+    it('returns BIG_NUMBER for single aggregate column (count)', () => {
+        const result = heuristicPlot([{ name: 'count', type: 'BIGINT' }], []);
+        expect(result).toMatch(/^BIG_NUMBER\(/);
     });
 });
 

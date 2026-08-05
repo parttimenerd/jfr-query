@@ -132,4 +132,50 @@ describe('browserSqlRules — suggestNaiveSql', () => {
         }));
         expect(out).toBeNull();
     });
+
+    it('WHERE VARCHAR column: suggests `= \'\'`', () => {
+        const out = suggestNaiveSql(buildPrompt({
+            tables: [events],
+            resultCols: [{ name: 'host', type: 'VARCHAR' }],
+            prefix: 'SELECT * FROM events WHERE ',
+        }));
+        // Should suggest a condition on the first VARCHAR column
+        expect(out).toContain('host');
+    });
+
+    it('WHERE numeric column: suggests `> 0`', () => {
+        const out = suggestNaiveSql(buildPrompt({
+            tables: [events],
+            resultCols: [{ name: 'cpu', type: 'DOUBLE' }],
+            prefix: 'SELECT * FROM events WHERE ',
+        }));
+        expect(out).toContain('cpu');
+        expect(out).toContain('>');
+    });
+
+    it('ORDER BY numeric column: adds DESC', () => {
+        const out = suggestNaiveSql(buildPrompt({
+            resultCols: [{ name: 'count', type: 'BIGINT' }],
+            prefix: 'SELECT count FROM events ORDER BY ',
+        }));
+        expect(out).toBe('"count" DESC');
+    });
+
+    it('LIMIT: suggests 100', () => {
+        const out = suggestNaiveSql(buildPrompt({
+            tables: [events],
+            prefix: 'SELECT * FROM events LIMIT ',
+        }));
+        expect(out).toBe('100');
+    });
+
+    it('variables in scope: uses variable in WHERE after `=`', () => {
+        const sections: string[] = [
+            `# Variables in scope\n$$threshold = 50`,
+            `# Current cell result columns\n"cpu" DOUBLE`,
+            `# Current cell — text before cursor\nSELECT * FROM events WHERE "cpu" =<<CURSOR>>`,
+        ];
+        const out = suggestNaiveSql(sections.join('\n\n'));
+        expect(out).toBe(' $$threshold');
+    });
 });

@@ -21,6 +21,15 @@ const STACKED_NAMES_RE = /pct|percent|share|portion|fraction|alloc|heap|eden|sur
 // a raw per-event measurement. Single columns matching these fall through to TABLE.
 const AGGREGATE_NAMES_RE = /^(count|total|sum|avg|average|mean|median|mode|n|num|number|frequency|occurrences?|events?|hits?|samples?)$/i;
 
+// Column names that suggest a percentage or ratio (0-100 range typically).
+const PERCENT_NAMES_RE = /pct|percent|ratio|overhead|utilization|usage/i;
+
+// Column names that represent duration/latency in ms.
+const DURATION_MS_NAMES_RE = /pause|duration|latency|elapsed|wait|delay|ms$/i;
+
+// Names that suggest an item label / description (good for big-number label param).
+const LABEL_NAMES_RE = /^(label|name|title|description|desc|message|text|key)$/i;
+
 /**
  * Returns true when the numeric columns look like they sum to a meaningful
  * whole (e.g. memory regions, allocation percentages) and stacking them makes
@@ -28,6 +37,19 @@ const AGGREGATE_NAMES_RE = /^(count|total|sum|avg|average|mean|median|mode|n|num
  */
 function looksLikeStackedSeries(numerics: ColumnInfo[]): boolean {
     return numerics.every(n => STACKED_NAMES_RE.test(n.name));
+}
+
+/** Returns the average string length of a category column from sample rows. */
+function avgCategoryLength(sample: any[], colName: string): number {
+    if (!sample || sample.length === 0) return 0;
+    let total = 0;
+    let count = 0;
+    for (const row of sample) {
+        const v = row?.[colName];
+        if (typeof v === 'string') { total += v.length; count++; }
+        if (count >= 20) break;
+    }
+    return count > 0 ? total / count : 0;
 }
 
 /**
@@ -38,19 +60,23 @@ function looksLikeStackedSeries(numerics: ColumnInfo[]): boolean {
  *
  * The heuristic ladder, in priority order:
  *   1. Empty cols → TABLE().
- *   2. Single scalar (one numeric, nothing else) → TABLE().
+ *   2. Single scalar aggregate (count, total…) → BIG_NUMBER.
  *   3. Two time-like cols (start*+end*) + 1+ categories → GANTT.
  *   4. 1 category + 2 numerics with min/max-like names → RANGE.
  *   5. Time + 3+ numerics with stacked-looking names → AREA_CHART (stacked).
  *      Time + 3+ independent numeric series → LINE_CHART.
  *   6. Time + numeric(s) → LINE_CHART(x:time, y:[numerics]).
- *   7. Single category + numeric(s):
- *        cardinality ≤ 32 → BAR_CHART(x:cat, y:[numerics])
- *        cardinality > 32 → TABLE() (bar of 100+ bars is unreadable).
- *   8. Two numerics, no time/cat → SCATTER_PLOT(x:, y:).
- *   9. Single numeric, no time/cat → HISTOGRAM(x:).
- *  10. Many numerics, no time/cat → HISTOGRAM of first numeric.
- *  11. Fallback → TABLE().
+ *   7. Single category + 1 numeric:
+ *        cardinality ≤ 6 → PIE_CHART (part-of-whole feel)
+ *        cardinality 7-32 → BAR_CHART (horizontal if names are long)
+ *        cardinality > 32 → TABLE()
+ *   8. Single category + multiple numerics:
+ *        cardinality ≤ 32 → BAR_CHART (horizontal for long names)
+ *        cardinality > 32 → TABLE()
+ *   9. Two numerics, no time/cat → SCATTER_PLOT(x:, y:).
+ *  10. Single numeric, no time/cat → HISTOGRAM(x:).
+ *  11. Many numerics, no time/cat → HISTOGRAM of first numeric.
+ *  12. Fallback → TABLE().
  */
 export function heuristicPlot(
     columns: { name: string; type: string }[],
@@ -63,11 +89,19 @@ export function heuristicPlot(
     const numerics = roles.filter(r => r.role === 'numeric');
     const cats = roles.filter(r => r.role === 'category');
 
-    // Single scalar value → table only when the column name suggests an aggregate (count, total, sum…)
-    // or when sample has exactly 1 row. Single raw-measurement columns (pauseMs, duration…) → HISTOGRAM.
+    // BIG_NUMBER — single aggregate scalar value (count, total, avg, etc.)
+    // Also applies to a numeric + a label/description column when sample=1 row (summary result).
     if (roles.length === 1 && numerics.length === 1) {
         const isAggregate = AGGREGATE_NAMES_RE.test(numerics[0].name) || sample.length === 1;
-        if (isAggregate) return 'TABLE()';
+        if (isAggregate) {
+            const title = numerics[0].name.replace(/_/g, ' ');
+            return `BIG_NUMBER(value: "${numerics[0].name}") TITLE "${title}"`;
+        }
+    }
+    // Single-row label+metric summary (e.g., dashboard KPI row).
+    if (numerics.length === 1 && cats.length === 1 && LABEL_NAMES_RE.test(cats[0].name) && sample.length === 1) {
+        const title = numerics[0].name.replace(/_/g, ' ');
+        return `BIG_NUMBER(value: "${numerics[0].name}", label: "${cats[0].name}") TITLE "${title}"`;
     }
 
     // GANTT — require BOTH start* AND end* (conservative; per plan risk matrix
@@ -106,18 +140,29 @@ export function heuristicPlot(
         return `AREA_CHART(x: "${time.name}", y: [${yCols}], layout: "stacked")`;
     }
 
-    // Time + numerics → line chart  (LINE_CHART(x:, y:[]))
+    // Time + numerics → line chart (LINE_CHART(x:, y:[]))
     if (time && numerics.length >= 1) {
         const yCols = numerics.map(n => `"${n.name}"`).join(', ');
-        return `LINE_CHART(x: "${time.name}", y: [${yCols}])`;
+        let config = `LINE_CHART(x: "${time.name}", y: [${yCols}])`;
+        // Add AXIS_Y DOMAIN hint for percentage columns.
+        if (numerics.length === 1 && PERCENT_NAMES_RE.test(numerics[0].name)) {
+            config += ` AXIS_Y DOMAIN [0, 100] FORMAT ".1f"`;
+        }
+        return config;
     }
 
-    // Single category + single numeric → bar or table depending on cardinality.
+    // Single category + single numeric.
     if (cats.length === 1 && numerics.length === 1) {
         const card = distinctCount(sample, cats[0].name);
-        // High-cardinality or empty-sample bar charts are unreadable; switch to table.
         if (card === null || card > 32) return 'TABLE()';
-        return `BAR_CHART(x: "${cats[0].name}", y: ["${numerics[0].name}"])`;
+        // Very low cardinality (≤4) and value column looks like percentage/share → PIE_CHART.
+        if (card !== null && card <= 4 && PERCENT_NAMES_RE.test(numerics[0].name)) {
+            return `PIE_CHART(category: "${cats[0].name}", value: "${numerics[0].name}")`;
+        }
+        // Larger cardinality → BAR_CHART; horizontal when names are long.
+        const avgLen = avgCategoryLength(sample, cats[0].name);
+        const horizontal = avgLen > 15 ? ', horizontal: true' : '';
+        return `BAR_CHART(x: "${cats[0].name}", y: ["${numerics[0].name}"]${horizontal})`;
     }
 
     // Category + multiple numerics → grouped bar
@@ -125,7 +170,9 @@ export function heuristicPlot(
         const card = distinctCount(sample, cats[0].name);
         if (card === null || card > 32) return 'TABLE()';
         const yCols = numerics.map(n => `"${n.name}"`).join(', ');
-        return `BAR_CHART(x: "${cats[0].name}", y: [${yCols}])`;
+        const avgLen = avgCategoryLength(sample, cats[0].name);
+        const horizontal = avgLen > 15 ? ', horizontal: true' : '';
+        return `BAR_CHART(x: "${cats[0].name}", y: [${yCols}]${horizontal})`;
     }
 
     // Two numerics (no time, no category) → scatter  (SCATTER_PLOT(x:, y:))
@@ -135,7 +182,11 @@ export function heuristicPlot(
 
     // One numeric, no time, no category → histogram  (HISTOGRAM(x:))
     if (numerics.length === 1 && cats.length === 0 && !time) {
-        return `HISTOGRAM(x: "${numerics[0].name}")`;
+        let config = `HISTOGRAM(x: "${numerics[0].name}")`;
+        if (DURATION_MS_NAMES_RE.test(numerics[0].name)) {
+            config += ` TITLE "${numerics[0].name.replace(/_/g, ' ')} distribution"`;
+        }
+        return config;
     }
 
     // Multiple numerics, no time, no category → histogram of first
@@ -145,3 +196,4 @@ export function heuristicPlot(
 
     return 'TABLE()';
 }
+
