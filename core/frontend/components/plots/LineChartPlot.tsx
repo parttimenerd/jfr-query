@@ -1,5 +1,5 @@
 import React, { useContext, useMemo } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, Brush } from 'recharts';
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
@@ -9,6 +9,7 @@ import { buildParserSpec, findColumn, findColumns, getTimeValue, isDurationColum
 import { lttb } from '../../services/plot/decimation';
 import { makeTickFormatter, mapAxisScale } from '../../utils/axisFormat';
 import { PlotTooltip } from './PlotTooltip';
+import { usePlotGestures } from '../../hooks/usePlotGestures';
 
 const LINE_SOFT_CAP_PER_SERIES = 5000;
 
@@ -18,9 +19,10 @@ const params: PlotParameter[] = [ { name: 'x', type: 'column', required: true, d
 
 const parseConfig = createConfigParser<Config>(buildParserSpec(params));
 
-const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any, any]; domainY?: [number, number]; isAnimationActive?: boolean; animationDuration?: number; clauses?: import('../../utils/plotParser').ParsedPlotCall; }> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration, clauses }) => {
+const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any, any]; domainY?: [number, number]; isAnimationActive?: boolean; animationDuration?: number; clauses?: import('../../utils/plotParser').ParsedPlotCall; gestureName?: string; onVariableChange?: (vars: Record<string, unknown>) => void; }> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration, clauses, gestureName, onVariableChange }) => {
   const { settings } = useContext(SettingsContext);
   const numberFormatter = (v: any) => formatNumber(v, settings.decimalPlaces);
+  const gestures = usePlotGestures({ name: gestureName, onVariableChange });
 
   // W4 — cross-cutting clauses override config-level fields where both exist.
   const legendPos = clauses?.legend; // 'right' | 'left' | 'top' | 'bottom' | 'none'
@@ -127,6 +129,7 @@ const LineChartComponent: React.FC<{ config: Config; data: any[]; domainX?: [any
           {allY2.map((y,i)=><Line yAxisId="right" key={y} type="monotone" dataKey={y} stroke={colors[(allY.length+i)%colors.length]} connectNulls={config.connectNulls} strokeWidth={config.lineType === 'line' ? 1 : 0} dot={config.lineType === 'dots'} activeDot={{r: 4}} isAnimationActive={isAnimationActive} animationDuration={animationDuration}/>)}
           {config.xRefLines?.map((l,i)=><ReferenceLine key={`x-${i}`} x={l.value} label={l.label} stroke="#facc15" strokeDasharray="3 3"/>)}
           {config.yRefLines?.map((l,i)=><ReferenceLine key={`y-${i}`} y={l.value} label={l.label} stroke="#facc15" strokeDasharray="3 3"/>)}
+          {gestureName && <Brush key={`brush-${chartData.length > 0 ? String(chartData[0]?.[finalXCol]) + '-' + String(chartData[chartData.length - 1]?.[finalXCol]) : 'empty'}`} dataKey={finalXCol} height={20} stroke="#4b5563" fill="#1f2937" onChange={(range) => gestures.onBrushChange(range as any, chartData, finalXCol)}/>}
         </LineChart>
       </ResponsiveContainer>
     </div>
