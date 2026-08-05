@@ -2049,3 +2049,41 @@ All 11 templates load and render without DOM errors or JS exceptions.
 
 ### Deferred (carry-forward)
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## QA pass — session 14 (2026-08-05)
+
+### Scope
+Recurring half-hour QA pass. Templates: Recording Overview, CPU Profiling. Interactive features check. Docs-site audit.
+
+### Unit tests
+6203 passed, 7 skipped ✅
+
+### Template scan
+- **Recording Overview** ✅ (0 lint errors, 0 DOM errors)
+- **CPU Profiling** ✅ (0 lint errors, 0 DOM errors)
+- **Comprehensive Feature Test** ✅ (0 lint errors, 0 DOM errors) — BRUSH cell verified
+
+### Interactive features
+- **Variables panel** ✅ — `$limit = 200` displayed
+- **Command palette** ✅ — opens with Cmd+K, closes with Escape
+- **SQL autocomplete** ✅ — `GarbageCollection · table · 20 rows`
+- **Run All** ✅ — 2 charts, 0 lint errors
+- **Help modal** ✅ — full shortcuts content
+- **BRUSH** ✅ — `LINE_CHART(...) BRUSH $sel MODE X` confirmed in Comprehensive template
+- **BAR_CHART tooltip** ✅ — GC cause data visible in screenshot
+
+### Console audit
+2 ONNX warnings only ✅
+
+### Docs-site audit
+- `variables.md` — BRUSH/LINK_X paths correct ✅
+- `cli.md` — flags accurate ✅
+- `plot-dsl.md` — GANTT params correct, BIG_NUMBER fix from s13 confirmed ✅
+
+### Bugs found
+None.
+
+### Deferred (carry-forward)
+- **B-205** (LATERAL join scope in completions): still open, deferred.
