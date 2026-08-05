@@ -37,3 +37,35 @@ describe('LineChartComponent — brush props accepted', () => {
         expect(container.querySelector('.recharts-brush')).toBeNull();
     });
 });
+
+describe('LineChartComponent — step lineType', () => {
+    it('accepts lineType=step without error', async () => {
+        const { lineChartPlot } = await import('../../components/plots/LineChartPlot');
+        const config = lineChartPlot.parseConfig('LINE_CHART(x:"t",y:["v"],lineType:"step")', data);
+        expect(config.lineType).toBe('step');
+        expect(() => render(React.createElement(lineChartPlot.component as any, {
+            config, data,
+            clauses: { mainConfig: 'LINE_CHART(x:"t",y:["v"],lineType:"step")' } as ParsedPlotCall,
+        }))).not.toThrow();
+    });
+
+    it('accepts lineType=stepBefore without error', async () => {
+        const { lineChartPlot } = await import('../../components/plots/LineChartPlot');
+        const config = lineChartPlot.parseConfig('LINE_CHART(x:"t",y:["v"],lineType:"stepBefore")', data);
+        expect(config.lineType).toBe('stepBefore');
+        expect(() => render(React.createElement(lineChartPlot.component as any, {
+            config, data,
+            clauses: { mainConfig: 'LINE_CHART(x:"t",y:["v"],lineType:"stepBefore")' } as ParsedPlotCall,
+        }))).not.toThrow();
+    });
+
+    it('accepts lineType=stepAfter without error', async () => {
+        const { lineChartPlot } = await import('../../components/plots/LineChartPlot');
+        const config = lineChartPlot.parseConfig('LINE_CHART(x:"t",y:["v"],lineType:"stepAfter")', data);
+        expect(config.lineType).toBe('stepAfter');
+        expect(() => render(React.createElement(lineChartPlot.component as any, {
+            config, data,
+            clauses: { mainConfig: 'LINE_CHART(x:"t",y:["v"],lineType:"stepAfter")' } as ParsedPlotCall,
+        }))).not.toThrow();
+    });
+});
