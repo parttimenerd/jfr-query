@@ -1871,5 +1871,34 @@ None. No regressions from prior sessions.
 
 ### Deferred (carry-forward)
 - **B-205** (LATERAL join scope in completions): still open, deferred.
-- **BRUSH demo notebook**: no built-in template exercises BRUSH interactively.
-- **BIG_NUMBER not showcased**: implemented and unit-tested, no template uses it.
+- ~~**BRUSH demo notebook**: no built-in template exercises BRUSH interactively.~~ ✅ FIXED — added Brush-Driven Filter cell to comprehensive-test.md
+- ~~**BIG_NUMBER not showcased**: implemented and unit-tested, no template uses it.~~ ✅ FIXED — added GC Summary BIG_NUMBER ROW() cell to comprehensive-test.md
+
+---
+
+## QA pass — 2026-08-05 (session 8)
+
+**Scope:** Add BIG_NUMBER and BRUSH showcase cells to Comprehensive Feature Test template; fix deferred items.
+
+**Test environment:** WASM mode, demo `.jfr` file, Chrome via Playwright MCP, `localhost:3001`.
+
+### Unit tests
+**6203 passed, 7 skipped, 0 failed** — all green.
+
+### Templates tested
+**Comprehensive Feature Test** ✅ PASS (0 DOM errors after fix iterations)
+
+### Features implemented
+
+- **BIG_NUMBER showcase** — Added `GC Summary — BIG_NUMBER Cards` cell using `ROW(BIG_NUMBER(...), BIG_NUMBER(...), BIG_NUMBER(...), BIG_NUMBER(...))` to show 4 stat cards from one query. Verified rendering: GC Events 20, Total Pause 790.8 ms, Avg Pause 39.54 ms, Max Pause 224.4 ms.
+
+- **BRUSH demo** — Added `Brush-Driven Filter` cell with `LINE_CHART ... BRUSH $sel MODE X` on the top chart and a `BETWEEN $sel.brush.lo AND $sel.brush.hi` filtered TABLE below. Pre-seeded `$sel.brush.lo = 0` and `$sel.brush.hi = 999999999999` in front-matter variables so the table renders all rows initially; dragging the chart updates the range and the table re-runs with only matching rows.
+
+### Bugs encountered & fixed during this session
+
+- **`+` operator creates overlay, not row** — Initial attempt used `BIG_NUMBER(...) + BIG_NUMBER(...)` which tries to overlay charts (not supported for BIG_NUMBER). Fixed by using `ROW(BIG_NUMBER(...), ...)`.
+- **`$sel = {}` not valid variable syntax** — Cell variables block parser uses `\w+` regex which rejects dotted keys. Front-matter variable parser supports dotted keys (splits on `:`). Moved defaults to front-matter.
+- **em-dash in TITLE caused parse error** — `TITLE "Select a window — drag to filter"` with a Unicode em-dash character triggered a plot parser error. Removed em-dash.
+
+### Deferred (carry-forward)
+- **B-205** (LATERAL join scope in completions): still open, deferred.

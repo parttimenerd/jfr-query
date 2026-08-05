@@ -7,6 +7,8 @@ priority: 99
 variables:
   $limit: "20"
   $min_pause_ms: "5"
+  $sel.brush.lo: "0"
+  $sel.brush.hi: "999999999999"
 ---
 
 <!-- @cell name=intro -->
@@ -42,6 +44,70 @@ SELECT
   round(avg(sumOfPauses) * 1000, 2) AS "Avg Pause (ms)",
   round(max(longestPause) * 1000, 2) AS "Max Pause (ms)"
 FROM GarbageCollection
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=gc-summary-stats -->
+
+## GC Summary — BIG_NUMBER Cards
+
+Three stat cards from one query. `BIG_NUMBER` extracts the first row of a column and renders it large.
+
+```sql
+SELECT
+  count(*)                                          AS "gc_count",
+  round(sum(sumOfPauses) * 1000, 1)                AS "total_pause_ms",
+  round(avg(sumOfPauses) * 1000, 2)                AS "avg_pause_ms",
+  round(max(longestPause) * 1000, 2)               AS "max_pause_ms"
+FROM GarbageCollection
+```
+
+```plot
+ROW(
+  BIG_NUMBER(value: "gc_count",       label: "GC Events"),
+  BIG_NUMBER(value: "total_pause_ms", label: "Total Pause",  units: "ms"),
+  BIG_NUMBER(value: "avg_pause_ms",   label: "Avg Pause",    units: "ms"),
+  BIG_NUMBER(value: "max_pause_ms",   label: "Max Pause",    units: "ms")
+)
+```
+
+---
+
+<!-- @cell name=brush-filter -->
+
+## Brush-Driven Filter
+
+Drag on the chart to select a time window — the `BRUSH $sel MODE X` clause writes `$sel.brush.lo` and `$sel.brush.hi` into the notebook's variable store. Any downstream SQL cell can then reference those values with `WHERE t BETWEEN $sel.brush.lo AND $sel.brush.hi`.
+
+```sql
+-- alias heap_timeline
+SELECT
+  round(epoch_ms(startTime) / 1000.0, 3) AS "t",
+  round(sumOfPauses * 1000, 2)           AS "Pause (ms)"
+FROM GarbageCollection
+ORDER BY startTime
+```
+
+```plot
+LINE_CHART(x: "t", y: "Pause (ms)") BRUSH $sel MODE X TITLE "Pause Timeline (drag to select)"
+```
+
+```sql
+SELECT
+  gcId   AS "GC ID",
+  cause  AS "Cause",
+  round(sumOfPauses * 1000, 2)           AS "Pause (ms)",
+  round(epoch_ms(startTime) / 1000.0, 3) AS "t"
+FROM GarbageCollection
+WHERE round(epoch_ms(startTime) / 1000.0, 3)
+      BETWEEN $sel.brush.lo AND $sel.brush.hi
+ORDER BY startTime
+LIMIT 50
 ```
 
 ```plot
