@@ -1949,7 +1949,32 @@ None. No regressions from prior sessions.
 
 ---
 
-## QA pass — session 11 (2026-08-05)
+## QA pass — session 12 (2026-08-05)
+
+### Unit tests
+`npx vitest run` — 6203 passed, 7 skipped. No regressions.
+
+### Template scan (12 templates)
+All 12 templates (including GC Deep Dive) load and run with **0 DOM errors**:
+Recording Overview ✅ · GC Pause Analysis ✅ · GC Deep Dive ✅ · CPU Profiling ✅ · Heap Allocation ✅ · I/O & Latency ✅ · JVM Internals ✅ · Memory Leak Detection ✅ · Threading & Contention ✅ · Container & Cloud ✅ · Exceptions & Errors ✅ · Comprehensive Feature Test ✅
+
+### Interactive features (demo notebook)
+- **Run All** ✅
+- **Collapse All / Expand All** ✅
+- **Schema Explorer** ✅ — clicking GarbageCollection shows `SELECT * FROM "GarbageCollection"` in preview pane
+- **Command palette** ✅ — Ctrl+K opens palette
+- **SQL autocomplete** ✅ — typing `Gar` in preview pane shows `GarbageCollection · table · 20 rows`
+- **5 charts rendered** ✅
+- **0 DOM errors** ✅
+
+### Console audit
+2 errors (ONNX runtime session assignment warnings — not real bugs per QA spec).
+
+### Bugs found
+None.
+
+### Deferred (carry-forward)
+- **B-205** (LATERAL join scope in completions): still open, deferred.
 
 ### Scope
 Full QA pass on demo notebook + all 11 templates. Focus: interactive features, plot tooltips, UI polish, docs-site consistency.
