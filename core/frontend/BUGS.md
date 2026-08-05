@@ -2305,6 +2305,45 @@ None new.
 
 ---
 
+## Session 23 — 2026-08-06
+
+**Scope:** Full visual QA pass — unit tests, all 12 templates (DOM error scan after Run All + full scroll), demo notebook interactive features (variables panel, Run All, Collapse/Expand, Schema Explorer), console errors.
+
+### Fixes applied
+None.
+
+### Test results
+
+- **Unit tests:** 6210 passed, 0 failed
+- **All 12 templates — DOM error scan (after Run All + scroll-to-bottom):**
+  - Recording Overview ✅ PASS
+  - GC Pause Analysis ✅ PASS
+  - GC Deep Dive ✅ PASS
+  - CPU Profiling ✅ PASS
+  - Heap Allocation ✅ PASS
+  - I/O & Latency ✅ PASS
+  - JVM Internals ✅ PASS
+  - Memory Leak Detection ✅ PASS
+  - Container & Cloud ✅ PASS
+  - Exception & Error Analysis ✅ PASS
+  - Threading & Locking ✅ PASS
+  - Comprehensive Feature Test ✅ PASS
+- **Demo notebook:**
+  - Variables panel: 2 vars (`$session_start`, `$session_end`) ✅
+  - Run All: no errors ✅
+  - Collapse All / Expand All: 11 cells collapsed and re-expanded ✅
+  - Schema Explorer: GarbageCollection click → gcId/name/startTime columns in preview ✅
+- **Console errors:** 0 JS errors (199 total messages, all warnings)
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
 ## Session 17 — 2026-08-05
 
 **Scope:** Full QA pass — unit tests, demo notebook, Recording Overview template, I/O & Latency template, interactive features, console check, UI polish, BUGS.md/docs-site audit.
