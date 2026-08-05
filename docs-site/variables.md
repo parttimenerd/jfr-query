@@ -78,18 +78,21 @@ Supported `input=` types:
 | `slider` | `input="slider" var="$name" min="0" max="100"` | Range slider with live readout |
 | `dropdown` | `input="dropdown" var="$name" options="GC,JIT,IO"` | Select dropdown |
 | `datetime` | `input="datetime" var="$$start"` | Native datetime-local picker |
+| `button` | `input="button" var="$name" options="10,50,100"` | Row of preset-value buttons; active button highlighted |
+| `text` | `input="text" var="$name" placeholder="filter..."` | Free-text input box |
 
 **Common attributes:**
 
 | Attribute | Required | Description |
 |-----------|----------|-------------|
-| `input=` | yes | Widget type: `slider`, `dropdown`, or `datetime`. |
+| `input=` | yes | Widget type: `slider`, `dropdown`, `datetime`, `button`, or `text`. |
 | `var=` | yes | The variable name to write to (e.g. `var="$limit"` or `var="$$threshold"`). |
 | `default=` | no | Initial value when the variable is not otherwise set. |
 | `min=` | slider only | Minimum slider value (numeric). Default `0`. |
 | `max=` | slider only | Maximum slider value (numeric). Default `100`. |
 | `step=` | slider only | Step size for slider increments (numeric). Default `1`. |
-| `options=` | dropdown only | Comma-separated list of option values (e.g. `options="GC,JIT,IO"`). |
+| `options=` | dropdown, button | Comma-separated list of option values (e.g. `options="GC,JIT,IO"` or `options="10,50,100"`). |
+| `placeholder=` | text only | Placeholder hint text shown when the input is empty. |
 
 **Example — slider-driven threshold:**
 

@@ -1500,3 +1500,54 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Repro:** With no AI proxy configured, run a query with a SQL error. The "AI suggestion loading…" pulsing text appears and never resolves.
 **Observed:** The `.catch()` handler set `aiErrorSuggestions[i]: null` (the "loading" sentinel) instead of clearing the entry, causing the spinner to stay visible indefinitely on proxy failure.
 **Fix:** Changed the catch block to delete the key from the map (`delete n[i]`), so `aiErrorSuggestions[i]` becomes `undefined` and the loading UI is hidden.
+
+---
+
+## Comprehensive QA pass — 2026-08-05
+
+**Scope:** Full template gallery (all 12 templates), demo notebook, interactive features, docs audit.
+
+**Test environment:** WASM mode, demo `.jfr` file, Chrome via Playwright, `localhost:3001`.
+
+### Templates tested (zero DOM errors each)
+
+| Template | Result |
+|----------|--------|
+| GC Deep Dive | ✅ No errors; TIMESTAMP fix (f8edf74) confirmed working — Overview shows 20 events, 1.13% overhead |
+| GC Pause Analysis | ✅ No errors |
+| Comprehensive Feature Test | ✅ 23 charts, 9 cells, no errors |
+| Recording Overview | ✅ No errors |
+| CPU Profiling | ✅ No errors |
+| Heap Allocation | ✅ No errors |
+| I/O & Latency | ✅ No errors |
+| Threading & Contention | ✅ No errors |
+| Memory Leak Detection | ✅ No errors |
+| JVM Internals | ✅ No errors |
+| Container & Cloud | ✅ No errors |
+| Exceptions & Errors | ✅ No errors |
+
+### Interactive features
+
+- **SQL autocomplete** ✅ — `FROM Gar` → `GarbageCollection (table · 20 rows)` appears; mouse-click focus required (keyboard-only focus insufficient for first activation)
+- **Chart tooltips** ✅ — Hover shows "11:11:40.00 / Committed MB: 750 / Used MB: 340.9" on line chart
+- **LINK_X zoom** ✅ — Shift+drag on "Heap MB Over Time" line chart zooms in; "reset" button appears; x-axis narrows from 11:06–11:19 to 11:07–11:11
+- **Help modal** ✅ — Opens correctly showing keyboard shortcuts and hidden-feature tips; "Shift+drag to zoom" tip is accurate
+- **Command palette** ✅ — Cmd+K opens; cell/table search works
+- **Schema Explorer** ✅ — Preview panel renders table data
+- **Collapse/Expand** ✅ — Cells collapse and expand
+- **Run All** ✅ — All cells execute with zero SQL errors
+
+### Console errors
+
+Only the 2 ONNX runtime CPU-node-assignment warnings (non-actionable, always present). No JS errors.
+
+### Docs audit (`docs-site/`)
+
+All pages reviewed. Found and fixed one stale entry:
+
+- **`variables.md`**: Added `button` and `text` input widget types (implemented in `VariableInputWidgets.tsx` but undocumented); updated `options=` attribute description to cover both `dropdown` and `button`; added `placeholder=` attribute for `text` type.
+
+### Open issues
+
+- **B-205** (LATERAL join scope — low priority, complex to fix, not user-visible in demo data): still open.
+- **Scroll-wheel zoom on charts**: Scrolling on a chart while the page is scrollable sends wheel events to the page rather than the chart. The zoom works via Shift+drag (as documented in the Help modal) — this is expected behavior, not a bug.
