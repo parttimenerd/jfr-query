@@ -41,7 +41,7 @@ The `name=` attribute gives the cell a stable handle that can be referenced from
 Interactive plots write back to variables:
 
 - `BRUSH $var MODE X` writes the selected X range to `$var.brush.lo` / `$var.brush.hi`.
-- `ON HOVER TOOLTIP "..."` can update variables that downstream SQL cells read.
+- `LINK_X($start, $end)` writes the current zoom/pan X domain to `$start` and `$end` on pointer-up.
 
 When a variable changes, dependent SQL cells re-run automatically, and their plots re-render.
 
@@ -61,6 +61,7 @@ The left-sidebar AI chat panel lets you explore a recording conversationally.
 | `/plan` | Propose-only mode — the AI drafts a structured plan without modifying the notebook. Approve individual steps from the plan card. |
 | `/btw` | Normal chat plus "by the way" suggestion cards after each reply. |
 | `/verbose` | Show full reasoning — intermediate query results, hypotheses, and step-by-step analysis before conclusions. |
+| `/clear` | Erase all messages in this chat channel. |
 | `/compact` | Summarise and compress the conversation history to free up context window. |
 | `/model [name]` | Show or switch the current model. |
 | `/provider [name]` | Show or switch the AI provider (anthropic, openai, local, browser). |

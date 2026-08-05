@@ -2087,3 +2087,50 @@ None.
 
 ### Deferred (carry-forward)
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## QA pass — session 15 (2026-08-05)
+
+**Scope:** Full QA sweep — unit tests, demo notebook, Threading & Contention + Memory Leak Detection templates, full interactive feature suite, UI polish, docs-site audit.
+
+**Test environment:** WASM mode, demo `.jfr` file, Chrome via Playwright MCP, `localhost:3001`.
+
+### Unit tests
+**6203 passed, 7 skipped, 0 failed** — all green.
+
+### Templates tested (zero DOM errors each)
+| Template | Result |
+|---|---|
+| Threading & Contention | ✅ PASS |
+| Memory Leak Detection | ✅ PASS |
+
+### Demo notebook
+- DOM scan: 0 errors, 7 charts + 2 tables rendered ✅
+
+### Interactive features
+- **Variables panel** ✅ — `$session_start` chip opens inline editor; native-setter + Enter commits value; queries re-run (console events confirmed)
+- **Command palette** ✅ — Cmd+K opens, "run" search shows "Run all queries" action, Escape closes
+- **SQL autocomplete** ✅ — `SELECT * FROM Gar` + Ctrl+Space → `GarbageCollection · table · 20 rows`
+- **Schema explorer** ✅ — clicking GCHeapSummary updates preview to `SELECT * FROM "GCHeapSummary" LIMIT 20;` with 20 rows
+- **Run All** ✅ — 0 DOM errors after run
+- **Help modal** ✅ — "Keyboard Shortcuts & Tips" dialog with full content
+- **Chart tooltip** ✅ — LINE_CHART hover shows `11:00:19.70 / duration ms / 7.5`
+- **BRUSH** ✅ — drag on Comprehensive Feature Test "Pause Timeline" chart updated `$sel` from `writes 0 and 999999999999` to real timestamps; downstream table filtered to 1 row
+- **LINK_X / zoom** ✅ — Alt+scroll zoom on scatter chart narrowed x-axis (confirmed via screenshot)
+- **Collapse All / Expand All** ✅
+
+### UI polish
+- 0 DOM errors, 0 zero-height containers, 0 stuck spinners, 0 error boundaries
+- Overflow check: only minor SVG tick text overflow (cosmetic) and resize-handle overflow (intentional)
+- Console: 0 JS errors (2 ONNX runtime warnings — expected)
+
+### Docs-site fixes
+1. **`web-ui.md` Live coupling section** — removed stale claim that `ON HOVER TOOLTIP "..."` updates variables (it formats tooltips only). Added `LINK_X($start, $end)` which was missing from the section.
+2. **`web-ui.md` Slash commands table** — added missing `/clear` command (erases chat history; in `slashCommands.ts` but undocumented).
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-205** (LATERAL join scope in completions): still open, deferred.
