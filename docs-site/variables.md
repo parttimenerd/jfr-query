@@ -67,6 +67,45 @@ The sidebar variable-controls panel renders a form for every declared variable. 
 
 Editing a control mutates the variable and triggers re-evaluation of every dependent SQL cell, plot, inline scalar, and conditional block.
 
+### Inline input widgets
+
+In addition to the sidebar, you can embed an interactive input widget directly inside a cell by adding `input=`, `var=`, and related attributes to the cell directive. This is useful when you want a control co-located with the query it drives.
+
+Supported `input=` types:
+
+| Type | Syntax | Rendered widget |
+|------|--------|----------------|
+| `slider` | `input="slider" var="$name" min="0" max="100"` | Range slider with live readout |
+| `dropdown` | `input="dropdown" var="$name" options="GC,JIT,IO"` | Select dropdown |
+| `datetime` | `input="datetime" var="$$start"` | Native datetime-local picker |
+
+**Common attributes:**
+
+| Attribute | Required | Description |
+|-----------|----------|-------------|
+| `input=` | yes | Widget type: `slider`, `dropdown`, or `datetime`. |
+| `var=` | yes | The variable name to write to (e.g. `var="$limit"` or `var="$$threshold"`). |
+| `default=` | no | Initial value when the variable is not otherwise set. |
+| `min=` | slider only | Minimum slider value (numeric). Default `0`. |
+| `max=` | slider only | Maximum slider value (numeric). Default `100`. |
+| `options=` | dropdown only | Comma-separated list of option values (e.g. `options="GC,JIT,IO"`). |
+
+**Example — slider-driven threshold:**
+
+```html
+<!-- @cell name=gc-filter input="slider" var="$limit" min="0" max="500" default="100" -->
+```
+
+```sql
+SELECT * FROM gc WHERE duration_ms > $limit ORDER BY duration_ms DESC
+```
+
+**Example — dropdown event-type filter:**
+
+```html
+<!-- @cell name=event-picker input="dropdown" var="$event" options="GarbageCollection,JIT,IO" default="GarbageCollection" -->
+```
+
 ## Live coupling
 
 Interactive plot clauses write to variables:
@@ -116,6 +155,21 @@ SELECT * FROM gc WHERE timestamp BETWEEN $sel.brush.lo AND $sel.brush.hi
 TABLE() ON selected
 ```
 ````
+
+## Seeding variables from URL parameters
+
+You can pre-populate cell-local or notebook-level variables via URL query parameters using the `var.NAME=VALUE` syntax:
+
+```
+http://localhost:3001/?var.threshold=500&var.event_type=GC
+```
+
+- The `var.` prefix is stripped; the remainder becomes the variable name.
+- Names without a leading `$` have `$` prepended automatically.
+- Values are parsed as numbers when possible, otherwise kept as strings.
+- URL-seeded values merge into the notebook's initial variable state and can be overridden interactively.
+
+This is useful for sharing pre-filtered notebook views or scripting notebook screenshots.
 
 ## See also
 

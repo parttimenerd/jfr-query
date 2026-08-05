@@ -39,6 +39,7 @@ A plot expression consists of:
 | `SUNBURST` | — | Sunburst drill-down chart with `path` (one or more columns, or a delimited single column) and `value`. |
 | `SANKEY` | — | Sankey flow diagram with `source`, `target`, and `value` columns. |
 | `CROSSTAB` | — | Pivot table with heat-map cell coloring. Aggregates `value` by two categorical dimensions (`row` / `col`). |
+| `BIG_NUMBER` | — | Large stat card showing a single scalar value with optional label and comparison delta. |
 
 Aliases are accepted anywhere the canonical name is. `LINE(x=t, y=v)` is equivalent to `LINE_CHART(x=t, y=v)`.
 `PIE_CHART` also accepts the older names `name` / `labels` / `values` for backwards compatibility; prefer `category` / `value`.
@@ -644,6 +645,51 @@ TABLE(headers: ["timestamp", "cause", "duration"], columnWidths: [200, 150, -1])
 
 ---
 
+### BIG_NUMBER
+
+Renders a single metric as a large prominent number — ideal for KPI-style summary cells. Optionally shows a label beneath the number and a delta (change vs. a baseline) with colour coding.
+
+**Example 1 — Simple scalar**
+
+````
+```sql
+-- alias avg_pause
+SELECT AVG(duration_ms) AS avg_ms FROM gc
+```
+```plot
+BIG_NUMBER(value: "avg_ms")
+  TITLE "Average GC Pause"
+```
+````
+
+**Example 2 — With label and delta**
+
+````
+```sql
+-- alias summary
+SELECT
+  count(*) AS pauses,
+  count(*) - $$baseline_count AS delta
+FROM gc
+```
+```plot
+BIG_NUMBER(value: "pauses", label: "Total GC Pauses", delta: "delta")
+  ON summary
+  TITLE "Pause Count"
+```
+````
+
+**Inner arguments:**
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `value` | column | Column whose value is displayed as the large number. Required. |
+| `label` | string | Descriptive text shown below the number. |
+| `delta` | column | Column whose value is shown as a ±change badge. Positive = green, negative = red. |
+| `format` | string | d3-format string for the main value (e.g. `".1f"`, `",.0f"`). |
+
+---
+
 ## Inner arguments
 
 Inner arguments go inside the parentheses after the plot type. All are optional; the sensible defaults for each plot type apply when omitted.
@@ -674,6 +720,10 @@ Inner arguments go inside the parentheses after the plot type. All are optional;
 | `color` | most types | Column used to derive series/category colours. |
 | `size` | SCATTER | Column used to derive marker size. |
 | `trendline` | SCATTER_PLOT | `true` to draw a linear regression trendline over the scatter points. |
+| `lineType` | LINE_CHART | Render style: `"line"` (default), `"dots"`, `"step"`, `"stepBefore"`, `"stepAfter"`. |
+| `y2` | LINE_CHART, AREA_CHART | Columns to plot on a second Y-axis (right side). |
+| `label` | SCATTER_PLOT | Column whose value is rendered as a text label next to each point. |
+| `value` | BIG_NUMBER | Column (or literal) to display as the large number. |
 | `title` | any | Inline title. Equivalent to the `TITLE` tail clause. |
 
 Values are column names from the bound query. String literals are wrapped in double quotes.
@@ -694,6 +744,20 @@ Tail clauses come after the closing paren of the plot type and each other, in an
 
 - `ON query_ref[, query_ref, ...]` — bind the plot to one or more queries. See "Query references" below. Default: the query immediately preceding the plot block.
 - `DATASET name` — use a named view as data source. Equivalent to `ON name` for view-backed data.
+
+### Sorting and limiting
+
+- `SORT ASC` — sort bars/rows by value ascending (lowest first) before rendering.
+- `SORT DESC` — sort bars/rows by value descending (highest first) — useful for top-N charts.
+- `LIMIT n` — cap the rendered rows/bars to the first `n` entries (after any `SORT`). Applies to `BAR_CHART` and `TABLE`.
+
+Example — top-10 slowest GC causes:
+
+```plot
+BAR_CHART(x: "cause", y: ["avg_ms"])
+  SORT DESC
+  LIMIT 10
+```
 
 ### Legend
 
