@@ -1,5 +1,5 @@
 import React, { useContext } from 'react';
-import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from 'recharts';
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
@@ -16,6 +16,7 @@ interface ScatterPlotConfig {
   size?: string;
   color?: string;
   category?: string;
+  label?: string;
 }
 
 const params: PlotParameter[] = [
@@ -24,6 +25,7 @@ const params: PlotParameter[] = [
     { name: 'size', type: 'column', description: 'Numeric column to determine the size of the points.' },
     { name: 'color', type: 'column', description: 'Column whose distinct values determine point color (one series per value).' },
     { name: 'category', type: 'column', aliasFor: 'color', deprecated: true, description: 'Deprecated alias for "color".' },
+    { name: 'label', type: 'column', description: 'Optional column whose values are shown as text labels next to each point.' },
 ];
 
 const parseConfig = createConfigParser<ScatterPlotConfig>(buildParserSpec(params));
@@ -99,7 +101,9 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
           <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} formatter={(value: any, name: string) => [(name === config.y ? yFormatter : numberFormatter)(value), name]} labelFormatter={xLabelFormatter} content={(clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => (<PlotTooltip {...props} onHoverTooltip={clauses?.onHoverTooltip} tooltipColumns={clauses?.tooltipColumns} labelFormatter={xLabelFormatter} />) : undefined}/>
           {showLegend && <Legend wrapperStyle={{ fontSize: "12px" }} verticalAlign={legendPos === 'top' ? 'top' : 'bottom'} align={legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center'} />}
           {series.map((s, i) => (
-            <Scatter key={s.name} name={s.name} data={s.data} fill={colors[i % colors.length]} isAnimationActive={isAnimationActive} animationDuration={animationDuration} />
+            <Scatter key={s.name} name={s.name} data={s.data} fill={colors[i % colors.length]} isAnimationActive={isAnimationActive} animationDuration={animationDuration}>
+              {config.label && <LabelList dataKey={config.label} position="top" style={{ fontSize: 10, fill: '#9ca3af' }} />}
+            </Scatter>
           ))}
         </ScatterChart>
       </ResponsiveContainer>
