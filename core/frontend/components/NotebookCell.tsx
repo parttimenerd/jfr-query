@@ -51,6 +51,7 @@ import { ClipboardIcon } from './icons/ClipboardIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import CollapsibleBlock from './CollapsibleBlock';
 import { VariableInputWidget } from './VariableInputWidgets';
+import { ResizablePlotContainer } from './ResizablePlotContainer';
 
 interface NotebookCellProps {
     cell: NotebookCellData;
@@ -1573,8 +1574,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                         const standaloneIsTableView = tableViewStates[standaloneViewKey] ?? false;
                                         items.push(
                                             <div key={standaloneViewKey}
-                                                className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative"
-                                                style={{ height: `${resultHeight}px` }}>
+                                                className="group/result rounded-md border border-gray-700/60 flex flex-col relative">
                                                 <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover/result:opacity-100 transition-opacity z-10">
                                                     <button title={standaloneIsTableView ? 'Show chart' : 'Show as table'} aria-label={standaloneIsTableView ? 'Show chart' : 'Show as table'} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200" onClick={() => setTableViewStates(prev => ({ ...prev, [standaloneViewKey]: !prev[standaloneViewKey] }))}>
                                                         {standaloneIsTableView ? <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>}
@@ -1583,7 +1583,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                                     </button>
                                                 </div>
-                                                <div id={`result-container-${cell.id}-standalone-${si}`} className="flex-grow overflow-hidden">
+                                                <ResizablePlotContainer id={`result-container-${cell.id}-standalone-${si}`}>
                                                     {standaloneIsTableView
                                                         ? <DataTable data={standaloneData} />
                                                         : <PlotRenderer
@@ -1600,7 +1600,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                             allVariables={allVariables}
                                                         />
                                                     }
-                                                </div>
+                                                </ResizablePlotContainer>
                                             </div>
                                         );
                                     } else if (standaloneDataset && !standaloneIsCollapsed) {
@@ -1703,7 +1703,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                     const pairedViewKey = `result-${cell.id}-${plotUid}`;
                                     const pairedIsTableView = tableViewStates[pairedViewKey] ?? false;
                                     items.push(
-                                        <div key={pairedViewKey} className="group/result rounded-md border border-gray-700/60 overflow-hidden flex flex-col relative" style={{ height: `${resultHeight}px` }}>
+                                        <div key={pairedViewKey} className="group/result rounded-md border border-gray-700/60 flex flex-col relative">
                                             <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover/result:opacity-100 transition-opacity z-10">
                                                 <button title={pairedIsTableView ? 'Show chart' : 'Show as table'} aria-label={pairedIsTableView ? 'Show chart' : 'Show as table'} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded p-1 text-gray-400 hover:text-gray-200" onClick={() => setTableViewStates(prev => ({ ...prev, [pairedViewKey]: !prev[pairedViewKey] }))}>
                                                     {pairedIsTableView ? <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>}
@@ -1712,12 +1712,12 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                                 </button>
                                             </div>
-                                            <div id={`result-container-${cell.id}-${plotUid}`} className="flex-grow overflow-hidden">
+                                            <ResizablePlotContainer id={`result-container-${cell.id}-${plotUid}`}>
                                                 {pairedIsTableView
                                                     ? <DataTable data={resolvedData} />
                                                     : <PlotRenderer config={configToRender} data={resolvedData} dataByQueryRef={dataByQueryRef} sql={resolvedSql} cellContext={cellContext} onApplyFix={c => handleApplyPlotFix(c, defaultSqlIndex)} isAiFeatureActive={isAiFeatureActive} metadata={metadata} onMetadataChange={onMetadataChange} onCellVariableChange={handleCellVariableChange} allVariables={allVariables} />
                                                 }
-                                            </div>
+                                            </ResizablePlotContainer>
                                         </div>
                                     );
                                 }
