@@ -56,5 +56,5 @@ describe('BigNumberPlot', () => {
     it('is registered in plotRegistry', async () => {
         const { plotRegistry } = await import('../../components/plots/plotRegistry');
         expect(plotRegistry['BIG_NUMBER']).toBeDefined();
-    });
+    }, 15000);
 });

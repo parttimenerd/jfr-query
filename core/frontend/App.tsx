@@ -488,10 +488,11 @@ const App: React.FC = () => {
     //   ?jfr=<https-url>               auto-load a JFR/duckdb file (WASM mode)
     //   ?run=true                      run all queries once the DB is ready
     // Each runs at most once per page load.
-    const urlParamsRef = useRef<{ notebookLoaded: boolean; jfrLoaded: boolean; ranAll: boolean }>({
+    const urlParamsRef = useRef<{ notebookLoaded: boolean; jfrLoaded: boolean; ranAll: boolean; varsSeeded: boolean }>({
         notebookLoaded: false,
         jfrLoaded: false,
         ranAll: false,
+        varsSeeded: false,
     });
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -515,6 +516,25 @@ const App: React.FC = () => {
             }
         }
     }, [loadNotebook]);
+
+    // Seed notebook variables from ?var.NAME=VALUE URL params.
+    // Runs once after the initial render (metadata is ready at that point).
+    useEffect(() => {
+        if (urlParamsRef.current.varsSeeded) return;
+        urlParamsRef.current.varsSeeded = true;
+        const params = new URLSearchParams(window.location.search);
+        const urlVars: Record<string, string> = {};
+        for (const [key, value] of params.entries()) {
+            if (key.startsWith('var.')) {
+                const varName = key.slice(4);
+                urlVars[varName.startsWith('$') ? varName : `$${varName}`] = value;
+            }
+        }
+        if (Object.keys(urlVars).length > 0) {
+            void handleMetadataChange({ ...metadataRef.current, variables: { ...metadataRef.current.variables, ...urlVars } });
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Auto-load JFR: only relevant in WASM mode, only if no DB yet.
     useEffect(() => {
