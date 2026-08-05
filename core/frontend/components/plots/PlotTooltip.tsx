@@ -113,6 +113,8 @@ export const PlotTooltip: React.FC<PlotTooltipProps> = ({
           }).filter(Boolean) as Array<PlotTooltipEntry & { displayValue: string }>
         : payload.map(e => ({ ...e, displayValue: formatTooltipValue(e.value) }));
 
+    if (entries.length === 0 && label === undefined) return null;
+
     return (
         <div className={boxCls}>
             {label !== undefined && (
