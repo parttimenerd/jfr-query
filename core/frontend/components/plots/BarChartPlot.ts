@@ -1,5 +1,5 @@
 import React, { useContext, useMemo } from 'react';
-import { BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
 import { formatNumber } from '../../utils/numberFormatter';
@@ -20,6 +20,7 @@ interface BarChartConfig {
   yAxisLabel?: string;
   logScale: boolean;
   horizontal: boolean;
+  yRefLines?: any[];
 }
 
 const params: PlotParameter[] = [
@@ -31,6 +32,7 @@ const params: PlotParameter[] = [
   { name: 'yAxisLabel', type: 'string', description: 'Label for the numeric value axis.' },
   { name: 'logScale', type: 'boolean', defaultValue: false, description: 'Use a logarithmic scale for the value axis.' },
   { name: 'horizontal', type: 'boolean', defaultValue: false, description: 'If true, creates a horizontal bar chart.' },
+  { name: 'yRefLines', type: 'referenceLine[]', description: 'Horizontal reference lines at specified Y values. Each entry: {value: number, label: string}.' },
 ];
 
 const parseConfig = createConfigParser<BarChartConfig>(buildParserSpec(params));
@@ -236,7 +238,18 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
         React.createElement(Tooltip, { key: 'tooltip', content: (clauses?.onHoverTooltip || (clauses?.tooltipColumns && clauses.tooltipColumns.length > 0)) ? (props: any) => React.createElement(PlotTooltip, { ...props, onHoverTooltip: clauses?.onHoverTooltip, tooltipColumns: clauses?.tooltipColumns }) : (props: any) => React.createElement(CustomTooltip, { ...props, formatter: numberFormatter }) }),
         ...(showLegend ? [React.createElement(Legend as any, { key: 'legend', wrapperStyle: { fontSize: "12px" }, formatter: (v: string) => String(v).replace(/_/g, ' '), verticalAlign: legendPos === 'top' ? 'top' : 'bottom', align: legendPos === 'left' ? 'left' : legendPos === 'right' ? 'right' : 'center' })] : []),
         ...barElements,
-        ...lineElements
+        ...lineElements,
+        ...(config.yRefLines ?? []).map((l: any, i: number) =>
+            React.createElement(ReferenceLine, {
+                key: `yref-${i}`,
+                y: l.value,
+                yAxisId: config.horizontal ? undefined : 'left',
+                xAxisId: config.horizontal ? 'bottom' : undefined,
+                label: l.label,
+                stroke: '#facc15',
+                strokeDasharray: '3 3',
+            })
+        ),
     ];
 
     return React.createElement('div', { style: { width: '100%', minHeight: 200 } },
