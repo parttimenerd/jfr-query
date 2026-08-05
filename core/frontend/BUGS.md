@@ -1634,3 +1634,65 @@ All 11 built-in templates now verified clean (zero DOM-visible errors).
 - **B-205** (LATERAL join scope): still open, deferred.
 - **BRUSH live demo**: no template exercises BRUSH; feature is unit-tested but lacks an end-to-end notebook demo.
 - **BIG_NUMBER not in any template**: The chart type is implemented and tested but not showcased in any builtin template. Low priority — the heuristic auto-suggests it for scalar queries.
+
+---
+
+## QA comprehensive pass — 2026-08-05 (session 4)
+
+**Scope:** Full re-verification of all 12 templates, demo notebook, all interactive features (variables panel, SQL autocomplete, schema explorer, command palette, Run All, chart tooltips, resize handles), unit test suite, console error audit.
+
+**Test environment:** WASM mode, demo `.jfr` file, Chrome via Playwright MCP, `localhost:3001`.
+
+### Unit tests
+
+**6184 passed, 7 skipped, 0 failed** — all green. (Duration ~20s, 256 test files)
+
+### Demo notebook
+
+- Loaded via "▶ Try the demo" — no DOM errors after 12s wait.
+
+### Templates tested (zero DOM errors each)
+
+| Template | Sections loaded | Result |
+|----------|----------------|--------|
+| GC Pause Analysis | h2: "Long Pauses", "GC Causes", etc. | ✅ No errors |
+| Recording Overview | 13 sections (GC Summary, CPU Load, top methods…) | ✅ No errors |
+| CPU Profiling | 5 sections (CPU Load, Hottest Methods, Flame Graph…) | ✅ No errors |
+| Heap Allocation | 4 sections (Top Allocating, Allocation Rate…) | ✅ No errors |
+| I/O & Latency | 7 sections (Combined Latency, File/Socket R/W…) | ✅ No errors |
+| JVM Internals | 7 sections (VM Ops, Safepoints, JIT Deopt…) | ✅ No errors |
+| Memory Leak Detection | 4 sections (Long-Lived, Allocation Sites, Heap GC…) | ✅ No errors |
+| Threading & Contention | 8 sections (Thread Counts, CPU Load, Contention…) | ✅ No errors |
+| Container & Cloud | 6 sections (Config, CPU Throttle, Memory, I/O…) | ✅ No errors |
+| Exceptions & Errors | 3 sections (By Class, Errors) | ✅ No errors |
+| Comprehensive Feature Test | 10 sections (Scatter, Linked Lines, Cross-cell…) | ✅ No errors |
+| GC Deep Dive | 20 sections (Overview, Phases, Allocation, TLAB…) | ✅ No errors |
+
+All 12 templates verified clean.
+
+### Interactive features
+
+- **Variables panel (slider)** ✅ — GC Deep Dive: `$$threshold_ms` slider changed 50→100; value updated and dependent cells queued for rerun.
+- **SQL autocomplete** ✅ — `SELECT * FROM Gar` + Ctrl+Space → popup shows `GarbageCollection table · 20 rows`.
+- **Schema Explorer** ✅ — Clicking `GarbageCollection` in sidebar expands columns; types INTEGER, TIMESTAMP WITH TIME ZONE, VARCHAR visible.
+- **Command palette** ✅ — Cmd+K opens; typing "gc" shows GCHeapSummary and related cells; Escape closes.
+- **Run All** ✅ — Via command palette "Run all queries"; all cells executed; zero DOM errors after 12s.
+- **Chart tooltip** ✅ — Hover over "G1 Concurrent GC" bar → tooltip shows `count: 3, avg_ms: 185.333`.
+- **Resize handles** ✅ — 20 `cursor-ns-resize` handles found; dragging confirmed in previous session.
+- **"Where to start?" help dropdown** ✅ — Expands to show symptom-based template suggestions (App is slow, High GC overhead, Memory leak, Thread contention, Slow I/O, JVM overhead, Container throttled).
+
+### Console errors
+
+Only the 2 ONNX runtime CPU-node-assignment warnings (non-actionable, always present). No JS errors.
+
+Recharts `width(-1)/height(-1)` warning appeared 4 times during initial chart mount — transient; all charts rendered correctly (0 bad recharts surfaces in final DOM scan).
+
+### Bugs found
+
+None. All previously tracked bugs remain fixed. No regressions detected.
+
+### Bugs deferred (carry-forward)
+
+- **B-205** (LATERAL join inner-subquery scope not tracked in completions): still open, complex, low user impact.
+- **BRUSH demo notebook**: no built-in template demonstrates BRUSH end-to-end; unit-tested only.
+- **BIG_NUMBER not showcased**: implemented and unit-tested but no built-in template uses it directly.
