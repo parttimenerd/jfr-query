@@ -187,6 +187,19 @@ BAR_CHART(x: "method", y: ["duration"], horizontal: true)
 ```
 ````
 
+**Example 6 — Bar with horizontal reference line**
+
+````
+```plot
+BAR_CHART(x: "cause", y: ["avg_ms"], yRefLines: [{value: 200, label: "SLA"}])
+  TITLE "GC Pause by Cause"
+  SORT DESC
+  LIMIT 10
+```
+````
+
+`yRefLines` draws horizontal dashed lines at fixed Y values — useful for thresholds, SLA targets, or p99 baselines. Each entry is `{value: <number>, label: "<text>"}`.
+
 ---
 
 ### PIE_CHART
@@ -724,6 +737,8 @@ Inner arguments go inside the parentheses after the plot type. All are optional;
 | `y2` | LINE_CHART, AREA_CHART | Columns to plot on a second Y-axis (right side). |
 | `label` | SCATTER_PLOT | Column whose value is rendered as a text label next to each point. |
 | `value` | BIG_NUMBER | Column (or literal) to display as the large number. |
+| `yRefLines` | BAR_CHART, LINE_CHART | Horizontal reference lines at fixed Y values. Each entry: `{value: <number>, label: "<text>"}`. |
+| `xRefLines` | BAR_CHART, LINE_CHART | Vertical reference lines at fixed X values. Each entry: `{value: <number>, label: "<text>"}`. |
 | `title` | any | Inline title. Equivalent to the `TITLE` tail clause. |
 
 Values are column names from the bound query. String literals are wrapped in double quotes.

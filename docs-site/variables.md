@@ -88,6 +88,7 @@ Supported `input=` types:
 | `default=` | no | Initial value when the variable is not otherwise set. |
 | `min=` | slider only | Minimum slider value (numeric). Default `0`. |
 | `max=` | slider only | Maximum slider value (numeric). Default `100`. |
+| `step=` | slider only | Step size for slider increments (numeric). Default `1`. |
 | `options=` | dropdown only | Comma-separated list of option values (e.g. `options="GC,JIT,IO"`). |
 
 **Example — slider-driven threshold:**
