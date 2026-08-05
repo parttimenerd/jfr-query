@@ -135,6 +135,20 @@ const parseValue = (valueStr: string, expectedType: string, data: any[], paramNa
         return num;
     }
 
+    // Object literal — handles referenceLine type: {value: 200, label: "Target"}
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        const inner = trimmed.slice(1, -1).trim();
+        const obj: Record<string, any> = {};
+        for (const pair of splitParams(inner)) {
+            const colonIdx = pair.indexOf(':');
+            if (colonIdx === -1) continue;
+            const key = pair.slice(0, colonIdx).trim();
+            const val = pair.slice(colonIdx + 1).trim();
+            obj[key] = parseValue(val, 'any', data);
+        }
+        return obj;
+    }
+
     // For string-typed params with restricted options, validate
     return trimmed;
 };
@@ -151,8 +165,8 @@ function splitParams(paramsStr: string): string[] {
             continue;
         }
         if (ch === '"' || ch === "'") { inStr = true; strChar = ch; curr += ch; continue; }
-        if (ch === '[' || ch === '(') depth++;
-        else if (ch === ']' || ch === ')') depth--;
+        if (ch === '[' || ch === '(' || ch === '{') depth++;
+        else if (ch === ']' || ch === ')' || ch === '}') depth--;
         if (ch === ',' && depth === 0) {
             const trimmed = curr.trim();
             if (trimmed) parts.push(trimmed);

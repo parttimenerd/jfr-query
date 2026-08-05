@@ -392,4 +392,20 @@ describe('findColumn / findColumns — regex metacharacter safety', () => {
         // Should not throw — prefixed match exists
         expect(() => parse('F(x: "duration[ms]")', data)).not.toThrow();
     });
+
+    it('plotConfigParser: object literal in array parses to {value, label}', () => {
+        const spec: ParserSpec = { yRefLines: { type: 'referenceLine[]', required: false, description: 'ref lines' } };
+        const parse = createConfigParser(spec);
+        const result: any = parse('F(yRefLines: [{value: 200, label: "Target"}])', []);
+        expect(result.yRefLines).toEqual([{ value: 200, label: 'Target' }]);
+    });
+
+    it('plotConfigParser: multiple reference lines parse correctly', () => {
+        const spec: ParserSpec = { yRefLines: { type: 'referenceLine[]', required: false, description: 'ref lines' } };
+        const parse = createConfigParser(spec);
+        const result: any = parse('F(yRefLines: [{value: 100, label: "P50"}, {value: 500, label: "P99"}])', []);
+        expect(result.yRefLines).toHaveLength(2);
+        expect(result.yRefLines[0]).toEqual({ value: 100, label: 'P50' });
+        expect(result.yRefLines[1]).toEqual({ value: 500, label: 'P99' });
+    });
 });
