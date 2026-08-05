@@ -1,0 +1,82 @@
+// Ohm.js PEG grammar for Plot DSL inner arguments.
+//
+// Parses: FUNCNAME(key1: value1, key2: value2, ...)
+//
+// Values may be:
+//   - Quoted string: "hello" or 'hello'  (case-insensitive boolean handled first)
+//   - Boolean:       true / false  (case-insensitive)
+//   - Number:        42, -3.14, .5, 1e10
+//   - Array:         ["a", "b"]  or  [1, 2, 3]
+//   - Object:        {value: 100, label: "Target"}
+//   - Bare word:     linear  (returned as-is, validated by caller)
+
+PlotInnerArgs {
+
+  // Entry point: FUNCNAME(argList) with optional trailing whitespace/comma.
+  Call = funcName "(" spaces ArgList spaces ")" spaces end
+
+  funcName = (letter | "_") (alnum | "_" | "-")*
+
+  // Argument list: zero or more named parameters, optional trailing comma.
+  ArgList = NonemptyArgList | EmptyArgList
+  NonemptyArgList = Arg ("," Arg)* ","?
+  EmptyArgList = /* nothing */
+
+  // A single named parameter: key: value
+  Arg = spaces key spaces ":" spaces Value spaces
+
+  // Key: bare identifier
+  key = (letter | "_") (alnum | "_" | "-")*
+
+  // Value: ordered most-specific first.
+  Value
+    = Array
+    | Object
+    | dqString
+    | sqString
+    | boolTrue
+    | boolFalse
+    | number
+    | bareWord
+
+  // --- Compound values ---
+
+  Array     = "[" spaces ArrayItems spaces "]"
+  ArrayItems = ArrayItem ("," ArrayItem)* ","?  -- nonempty
+             | /* nothing */                     -- empty
+  ArrayItem = spaces Value spaces
+
+  Object = "{" spaces NonemptyListOf<ObjPair, ","> spaces "}"
+  ObjPair = spaces key spaces ":" spaces Value spaces
+
+  // --- String literals ---
+  // Use inline rule alternatives so each alternative has consistent arity.
+
+  dqString = "\"" dqChar* "\""
+  dqChar
+    = dqEscape  -- esc
+    | ~"\"" ~"\n" any -- plain
+  dqEscape = "\\" any
+
+  sqString = "'" sqChar* "'"
+  sqChar
+    = sqEscape  -- esc
+    | ~"'" ~"\n" any -- plain
+  sqEscape = "\\" any
+
+  // --- Booleans (case-insensitive) ---
+  boolTrue  = caseInsensitive<"true">  ~(alnum | "_")
+  boolFalse = caseInsensitive<"false"> ~(alnum | "_")
+
+  // --- Number (split alternatives for consistent arity) ---
+  number
+    = "-"? digit+ "." digit+ numExp? -- float
+    | "-"? "." digit+ numExp?        -- leadDot
+    | "-"? digit+ numExp?            -- int
+
+  numExp = ("e" | "E") ("+" | "-")? digit+
+
+  // --- Bare word ---
+  // Column names like "p99", enum values like "stepBefore", CSS units like "400px".
+  bareWord = (alnum | "_" | "-" | ".")+
+}
