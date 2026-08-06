@@ -4841,3 +4841,49 @@ None.
 
 ### BUGS.md open items
 No open non-✅ items (398 resolved entries).
+
+---
+
+## QA Session 85 — 2026-08-06
+
+### Unit tests
+6206 passed, 7 skipped, 0 failed ✅
+
+### Demo notebook (fresh localStorage cleared)
+0 DOM errors. Console: 2 × HTTP 500 on /api/query (expected), 0 real errors ✅
+
+### Templates tested (rotation S85)
+- **GC Pause Analysis** — loaded via template gallery, used for LINK_X zoom test. 0 DOM errors ✅
+- **Comprehensive Feature Test** — loaded for BRUSH test. 0 DOM errors ✅
+- **GC Extended** — confirmed 0 DOM errors ✅
+- **Threading & Contention** — confirmed 0 DOM errors ✅
+
+### Interactive features
+- Variables panel ✅ — `$session_start` chip → inline editor; typed `2024-03-15T11:05`, chip updated to "15 Mar, 10:05"
+- LINK_X zoom ✅ — Shift+scroll on chart[0] in GC Pause Analysis → 3 zoom reset buttons appeared; reset clicked
+- BRUSH ✅ — dragged right traveller (x=1367→1094); `$sel: {"lo":1710496801200,"hi":1710496866900}` confirmed in SQL interpolation
+- Command palette (Cmd+K) ✅ — dialog with input opened
+- SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`) ✅ — completion listbox appeared
+- Schema explorer ✅ — GarbageCollection click → `SELECT * FROM "GarbageCollection" LIMIT 20;` in preview pane
+- Run All ✅
+- Help modal (Keyboard Shortcuts) ✅ — opened, contains Shift shortcut text
+
+### UI polish audit
+- Zero-height cells: none ✅
+- Text overflow: none ✅
+- Chart tooltip on hover: visible ✅
+- `cm-announced` at top=-10000px: CodeMirror a11y standard — not a bug ✅
+- Console errors: 0 ✅
+
+### Console errors
+0 errors, 12 warnings (Recharts sizing — expected) ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items (398 resolved entries).
+
+### Docs check
+- `docs-site/web-ui.md`: BRUSH, LINK_X, variable coupling, command palette, `?template=` URL param — all accurate ✅
+- `docs-site/views-macros.md`: `gc-pauses`, `gc-pause-*` views all confirmed present in `builtinSql.ts` ✅
