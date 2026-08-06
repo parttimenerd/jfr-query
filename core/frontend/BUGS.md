@@ -2428,3 +2428,37 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 20 — 2026-08-06
+
+**Scope:** Full QA pass — unit tests, demo notebook, Recording Overview + JVM Internals templates, GC Pause Analysis interactive features, console check, UI polish, BUGS.md/docs-site audit.
+
+### Test results
+
+- **Unit tests:** 6210 passed, 0 failed
+- **Demo notebook:** localStorage cleared; 2 charts, 5 cells, 0 DOM errors ✅
+- **Recording Overview template:** ✅ PASS — 3 charts, 11 cells, 0 DOM errors
+- **JVM Internals template:** ✅ PASS — 0 DOM errors (cells hidden, no JVM internals events in demo)
+- **GC Pause Analysis template:** ✅ PASS — loaded for interactive feature testing
+- **Interactive features:**
+  - Variables panel ✅ — `$session_start` header button opens edit widget
+  - LINK_X zoom ✅ — 5 wheel events on `.group` div; reset button appeared
+  - Command palette ✅ — Cmd+K opens; Escape closes
+  - SQL autocomplete ✅ — Ctrl+Space after `SELECT * FROM Gar` suggested `GarbageCollection`
+  - Schema explorer ✅ — gcId, startTime, cause columns shown
+  - Run All ✅ — 0 DOM errors after execution
+  - Help modal ✅ — "Keyboard Shortcuts & Tips (?)" opens correctly
+- **Console:** 0 JS errors (2 expected /api/query 500s on fresh load only)
+- **UI polish:** 0 zero-height cells, 0 truncated text, 0 spinners; chart tooltip ✅; 22 resize handles ✅
+
+### Bugs found
+None new.
+
+### Notes
+- LINK_X zoom test order matters: chart must remain in viewport when checking for reset button. The combined test script scrolled away before checking — retested standalone and confirmed PASS.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
