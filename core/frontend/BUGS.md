@@ -3115,6 +3115,53 @@ Not re-run this session (previous session confirmed 6203 passed, 0 failed; no ne
 
 ---
 
+## Session 43 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook
+Loaded clean after clearing localStorage + dismissing product tour. 6 editors, 5 charts. DOM scan: 0 errors ✅
+
+### Templates tested (with Run All)
+- **Recording Overview** — 0 errors, 24 editors, 7 charts ✅
+- **CPU Profiling** — 0 errors, 8 editors, 0 charts (no ExecutionSample/CPULoad events in demo data — expected) ✅
+
+### Interactive features
+- **Variables panel** ✅ — `$session_start` / `$session_end` buttons present; clicking opens `datetime-local` input
+- **LINK_X zoom** ✅ — Shift+scroll on `InteractivePlotWrapper` chart; reset button appeared and dismissed
+- **Command palette** ✅ — button click opens dialog; search input accepted
+- **SQL autocomplete** ✅ — tested in sidebar preview pane (avoids notebook contamination): `SELECT * FROM Gar` → `GarbageCollection · table · 20 rows`
+- **Schema explorer** ✅ — GarbageCollection → preview table with gcId, name, startTime, duration, sumOfPauses, longestPause
+- **Help modal** ✅ — Keyboard Shortcuts dialog opens
+- **Chart tooltip** ✅ — hover on bar chart rectangle shows recharts tooltip
+- **Resize handles** ✅ — 43 handles present on plots
+- **Run All** ✅ — 18 charts, 0 errors (on fresh GC notebook)
+
+### Console errors
+0 errors, 19 warnings (ONNX/recharts — known non-bugs).
+
+### UI polish
+- No zero-height cells
+- No text overflow issues
+
+### Note: SQL autocomplete test method
+Prior sessions typed into notebook cells, then used Ctrl+Z to undo. The undo sometimes left residual text causing a false "Query has errors" in subsequent Run All. Changed test approach to use the **sidebar preview pane editor** — which has its own undo history and doesn't contaminate notebook cells.
+
+### Open bugs checked
+- **B-057** (raw-markdown editor virtualization): still deferred.
+- **B-205** (LATERAL join inner-subquery scope): still open, deferred.
+
+### Docs check
+- `docs-site/ai-providers.md`: default model `claude-sonnet-4-6` matches `AnthropicProvider.ts` ✅; gpt-4.1/gpt-5 entries are SAP proxy-specific (correct) ✅
+- `docs-site/web-ui.md`: `/btw` and `/verbose` slash commands confirmed implemented in `slashCommands.ts` + `InlineChat.tsx` ✅
+- No stale content found.
+
+### Bugs found
+None new.
+
+---
+
 ## Session 42 — 2026-08-06
 
 ### Vitest
