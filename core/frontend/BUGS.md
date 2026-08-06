@@ -3443,3 +3443,44 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+## Session 48 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### All 11 templates tested
+
+| Template | Editors | Charts | Errors |
+|---|---|---|---|
+| Recording Overview | 24 | 3 | ✅ 0 |
+| GC Deep Dive | 38 | 6 | ✅ 0 |
+| Container & Cloud | 10 | 0 | ✅ 0 |
+| CPU Profiling | 8 | 0 | ✅ 0 |
+| Exceptions & Errors | 4 | 0 | ✅ 0 |
+| GC Pause Analysis | 77 | 13 | ✅ 0 |
+| Heap Allocation | 4 | 2 | ✅ 0 |
+| I/O & Latency | 12 | 0 | ✅ 0 |
+| JVM Internals | 15 | 0 | ✅ 0 |
+| Memory Leak Detection | 6 | 1 | ✅ 0 |
+| Threading & Contention | 15 | 0 | ✅ 0 |
+| Comprehensive Feature Test | 23 | 6 | ✅ 0 |
+
+### Demo notebook (fresh localStorage)
+6 editors, 2 charts, 0 errors. ✅
+
+### Interactive features
+- **Run All** ✅ — 2 charts rendered, 0 errors
+- **Variables panel** ✅ — `$session_start`, `$session_end`, `$limit` toolbar buttons present
+- **Collapse/Expand** ✅ — cell collapse and expand working
+- **Schema Explorer** ✅ — tables (5), views (26), macros (35) all visible
+
+### Console errors
+2 ONNX runtime warnings — known non-bug (no JFR file loaded).
+
+### Bugs found
+None.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
