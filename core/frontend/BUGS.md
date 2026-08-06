@@ -3366,3 +3366,47 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 46 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook
+Loaded via "▶ Try the demo" (fresh tab, localStorage clean). 7 editors, 2 charts. DOM scan: 0 errors ✅
+
+### Templates tested
+- **Recording Overview** — 0 errors, 25 editors ✅
+- **CPU Profiling** — 0 errors, 9 editors ✅
+- **GC Pause Analysis** (interactive testing) — 0 errors, 78 editors, 6 charts (13 after Run All) ✅
+
+### Interactive features
+- **Variables panel** ✅ — inline datetime editor for `$session_start`; changed 11:00→11:03, toolbar badge updated to "10:03"
+- **LINK_X zoom** ✅ — Shift+scroll ×3 on chart[2] (linkX=["$start","$end"]); 6 reset buttons appeared (all linked charts); click reset → 0 reset buttons
+- **Command palette** ✅ — Cmd+K opens palette
+- **Help modal** ✅ — `?` button opens keyboard shortcuts dialog
+- **Schema explorer** ✅ — GarbageCollection + views visible in sidebar
+- **SQL autocomplete** ✅ — preview pane: `SELECT * FROM Gar` + Ctrl+Space → `GarbageCollection table · 20 rows`
+- **Run All** ✅ — 0 notebook-cell errors, 13 charts rendered
+
+### Console errors
+0 true errors. HTTP 500 on `/api/query` (no JFR file) — expected, known non-bug.
+
+### Test artifact (not a real bug)
+DOM scan caught `Parser Error: syntax error near FROM` from the sidebar preview pane — caused by autocomplete test typing `SELECT * FROM Gar` which concatenated with pre-filled preview content. The error is in the sidebar's independent query runner, not any notebook cell. Confirmed via ancestor chain: `sidebar-list-font` in parent hierarchy. Not a real bug.
+
+**Note:** DOM scan should exclude sidebar when checking for notebook cell errors. The sidebar has its own live-preview query runner that legitimately shows errors for partial SQL typed during testing.
+
+### Docs check
+- `docs-site/views-macros.md`: all 122 view names cross-checked against `builtinSql.ts` — fully in sync ✅
+- `docs-site/variables.md`: all 5 inline input widget types (`slider`, `dropdown`, `datetime`, `button`, `text`) match `VariableInputWidgets.tsx` ✅
+- No stale content found.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
