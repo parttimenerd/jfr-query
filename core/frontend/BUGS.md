@@ -2720,3 +2720,38 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session — 2026-08-06
+
+### Unit tests
+6210 passed, 0 failed.
+
+### Demo notebook
+Loaded via "Try the demo" after localStorage clear. DOM scan: 0 errors.
+
+### Templates tested
+- **Container & Cloud** — 0 DOM errors ✅
+- **Exceptions & Errors** — 0 DOM errors ✅
+
+### Interactive features
+- **Variables panel** ✅ — `$session_start` / `$session_end` controls visible and clickable
+- **LINK_X zoom** ✅ — 5 Shift+scroll wheel events on gc-pause-over-time chart; "Reset zoom" button appeared
+- **Command palette** ✅ — Cmd+K opens with Actions/Ask AI tabs and search box
+- **SQL autocomplete** ✅ — `SELECT * FROM Gar` + Ctrl+Space shows `.cm-tooltip-autocomplete`
+- **Run All** ✅ — clicked, queries executed
+- **Help modal** ✅ — Keyboard Shortcuts & Tips dialog opens with shortcuts table
+
+### Console errors
+2 ONNX runtime node-assignment warnings — known non-bugs, not user-visible.
+
+### Docs audit
+All slash commands (`/btw`, `/verbose`, `/compact`, `/skills`) verified against `slashCommands.ts`. In-browser model `onnx-community/Qwen2.5-0.5B-Instruct` (~483 MB) matches `BrowserChatService.ts`. No stale information found.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
