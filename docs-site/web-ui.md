@@ -6,7 +6,7 @@ Open a notebook, drop a `.jfr` or `.cjfr` file, and start writing SQL cells that
 
 ## Layout
 
-- **Left sidebar** — file explorer, variable controls, schema browser, and AI chat.
+- **Left sidebar** — schema explorer (tables, views, macros), variable controls, query preview pane, and AI chat.
 - **Main area** — the notebook itself: a stack of cells with SQL, plots, and Markdown.
 
 ## Cells

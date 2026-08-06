@@ -2755,3 +2755,43 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session — 2026-08-06 (run 2)
+
+### Unit tests
+6210 passed, 0 failed.
+
+### Demo notebook
+Loaded cleanly (localStorage cleared). DOM scan top + bottom: 0 errors ✅
+
+### Templates tested
+All 12 templates scanned (both visible and scrolled-down): 0 DOM errors across all.
+- GC Pause Analysis, Recording Overview, CPU Profiling, Heap Allocation ✅
+- I/O & Latency, JVM Internals, Memory Leak Detection, Threading & Contention ✅
+- Container & Cloud, Exceptions & Errors, Comprehensive Feature Test, GC Deep Dive ✅
+
+### Interactive features
+- **Variables panel** ✅ — `$session_start` / `$session_end` controls visible
+- **LINK_X zoom** ✅ — Shift+mouse.wheel on GC Pause chart; "reset|Reset zoom" button found inside chart div
+- **BRUSH clause** ✅ — Comprehensive Feature Test: drag on crosshair chart → epoch timestamps `1710496818666.151`/`1710496853666.151` appeared in DOM; downstream SQL WHERE clause updated
+- **Command palette** ✅ — Cmd+K opens Actions/Ask AI dialog
+- **Help modal** ✅ — `div[role="dialog"]` (not native `<dialog>`); opens with keyboard shortcuts table
+- **SQL autocomplete** ✅ — `SELECT * FROM Gar` + Ctrl+Space shows `.cm-tooltip-autocomplete`
+- **Run All** ✅ — no errors on clean notebook
+- **Collapse/Expand All** ✅ — 0 charts after collapse, charts restored after expand
+- **Schema explorer** ✅ — GarbageCollection, GCHeapSummary, GCPhasePause, HeapSnapshot, ObjectAllocationSample visible with row counts
+
+### Console errors
+2 ONNX runtime node-assignment warnings only — known non-bugs.
+
+### Docs fix
+`docs-site/web-ui.md` line 9: "file explorer" → "schema explorer (tables, views, macros), variable controls, query preview pane" to match actual sidebar content.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
