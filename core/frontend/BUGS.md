@@ -4268,3 +4268,56 @@ Full interactive feature test + 2 template live previews.
 ### Docs check
 - All docs-site/*.md reviewed in prior sessions; no stale items found in S69 ✅
 
+---
+
+## QA Session 70 — 2026-08-06
+
+### Vitest
+6206 passed, 7 skipped, 0 failed ✅
+
+### Demo notebook (fresh load, localStorage cleared)
+- DOM error scan: 0 errors ✅
+- Resize handles: 52 ✅
+- Charts: 6 ✅
+- BRUSH clause present ✅
+- LINK_X present ✅
+- Console: 0 errors, 12 warnings (ONNX — expected) ✅
+
+### Templates tested (rotation S70)
+- **GC Pause Analysis** — loaded via Smart-Start banner; 13+ charts; 0 DOM errors ✅
+- **Recording Overview** — Live Preview: 8 catalog errors (missing tables in demo — expected); 0 syntax/parser errors ✅
+
+### Interactive features
+| Feature | Result |
+|---|---|
+| Variables panel (`$session_start` click-to-edit) | ✅ PASS |
+| LINK_X zoom (Shift+scroll on gc-analysis chart) | ✅ PASS — chart zoomed, "reset" button appeared |
+| BRUSH (drag on Comprehensive Feature Test chart) | ✅ PASS — `$sel.brush.lo` / `$sel.brush.hi` updated, Query 2 re-ran |
+| Command palette (Cmd+K) | ✅ PASS — Actions / Ask AI tabs, search works |
+| SQL autocomplete (`SELECT * FROM Gar` + Ctrl+Space) | ✅ PASS — GarbageCollection completion shown |
+| Schema explorer (GarbageCollection click) | ✅ PASS — column list rendered |
+| Run All Queries | ✅ PASS — 0 DOM errors |
+| Help modal | ✅ PASS — "Keyboard Shortcuts & Tips" dialog opened |
+
+### UI polish
+- Overflow: none ✅
+- Zero-height cells: none ✅
+- Truncated text: class names in horizontal BAR_CHART Y-axis (expected chart behavior) ✅
+- Resize handles: 52 present ✅
+- Tooltip on chart hover: ✅
+
+### Console errors
+0 real errors (ONNX warnings excluded per spec) ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+
+### Docs check
+- `docs-site/variables.md` — BRUSH struct field names (`brush.lo`, `brush.hi`, `brush.x_lo` etc.), LINK_X/LINK_Y docs, inline input widgets — all accurate ✅
+- `docs-site/views-macros.md` — 6 new conditional views (g1-ihop-stats, g1-region-types, gc-rss-vs-heap, gc-memory-pools, gc-evacuation-efficiency, gc-failure-events) all documented ✅
+- No stale content found.
+
