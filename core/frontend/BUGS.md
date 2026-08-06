@@ -4922,3 +4922,22 @@ No open non-✅ items (398 resolved entries) ✅
 - `docs-site/plot-dsl.md`: LINK_X, BRUSH, ZOOM, variable coupling docs — all accurate ✅
 - `docs-site/web-ui.md`: BRUSH, LINK_X, command palette, `?template=` URL param — all accurate ✅
 - `docs-site/notebook-format.md`: `requires=` badge docs — accurate ✅
+
+---
+
+## Session S86b — 2026-08-06 (background agent: GC Extended + Threading)
+
+### Templates loaded
+- **GC Deep Dive (gc-extended.md)**: 0 DOM errors, 21 cells clean ✅
+  - Scatter, bar, pie, line, table, histogram, Gantt all rendered correctly
+  - "hidden" badges on TTSP Distribution + Concurrent Phase Gantt (expected requires= guards)
+  - GC Tuning Advisor rendered recommendation correctly
+- **Threading & Contention (threading.md)**: 0 DOM errors, 8 cells clean ✅
+  - hidden badges on Thread Counts/CPU Load/Virtual Thread Pinning (events absent in demo) — expected
+  - Monitor Contention cells expanded and ran queries correctly
+
+### Console errors
+2 ONNX runtime warnings only — 0 real errors ✅
+
+### Bugs found
+None.
