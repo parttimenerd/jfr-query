@@ -4362,3 +4362,43 @@ None.
 - `docs-site/notebook-format.md` — `requires=`, `autorun="false"`, `collapsed=true`, `cellConditions` all accurately documented ✅
 - No stale content found.
 
+## QA Session 72 — 2026-08-06
+
+### Vitest
+6206 passed, 1 skipped, 0 failed ✅
+
+### Demo notebook (fresh localStorage cleared)
+- DOM scan: 0 errors ✅
+- 5 charts rendered, tour dismissed ✅
+
+### Templates tested (rotation S72)
+- **CPU Profiling** — loaded via template gallery; 6 cells, intro prose correct, 4 cells show `hidden + requires` badges (CPULoad/ExecutionSample absent in demo JFR — expected); 0 DOM errors ✅
+- **JVM Internals** — loaded via template gallery; 8 cells, VM Operations + Safepoints headings confirmed, all cells show `hidden + requires` badges (no JFR data — expected); 0 DOM errors ✅
+
+### Interactive features
+| Feature | Result |
+|---|---|
+| Variables panel (`$session_start` click) | ✅ PASS — datetime-local input opened |
+| LINK_X zoom (Shift+scroll on Step 3 time series chart) | ✅ PASS — "reset" (aria-label="Reset zoom") button appeared |
+| Reset zoom button | ✅ PASS — clicked and zoom cleared |
+| Command palette (Cmd+K) | ✅ PASS — "Actions" dialog opened |
+| SQL autocomplete (`SELECT * FROM Gar` + Ctrl+Space) | ✅ PASS — completions panel shown |
+| Schema explorer (GarbageCollection expand) | ✅ PASS — table expanded |
+| Help modal (Keyboard Shortcuts) | ✅ PASS — shortcuts dialog opened |
+| Run All Queries | ✅ PASS — clicked successfully |
+
+### Console errors
+0 real errors (2 ONNX warnings — expected per spec) ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open — low priority)
+- B-205: LATERAL join inner-subquery scope (low priority, complex, deferred)
+
+### Docs check
+- `docs-site/views-macros.md` — all 6 new conditional views (`g1-ihop-stats`, `g1-region-types`, `gc-rss-vs-heap`, `gc-memory-pools`, `gc-evacuation-efficiency`, `gc-failure-events`) documented ✅
+- `docs-site/web-ui.md` — LINK_X, BRUSH, variable pause gate, Smart-Start banner accurate ✅
+- No stale content found.
+
