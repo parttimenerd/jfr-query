@@ -14,9 +14,10 @@ function getMaxWorkers(): number {
   const override = new URLSearchParams(location.search).get('maxWorkers');
   const n = parseInt(override, 10);
   if (override && !isNaN(n)) return Math.max(1, Math.min(4, n));
-  // Default to 1 worker to bound peak GraalVM WASM memory (~300-600 MB per worker).
-  // Users on high-memory machines can override with ?maxWorkers=2.
-  return 1;
+  // Use 2 workers on devices with ≥8 GB RAM (~600 MB per worker fits within typical
+  // browser renderer memory budgets on those machines). Fall back to 1 worker otherwise.
+  const mem = (navigator as any).deviceMemory;
+  return typeof mem === 'number' && mem >= 8 ? 2 : 1;
 }
 
 // ── WASM worker pool ──────────────────────────────────────────────────────────
