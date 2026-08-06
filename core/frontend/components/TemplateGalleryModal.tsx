@@ -32,14 +32,19 @@ interface LiveResult {
     running: boolean;
 }
 
-/** Extract all ```sql … ``` blocks from template body (with alias comment stripped). */
+/** Extract all ```sql … ``` blocks from template body (with alias comment stripped).
+ *  Notebook variable references ($$var, $var) are substituted with a safe fallback
+ *  value so DuckDB doesn't choke on bare $ tokens. */
 function extractSqlBlocks(body: string): string[] {
     const blocks: string[] = [];
     const re = /```sql\s*\n([\s\S]*?)```/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(body)) !== null) {
-        // Strip alias comment line(s)
-        const sql = m[1].replace(/^--\s*alias\s+\S+.*\n?/gm, '').trim();
+        let sql = m[1]
+            .replace(/^--\s*alias\s+\S+.*\n?/gm, '')  // strip alias comments
+            .replace(/\$\$[a-zA-Z_]\w*/g, '100')       // $$varname → 100
+            .replace(/(?<!\$)\$(?=[a-zA-Z_])\w+/g, '100') // $varname → 100 (not $$)
+            .trim();
         if (sql) blocks.push(sql);
     }
     return blocks;
