@@ -4478,3 +4478,35 @@ None.
 ### BUGS.md open items
 - B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
 - B-205: LATERAL join scope in completions (deferred)
+
+---
+
+## S75 — 2026-08-06
+
+**Vitest:** 6206 passed, 7 skipped, 0 failed ✅
+
+**Demo notebook:** loaded after localStorage clear — 0 DOM errors, 10 cells, 2 charts, 0 spinners ✅
+
+**Templates tested:**
+- **Recording Overview** — 0 errors, 14 cells, 3 charts, 2 tables ✅
+- **CPU Profiling** — 0 errors, 6 cells, 0 charts (no ExecutionSample events in demo data — expected) ✅
+
+**Interactive features:**
+- Variables: changed `$session_start` from `2024-03-15T11:00` → `11:05`, dependent cells re-ran ✅
+- LINK_X zoom (GC Pause Analysis, chart 2 "Heap Used MB"): Shift+scroll → 6 linked reset buttons appeared ✅
+- Command palette: opened via toolbar button ✅
+- SQL autocomplete (preview pane, `SELECT * FROM Gar`): completions shown ✅
+- Schema explorer: GarbageCollection expanded → type annotations visible (INTEGER, TIMESTAMP, VARCHAR) ✅
+- Run All: button clicked ✅
+- Help modal: opened with keyboard shortcuts content ✅
+
+**Console (localhost:3001):** 0 errors, 12 warnings (all expected: ONNX, recharts width=-1, conditional view failed) ✅
+
+**Docs-site check:** web-ui.md, views-macros.md, plot-dsl.md all accurate — no stale content found ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+- B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
+- B-205: LATERAL join scope in completions (deferred)
