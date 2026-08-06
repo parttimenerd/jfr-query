@@ -3250,6 +3250,43 @@ None new.
 
 ---
 
+## Session 44 — 2026-08-06
+
+### Vitest
+Not re-run this session (6203 passed, 0 failed from session 43 carries forward; no source changes).
+
+### Template sweep (all 12)
+All 12 templates loaded and DOM-scanned. 0 errors across all. Full list:
+- GC Analysis ✅, CPU Profiling ✅, Heap Allocation ✅, I/O & Latency ✅
+- JVM Internals ✅, Memory Leak Detection ✅, Container & Cloud ✅
+- Exception & Error Analysis ✅, Comprehensive Feature Test ✅
+- Recording Overview ✅, Threading & Synchronization ✅, JIT Compilation ✅
+
+### Demo notebook
+Loaded via "▶ Try the demo" (localStorage cleared, tour dismissed). 6 editors, 2 charts. DOM scan: 0 errors ✅
+
+### Interactive features
+- **Variables panel** ✅ — sidebar shows `$session_start` and `$session_end` with formatted timestamps
+- **Collapse/Expand** ✅ — collapsed 20→0 editors; expanded back 0→20
+- **Schema explorer** ✅ — GarbageCollection columns visible (gcId, name, startTime, duration, sumOfPauses, longestPause)
+- **SQL autocomplete** ✅ — `FROM Gar` + Ctrl+Space → `GarbageCollection table · 20 rows`
+- **Run All (clean)** ✅ — 0 DOM errors on fresh demo notebook, 2 charts rendered
+
+### Console errors
+0 true errors. The 2 HTTP 500 entries on `/api/query` are expected (no JFR file loaded on landing). Known non-bugs.
+
+### Test artifact (not a real bug)
+Previous sub-session: autocomplete test typed `SELECT * FROM Gar` into the sidebar preview pane; Ctrl+Z undo left residue in the editor. Run All then showed `Catalog Error: Table with name Gar does not exist!`. Confirmed test artifact by reloading clean demo — Run All produces 0 errors. No fix needed.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
 ## Session 39 — 2026-08-06
 
 ### Vitest
