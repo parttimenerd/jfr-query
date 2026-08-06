@@ -3918,3 +3918,46 @@ None.
 ### Deferred (carry-forward)
 - B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
 - B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+
+---
+
+## QA Session 62 — 2026-08-06
+
+### vitest
+- 6206 passed, 0 failures ✅
+
+### Demo load
+- localStorage cleared, demo loaded fresh ✅
+- DOM scan: 0 errors, 12 tables in schema ✅
+
+### Templates tested (rotation: Exceptions & Errors + Comprehensive Feature Test)
+- **Exceptions & Errors** ✅ — 3 cells (Exceptions by Class, Errors, summary), 0 errors.
+- **Comprehensive Feature Test** ✅ — 12 cells, 6 charts, 3 tables, 0 errors.
+
+### Interactive features
+- **Variables panel** ✅ — `$session_start` inline editor opened on click
+- **LINK_X zoom** ✅ — Shift+drag → "Reset zoom" button appeared; reset cleared zoom
+- **BRUSH clause** ✅ — brush traveller drag filtered downstream table 20 → 5 rows
+- **Command palette** ✅ — double-Shift opened palette
+- **SQL autocomplete** ✅ — Ctrl+Space after `SELECT * FROM Gar` → "GarbageCollection table · 20 rows"
+- **Schema explorer** ✅ — clicked GarbageCollection → table preview
+- **Run All** ✅ — queries ran, charts rendered, no errors
+- **Help modal** ✅ — Keyboard Shortcuts dialog opened
+
+### Console errors
+- 0 real errors (ONNX × 2, Recharts width(-1) transient × 16 — both pre-existing expected)
+
+### Bugs found
+- None
+
+### BUGS.md
+- No open non-✅ items beyond B-032 and B-205 (both long-standing deferred)
+
+### Docs check
+- `docs-site/plot-dsl.md` — BRUSH MODE X, LINK_X, ZOOM gestures accurate ✅
+- `docs-site/notebook-format.md` — DATASET, autorun, collapsed, requires= accurate ✅
+- `docs-site/web-ui.md` — template URL param, slash commands accurate ✅
+
+### Deferred (carry-forward)
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
