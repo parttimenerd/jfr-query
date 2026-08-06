@@ -1039,7 +1039,23 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
 
         // Substitute $var / $$var references in the plot config before parsing
         // so clauses like `LIMIT $$limit` or `TITLE "threshold=$$threshold_ms"` resolve.
-        const substitutedConfig = substituteVariables(config?.trim() || 'TABLE()', toSqlVariables(allVariables));
+        // Exclude BRUSH and LINK binding-target variables: BRUSH $sel MODE writes $sel as
+        // an output; if $sel has a value it must not be substituted into "BRUSH $sel MODE"
+        // or the DSL parser will see "BRUSH {"lo":...} MODE" and throw.
+        const rawConfig = config?.trim() || 'TABLE()';
+        const bindingTargetRe = /\bBRUSH\s+(\$\w+)\s+MODE\b|\bLINK_(?:X|Y|XY|SCROLL)\s*\(([^)]*)\)|\bLINK_(?:Y|XY|SCROLL)\s+(\$\w+)/gi;
+        const bindingTargetNames = new Set<string>();
+        let bm: RegExpExecArray | null;
+        bindingTargetRe.lastIndex = 0;
+        while ((bm = bindingTargetRe.exec(rawConfig)) !== null) {
+            // Group 1: BRUSH $name, Group 2: LINK_X($a,$b) args, Group 3: LINK_Y $name
+            if (bm[1]) bindingTargetNames.add(bm[1].trim());
+            if (bm[2]) bm[2].split(',').forEach(t => { const s = t.trim(); if (s.startsWith('$')) bindingTargetNames.add(s); });
+            if (bm[3]) bindingTargetNames.add(bm[3].trim());
+        }
+        const varsForPlot = bindingTargetNames.size === 0 ? allVariables
+            : Object.fromEntries(Object.entries(allVariables).filter(([k]) => !bindingTargetNames.has(k)));
+        const substitutedConfig = substituteVariables(rawConfig, toSqlVariables(varsForPlot));
         // Expand `LET @name = value` constants before any further parsing so
         // both validation and rendering see the substituted form.
         const expansion = expandPlotConstants(substitutedConfig || 'TABLE()');
