@@ -5119,3 +5119,77 @@ No open non-✅ items ✅
 
 ### Docs check
 No stale content found ✅
+
+---
+
+## Session S92 — 2026-08-07
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- DOM error scan: 0 errors ✅
+
+### Templates loaded
+- **GC Analysis / GC Deep Dive**: 0 DOM errors ✅
+- **Recording Overview**: 0 DOM errors ✅
+
+### Interactive features
+- Variables panel ($limit 20 → 50, cells re-ran): ✅
+- LINK_X zoom (Shift+scroll on GC Analysis chart — axis changed from 19-min to 3-sec window): ✅
+- Command palette (Cmd+K opens dialog with search): ✅
+- SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar` → GarbageCollection): ✅
+- Schema explorer (GarbageCollection shows column types in hover popover): ✅
+- Run All (completed, 0 DOM errors): ✅
+- Keyboard shortcuts modal (opened, shortcuts table visible): ✅
+
+### Console errors
+2 ONNX runtime warnings only — 0 real errors ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items ✅
+
+### Docs check
+No stale content found ✅
+
+---
+
+## Session S93 — 2026-08-07
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- DOM error scan: 0 errors ✅
+
+### Templates loaded
+- **Memory Leak Detection**: 0 DOM errors ✅
+- **Exceptions & Errors**: 0 DOM errors (content-word matches only: "Exceptions & Errors", "OutOfMemoryError" etc. are template description text, not render errors) ✅
+
+### Interactive features
+- Variables panel ($limit 20 → 50, cells re-ran): ✅
+- LINK_X zoom (confirmed visually on GC Analysis tab — chart zoomed from 19-min session to 3-sec window): ✅
+- Command palette (Cmd+K opens dialog with search): ✅
+- SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar` → GarbageCollection): ✅
+- Schema explorer (GarbageCollection shows column types in hover popover): ✅
+- Run All (completed, 0 DOM errors): ✅
+- Keyboard shortcuts modal (opened, shortcuts table visible): ✅
+
+### Console errors
+2 ONNX runtime warnings only — 0 real errors ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items ✅
+
+### Docs check
+- All docs-site/*.md reviewed: no stale content found ✅
+- `browser-architecture.md`: accurately describes 1–2 workers, 50 000-row cap, no-limit bypass, chunk-parallel parsing ✅
+- `web-ui.md`: ▶ Var / ⏸ Var pause gate confirmed present in App.tsx ✅
+- `variables.md`, `plot-dsl.md`, `notebook-format.md`, `views-macros.md`: all accurate ✅
+- Note: query result cache (-- no-cache bypass) and executor concurrency change are internal implementation details not requiring user-facing docs updates
