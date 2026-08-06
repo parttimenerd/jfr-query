@@ -4227,3 +4227,44 @@ Simulated realistic user session on the demo notebook:
 - `docs-site/views-macros.md` — accurate ✅
 - GC Deep Dive template (`gc-extended`) not in web-ui.md by name — intentional (docs give examples, not exhaustive list) ✅
 
+---
+
+## Session 69 QA Pass — 2026-08-06
+
+### Scope
+Full interactive feature test + 2 template live previews.
+
+### Vitest
+- 6206 tests passing, 257 files, 1 skipped ✅
+
+### Demo notebook (fresh load, localStorage cleared)
+- DOM error scan: 0 errors ✅
+- Tables loaded: GarbageCollection, GCHeapSummary, GCPhasePause, HeapSnapshot, ObjectAllocationSample (5 tables) ✅
+- Smart-Start banner: "Detected Serial/Parallel GC — Open GC Analysis template" ✅
+
+### Interactive features
+- **Run All Queries** ✅ — button title "Run All Queries"; clicked, all cells ran, no new console errors
+- **Command palette (Cmd+K)** ✅ — dialog opened with Actions / Ask AI tabs; search filters commands; "Open template gallery" action found
+- **SQL autocomplete** ✅ — `SELECT * FROM Gar` + Ctrl+Space → `.cm-tooltip-autocomplete` visible; suggestions shown
+- **Schema explorer** ✅ — searched "GarbageCollection", found "GarbageCollection 20" row count chip; clicked → Preview panel populated
+- **Variables panel** ✅ — clicking `$session_start` toolbar button opened `datetime-local` input
+- **LINK_X zoom** ✅ — Shift+scroll on LINE_CHART with `LINK_X($start, $end)` → X-axis zoomed to ~20s range, "reset" button appeared in chart corner
+- **Help modal** ✅ — "Keyboard Shortcuts" toolbar button opened "Keyboard Shortcuts & Tips" dialog with full table
+
+### Templates tested (rotation S69)
+- **I/O & Latency** — Live Preview: 0 syntax errors, 0 parser errors, 6 catalog errors (FileRead/FileWrite/SocketRead/SocketWrite/latencies-by-type missing from demo JFR — expected) ✅
+- **Heap Allocation** — Live Preview: 0 syntax errors, 0 parser errors, 0 catalog errors (demo JFR has ObjectAllocationSample/HeapSnapshot) ✅
+
+### Console errors
+- 2 errors: ONNX runtime EP assignment warnings (expected, not bugs) ✅
+
+### Bugs found
+- None
+
+### BUGS.md open items
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+
+### Docs check
+- All docs-site/*.md reviewed in prior sessions; no stale items found in S69 ✅
+
