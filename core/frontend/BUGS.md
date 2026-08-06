@@ -4402,3 +4402,46 @@ None.
 - `docs-site/web-ui.md` — LINK_X, BRUSH, variable pause gate, Smart-Start banner accurate ✅
 - No stale content found.
 
+
+## QA Session 73 — 2026-08-06
+
+### Vitest
+6206 passed, 1 skipped, 0 failed ✅
+
+### Templates tested (all 13)
+| Template | Result |
+|---|---|
+| Recording Overview | ✅ CLEAN |
+| GC Pause Analysis | ✅ CLEAN |
+| GC Deep Dive | ✅ CLEAN |
+| CPU Profiling | ✅ CLEAN |
+| Heap Allocation | ✅ CLEAN |
+| I/O & Latency | ✅ CLEAN |
+| Threading & Contention | ✅ CLEAN |
+| JVM Internals | ✅ CLEAN |
+| Memory Leak Detection | ✅ CLEAN |
+| Exceptions & Errors | ✅ CLEAN |
+| Container & Cloud | ✅ CLEAN |
+| ZGC Analysis | ✅ CLEAN |
+| Comprehensive Feature Test | ✅ CLEAN |
+
+All templates: Expand All → Run All → scroll to bottom → DOM scan. 0 Catalog Errors, 0 Binder Errors, 0 Parser Errors, 0 Invalid plot errors across all 13.
+
+### Demo notebook interactive features
+| Feature | Result |
+|---|---|
+| Variables panel (`$session_start` click) | ✅ PASS — datetime input appeared |
+| Run All Queries | ✅ PASS |
+| Collapse All / Expand All | ✅ PASS |
+| Schema Explorer (GarbageCollection click) | ✅ PASS |
+| DOM error scan | ✅ 0 errors |
+
+### Console errors
+0 real errors. Warnings: 2 conditional view failed (expected), ONNX × 2 (expected), recharts width=-1 × 10 (expected — collapsed cells).
+
+### Bugs found
+None.
+
+### BUGS.md open items
+- B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
+- B-205: LATERAL join scope in completions (deferred)
