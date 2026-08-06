@@ -215,12 +215,11 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Notes:** It uses `defaultValue` so the input keeps its in-progress text after Escape — minor.
 **Fix:** Added `editingTitleValue` controlled state. Clicking to edit initializes it to the current title. Escape now correctly reverts the displayed value.
 
-### 🟡 [B-032] No keyboard shortcut for run / undo / save / toggle markdown ✅ PARTIALLY FIXED
-**Where:** `core/frontend/App.tsx`
+### 🟡 [B-032] No keyboard shortcut for run / undo / save / toggle markdown ✅ FIXED
+**Where:** `core/frontend/App.tsx`, `core/frontend/components/editor/Editor.tsx`
 **Observed:** Verified: only the editors' own `extraKeys` exist; no `keydown` listener on the document.
 **Expected:** Cmd/Ctrl-Enter to run cell, Cmd/Ctrl-Z bound to history undo, Cmd/Ctrl-S to save, etc.
-**Fix:** App-level keydown listener now binds Cmd/Ctrl-S (save), Cmd/Ctrl-Z (undo), Cmd/Ctrl-Shift-Z and Cmd/Ctrl-Y (redo). Save fires unconditionally; undo/redo only fire when focus is outside a CodeMirror instance, so the editor's own history wins inside editors. Button titles updated with shortcut hints. Verified Cmd-S download via Playwright.
-**Still open:** Cmd-Enter to run focused cell — needs per-editor wiring with cell-aware `onRunQuery`.
+**Fix:** App-level keydown listener now binds Cmd/Ctrl-S (save), Cmd/Ctrl-Z (undo), Cmd/Ctrl-Shift-Z and Cmd/Ctrl-Y (redo). Save fires unconditionally; undo/redo only fire when focus is outside a CodeMirror instance, so the editor's own history wins inside editors. Button titles updated with shortcut hints. Cmd-Enter wired per-editor in `Editor.tsx` via `keymap.of([{ key: 'Mod-Enter', run: () => { onRunRef.current?.(); return true; } }])` — each SQL block passes `onRun={() => handleRun(sql, i)}` from `NotebookCell.tsx`.
 
 ### 🟡 [B-033] Markdown raw-mode toggle silently loses cell-by-cell collapse/lock state ✅ FIXED
 **Where:** `core/frontend/App.tsx:113`; `NotebookCell.tsx:93`
@@ -1550,7 +1549,7 @@ All pages reviewed. Found and fixed one stale entry:
 
 ### Open issues
 
-- **B-205** (LATERAL join scope — low priority, complex to fix, not user-visible in demo data): still open.
+- **B-205** (LATERAL join scope in completions): ✅ fixed via `extractLateralInnerStmt` in `sqlContext.ts`.
 - **Scroll-wheel zoom on charts**: Scrolling on a chart while the page is scrollable sends wheel events to the page rather than the chart. The zoom works via Shift+drag (as documented in the Help modal) — this is expected behavior, not a bug.
 
 ---
@@ -1587,7 +1586,7 @@ All pages reviewed. Found and fixed one stale entry:
 
 ### Open issues
 
-- **B-205** (LATERAL join scope): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -1632,7 +1631,7 @@ All 11 built-in templates now verified clean (zero DOM-visible errors).
 
 ### Open issues
 
-- **B-205** (LATERAL join scope): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 - **BRUSH live demo**: no template exercises BRUSH; feature is unit-tested but lacks an end-to-end notebook demo.
 - **BIG_NUMBER not in any template**: The chart type is implemented and tested but not showcased in any builtin template. Low priority — the heuristic auto-suggests it for scalar queries.
 
@@ -1694,7 +1693,7 @@ None. All previously tracked bugs remain fixed. No regressions detected.
 
 ### Bugs deferred (carry-forward)
 
-- **B-205** (LATERAL join inner-subquery scope not tracked in completions): still open, complex, low user impact.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 - **BRUSH demo notebook**: no built-in template demonstrates BRUSH end-to-end; unit-tested only.
 - **BIG_NUMBER not showcased**: implemented and unit-tested but no built-in template uses it directly.
 
@@ -1724,7 +1723,7 @@ Loaded via "▶ Try the demo". All cells ran without errors. DOM scan: 0 error s
 None. The vitest pool fix was the only issue, and it's now committed.
 
 ### Bugs deferred (carry-forward)
-- **B-205** (LATERAL join inner-subquery scope not tracked in completions): still open, complex, low user impact.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 - **BRUSH demo notebook**: no built-in template demonstrates BRUSH end-to-end; unit-tested only.
 - **BIG_NUMBER not showcased**: implemented and unit-tested but no built-in template uses it directly.
 
@@ -1786,7 +1785,7 @@ None. All features working correctly.
 - **GanttChartPlot outer wrapper missing `minHeight: 200`** — `GanttChartPlot.tsx:141` outer `<div>` lacked `minHeight: 200`, causing `ResponsiveContainer` to receive zero dimensions when the cell was in a collapsed state, generating Recharts `width(-1) height(-1)` console warnings. Added `minHeight: 200` to match all other plot wrappers. ✅ FIXED
 
 ### Deferred (carry-forward)
-- **B-205** (LATERAL join scope in completions): still open, complex, low user impact.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 - **BRUSH demo notebook**: no built-in template demonstrates BRUSH end-to-end.
 - **BIG_NUMBER not showcased**: implemented and unit-tested but no built-in template uses it directly.
 
@@ -1836,7 +1835,7 @@ Only the 2 expected ONNX runtime CPU-node-assignment warnings (non-actionable). 
 None. No regressions from prior sessions.
 
 ### Deferred (carry-forward)
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 - **BRUSH demo notebook**: no built-in template exercises BRUSH interactively.
 - **BIG_NUMBER not showcased**: implemented and unit-tested, no template uses it.
 
@@ -1871,7 +1870,7 @@ None. No regressions from prior sessions.
 - ~10 transient Recharts `width(-1) height(-1)` warnings — these fire at initial browser-layout before `ResizablePlotContainer` (320px default) paints. They self-correct and do not affect rendered output. Investigation confirmed: all plot outer wrappers now have `minHeight: 200`; the warnings originate from the timing window between React mounting and browser layout completing for new cells.
 
 ### Deferred (carry-forward)
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 - ~~**BRUSH demo notebook**: no built-in template exercises BRUSH interactively.~~ ✅ FIXED — added Brush-Driven Filter cell to comprehensive-test.md
 - ~~**BIG_NUMBER not showcased**: implemented and unit-tested, no template uses it.~~ ✅ FIXED — added GC Summary BIG_NUMBER ROW() cell to comprehensive-test.md
 
@@ -1902,7 +1901,7 @@ None. No regressions from prior sessions.
 - **em-dash in TITLE caused parse error** — `TITLE "Select a window — drag to filter"` with a Unicode em-dash character triggered a plot parser error. Removed em-dash.
 
 ### Deferred (carry-forward)
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -1946,7 +1945,7 @@ None. No regressions from prior sessions.
 **0 JS errors** across the full session (198 total console entries, all warnings/info).
 
 ### Deferred (carry-forward)
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -1987,7 +1986,7 @@ Full QA pass continuing from session 12. Focus: interactive features (variables,
 - Mid-session HMR reload showed transient `ganttChartPlot`/`violinPlot` TDZ errors — confirmed as hot-reload artifacts, not real runtime bugs ✅
 
 ### Deferred (carry-forward)
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ### Unit tests
 `npx vitest run` — 6203 passed, 7 skipped. No regressions.
@@ -2012,7 +2011,7 @@ Recording Overview ✅ · GC Pause Analysis ✅ · GC Deep Dive ✅ · CPU Profi
 None.
 
 ### Deferred (carry-forward)
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ### Scope
 Full QA pass on demo notebook + all 11 templates. Focus: interactive features, plot tooltips, UI polish, docs-site consistency.
@@ -2049,7 +2048,7 @@ All 11 templates load and render without DOM errors or JS exceptions.
 - Fixed stale `BRUSH $var MODE X` variable path in `docs-site/web-ui.md`: `$var.lo`/`$var.hi` → `$var.brush.lo`/`$var.brush.hi`
 
 ### Deferred (carry-forward)
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2087,7 +2086,7 @@ Recurring half-hour QA pass. Templates: Recording Overview, CPU Profiling. Inter
 None.
 
 ### Deferred (carry-forward)
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2134,7 +2133,7 @@ None.
 None new.
 
 ### Deferred (carry-forward)
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2167,7 +2166,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2196,7 +2195,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2229,7 +2228,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2264,7 +2263,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2302,7 +2301,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2341,7 +2340,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2397,7 +2396,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2428,7 +2427,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2462,7 +2461,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2506,7 +2505,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2549,7 +2548,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2589,7 +2588,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2631,7 +2630,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2676,7 +2675,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2720,7 +2719,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2755,7 +2754,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2795,7 +2794,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2830,7 +2829,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2866,7 +2865,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2904,7 +2903,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2941,7 +2940,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -2985,7 +2984,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3023,7 +3022,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3069,7 +3068,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3112,7 +3111,7 @@ Not re-run this session (previous session confirmed 6203 passed, 0 failed; no ne
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3151,7 +3150,7 @@ Prior sessions typed into notebook cells, then used Ctrl+Z to undo. The undo som
 
 ### Open bugs checked
 - **B-057** (raw-markdown editor virtualization): still deferred.
-- **B-205** (LATERAL join inner-subquery scope): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ### Docs check
 - `docs-site/ai-providers.md`: default model `claude-sonnet-4-6` matches `AnthropicProvider.ts` ✅; gpt-4.1/gpt-5 entries are SAP proxy-specific (correct) ✅
@@ -3198,7 +3197,7 @@ Loaded clean after clearing localStorage + dismissing product tour. 6 editors, 5
 
 ### Open bugs checked
 - **B-057** (raw-markdown editor virtualization): still deferred.
-- **B-205** (LATERAL join inner-subquery scope): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ### Docs check
 - `docs-site/views-macros.md`: all 3 conditional views (`g1-heap-regions`, `metaspace-over-time`, `tenuring-distribution`) correctly documented ✅
@@ -3247,7 +3246,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3284,7 +3283,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3322,7 +3321,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3366,7 +3365,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3410,7 +3409,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ## Session 47 — 2026-08-06
 
@@ -3443,7 +3442,7 @@ None new.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ## Session 48 — 2026-08-06
 
@@ -3484,7 +3483,7 @@ None.
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ## Session 49 — 2026-08-06
 
@@ -3530,7 +3529,7 @@ use `[data-testid="preview-editor"] .cm-content` to target only the sidebar prev
 
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
-- **B-205** (LATERAL join scope in completions): still open, deferred.
+- **B-205** (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3559,7 +3558,7 @@ None. All features working. No new DOM errors in demo notebook or either templat
 
 ### Deferred
 - B-057 (raw-markdown editor virtualization): still open, deferred.
-- B-205 (LATERAL join scope in completions): still open, deferred.
+- B-205 (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3595,7 +3594,7 @@ None.
 
 ### Deferred (carry-forward)
 - B-057 (raw-markdown editor virtualization): still open, deferred.
-- B-205 (LATERAL join scope in completions): still open, deferred.
+- B-205 (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3629,7 +3628,7 @@ None.
 
 ### Deferred (carry-forward)
 - B-057 (raw-markdown editor virtualization): still open, deferred.
-- B-205 (LATERAL join scope in completions): still open, deferred.
+- B-205 (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3672,7 +3671,7 @@ None.
 
 ### Deferred (carry-forward)
 - B-057 (raw-markdown editor virtualization): still open, deferred.
-- B-205 (LATERAL join scope in completions): still open, deferred.
+- B-205 (LATERAL join scope in completions): ✅ fixed.
 
 ---
 
@@ -3763,7 +3762,7 @@ None.
 **Bugs fixed this session:** none
 
 **Deferred (carry-forward):**
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
 
 ---
 
@@ -3788,8 +3787,8 @@ None.
 **Docs check:** `web-ui.md` and `notebook-format.md` reviewed — both accurate and up to date.
 
 **Deferred:**
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 - BRUSH live demo: no built-in template demonstrates BRUSH end-to-end
 - BIG_NUMBER not showcased in any built-in template
 
@@ -3837,8 +3836,8 @@ None.
 - **Commit:** `d2d42d1` — fix(gc): remove heapSpace$committedSize from gc-rss-vs-heap subquery to fix binder error
 
 ### Deferred (carry-forward)
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -3880,8 +3879,8 @@ None.
 - `docs-site/views-macros.md` — built-in views listed accurately ✅
 
 ### Deferred (carry-forward)
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -3916,8 +3915,8 @@ None.
 - `docs-site/notebook-format.md` — `requires=`, conditional blocks, templating all accurate ✅
 
 ### Deferred (carry-forward)
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -3959,8 +3958,8 @@ None.
 - `docs-site/web-ui.md` — template URL param, slash commands accurate ✅
 
 ### Deferred (carry-forward)
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -4005,8 +4004,8 @@ None.
 - `docs-site/web-ui.md` — template URL, smart-start banner accurate ✅
 
 ### Deferred (carry-forward)
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -4041,7 +4040,7 @@ None.
 
 ### BUGS.md open items
 - B-032: `✅ PARTIALLY FIXED` — only per-editor Cmd-Enter wiring deferred (minor)
-- B-205: LATERAL join scope — still deferred (low priority, complex)
+- B-205: LATERAL join scope in completions: ✅ fixed
 - No other open non-✅ items
 
 ### Docs check
@@ -4051,8 +4050,8 @@ None.
 - `docs-site/views-macros.md` — 6 new conditional GC views added in S63, still accurate ✅
 
 ### Deferred (carry-forward)
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -4089,8 +4088,8 @@ None.
 - None
 
 ### BUGS.md open items
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 - No other open non-✅ items
 
 ### Docs check
@@ -4120,8 +4119,8 @@ None.
 - None
 
 ### BUGS.md open items
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 - No other open non-✅ items
 
 ### Docs check
@@ -4130,8 +4129,8 @@ None.
 - `docs-site/plot-dsl.md` — LINK_X/BRUSH/ZOOM accurate ✅
 
 ### Deferred (carry-forward)
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -4188,8 +4187,8 @@ Simulated realistic user session on the demo notebook:
 - None
 
 ### BUGS.md open items
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -4218,8 +4217,8 @@ Simulated realistic user session on the demo notebook:
 - None
 
 ### BUGS.md open items
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 - No other open non-✅ items
 
 ### Docs check
@@ -4262,8 +4261,8 @@ Full interactive feature test + 2 template live previews.
 - None
 
 ### BUGS.md open items
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ### Docs check
 - All docs-site/*.md reviewed in prior sessions; no stale items found in S69 ✅
@@ -4313,8 +4312,8 @@ Full interactive feature test + 2 template live previews.
 None.
 
 ### BUGS.md open items
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ### Docs check
 - `docs-site/variables.md` — BRUSH struct field names (`brush.lo`, `brush.hi`, `brush.x_lo` etc.), LINK_X/LINK_Y docs, inline input widgets — all accurate ✅
@@ -4354,8 +4353,8 @@ None.
 None.
 
 ### BUGS.md open items
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
-- B-205: LATERAL join inner-subquery scope (low priority, complex, deferred)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ### Docs check
 - `docs-site/web-ui.md` — template URL params (`?template=gc-analysis`, `?template=zgc-analysis`) still accurate; 13 built-in templates confirmed present in `data/templates/builtin/` ✅
@@ -4394,8 +4393,8 @@ None.
 None.
 
 ### BUGS.md open items
-- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open — low priority)
-- B-205: LATERAL join inner-subquery scope (low priority, complex, deferred)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ### Docs check
 - `docs-site/views-macros.md` — all 6 new conditional views (`g1-ihop-stats`, `g1-region-types`, `gc-rss-vs-heap`, `gc-memory-pools`, `gc-evacuation-efficiency`, `gc-failure-events`) documented ✅
@@ -4443,8 +4442,8 @@ All templates: Expand All → Run All → scroll to bottom → DOM scan. 0 Catal
 None.
 
 ### BUGS.md open items
-- B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
-- B-205: LATERAL join scope in completions (deferred)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -4476,8 +4475,8 @@ None.
 None.
 
 ### BUGS.md open items
-- B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
-- B-205: LATERAL join scope in completions (deferred)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -4508,8 +4507,8 @@ None.
 None.
 
 ### BUGS.md open items
-- B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
-- B-205: LATERAL join scope in completions (deferred)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -4543,8 +4542,8 @@ None.
 - `docs(views-macros)`: document 7 previously missing conditional views (commit `2f1ad64`)
 
 ### BUGS.md open items
-- B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
-- B-205: LATERAL join scope in completions (deferred)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
 
 ---
 
@@ -4579,5 +4578,5 @@ None.
 None.
 
 ### BUGS.md open items
-- B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
-- B-205: LATERAL join scope in completions (deferred)
+- B-032: Cmd-Enter per-editor wiring: ✅ fixed
+- B-205: LATERAL join scope in completions: ✅ fixed
