@@ -67,10 +67,17 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 - `g1-heap-regions` *(conditional — requires `G1HeapSummary` events)*
 - `g1-ihop-stats` *(conditional — requires `G1AdaptiveIHOP` events)*
 - `g1-region-types` *(conditional — requires `G1HeapRegionInformation` events)*
+- `g1-evacuation-failures` *(conditional — requires `G1EvacuationYoungStatistics` events)*
+- `g1-evacuation-failure-summary` *(conditional — requires `G1EvacuationYoungStatistics` events)*
 - `gc-rss-vs-heap` *(conditional — requires `ResidentSetSize` events)*
 - `gc-memory-pools` *(conditional — requires `GCHeapMemoryPoolUsage` events)*
 - `gc-evacuation-efficiency` *(conditional — requires `EvacuationInformation` events)*
 - `gc-failure-events` *(conditional — requires `PromotionFailed` events; also includes `EvacuationFailed` and `ConcurrentModeFailure` when present)*
+- `gc-tuning-advisor` *(conditional — requires `GarbageCollection` events; generates automated tuning recommendations)*
+- `zgc-pause-phases` *(conditional — requires `ZGCGarbageCollection` events)*
+- `zgc-cycle-stats` *(conditional — requires `ZGCGarbageCollection` events)*
+- `zgc-heap-stats` *(conditional — requires `ZGCStatistics` events)*
+- `zgc-concurrent-phases` *(conditional — requires `ZGCPhaseStatistics` events)*
 - `heap-committed-vs-used`
 - `heap-configuration`
 - `heap-summary-over-time`
