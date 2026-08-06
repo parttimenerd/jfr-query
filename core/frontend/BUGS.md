@@ -2506,3 +2506,46 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 24 — 2026-08-06
+
+**Scope:** Full QA pass — unit tests, demo notebook (fresh localStorage), GC Deep Dive template, Exceptions & Errors template, GC Pause Analysis (interactive tests), BRUSH clause (Comprehensive Feature Test), UI polish, docs-site audit.
+
+### Fixes applied
+None.
+
+### Test results
+
+- **Unit tests:** 6210 passed, 0 failed ✅
+- **Demo notebook (fresh localStorage):** ✅ PASS — 0 DOM errors; 2 charts rendered
+- **GC Deep Dive template:** ✅ PASS — 6 charts, 0 DOM errors
+- **Exceptions & Errors template:** ✅ PASS — 0 charts (no exception data in demo), 0 DOM errors
+- **GC Pause Analysis (interactive tests):**
+  - Variables panel: `$session_start` / `$session_end` visible ✅
+  - LINK_X zoom: Shift+scroll × 5 → reset button appeared ✅
+  - BRUSH clause: drag on Pause Timeline chart → prose inline text updated with `$sel.brush.lo`/`$sel.brush.hi` epoch-ms values; downstream Query 2 re-ran ✅
+  - Command palette (⇧⇧): opened with search prompt ✅
+  - SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`): `GarbageCollection · table · 20 rows` ✅
+  - Schema explorer: GarbageCollection → gcId/startTime/cause columns ✅
+  - Run All: no errors, no stuck spinners ✅
+  - Help modal: `Keyboard Shortcuts & Tips` opened ✅
+- **UI polish:**
+  - 0 zero-height chart containers
+  - 0 truncated labels
+  - 0 stuck loading spinners
+  - 22 resize handles present
+  - Chart tooltip on hover ✅
+  - 0 JS console errors ✅
+  - 0 DOM error strings (Catalog Error / Binder Error / Parser Error / Invalid plot)
+
+### Docs audit
+No stale information found in docs-site/*.md. All docs consistent with observed behavior.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
