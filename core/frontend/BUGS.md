@@ -5016,3 +5016,43 @@ None.
 
 ### BUGS.md open items
 No open non-✅ items (B-057 and B-205 both ✅ FIXED) ✅
+
+---
+
+## Session S89 — 2026-08-06
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- DOM error scan: 0 errors ✅
+- Variables panel (click $session → input, change value → cells re-run): ✅
+- Schema Explorer (GarbageCollection → startTime column visible): ✅
+- SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`): ✅
+- Command palette (Cmd+K → dialog): ✅
+- Help modal (Keyboard Shortcuts → Shift reference): ✅
+- Run All (0 DOM errors after): ✅
+- LINK_X zoom (Shift+scroll → Reset zoom button): ✅
+- Tooltip on hover over line chart: ✅
+- Zero-height cells: 0 ✅
+
+### Templates loaded
+- **Memory Leak Detection**: 0 DOM errors ✅
+- **Comprehensive Feature Test**: 0 DOM errors ✅
+  - BRUSH drag → `brush.lo` / `brush.hi` updated in sidebar: ✅
+
+### Console errors
+2 ONNX runtime warnings only — 0 real errors ✅
+
+### UI polish
+- No truncated text, overlapping elements, or broken layouts found ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items ✅
+
+### Docs check
+- `docs-site/web-ui.md`: "stale" mention in pause-variable-updates description is correct app behaviour — not stale ✅
+- All other docs-site/*.md: no TODO/FIXME/outdated markers found ✅
