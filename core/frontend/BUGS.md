@@ -4637,3 +4637,23 @@ None.
 
 ### Open issues
 - None. All known bugs are resolved or explicitly deferred by design (WONTFIX/BY DESIGN).
+
+---
+
+## QA Session 79 — 2026-08-06
+
+### Bugs found and fixed
+
+### 🟠 [B-252] `heap-committed-vs-used` view — Binder Error on `heapSpace$committedSize` ✅ FIXED
+**Where:** `core/frontend/data/builtinSql.ts:971`
+**Repro:** Load any JFR that has `GarbageCollection` + `GCHeapSummary` tables. Browser console shows:
+`conditional view failed: Error: Binder Error: Table "h" does not have a column named "heapSpace$committedSize"`
+**Root cause:** `COALESCE(h."heapSpace$committedSize", h."heapCommitted")` — DuckDB's binder rejects the entire expression at parse time if the first argument doesn't exist as a column, even inside COALESCE. The `heapSpace$committedSize` column is a CJFR struct-path name not present in standard JFR `GCHeapSummary`.
+**Fix:** Removed the COALESCE; the view now uses only `h.heapCommitted` which is the standard JFR field name.
+
+### 🟠 [B-253] `alloc-flamegraph` view — Binder Error on `stackTrace$methods` ✅ FIXED
+**Where:** `core/frontend/data/builtinSql.ts:1077-1086`
+**Repro:** Load any JFR that has `ObjectAllocationSample`. Browser console shows:
+`conditional view failed: Error: Binder Error: Table "oas" does not have a column named "stackTrace$methods"`
+**Root cause:** `alloc-flamegraph` used a raw `sql:` string referencing `oas."stackTrace$methods"`. This CJFR struct-path column doesn't exist in standard JFR `ObjectAllocationSample` (requires CJFR's `Method` table populated).
+**Fix:** Converted to `buildSql:` (same pattern as `allocation-by-site`). When `Method` table is present, generates the full flamegraph SQL; otherwise generates `WHERE false` fallback to avoid the binder error.

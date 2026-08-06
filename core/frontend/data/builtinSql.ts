@@ -968,7 +968,7 @@ SELECT
     g.startTime AS "Time",
     h."when" AS "Phase",
     h.heapUsed / (1024.0 * 1024.0) AS "Used MB",
-    COALESCE(h."heapSpace$committedSize", h."heapCommitted") / (1024.0 * 1024.0) AS "Committed MB"
+    h.heapCommitted / (1024.0 * 1024.0) AS "Committed MB"
 FROM GCHeapSummary h
 JOIN GarbageCollection g ON g.gcId = h.gcId
 ORDER BY g.startTime`,
@@ -1075,14 +1075,17 @@ SELECT 'Stack trace metadata not available' AS "Method", 0.0 AS "Allocation Pres
   },
   {
     requires: 'ObjectAllocationSample',
-    sql: `CREATE OR REPLACE VIEW "alloc-flamegraph" AS
+    buildSql: (tables: Set<string>) => tables.has('Method')
+      ? `CREATE OR REPLACE VIEW "alloc-flamegraph" AS
 SELECT
   stack_frames(oas."stackTrace$methods") AS frame,
   ROUND(SUM(oas.weight) / 1048576.0, 4) AS value
 FROM ObjectAllocationSample oas
 WHERE oas."stackTrace$methods" IS NOT NULL
 GROUP BY oas."stackTrace$methods"
-ORDER BY value DESC`,
+ORDER BY value DESC`
+      : `CREATE OR REPLACE VIEW "alloc-flamegraph" AS
+SELECT 'Stack trace metadata not available' AS frame, 0.0 AS value WHERE false`,
   },
   {
     requires: 'SafepointBegin',
