@@ -2676,3 +2676,47 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 28 — 2026-08-06
+
+**Scope:** Full QA pass — unit tests, demo notebook (fresh localStorage), JVM Internals template, Memory Leak Detection template, GC Pause Analysis (interactive features), Comprehensive Feature Test (BRUSH), UI polish, docs-site audit.
+
+### Fixes applied
+None.
+
+### Test results
+
+- **Unit tests:** 6210 passed, 0 failed ✅
+- **Demo notebook (fresh localStorage):** ✅ PASS — 5 charts, 0 DOM errors
+- **JVM Internals template:** ✅ PASS — 0 charts (no JVM data), 0 DOM errors
+- **Memory Leak Detection template:** ✅ PASS — 2 charts, 0 DOM errors
+- **GC Pause Analysis (interactive features):**
+  - Variables panel: `$session_start` clickable → editor opened ✅
+  - LINK_X zoom: Shift+scroll × 5 → reset button appeared ✅
+  - Command palette (⇧⇧): opened ✅
+  - SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`): `GarbageCollection · table · 20 rows` ✅
+  - Schema explorer: GarbageCollection → gcId/startTime/cause columns ✅
+  - Run All: no errors, no stuck spinners ✅
+  - Help modal: `Keyboard Shortcuts & Tips` opened ✅
+- **BRUSH clause (Comprehensive Feature Test):**
+  - Drag on crosshair chart → epoch-ms values appeared in DOM (variable updated) ✅
+- **UI polish:**
+  - 0 zero-height charts
+  - 0 truncated labels
+  - 0 stuck spinners
+  - 42 resize handles
+  - Tooltip on hover ✅
+  - 0 JS console errors (0 total errors) ✅
+  - 0 DOM error strings ✅
+
+### Docs audit
+No stale information found. `ROW`/`COL` composite operators documented correctly in plot-dsl.md.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
