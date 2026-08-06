@@ -2589,3 +2589,45 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 26 — 2026-08-06
+
+**Scope:** Full QA pass — unit tests, demo notebook (fresh localStorage), Heap Allocation template, I/O & Latency template, GC Pause Analysis (all interactive features), UI polish, BUGS.md/docs-site audit.
+
+### Fixes applied
+None.
+
+### Test results
+
+- **Unit tests:** 6210 passed, 0 failed ✅
+- **Demo notebook (fresh localStorage):** ✅ PASS — 5 charts, 0 DOM errors
+- **Heap Allocation template:** ✅ PASS — 0 charts (no ObjectAllocationSample data), 0 DOM errors
+- **I/O & Latency template:** ✅ PASS — 0 charts (no FileRead/SocketRead data), 0 DOM errors
+- **GC Pause Analysis (interactive features):**
+  - Variables panel: `$session_start` / `$session_end` in header ✅
+  - LINK_X zoom: Shift+scroll × 5 → reset button visible ✅
+  - Command palette (⇧⇧): opened with search prompt ✅
+  - SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`): `GarbageCollection · table · 20 rows` ✅
+  - Schema explorer: GarbageCollection → `gcId` column preview ✅
+  - Run All: no errors, no stuck spinners ✅
+  - Help modal: `Keyboard Shortcuts & Tips` opened ✅
+- **UI polish:**
+  - 0 zero-height chart containers
+  - 0 truncated labels
+  - 0 stuck loading spinners
+  - 56 resize handles present
+  - Chart tooltip on hover ✅
+  - 0 real JS errors (2 ONNX runtime warnings — expected) ✅
+  - 0 DOM error strings ✅
+
+### Docs audit
+No stale information found. `localhost:4244` in getting-started.md/index.md is the correct Java server default. `localhost:3001` in variables.md is intentional (dev-mode example). All docs consistent with observed behavior.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
