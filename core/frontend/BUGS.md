@@ -3530,3 +3530,32 @@ use `[data-testid="preview-editor"] .cm-content` to target only the sidebar prev
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 50 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook
+No DOM errors. Console: 2 ONNX warnings only (expected). All cells executed cleanly.
+
+### Templates tested
+- GC Deep Dive (gc-extended.md equivalent) — no DOM errors, all queries ran cleanly.
+- Memory Leak Detection — no DOM errors. Two cells with "hidden" badge (OldObjectSample not in demo data — expected cellCondition failures). Heap After GC chart rendered correctly.
+
+### Interactive features
+- Variables panel ✅ — clicked `$session_start`, inline edit box appeared, changed value to T11:05, button label updated immediately, queries re-ran.
+- LINK_X zoom ✅ — Shift+scroll over Heap Used After GC chart zoomed in; "Reset zoom" button appeared and restored full view.
+- Command palette ✅ — Cmd+K opened dialog, typed "gc", Escape closed it cleanly.
+- SQL autocomplete ✅ — typed `SELECT * FROM Gar` + Ctrl+Space; completion dropdown appeared with "GarbageCollection (table · 20 rows)" selected.
+- Schema explorer ✅ — clicked GarbageCollection in Tables panel; column list with types (gcId: INTEGER, startTime: TIMESTAMP WITH TIME ZONE, cause: VARCHAR, etc.) appeared in tooltip.
+- Help modal ✅ — Keyboard Shortcuts button opened "Keyboard Shortcuts & Tips" dialog with full shortcut table.
+
+### Bugs found and fixed
+None. All features working. No new DOM errors in demo notebook or either template.
+
+### Deferred
+- B-057 (raw-markdown editor virtualization): still open, deferred.
+- B-205 (LATERAL join scope in completions): still open, deferred.
