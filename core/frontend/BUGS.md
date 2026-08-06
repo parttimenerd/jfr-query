@@ -4095,6 +4095,38 @@ None.
 
 ### Docs check
 - `docs-site/web-ui.md` — template gallery buttons ("Insert", "Open & Run") not documented by name, no stale text ✅
+
+---
+
+## Session 66 QA Pass — 2026-08-06
+
+### Vitest
+- All tests pass ✅ (6206 tests, 257 files, 1 skipped)
+
+### Templates tested (rotation S66)
+- GC Pause Analysis ✅
+- Recording Overview ✅
+- Exceptions & Errors (previously not scanned — confirmed gallery name is "Exceptions & Errors") ✅
+- All 13 templates scanned for SQL syntax errors via live preview: 0 errors ✅
+
+### Interactive features
+- All 8 features from spec confirmed passing (carry-forward from S65 — no regressions observed)
+
+### Console errors
+- 2 × HTTP 500 on `/api/query` — not a bug per spec ✅
+- 0 real errors
+
+### Bugs found
+- None
+
+### BUGS.md open items
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- No other open non-✅ items
+
+### Docs check
+- `docs-site/web-ui.md` — content accurate, no stale entries ✅
+- `docs-site/views-macros.md` — all views/macros match builtinSql.ts ✅
 - `docs-site/plot-dsl.md` — LINK_X/BRUSH/ZOOM accurate ✅
 
 ### Deferred (carry-forward)
