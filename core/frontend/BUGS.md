@@ -3072,6 +3072,46 @@ None new.
 
 ---
 
+## Session 40 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook
+Loaded via "▶ Try the demo" (localStorage cleared). Tour dismissed. 6 editors, 2 charts. DOM scan: 0 errors ✅
+
+### Templates tested
+- **Memory Leak Detection** — 0 errors, 7 editors, 1 chart ✅
+- **Container & Cloud** — 0 errors, 11 editors ✅
+
+### Interactive features
+- **Variables panel** ✅ — changed `$limit` 200→75 via sidebar input
+- **Command palette** ✅ — Cmd+K opens Actions dialog
+- **Help modal** ✅ — `?` key opens keyboard shortcuts dialog
+- **SQL autocomplete** ✅ — `FROM Gar` + Ctrl+Space → `.cm-tooltip-autocomplete` visible
+- **Schema explorer** ✅ — GarbageCollection → gcId/startTime in preview
+- **LINK_X zoom** ✅ — Shift+scroll × 5; reset button appeared
+- **Run All** ✅ — no Catalog/Binder/Parser errors
+
+### Console errors
+2 ONNX runtime warnings only — known non-bugs.
+
+### Docs check
+- `docs-site/ai-providers.md`: default model `claude-sonnet-4-6` ✅
+- `docs-site/web-ui.md`: sidebar, BRUSH/LINK_X descriptions — current ✅
+- `docs-site/variables.md`: inline input widget types — current ✅
+- `docs-site/views-macros.md`: view names (`gc-phase-breakdown`, `heap-committed-vs-used`, `thread-cpu-load`, `gc-phase-stats`) verified against builtinSql.ts ✅
+- No stale content found.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
 ## Session 39 — 2026-08-06
 
 ### Vitest
