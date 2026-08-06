@@ -3322,3 +3322,47 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 45 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook
+Loaded via "▶ Try the demo" (localStorage cleared, tour dismissed). 6 editors, 2 charts. DOM scan: 0 errors ✅
+
+### Templates tested
+- **GC Pause Analysis** — 0 errors, 83 editors, 6 charts ✅ (after Run All: 13 charts)
+- **GC Deep Dive** — 0 errors, 38 editors ✅
+- **Threading & Contention** — 0 errors, 15 editors ✅
+- **Comprehensive Feature Test** — 0 errors, 24 editors, 4 charts ✅
+
+### Interactive features
+- **Variables panel** ✅ — `$session_start` inline datetime editor opened; changed 11:00→11:05, charts re-ran (4→6), 0 errors
+- **LINK_X zoom** ✅ — Shift+scroll ×3 on chart with `linkX: ["$start","$end"]`; 3 linked reset buttons appeared; click reset → 0 reset buttons
+- **BRUSH clause** ✅ — dragged across LINE_CHART with `BRUSH $sel MODE X`; `$sel.brush.lo` timestamp propagated into page (1710496815145...)
+- **Command palette** ✅ — Cmd+K opens palette (3 matching elements)
+- **SQL autocomplete** ✅ — `FROM Gar` + Ctrl+Space → `GarbageCollection table · 20 rows`
+- **Schema explorer** ✅ — sidebar shows GarbageCollection (20), GCHeapSummary (40), GCPhasePause (40) + view list
+- **Help modal** ✅ — `?` button opens keyboard shortcuts dialog with expected content
+- **Run All** ✅ — 0 DOM errors, 13 charts after Run All on GC Pause Analysis
+- **Resize handles** ✅ — 5 visible `cursor-ns-resize` handles on plot cells
+- **Tooltips** ✅ — hover on LINE chart shows `11:00:27.80 · Pause (ms) 18.3`
+
+### UI polish checks
+- Truncated text: 0 elements ✅
+- Zero-height cells: 0 ✅
+- Overlapping elements: 0 ✅
+- Console errors: 0 true errors (2 HTTP 500 on `/api/query` = no JFR file, known non-bug)
+
+### Docs fix
+- `docs-site/plot-dsl.md`: Added missing aliases `HEAT` (HEATMAP), `HIST` (HISTOGRAM), `TREE` (TREEMAP), `FALL` (WATERFALL) to the plot-type overview table. These are defined in `plotNames.ts` but were showing `—` in the docs.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.

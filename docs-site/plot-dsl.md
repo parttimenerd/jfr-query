@@ -24,8 +24,8 @@ A plot expression consists of:
 | `LINE_CHART` | `LINE` | Line chart with one series per `color` group. |
 | `BAR_CHART` | `BAR` | Vertical bar chart. |
 | `SCATTER_PLOT` | `SCATTER` | Scatter plot with optional `size` and `color`. |
-| `HEATMAP` | — | 2D binned heatmap with `x`, `y`, and `value` (intensity). |
-| `HISTOGRAM` | — | Frequency histogram over `x`. Supports `bins` (count) and `logBins: true` for log-scale bucketing. |
+| `HEATMAP` | `HEAT` | 2D binned heatmap with `x`, `y`, and `value` (intensity). |
+| `HISTOGRAM` | `HIST` | Frequency histogram over `x`. Supports `bins` (count) and `logBins: true` for log-scale bucketing. |
 | `BOX_PLOT` | `BOX` | Box-and-whisker per `x` category. |
 | `PIE_CHART` | `PIE` | Pie chart with `category` and `value` columns. |
 | `FLAMEGRAPH` | `FLAME` | Flamegraph of stack frames — `frames` (frame list column) and `value` (weight column). |
@@ -33,8 +33,8 @@ A plot expression consists of:
 | `AREA_CHART` | `AREA` | Stacked / overlaid filled areas. |
 | `GANTT` | — | Gantt bars with `start`, `end`, and `lane` (row category). Optional `task` (bar label). |
 | `RANGE` | — | Range/interval band with `x`, `low`, `high`. Optional `center` line and `color`. |
-| `TREEMAP` | — | Hierarchical treemap with `path` (one or more columns) and `value` (numeric weight). |
-| `WATERFALL` | — | Waterfall/bridge chart with `category` and `value`; positive segments go up, negative down. |
+| `TREEMAP` | `TREE` | Hierarchical treemap with `path` (one or more columns) and `value` (numeric weight). |
+| `WATERFALL` | `FALL` | Waterfall/bridge chart with `category` and `value`; positive segments go up, negative down. |
 | `VIOLIN_PLOT` | — | Kernel-density distribution shape with optional `category` split and configurable `bins`. |
 | `SUNBURST` | — | Sunburst drill-down chart with `path` (one or more columns, or a delimited single column) and `value`. |
 | `SANKEY` | — | Sankey flow diagram with `source`, `target`, and `value` columns. |
