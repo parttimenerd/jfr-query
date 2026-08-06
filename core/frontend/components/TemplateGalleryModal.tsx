@@ -41,9 +41,9 @@ function extractSqlBlocks(body: string): string[] {
     let m: RegExpExecArray | null;
     while ((m = re.exec(body)) !== null) {
         let sql = m[1]
-            .replace(/^--\s*alias\s+\S+.*\n?/gm, '')  // strip alias comments
-            .replace(/\$\$[a-zA-Z_]\w*/g, '100')       // $$varname → 100
-            .replace(/(?<!\$)\$(?=[a-zA-Z_])\w+/g, '100') // $varname → 100 (not $$)
+            .replace(/^--\s*alias\s+\S+.*\n?/gm, '')         // strip alias comments
+            .replace(/\$\$[a-zA-Z_][\w.]*/g, '100')           // $$varname(.prop)* → 100
+            .replace(/(?<!\$)\$(?=[a-zA-Z_])[a-zA-Z_][\w.]*/g, '100') // $varname(.prop)* → 100
             .trim();
         if (sql) blocks.push(sql);
     }
