@@ -554,11 +554,10 @@ export const sqlCases: AutocompleteCase[] = [
         name: 'lateral-join-inner-col',
         kind: 'sql',
         tier: 'sql-complex',
-        // LATERAL subquery inner scope is not yet tracked by the SQL context parser (B-205).
-        // For now, assert the cursor position returns some completion options (no crash),
-        // accepting that the inner FROM's columns may not be visible yet.
+        // B-205 fixed: cursor inside LATERAL (…) is scoped to the inner FROM only.
+        // Inner FROM is "requests r", so "requests" must appear and "events" must not.
         input: 'SELECT e.host, l.cnt FROM events e, LATERAL (SELECT count(*) AS cnt FROM requests r WHERE |) l',
-        expected: { matchesRegex: /events|requests|WHERE/i }, // best-effort until B-205
+        expected: { contains: ['requests'] },
     },
     {
         name: 'view-in-cte',

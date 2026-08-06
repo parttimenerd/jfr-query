@@ -207,6 +207,38 @@ function detectFunctionArgs(stmt: string): { funcName: string; argIndex: number 
   return { funcName: fn[1], argIndex };
 }
 
+/**
+ * When the cursor is inside a LATERAL subquery, returns the inner subquery
+ * text (between the opening `(` and the cursor). Returns null otherwise.
+ *
+ * Handles: `LATERAL (SELECT ... FROM t WHERE |)` — detects unbalanced `(`
+ * after the last `LATERAL (` before the cursor position.
+ */
+function extractLateralInnerStmt(textUpToCursor: string): string | null {
+  // Find the last occurrence of LATERAL followed by optional whitespace and `(`
+  const lateralRe = /\bLATERAL\s*\(/gi;
+  let lastMatch: RegExpExecArray | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = lateralRe.exec(textUpToCursor)) !== null) lastMatch = m;
+  if (!lastMatch) return null;
+
+  // Walk from the `(` to the cursor, tracking paren depth.
+  // The `(` is the last character of the match.
+  const openParen = lastMatch.index + lastMatch[0].length - 1;
+  let depth = 0;
+  for (let i = openParen; i < textUpToCursor.length; i++) {
+    const c = textUpToCursor[i];
+    if (c === '(') depth++;
+    else if (c === ')') {
+      depth--;
+      if (depth === 0) return null; // cursor is outside the LATERAL parens
+    }
+  }
+  // depth > 0 means cursor is inside the LATERAL subquery
+  if (depth <= 0) return null;
+  return textUpToCursor.slice(openParen + 1);
+}
+
 export function parseSqlContext(textUpToCursor: string, fullDocText?: string): SqlContext {
   const stmt = textUpToCursor.replace(/^[\s\S]*;/, '');
   // For alias extraction, scan the full document when available so that
@@ -214,12 +246,18 @@ export function parseSqlContext(textUpToCursor: string, fullDocText?: string): S
   const fullStmt = fullDocText
     ? fullDocText.replace(/^[\s\S]*;/, '')
     : stmt;
+
+  // B-205: When cursor is inside a LATERAL subquery, scope alias extraction to
+  // the inner query only so inner-scope completions don't bleed outer aliases.
+  const lateralInner = extractLateralInnerStmt(stmt);
+  const aliasSourceStmt = lateralInner ?? fullStmt;
+
   const referenced = new Set<string>();
   const aliases = new Map<string, SqlAlias>();
 
   FROM_JOIN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = FROM_JOIN_RE.exec(fullStmt)) !== null) {
+  while ((m = FROM_JOIN_RE.exec(aliasSourceStmt)) !== null) {
     const target = unquote(m[1]);
     referenced.add(target.toLowerCase());
     if (m[2] && !/^(WHERE|GROUP|ORDER|HAVING|JOIN|ON|USING|LIMIT|INNER|LEFT|RIGHT|FULL|CROSS)$/i.test(m[2])) {
@@ -227,12 +265,12 @@ export function parseSqlContext(textUpToCursor: string, fullDocText?: string): S
     }
   }
 
-  const ctes = parseCtes(fullStmt);
+  const ctes = parseCtes(aliasSourceStmt);
   // CTEs are queryable like tables.
   for (const name of ctes.keys()) referenced.add(name);
 
   const clause = detectClause(textUpToCursor);
-  const selectAliases = parseSelectAliases(fullStmt);
+  const selectAliases = parseSelectAliases(aliasSourceStmt);
 
   // qualifierAlias: did the user just type `foo.`?
   const qmatch = stmt.match(/(\w+)\.$/);

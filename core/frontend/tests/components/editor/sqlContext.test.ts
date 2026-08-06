@@ -218,3 +218,32 @@ describe('detectStringValueColumn — extended operators', () => {
         expect(ctx.insideStringForColumn?.table).toBe('e');
     });
 });
+
+// ---------------------------------------------------------------------------
+// B-205: LATERAL subquery inner scope
+// ---------------------------------------------------------------------------
+describe('parseSqlContext — LATERAL subquery scope (B-205)', () => {
+    it('scopes aliases to inner FROM when cursor is inside LATERAL', () => {
+        // Outer: events e. Inner: requests r. Cursor inside LATERAL WHERE.
+        const cursor = 'SELECT e.host, l.cnt FROM events e, LATERAL (SELECT count(*) AS cnt FROM requests r WHERE ';
+        const ctx = parseSqlContext(cursor);
+        // Inner scope: should see "requests", should NOT see "events"
+        expect(ctx.referenced.has('requests')).toBe(true);
+        expect(ctx.referenced.has('events')).toBe(false);
+    });
+
+    it('uses outer scope aliases when cursor is OUTSIDE LATERAL parens', () => {
+        // Cursor is after the closing `)` alias — outside the LATERAL
+        const cursor = 'SELECT e.host, l.cnt FROM events e, LATERAL (SELECT count(*) AS cnt FROM requests r) l WHERE ';
+        const ctx = parseSqlContext(cursor);
+        expect(ctx.referenced.has('events')).toBe(true);
+        expect(ctx.referenced.has('requests')).toBe(true);
+    });
+
+    it('inner LATERAL alias is visible in inner scope', () => {
+        const cursor = 'SELECT e.host FROM events e, LATERAL (SELECT id FROM orders o WHERE ';
+        const ctx = parseSqlContext(cursor);
+        expect(ctx.aliases.get('o')?.target).toBe('orders');
+        expect(ctx.aliases.has('e')).toBe(false);
+    });
+});

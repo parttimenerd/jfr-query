@@ -124,7 +124,15 @@ const regionTheme = EditorView.baseTheme({
     },
 });
 
+const LARGE_DOC_LINE_THRESHOLD = 2000;
+
 const buildDecorations = (view: EditorView): DecorationSet => {
+    // Skip the expensive full-doc scan for very large notebooks (B-057).
+    // The raw markdown editor passes the entire notebook as one string;
+    // scanning it on every keystroke is O(n) and causes noticeable lag.
+    if (view.state.doc.lines > LARGE_DOC_LINE_THRESHOLD) {
+        return Decoration.none;
+    }
     const doc = view.state.doc.toString();
     const builder = new RangeSetBuilder<Decoration>();
     const exprs = findExprRegions(doc);
@@ -191,6 +199,8 @@ const posInIfBody = (pos: number, regions: IfRegion[]): IfRegion | null => {
 const SQL_KEYWORDS = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'LIMIT', 'JOIN', 'ON', 'AS', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL'];
 
 const completionSource = (deps: MarkdownTemplatingDeps) => (cx: CompletionContext): CompletionResult | null => {
+    // Skip region-based completion for very large notebooks (B-057).
+    if (cx.state.doc.lines > LARGE_DOC_LINE_THRESHOLD) return null;
     const doc = cx.state.doc.toString();
     const pos = cx.pos;
 
@@ -273,6 +283,8 @@ const completionSource = (deps: MarkdownTemplatingDeps) => (cx: CompletionContex
 };
 
 const templatingLinter = (deps: MarkdownTemplatingDeps) => linter((view) => {
+    // Skip linting for very large notebooks (B-057).
+    if (view.state.doc.lines > LARGE_DOC_LINE_THRESHOLD) return [];
     const doc = view.state.doc.toString();
     const diagnostics: Diagnostic[] = [];
 

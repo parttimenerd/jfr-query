@@ -354,9 +354,10 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Where:** `core/frontend/components/SQLEditor.tsx:296-388`
 **Notes:** Hide delay increased from 200ms to 400ms so the next `mousemove` (which clears the timeout) fires before the tooltip disappears when moving between adjacent tokens.
 
-### 🟡 [B-057] `Notebook.tsx` raw-markdown editor renders the entire notebook in one CodeMirror instance with no virtualization ⏸ DEFERRED
-**Where:** `core/frontend/components/Notebook.tsx:45-58`
-**Notes:** For multi-thousand-line notebooks the SQLEditor's regex overlay (B-049) becomes pathological. Fixing this properly requires splitting the markdown string into virtual windows and merging edits back, which is a significant architectural change. Deferred — most notebooks are <500 lines in practice.
+### 🟡 [B-057] `Notebook.tsx` raw-markdown editor renders the entire notebook in one CodeMirror instance with no virtualization ✅ FIXED
+**Where:** `core/frontend/components/editor/markdownTemplating.ts`
+**Notes:** Added `LARGE_DOC_LINE_THRESHOLD = 2000` guard to the decoration `ViewPlugin`, the `completionSource`, and the `templatingLinter`. When `view.state.doc.lines > 2000` all three return immediately (no decoration, no completion, no lint). This eliminates the O(n) full-doc regex scan on every keystroke for large notebooks. Fixing full virtualization (virtual windows + edit merging) is still a larger architectural change that is not needed given this guard handles the pathological case.
+**Fix commit:** (this session)
 
 ### 🟡 [B-058] Mode badge always reads "WASM" or "Server" but never indicates *connection health* — if the backend dies mid-session, the badge stays green ✅ FIXED
 **Where:** `core/frontend/App.tsx:361-372`
@@ -1225,11 +1226,11 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** After `SELECT ROW_NUMBER() `, the SQL completion popup did not suggest `OVER`.
 **Fix:** Added `overKeywordProvider` (priority 200) to the AST-driven dispatcher. It fires when `upTo` ends with `FUNC(...)` in a SELECT or ORDER BY context and suggests `OVER (` with boost 20. Removed dead equivalent code from the legacy `completions.ts`. Test: `sql-window` tier, `window-over-keyword-after-func`.
 
-### 🟡 [B-205] `components/editor/completions.ts` + `sqlContext.ts`: LATERAL join inner-subquery scope not tracked
-**Where:** `components/editor/completions.ts`, `components/editor/sqlContext.ts`
-**Observed:** Inside a LATERAL subquery `LATERAL (SELECT ... FROM requests r WHERE |)`, the completion popup shows the outer FROM's context (outer tables/joins) instead of the inner FROM's columns (`ts`, `status_code`, `path` from `requests`). The `parseSqlContext` parser does not isolate LATERAL subquery scope as a separate scope block.
-**Impact:** Column completions inside LATERAL are inaccurate (outer-scope columns shown instead of inner-scope).
-**Status:** Known gap, not yet fixed. Regression guard in `tests/autocomplete/cases/sql.cases.ts` (`sql-complex` tier) with a placeholder assertion.
+### 🟡 [B-205] `components/editor/completions.ts` + `sqlContext.ts`: LATERAL join inner-subquery scope not tracked ✅ FIXED
+**Where:** `components/editor/sqlContext.ts`
+**Observed:** Inside a LATERAL subquery `LATERAL (SELECT ... FROM requests r WHERE |)`, the completion popup shows the outer FROM's context (outer tables/joins) instead of the inner FROM's columns (`ts`, `status_code`, `path` from `requests`). The `parseSqlContext` parser did not isolate LATERAL subquery scope.
+**Fix:** Added `extractLateralInnerStmt(textUpToCursor)` which detects unbalanced parens after the last `LATERAL (` before the cursor. When the cursor is inside the LATERAL, `aliasSourceStmt` is scoped to the inner subquery text only. Outer aliases no longer bleed into inner-scope completions. Regression tests added to `tests/components/editor/sqlContext.test.ts` and the placeholder test in `tests/autocomplete/cases/sql.cases.ts` now asserts `requests` is present (not just a regex).
+**Fix commit:** (this session)
 
 ### 🟡 [B-206] `components/editor/completions.ts`: BRUSH / AXIS-X / AXIS-Y / PALETTE / LEGEND not suggested in plot tail-key position ✅ FIXED
 **Where:** `components/editor/completions.ts:completeTailKey`, `components/editor/plot/parser.ts:UPPERCASE_TAIL_KEYWORDS`
@@ -3672,3 +3673,29 @@ None.
 ### Deferred (carry-forward)
 - B-057 (raw-markdown editor virtualization): still open, deferred.
 - B-205 (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## QA Session 54 — 2026-08-06 (B-057 + B-205 fixes)
+
+**Focus:** Fix the two remaining long-deferred open bugs.
+
+### B-057 fix — `markdownTemplating.ts` large-doc guard
+**File:** `core/frontend/components/editor/markdownTemplating.ts`
+- Added `LARGE_DOC_LINE_THRESHOLD = 2000` constant.
+- `buildDecorations`: returns `Decoration.none` immediately when `view.state.doc.lines > 2000`.
+- `completionSource`: returns `null` immediately for large docs.
+- `templatingLinter`: returns `[]` immediately for large docs.
+- Eliminates the O(n) full-doc regex scan on every keystroke for large notebooks in raw-markdown mode.
+
+### B-205 fix — `sqlContext.ts` LATERAL scope isolation
+**File:** `core/frontend/components/editor/sqlContext.ts`
+- Added `extractLateralInnerStmt(textUpToCursor)` helper.
+- Finds the last `LATERAL (` before the cursor; tracks paren depth — if depth > 0 at end of text, cursor is inside the LATERAL subquery.
+- `parseSqlContext` uses `aliasSourceStmt = lateralInner ?? fullStmt` for all alias/reference/CTE/selectAlias extraction.
+- Outer aliases no longer bleed into inner-scope completions when cursor is inside `LATERAL (...)`.
+- Test in `tests/autocomplete/cases/sql.cases.ts` (`lateral-join-inner-col`) updated from a weak regex to `{ contains: ['requests'] }`.
+- Three new tests in `tests/components/editor/sqlContext.test.ts`.
+
+### Test results
+- **6206 passed** (3 new tests), 7 skipped — all green.
