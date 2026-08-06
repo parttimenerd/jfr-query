@@ -5193,3 +5193,54 @@ No open non-✅ items ✅
 - `web-ui.md`: ▶ Var / ⏸ Var pause gate confirmed present in App.tsx ✅
 - `variables.md`, `plot-dsl.md`, `notebook-format.md`, `views-macros.md`: all accurate ✅
 - Note: query result cache (-- no-cache bypass) and executor concurrency change are internal implementation details not requiring user-facing docs updates
+
+---
+
+## Session S94 — 2026-08-07
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### All 13 templates (automated node script: e2e/template-qa-s94.mjs)
+- Recording Overview (11 cells): ✅ PASS
+- GC Pause Analysis (47 cells): ✅ PASS
+- GC Deep Dive (21 cells): ✅ PASS
+- CPU Profiling (5 cells): ✅ PASS
+- Heap Allocation (3 cells): ✅ PASS
+- I/O & Latency (7 cells): ✅ PASS
+- JVM Internals (7 cells): ✅ PASS
+- Memory Leak Detection (4 cells): ✅ PASS
+- Container & Cloud (6 cells): ✅ PASS
+- Exceptions & Errors (3 cells): ✅ PASS
+- Threading & Contention (8 cells): ✅ PASS
+- Comprehensive Feature Test (11 cells): ✅ PASS
+- ZGC Analysis (7 cells): ✅ PASS
+
+### Demo notebook interactive features (automated: e2e/demo-qa-s94.mjs)
+- DOM error scan: 0 errors ✅
+- Run All (settled, 0 errors): ✅
+- Collapse All: ✅
+- Expand All: ✅
+- Schema Explorer (GarbageCollection + columns visible): ✅
+- Command palette (Cmd+K opens dialog): ✅
+- SQL autocomplete (GarbageCollection in completions for "Gar"): ✅
+- Keyboard shortcuts modal (toolbar button opens modal): ✅
+- Final DOM error scan: 0 errors ✅
+- Variables panel: ⚠ demo notebook has no variable pills (expected — demo uses hardcoded SQL, no variables block)
+
+### Console errors
+2 ONNX runtime warnings only — 0 real errors ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items ✅
+
+### Docs check
+No stale content found ✅
+
+### Notes
+- Added e2e/template-qa-s94.mjs and e2e/demo-qa-s94.mjs for automated QA scripting
+- Template QA now uses separate browser contexts per template with localStorage pre-set to suppress tour overlay
+- Gallery dialog interaction replaces ?template= URL approach to ensure actual template content loads
