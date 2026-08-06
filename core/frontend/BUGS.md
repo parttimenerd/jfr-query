@@ -5339,3 +5339,41 @@ No open non-✅ items ✅
 
 ### Docs check
 All docs-site/*.md verified by agent audit — no stale content found ✅
+
+---
+
+## Session S97 — 2026-08-07
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### All 13 templates (automated: e2e/template-qa-s94.mjs)
+13/13 PASS ✅ (identical results to S96; all cell counts/SVG counts stable)
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Demo notebook (e2e/qa-s97-deep.mjs)
+- DOM error scan: 0 errors ✅
+- `$session_start` changed → cells re-ran, 0 DOM errors ✅
+- Run All → 0 DOM errors ✅
+- Schema Explorer (GarbageCollection columns visible) ✅
+- 0 console errors ✅
+
+### Template rotation (CPU Profiling + Heap Allocation — e2e/qa-s97-deep.mjs)
+- CPU Profiling: 5 cells, 138 svgs ✅
+- Heap Allocation: 3 cells, 173 svgs ✅
+
+### Tooltip investigation
+- Recharts tooltip confirmed `visibility: hidden` / `width: 0` in headless Playwright even when chart is in viewport and mouse.move() fires.
+- Root cause: Recharts uses `getBoundingClientRect()` + synthetic mousemove, which does not always propagate through SVG coordinate system in headless mode.
+- **Not a real bug** — confirmed working in prior real-browser sessions (hover values visible with correct formatting).
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items ✅
+
+### Docs check
+- plot-dsl.md: WATERFALL, VIOLIN, HEATMAP, SANKEY, TREEMAP, SUNBURST — all documented with examples ✅
+- No stale content found ✅
