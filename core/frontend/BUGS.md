@@ -3023,3 +3023,49 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 38 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook
+Loaded via "▶ Try the demo" (localStorage cleared). Tour dismissed. 6 editors, 2 charts. DOM scan: 0 errors ✅
+
+### Templates tested
+- **GC Pause Analysis** — 0 errors, 78 editors, 6 charts ✅
+- **Comprehensive Feature Test** — 0 errors, 24 editors, 4 charts, 3 BRUSH components ✅
+- **Threading & Contention** — 0 errors, 16 editors, 0 charts ✅
+
+### Interactive features
+- **Variables panel** ✅ — changed `$limit` 200→100, input accepted, cell updated
+- **Command palette** ✅ — Cmd+Shift+K opened dialog
+- **Help modal** ✅ — `?` key opened "Keyboard shortcuts and tips" dialog
+- **SQL autocomplete** ✅ — `FROM Gar` + Ctrl+Space → `.cm-tooltip-autocomplete` visible
+- **Schema explorer** ✅ — GarbageCollection clicked → gcId/startTime columns appeared in preview
+- **LINK_X zoom** ✅ — Shift+scroll × 5 on demo chart → reset button appeared
+- **BRUSH clause** ✅ — Comprehensive Feature Test has 3 `.recharts-brush` components rendered
+- **Run All** ✅ — 0 DOM errors after
+- **Tooltip on hover** — Playwright SVG mousemove doesn't reliably trigger Recharts tooltip state in headless mode; PlotTooltip wiring confirmed correct in source (BarChartPlot.ts:220, LineChartPlot.tsx:126). Not a bug.
+
+### UI polish checks
+- All 11 templates load with 0 DOM errors ✅
+- No truncation/overflow issues visible in screenshot ✅
+- No broken layouts ✅
+
+### Console errors
+0 errors on final page load, 22 warnings (recharts/non-critical only). ONNX warnings on demo load — known non-bugs.
+
+### Docs check
+- `docs-site/variables.md`: inline input widget types (slider/dropdown/datetime/button/text) — confirmed current ✅
+- `docs-site/web-ui.md`: slash commands and sidebar description — confirmed current ✅
+- No stale content found.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
