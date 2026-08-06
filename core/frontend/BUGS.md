@@ -3410,3 +3410,36 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+## Session 47 — 2026-08-06
+
+### Templates tested
+- **Heap Allocation** — 0 errors, 5 editors ✅
+- **JVM Internals** — 0 errors, 16 editors ✅
+- **GC Pause Analysis** (interactive testing) — 0 errors, 78 editors, 6 charts ✅
+
+### Interactive features
+- **Variables panel** ✅ — inline datetime editor for `$session_start`; changed to 11:06, toolbar badge updated
+- **LINK_X zoom** ✅ — Shift+scroll on chart[2]; 6 reset buttons appeared; click reset → 0 reset buttons
+- **Command palette** ✅ — Cmd+K opens palette
+- **Help modal** ✅ — `?` button opens keyboard shortcuts dialog
+- **Schema explorer** ✅ — GarbageCollection + views visible in sidebar
+- **SQL autocomplete** ✅ — preview pane: `SELECT * FROM Gar` + Ctrl+Space → completions dropdown appeared
+- **Run All** ✅ — 0 notebook-cell errors
+
+### Console errors
+0 errors.
+
+### Docs check
+- `docs-site/variables.md`: inline widget types, BRUSH/LINK_X/LINK_Y live coupling — accurate ✅
+- `docs-site/notebook-format.md`: all constructs (front matter, cell directives, SQL blocks, inline scalars, conditional blocks, variables block, standalone plots) — accurate ✅
+- `docs-site/getting-started.md`: install/build/serve instructions — accurate ✅
+- `docs-site/ai-providers.md`: Anthropic default model `claude-sonnet-4-6` confirmed in `AnthropicProvider.ts:101` ✅
+- No stale content found.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
