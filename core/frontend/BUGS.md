@@ -4657,3 +4657,75 @@ None.
 `conditional view failed: Error: Binder Error: Table "oas" does not have a column named "stackTrace$methods"`
 **Root cause:** `alloc-flamegraph` used a raw `sql:` string referencing `oas."stackTrace$methods"`. This CJFR struct-path column doesn't exist in standard JFR `ObjectAllocationSample` (requires CJFR's `Method` table populated).
 **Fix:** Converted to `buildSql:` (same pattern as `allocation-by-site`). When `Method` table is present, generates the full flamegraph SQL; otherwise generates `WHERE false` fallback to avoid the binder error.
+
+---
+
+## QA Session 80 — 2026-08-06
+
+### Unit tests
+6206 passed, 7 skipped, 0 failed ✅
+
+### Demo notebook (fresh localStorage cleared)
+0 DOM errors. Console: 2 ONNX warnings only (expected). All cells executed cleanly.
+
+### Templates tested (rotation S80)
+- **Memory Leak Detection** — 0 DOM errors. Two cells with `hidden + requires` badges (OldObjectSample absent in demo JFR — expected). Heap After GC chart rendered correctly ✅
+- **Container & Cloud** — 0 DOM errors. All cells show `hidden + requires` badges (container events absent — expected) ✅
+
+### Interactive features
+- Variables panel ✅ — `$session_start` click-to-edit; changed value, cells re-ran
+- LINK_X zoom ✅ — Shift+scroll on chart; reset buttons appeared on linked charts
+- Command palette (Cmd+K) ✅ — dialog opened with Actions/Ask AI tabs
+- SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`) ✅ — GarbageCollection suggestion shown
+- Schema explorer ✅ — GarbageCollection column list with types rendered
+- Run All ✅ — all queries ran, 0 DOM errors
+- Help modal ✅ — Keyboard Shortcuts & Tips dialog opened
+
+### Console errors
+- 22 × Recharts `width(-1) height(-1)` warnings — transient during initial render of collapsed cells; all charts rendered correctly (confirmed via positive-dimension DOM check). Not a bug.
+- HMR TDZ `ReferenceError: Cannot access 'ganttChartPlot' before initialization` and `violinPlot` — appeared at two distinct `?t=` Vite module timestamps (1785951791712, 1785954781261). Root cause: Vite hot-module-reload during earlier `builtinSql.ts` edits caused `plotRegistry.ts` to reload mid-session while const exports were not yet initialized. Fresh tab (opened after edits settled) showed 0 of these errors. NOT a cold-start bug — all 19 plot types load correctly on a clean page load.
+- 0 real JS errors in fresh tab.
+
+### Bugs found
+None. All console warnings confirmed as known non-bugs per spec (ONNX, Recharts transient, HMR artifacts).
+
+### BUGS.md open items
+No open non-✅ items beyond B-205 (already ✅ fixed). B-252 and B-253 fixed in S79.
+
+### Docs check
+All docs-site/*.md confirmed accurate in S78 and prior sessions. No stale content found in S80.
+
+---
+
+## QA Session 81 — 2026-08-06
+
+### Unit tests
+6206 passed, 7 skipped, 0 failed ✅ (run at session start via vitest)
+
+### Templates tested (rotation S81)
+- **ZGC Analysis** — 0 DOM errors. All 5 cells show `hidden + requires` badges (ZGCGarbageCollection/ZGCPhaseStatistics/ZGCStatistics absent in demo JFR — expected). GC Tuning Advisor cell rendered table with 3 rows from GarbageCollection ✅
+- **Threading & Contention** — 0 DOM errors. Most cells show `hidden + requires` badges (JavaMonitorEnter/ThreadSleep/Thread events absent in demo JFR — expected). Schema Explorer correctly listed available GC tables ✅
+
+### Interactive features
+- Variables panel ✅ — `$session_start` click-to-edit; fill + Enter commits change, cells re-ran
+- LINK_X zoom ✅ — Shift+scroll on line chart; 4 reset buttons appeared on linked charts; reset dismissed them
+- BRUSH clause ✅ — drag right traveller to narrow selection; `$sel = {"lo":…,"hi":…}` updated in variable widget; downstream table filtered correctly (row count changed from 20 to 0 for a narrow window excluding all events)
+- Command palette (Cmd+K) ✅ — dialog opened with Actions/Ask AI tabs
+- SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar` in preview pane) ✅ — GarbageCollection suggestion shown
+- Schema explorer ✅ — column list with types rendered on table click
+- Run All ✅ — all queries ran, 0 DOM errors
+- Help modal (Keyboard Shortcuts button) ✅ — Keyboard Shortcuts & Tips dialog opened
+
+### Console errors
+- 4 × Recharts `width(-1) height(-1)` warnings — transient, not a bug
+- 0 real JS errors (fresh session page, no HMR artifacts)
+
+### Bugs found
+None. All 8 interactive features PASS.
+
+### BUGS.md open items
+No open non-✅ items. All B-series bugs resolved.
+
+### Docs check
+- BRUSH docs in `docs-site/plot-dsl.md` lines 786–898: accurate; covers `$var.brush.lo`/`hi`, MODE X/Y/XY, two-variable CROSSTAB form ✅
+- No stale content found in S81.
