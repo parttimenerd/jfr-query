@@ -4513,6 +4513,41 @@ None.
 
 ---
 
+## S77 QA Pass — 2026-08-06
+
+### Vitest
+6206 tests, 257 files, 7 skipped — all pass ✅
+
+### Templates tested
+- **GC Pause Analysis** (loaded via smart-start banner) — 13 charts, 0 real errors ✅
+  - Bar chart tooltip: "G1 Evacuation Pause | Total Pause (ms) 158 | Avg Pause (ms) 11.29 | Max Pause (ms) 19.8" ✅
+  - LINK_X zoom: Shift+scroll × 2 → 6 reset buttons appeared ✅
+  - 7 new deep-dive cells (IHOP, Regions, RSS, Memory Pools, Evacuation, Failures, ConcurrentMode) all show correct amber requires= badges ✅
+  - GC Tuning Advisor: "Long worst-case pause | Medium | Maximum pause was 225.0 ms. If low-latency is required, consider ZGC or Shenandoah." ✅
+- **CPU Profiling** — 4 cells (CPU Load, Hottest Methods, Thread State, Flame Graph), all show hidden/requires amber badges (expected: demo JFR has no CPULoad/ExecutionSample) ✅
+
+### Interactive features
+- Command palette (Cmd+K): opens, search "run all" → "Run all queries" found ✅
+- Schema explorer: GarbageCollection click → table with gcId/name columns, sortable ✅
+- Variables: $session_start and $session_end buttons visible in toolbar, click opens inline datetime editor ✅
+- Help modal: `?` key opens "Keyboard Shortcuts & Tips" dialog with table of shortcuts ✅
+
+**Console (localhost:3001):** 0 real errors (2 ONNX warnings only) ✅
+
+### Bugs found
+1. **`"stackTrace$topMethod"` false "Undefined variable" in SQL editor** — CJFR struct field path inside SQL double-quoted identifier was treated as a variable reference by the `$\w+` regex in `variables.ts`. Fixed by precomputing quoted identifier ranges and skipping `$`-matches that fall inside them. Commit: `2f745cd`
+
+### Fixes applied this session
+- `fix(editor)`: suppress false "undefined variable" for `$` inside SQL quoted identifiers (`variables.ts`)
+- `fix(plots)`: add timestamp labelFormatter and x-axis tick formatter to `BarChartPlot` (commits `6ecc22f`, `26e45c6`)
+- `docs(views-macros)`: document 7 previously missing conditional views (commit `2f1ad64`)
+
+### BUGS.md open items
+- B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
+- B-205: LATERAL join scope in completions (deferred)
+
+---
+
 ## S76 QA Pass — 2026-08-06
 
 ### Vitest
