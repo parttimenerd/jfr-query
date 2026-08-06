@@ -2795,3 +2795,38 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 32 — 2026-08-06
+
+### Vitest
+6210 passed, 0 failed.
+
+### Templates tested
+- **Memory Leak Detection** — 0 DOM errors ✅
+- **Threading & Contention** — 0 DOM errors ✅
+
+### Demo notebook
+Loaded via "Try the demo" button. DOM scan: 0 errors ✅
+
+### Interactive features
+- **Command palette** ✅ — Cmd+K opens Actions/Ask AI dialog with search
+- **Help modal** ✅ — "Keyboard Shortcuts & Tips" `div[role="dialog"]` opens correctly
+- **Schema explorer** ✅ — GarbageCollection (20), GCHeapSummary (40), GCPhasePause (40), HeapSnapshot (150), ObjectAllocationSample (25) visible with row counts
+- **SQL autocomplete** ✅ — `SELECT * FROM Gar` + Ctrl+Space shows `.cm-tooltip-autocomplete` with "GarbageCollection table · 20 rows"
+- **LINK_X zoom** ✅ — Shift+mouse.wheel on LINE_CHART; "Reset Layout" button appeared and was clickable
+- **Run All** ✅ — "Run All Queries" button clicked; 0 DOM errors after
+
+### Console errors
+2 ONNX runtime node-assignment warnings only — known non-bugs.
+
+### Docs check
+`docs-site/ai-providers.md` model reference `claude-sonnet-4-6` — current and correct.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
