@@ -4510,3 +4510,39 @@ None.
 ### BUGS.md open items
 - B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
 - B-205: LATERAL join scope in completions (deferred)
+
+---
+
+## S76 QA Pass — 2026-08-06
+
+### Vitest
+6206 tests, 257 files, 7 skipped — all pass ✅
+
+### Templates tested
+- **Heap Allocation** — 3 cells, bar chart + allocation rate line chart, tooltip renders correctly ✅
+- **I/O & Latency** — 6 cells, all show conditional amber badges (no I/O data in demo JFR, expected) ✅
+- Demo notebook fresh load (localStorage cleared) — GC Pauses visible, 0 real errors ✅
+
+### Interactive features
+- Variables panel: $session_start inline textbox opens on click ✅
+- LINK_X zoom: Shift+scroll on Heap Used MB chart → 5 linked reset buttons appear ✅
+- LINK_X reset: clicking one reset clears all 5 (propagation works) ✅
+- SQL autocomplete: `SELECT * FROM Gar` → `GarbageCollection (table · 20 rows)` suggestion ✅
+- Schema explorer: GarbageCollection expanded → gcId: INTEGER, startTime: TIMESTAMP WITH TIME ZONE, etc. ✅
+- Run All: button triggers all queries, 0 spinners after completion ✅
+- Help modal: `?` key opens "Keyboard Shortcuts & Tips" dialog ✅
+- Tooltip hover: visible on bar/line charts, clean styling ✅
+
+**Console (localhost:3001):** 0 errors (ONNX warnings only — not bugs) ✅
+
+### Polish review
+- PlotTooltip: underscore→space name transform applies for all chart types — good UX ✅
+- gc-analysis new cells (7 deep-dive cells): all requires= guards correct, prose clean ✅
+- No zero-height charts, no overflow, no layout issues found ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+- B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
+- B-205: LATERAL join scope in completions (deferred)
