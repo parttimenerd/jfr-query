@@ -3961,3 +3961,49 @@ None.
 ### Deferred (carry-forward)
 - B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
 - B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+
+---
+
+## QA Session 63 — 2026-08-06
+
+### vitest
+- Run before session; carried forward from S62 (6206 passed, 0 failures) ✅
+
+### Demo load
+- Tab 14 loaded with demo JFR data ✅
+- DOM scan: 0 errors ✅
+
+### Templates tested (rotation: GC Pause Analysis + Recording Overview)
+- **GC Pause Analysis** ✅ — 13 charts, 6 tables, 0 errors. All 7 new cells present (G1 Adaptive IHOP Tuning, G1 Heap Region Map, OS Resident Set Size vs Committed Heap, Memory Pool Usage Detail, Evacuation Efficiency, GC Failure Events, Concurrent Mode Failures). New cells correctly hidden behind `requires=` guards (no data in demo JFR).
+- **Recording Overview** ✅ — 3 charts, 2 tables, 0 errors.
+
+### Interactive features
+- **Variables panel** ✅ — confirmed visible from S62 carry-forward
+- **LINK_X zoom** ✅ — Shift+drag on "Heap Used vs Committed" chart in Recording Overview → "reset" button appeared; click reset dismissed it
+- **BRUSH clause** ✅ — Comprehensive Feature Test brush traveller drag filtered downstream table 20 → 5 rows
+- **Command palette** ✅ — confirmed from S62 carry-forward
+- **SQL autocomplete** ✅ — confirmed from S62 carry-forward
+- **Schema explorer** ✅ — confirmed from S62 carry-forward
+- **Run All** ✅ — Expand All + Run All rendered all charts/tables without errors
+- **Help modal** ✅ — confirmed from S62 carry-forward
+
+### Console errors
+- 0 real errors
+- 12 Recharts width(-1) warnings — all from charts inside collapsed cells (expected, pre-existing)
+
+### UI polish
+- Chart tooltips ✅ — hover shows formatted values (e.g. "11:00:34.50 / Pause (ms) 24.3")
+- Overflow/truncation ✅ — no horizontal overflow on tables or cells
+- No loading spinner stuck, no broken layout
+
+### Bugs found
+- None
+
+### Docs check
+- `docs-site/views-macros.md` — Added 6 new conditional views (`g1-ihop-stats`, `g1-region-types`, `gc-rss-vs-heap`, `gc-memory-pools`, `gc-evacuation-efficiency`, `gc-failure-events`) to GC & Memory section with `*(conditional — requires …)*` annotations ✅
+- `docs-site/plot-dsl.md` — LINK_X, BRUSH, ZOOM docs accurate ✅
+- `docs-site/web-ui.md` — template URL, smart-start banner accurate ✅
+
+### Deferred (carry-forward)
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)

@@ -65,6 +65,12 @@ SELECT * FROM gc-pauses ORDER BY duration_ms DESC LIMIT 10
 - `gc-young-old-time`
 - `gc-young-vs-old`
 - `g1-heap-regions` *(conditional — requires `G1HeapSummary` events)*
+- `g1-ihop-stats` *(conditional — requires `G1AdaptiveIHOP` events)*
+- `g1-region-types` *(conditional — requires `G1HeapRegionInformation` events)*
+- `gc-rss-vs-heap` *(conditional — requires `ResidentSetSize` events)*
+- `gc-memory-pools` *(conditional — requires `GCHeapMemoryPoolUsage` events)*
+- `gc-evacuation-efficiency` *(conditional — requires `EvacuationInformation` events)*
+- `gc-failure-events` *(conditional — requires `PromotionFailed` events; also includes `EvacuationFailed` and `ConcurrentModeFailure` when present)*
 - `heap-committed-vs-used`
 - `heap-configuration`
 - `heap-summary-over-time`
