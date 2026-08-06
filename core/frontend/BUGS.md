@@ -3559,3 +3559,39 @@ None. All features working. No new DOM errors in demo notebook or either templat
 ### Deferred
 - B-057 (raw-markdown editor virtualization): still open, deferred.
 - B-205 (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 51 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook
+No DOM errors. Console: 2 ONNX warnings only (expected). All cells executed cleanly.
+
+### Templates tested
+- **Recording Overview** — no DOM errors. All visible cells ran cleanly with demo data.
+- **CPU Profiling** — no DOM errors. Limited charts (CPU tables not in demo data — expected).
+
+### Interactive features
+- **Variable pause gate** ✅ — ▶ Var toggled to ⏸ Var then back; queuing mechanism confirmed working.
+- **Command palette** ✅ — Cmd+K opened "Command palette" dialog with Actions/Ask AI tabs, search box, Esc/↑↓/Enter hint.
+- **SQL autocomplete** ✅ — typed `SELECT * FROM Gar` + Ctrl+Space in preview pane; completion dropdown appeared with "GarbageCollection table · 20 rows".
+- **Schema explorer** ✅ — clicked GarbageCollection; column table with gcId, name, startTime, duration, etc. appeared.
+- **Keyboard Shortcuts modal** ✅ — opened "Keyboard Shortcuts & Tips" dialog with full shortcut table.
+- **Run All** ✅ — triggered on GC Pause Analysis; 12 charts rendered, 0 errors.
+
+### Console errors
+0 true errors across all templates.
+
+### Docs check
+- `docs-site/notebook-format.md` — `collapsed=true` directive documented ✅, `autorun="false"` documented ✅, `requires=` all forms documented ✅.
+- `docs-site/web-ui.md` — Smart-Start banner ✅, Variable pause gate ✅, URL parameters ✅ — all up to date.
+
+### Bugs found
+None.
+
+### Deferred (carry-forward)
+- B-057 (raw-markdown editor virtualization): still open, deferred.
+- B-205 (LATERAL join scope in completions): still open, deferred.
