@@ -3484,3 +3484,49 @@ None.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+## Session 49 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook (fresh localStorage)
+6 editors, 2 charts, 0 errors. ✅
+
+### Templates tested
+- **GC Pause Analysis** — 78 editors, 13 charts (after Run All), 0 errors ✅
+- **Threading & Contention** — 15 editors, 0 charts, 0 errors ✅
+
+### Interactive features
+- **Variables panel** ✅ — `$session_start` inline datetime editor opened; value change committed
+- **LINK_X zoom** ✅ — Shift+scroll on chart[2] → 6 reset buttons appeared; reset clicked
+- **Command palette** ✅ — Cmd+K opened, typed, Escaped
+- **SQL autocomplete** ✅ — preview pane `SELECT * FROM Gar` + Ctrl+Space → completions shown (using new `data-testid="preview-editor"`)
+- **Schema explorer** ✅ — GarbageCollection, views, macros all visible
+- **Help modal** ✅ — opened via ? button
+- **Run All** ✅ — 13 charts, 0 errors
+
+### Console errors
+0 true errors.
+
+### UI polish
+- Overflow: AI chat panel extends off-screen — expected (hidden side panel)
+- Tooltip on hover: ✅ visible on chart hover
+- Zero-height cells: 0 ✅
+- Truncated text: none ✅
+
+### Bug found and fixed
+
+#### [B-206] Autocomplete test could corrupt notebook cell SQL
+**Where:** `core/frontend/components/Sidebar.tsx:374`
+**Root cause:** `page.locator('.cm-content').first()` in test scripts could resolve to the first
+CodeMirror editor in the DOM, which is a notebook cell rather than the sidebar preview pane.
+Typing `SELECT * FROM Gar` would prepend to the cell's existing SQL, producing
+`SELECT SELECT * FROM Gar recording_start()...` and a Parser Error on Run All.
+**Fix:** Added `data-testid="preview-editor"` to the preview pane container div so tests can
+use `[data-testid="preview-editor"] .cm-content` to target only the sidebar preview editor.
+**Commit:** `626358b`
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
