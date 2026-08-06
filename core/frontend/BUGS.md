@@ -4800,3 +4800,44 @@ No open non-✅ items (398 resolved entries).
 
 ### Docs check
 No stale content found in S83. All docs accurate from prior checks.
+
+---
+
+## QA Session 84 — 2026-08-06
+
+### Unit tests
+6206 passed, 7 skipped, 0 failed ✅
+
+### Templates tested (all 13)
+All 13 builtin templates loaded, Run All executed, DOM error scan returned 0 results for each:
+- Recording Overview ✅
+- CPU Profiling ✅
+- GC Analysis ✅
+- GC Extended ✅
+- Heap Allocation ✅
+- I/O & Latency ✅
+- JVM Internals ✅
+- Memory Leaks ✅
+- Container & Cloud ✅
+- Exception & Error Analysis ✅
+- Threading & Contention ✅
+- ZGC Analysis ✅
+- Comprehensive Feature Test ✅
+
+### Demo notebook interactive features
+- Variables panel ✅ — `$session_start` click → inline editor with "Clear $session_start" button
+- Run All ✅ — all queries ran, no new console errors
+- Collapse All / Expand All ✅ — toggle worked correctly
+- Schema Explorer ✅ — GarbageCollection click → `SELECT * FROM "GarbageCollection" LIMIT 20;` in preview pane with result table
+
+### DOM errors (demo notebook)
+0 errors ✅
+
+### Console errors
+2 × ONNX runtime warnings (logged as errors, excluded by convention), 2 × HTTP 500 on /api/query (expected). 0 real errors ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items (398 resolved entries).
