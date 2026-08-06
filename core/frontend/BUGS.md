@@ -3740,3 +3740,27 @@ None.
 - **Fix:** Replaced all four bare `formatTooltipValue()` calls in the render paths with `fmt()`.
 - **Commit:** `929cfe2` — fix(tooltip): use settings decimal places in all PlotTooltip render paths
 - **Tests:** 6206 passed, 7 skipped — all green.
+
+---
+
+## QA Session 56 — 2026-08-06
+
+**Unit tests:** 6206 passed, 7 skipped — all green
+**Templates tested:** CPU Profiling, Heap Allocation
+**Interactive features:**
+- Variables panel: PASS — changed $session_start from 11:00 to 11:10, dependent cells re-ran
+- LINK_X zoom: PASS — chart zoomed via Shift+scroll, reset button visible, hint chip shows ⇧scroll=zoom
+- Command palette: PASS — Cmd+K opened, "gc" showed table/column/view completions
+- SQL autocomplete: PASS — GarbageCollection appeared in dropdown after SELECT * FROM Gar + Ctrl+Space
+- Schema explorer: PASS — clicking GarbageCollection triggered preview with columns
+- Run All: PASS — all queries ran without errors
+- Keyboard shortcuts modal: PASS — modal opened, shortcuts table visible
+
+**Console errors:** 0 real errors (ONNX warnings and gceasy.io errors excluded)
+
+**Bugs found:** 0
+
+**Bugs fixed this session:** none
+
+**Deferred (carry-forward):**
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
