@@ -4729,3 +4729,39 @@ No open non-✅ items. All B-series bugs resolved.
 ### Docs check
 - BRUSH docs in `docs-site/plot-dsl.md` lines 786–898: accurate; covers `$var.brush.lo`/`hi`, MODE X/Y/XY, two-variable CROSSTAB form ✅
 - No stale content found in S81.
+
+---
+
+## QA Session 82 — 2026-08-06
+
+### Unit tests
+6206 passed, 7 skipped, 0 failed ✅
+
+### Demo notebook (fresh localStorage cleared)
+0 DOM errors. Console: 2 × HTTP 500 on /api/query (expected, not a bug). Clean render.
+
+### Templates tested (rotation S82)
+- **CPU Profiling** — 0 DOM errors. Cells rendered with `hidden + requires` badges for ExecutionSample-dependent cells (absent in demo JFR — expected) ✅
+- **I/O & Latency** — 0 DOM errors. All cells show `hidden + requires` badges (FileRead/SocketRead/etc. absent in demo JFR — expected) ✅
+
+### Interactive features
+- Variables panel ✅ — `$session_start` click → inline editor appeared with textbox active
+- LINK_X zoom ✅ — Shift+scroll on GC Pause Analysis chart index 2; 6 reset buttons appeared; reset click dismissed all
+- Command palette (Cmd+K) ✅ — dialog with search appeared
+- SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`) ✅ — GarbageCollection suggestion shown
+- Schema explorer ✅ — GarbageCollection table click → `SELECT * FROM "GarbageCollection" LIMIT 20;` in preview pane with result table
+- Run All ✅ — all queries ran, runAllOk confirmed
+- Help modal ✅ — dialog with 'Shift' shortcut text confirmed
+
+### Console errors
+- 0 errors, 0 warnings in fresh context
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items. All B-series bugs resolved (398 resolved entries).
+
+### Docs check
+- `plot-dsl.md`: TOOLTIP COLUMNS, ON HOVER TOOLTIP, HEATMAP, TREEMAP, VIOLIN, SUNBURST all documented ✅
+- No stale content found in S82.
