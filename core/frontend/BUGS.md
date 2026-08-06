@@ -4941,3 +4941,40 @@ No open non-✅ items (398 resolved entries) ✅
 
 ### Bugs found
 None.
+
+---
+
+## Session S87 — 2026-08-06
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- DOM error scan: 0 errors ✅
+- Variables panel (click $session chip → input appeared): ✅
+- Schema explorer (GarbageCollection → SQL preview): ✅
+- SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`): ✅
+- Command palette (Cmd+K → dialog): ✅
+- Help modal (Keyboard Shortcuts → Shift reference): ✅
+- Run All (aria-label="Run All Queries"): ✅
+- DOM errors after Run All: 0 ✅
+
+### LINK_X zoom
+- Loaded GC Pause Analysis template; Shift+scroll on line chart → Reset zoom button appeared ✅
+
+### Templates loaded
+- **CPU Profiling**: 0 DOM errors ✅
+- **I/O & Latency**: 0 DOM errors ✅
+
+### Console errors
+0 errors, 6 warnings (Recharts sizing — expected) ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items (398 resolved entries) ✅
+
+### Docs check
+- `docs-site/variables.md`: LINK_X, BRUSH, struct dot notation, URL seeding — all accurate ✅
+- `docs-site/plot-dsl.md`: LINK_X, BRUSH, ZOOM — accurate (checked S86) ✅
