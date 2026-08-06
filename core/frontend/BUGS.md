@@ -3792,3 +3792,50 @@ None.
 - B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
 - BRUSH live demo: no built-in template demonstrates BRUSH end-to-end
 - BIG_NUMBER not showcased in any built-in template
+
+---
+
+## QA Session 58 — 2026-08-06
+
+**Unit tests:** 6206 passed, 7 skipped — all green
+**Templates tested:** Memory Leak Detection, Threading & Contention
+
+### Memory Leak Detection
+- Intro cell renders correctly
+- "Long-Lived Objects by Class" and "Oldest Surviving Objects by Allocation Site" — `hidden` + `requires` badges (OldObjectSample absent in demo JFR — correct)
+- "Heap After GC Over Time" — renders `LINE_CHART … LINK_X($start, $end) ZOOM` correctly; query ran in 2ms
+- Notebook Settings → Variables (3): `$limit = 20`, `$session_start`, `$session_end` all present
+
+### Threading & Contention
+- Intro cell renders correctly with full requirements list
+- All 5+ cells show `hidden` + `requires` badges (JavaThreadStatistics etc. absent in demo JFR — correct)
+- No errors, no unexpected visible content
+
+### Interactive features
+| Feature | Result |
+|---|---|
+| Variables panel | ✅ PASS — expanded Notebook Variables, saw `$limit`, `$session_start`, `$session_end` |
+| LINK_X zoom | ✅ PASS — Shift+drag on Heap After GC chart zoomed to 11:00:11.94–11:00:14.56; "reset" button appeared; query re-ran at 24ms |
+| BRUSH | ✅ PASS — Comprehensive Feature Test: drag on brush selector bar updated `$sel`; Query 2 re-ran (120ms) with `WHERE t BETWEEN $sel.brush.lo AND $sel.brush.hi` |
+| Command Palette | ✅ PASS — Cmd+K opens; "GarbageCollection" search found table (7 cols · 20 rows) with "copy name" action |
+| SQL autocomplete | ✅ PASS — `SELECT * FROM Garb` + Ctrl+Space → "GarbageCollection  table · 20 rows" inline suggestion |
+| Schema Explorer | ✅ PASS — clicked GarbageCollection → popup with 7 columns and types (INTEGER, TIMESTAMP WITH TIME ZONE, VARCHAR) |
+| Run All Queries | ✅ PASS — all queries ran, 0 DOM errors |
+| Help modal | ✅ PASS — "Keyboard Shortcuts & Tips" with Global/Queries/Tabs/Command Palette Prefixes/Hidden Features sections |
+
+### Console errors
+- 2 ONNX warnings (excluded per spec)
+- No real errors
+
+### Bugs found and fixed
+
+#### gc-rss-vs-heap binder error (`heapSpace$committedSize` column missing)
+- **Severity:** 🟠 console warning on load (pre-existing `conditional view failed` category)
+- **File:** `core/frontend/data/builtinSql.ts` line ~2133
+- **Root cause:** `gc-rss-vs-heap` buildSql subquery used `MAX(COALESCE("heapSpace$committedSize", heapCommitted))` in the GCHeapSummary join. DuckDB throws a binder error at view creation time because `heapSpace$committedSize` doesn't exist in modern JFR recordings.
+- **Fix:** Changed subquery to use `MAX(heapCommitted)` directly.
+- **Commit:** `d2d42d1` — fix(gc): remove heapSpace$committedSize from gc-rss-vs-heap subquery to fix binder error
+
+### Deferred (carry-forward)
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
