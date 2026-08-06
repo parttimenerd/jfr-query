@@ -5056,3 +5056,36 @@ No open non-✅ items ✅
 ### Docs check
 - `docs-site/web-ui.md`: "stale" mention in pause-variable-updates description is correct app behaviour — not stale ✅
 - All other docs-site/*.md: no TODO/FIXME/outdated markers found ✅
+
+---
+
+## Session S90 — 2026-08-06
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- DOM error scan: 0 errors ✅
+- Variables panel ($limit: 200 → 50, cell re-ran with 50-row result): ✅
+- Schema Explorer (GarbageCollection → gcId/name/cause columns visible): ✅
+- SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar` → GarbageCollection suggestion): ✅
+- Command palette (Cmd+K → dialog opens): ✅
+- Help modal (Keyboard Shortcuts button → dialog with shortcut table): ✅
+- Run All (0 DOM errors, 0 failed, 0 running after): ✅
+
+### Templates loaded
+- **CPU Profiling**: 0 DOM errors ✅
+- **Heap Allocation**: 0 DOM errors ✅
+
+### Console errors
+2 ONNX runtime warnings only — 0 real errors ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items ✅
+
+### Docs check
+- `docs-site/browser-architecture.md`: worker count "2–3" was stale (actual: 1–2 after perf improvement). Updated to "1–2 Web Workers" ✅
+- All other docs-site/*.md: no stale markers found ✅

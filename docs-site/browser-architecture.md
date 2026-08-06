@@ -98,8 +98,9 @@ Each chunk starts with the magic bytes `FLR\0` followed by the chunk size as a b
 64-bit integer at offset 8. The splitter reads only these 16-byte headers to locate every
 chunk boundary without loading the whole file into memory.
 
-Chunks are then processed in parallel across 2–3 Web Workers (the exact count depends on
-`navigator.deviceMemory`, since each GraalVM worker allocates 300–600 MB of linear memory).
+Chunks are then processed in parallel across 1–2 Web Workers (1 by default; 2 on devices
+with ≥ 8 GB RAM via `navigator.deviceMemory`, since each GraalVM worker allocates 300–600 MB
+of linear memory).
 Each worker writes its results to tables prefixed with its chunk index (e.g. `chunk0_Method`,
 `chunk1_Method`), which are merged into the final tables after all workers finish.
 
