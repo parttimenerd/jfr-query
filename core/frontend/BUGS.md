@@ -3069,3 +3069,41 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 39 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook
+Loaded via "▶ Try the demo" (localStorage cleared). Tour dismissed. 6 editors, 2 charts. DOM scan: 0 errors ✅
+
+### Templates tested
+- **Heap Allocation** — 0 errors, 5 editors, 0 charts (no heap events in demo — expected) ✅
+- **I/O & Latency** — 0 errors, 13 editors, 0 charts (no I/O events in demo — expected) ✅
+
+### Interactive features
+- **Variables panel** ✅ — changed `$limit` 200→50 via sidebar input
+- **Command palette** ✅ — Cmd+K opens dialog
+- **Help modal** ✅ — `?` key opens keyboard shortcuts dialog
+- **SQL autocomplete** ✅ — `FROM Gar` + Ctrl+Space → `.cm-tooltip-autocomplete` visible
+- **Schema explorer** ✅ — GarbageCollection → gcId/startTime in preview
+- **LINK_X zoom** ✅ — Shift+scroll × 5; reset button appeared
+- **Run All** — "Query has errors" shown after autocomplete test left broken SQL in editor; not a real bug (editor was modified by test)
+
+### Console errors
+2 ONNX runtime warnings only — known non-bugs.
+
+### Docs check
+- `docs-site/notebook-format.md`: `@cell`, `requires=`, `cellConditions`, `variables:` — current ✅
+- `docs-site/plot-dsl.md`: GANTT, AREA_CHART, BOX_PLOT, CROSSTAB, HISTOGRAM, RANGE all documented ✅
+- No stale content found.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
