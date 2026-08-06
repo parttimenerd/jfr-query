@@ -371,7 +371,7 @@ const Sidebar: React.FC<SidebarProps> = ({ metadata }) => {
       <div className="h-full flex flex-col">
         {isPreviewEditorVisible && (
             <div className="flex-shrink-0 p-1 animate-fade-in-down">
-                <div className="relative border border-gray-700 rounded-md overflow-hidden">
+                <div className="relative border border-gray-700 rounded-md overflow-hidden" data-testid="preview-editor">
                     <SQLEditor value={previewQuery} onChange={handlePreviewQueryChange} metadata={metadata} focusTrigger={previewFocusTrigger} />
                 </div>
             </div>
