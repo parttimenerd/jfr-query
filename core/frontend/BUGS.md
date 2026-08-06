@@ -4887,3 +4887,38 @@ No open non-✅ items (398 resolved entries).
 ### Docs check
 - `docs-site/web-ui.md`: BRUSH, LINK_X, variable coupling, command palette, `?template=` URL param — all accurate ✅
 - `docs-site/views-macros.md`: `gc-pauses`, `gc-pause-*` views all confirmed present in `builtinSql.ts` ✅
+
+---
+
+## Session S86 — 2026-08-06
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- DOM error scan: 0 errors ✅
+- Variables panel: ✅
+- Schema explorer: ✅
+- SQL autocomplete: ✅
+- LINK_X zoom: ✅
+- Command palette (Cmd+K): ✅
+- Run All: ✅
+- Help modal: ✅
+
+### Templates loaded
+- **Recording Overview**: 0 DOM errors ✅
+- **Heap Allocation**: 0 DOM errors ✅
+
+### Console errors
+2 ONNX runtime warnings (expected) — 0 real errors ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items (398 resolved entries) ✅
+
+### Docs check
+- `docs-site/plot-dsl.md`: LINK_X, BRUSH, ZOOM, variable coupling docs — all accurate ✅
+- `docs-site/web-ui.md`: BRUSH, LINK_X, command palette, `?template=` URL param — all accurate ✅
+- `docs-site/notebook-format.md`: `requires=` badge docs — accurate ✅
