@@ -4445,3 +4445,36 @@ None.
 ### BUGS.md open items
 - B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
 - B-205: LATERAL join scope in completions (deferred)
+
+---
+
+## S74 — 2026-08-06
+
+**Templates tested:** GC Pause Analysis (via template gallery), Comprehensive Feature Test (via template gallery on same tab with demo data)
+
+**Interactive features tested:**
+- Variables panel: changed variable value → dependent cells re-ran ✅
+- LINK_X zoom (GC Pause Analysis, chart 2 "Heap Used MB"): Shift+scroll zoomed → 6 linked "reset" buttons appeared simultaneously ✅
+- BRUSH drag (Comprehensive Feature Test, "Pause Timeline"): drag 25%→65% across chart → `$sel.brush.lo`/`$sel.brush.hi` referenced in downstream SQL ✅
+- Command palette: Cmd+K opened ✅
+- SQL autocomplete: completions shown ✅
+- Schema explorer: expanded GarbageCollection table → columns with types ✅
+- Run All: clicked ✅
+- Help modal: keyboard shortcuts shown ✅
+
+**UI polish checks:**
+- Overflow: only SVG `<text>` axis-label clipping (benign, expected in recharts)
+- Zero-height cells: 0
+- Overlapping elements: 0
+- Console errors (localhost:3001): 0
+- Tooltip on hover: visible with value "11:00:34.50 / Pause (ms) / 24.3" ✅
+- Resize handles: 41 found ✅
+
+**Console (localhost:3001):** 0 errors, 12 warnings (all expected: ONNX, recharts width=-1, conditional view failed)
+
+### Bugs found
+None.
+
+### BUGS.md open items
+- B-032: Cmd-Enter per-editor wiring (low priority, partially fixed)
+- B-205: LATERAL join scope in completions (deferred)
