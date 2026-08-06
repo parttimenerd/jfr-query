@@ -33,6 +33,8 @@ export interface ExecutorCallbacks {
     onStatusChange?: (cellId: string, status: CellStatus) => void;
 }
 
+const MAX_CONCURRENT = 4;
+
 export class Executor {
     graph: GraphResult;
     private cb: ExecutorCallbacks;
@@ -41,6 +43,10 @@ export class Executor {
     private runPromises = new Map<string, Promise<void>>();
     /** Monotonic per-cell run id, so old promises can be invalidated on re-schedule. */
     private runIds = new Map<string, number>();
+
+    // Concurrency semaphore: cap simultaneous 'running' cells to MAX_CONCURRENT.
+    private runningCount = 0;
+    private concurrencyQueue: Array<() => void> = [];
 
     constructor(graph: GraphResult, cb: ExecutorCallbacks) {
         this.graph = graph;
@@ -74,6 +80,22 @@ export class Executor {
         return this.runPromises.get(cellId) ?? Promise.resolve();
     }
 
+    private acquireSlot(): Promise<void> {
+        if (this.runningCount < MAX_CONCURRENT) {
+            this.runningCount++;
+            return Promise.resolve();
+        }
+        return new Promise(resolve => {
+            this.concurrencyQueue.push(() => { this.runningCount++; resolve(); });
+        });
+    }
+
+    private releaseSlot(): void {
+        this.runningCount = Math.max(0, this.runningCount - 1);
+        const next = this.concurrencyQueue.shift();
+        if (next) next();
+    }
+
     /**
      * Schedule cell `cellId` to run. Returns a promise that resolves when
      * this scheduled run completes (or rejects if it fails). Calling again
@@ -104,6 +126,7 @@ export class Executor {
             }
 
             this.setStatus(cellId, 'running');
+            await this.acquireSlot();
             try {
                 await this.cb.runFn(cellId);
                 if (this.runIds.get(cellId) === myRunId) this.setStatus(cellId, 'done');
@@ -112,6 +135,8 @@ export class Executor {
                     this.setStatus(cellId, 'failed');
                 }
                 throw err;
+            } finally {
+                this.releaseSlot();
             }
         })();
 

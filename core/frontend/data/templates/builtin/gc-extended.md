@@ -367,3 +367,21 @@ SELECT * FROM "tlab-efficiency" ORDER BY "Time"
 ```plot
 LINE_CHART(x: "Time", y: ["Fill Ratio"]) TITLE "TLAB Fill Ratio Over Time" LINK_X($start, $end) ZOOM AXIS_Y DOMAIN [0, 1] LABEL "ratio" FORMAT ".2f"
 ```
+
+---
+
+<!-- @cell name=gc-tuning-advisor-ext requires="GarbageCollection" -->
+
+## GC Tuning Advisor
+
+Automated recommendations based on the observed GC behaviour.
+
+```sql
+-- alias tuning_advice_ext
+SELECT * FROM "gc-tuning-advisor"
+```
+
+```plot
+TABLE() ON tuning_advice_ext TITLE "GC Tuning Recommendations"
+```
+

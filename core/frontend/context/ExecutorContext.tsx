@@ -12,9 +12,9 @@ interface ExecutorContextType {
      * the cell has no dependencies or if the graph is empty.
      */
     awaitUpstream: (cellId: string) => Promise<void>;
-    /** Schedule a cell-run via the executor. The actual run is performed by
-     * `runFn` registered with the executor (typically the existing onRunQuery
-     * pipeline). Returns when the run finishes. */
+    /** Schedule a cell-run via the executor. When variable updates are paused,
+     * the cell is queued internally and run in a batch when updates resume.
+     * Returns when the run finishes (or immediately when paused). */
     scheduleRun: (cellId: string) => Promise<void>;
     /** Register the run-function for a cell. Should be called by NotebookCell
      * when it mounts so the executor knows how to run it. */
@@ -35,13 +35,22 @@ export const useExecutor = () => useContext(ExecutorContext);
 interface ProviderProps {
     cells: NotebookCellData[];
     children: ReactNode;
+    /** When true, variable-triggered scheduleRun calls are queued instead of
+     * executed immediately. Queued cells run in a batch when this flips back
+     * to false. */
+    isVarPaused?: boolean;
 }
 
-export const ExecutorProvider: React.FC<ProviderProps> = ({ cells, children }) => {
+export const ExecutorProvider: React.FC<ProviderProps> = ({ cells, children, isVarPaused = false }) => {
     const runFns = useRef<Map<string, () => Promise<void>>>(new Map());
     const executorRef = useRef<Executor | null>(null);
     // Per-cell parse cache for execution graph construction.
     const graphCellCacheRef = useRef<WeakMap<object, GraphCell>>(new WeakMap());
+
+    // Cells that received a scheduleRun call while paused; flushed on resume.
+    const staleCellsRef = useRef<Set<string>>(new Set());
+    // Track the previous paused state so we can detect the transition to false.
+    const prevPausedRef = useRef(false);
 
     // Build graph cells from the live notebook cells.
     // Derive a stable structural key from cell id+content so that changes that
@@ -98,6 +107,22 @@ export const ExecutorProvider: React.FC<ProviderProps> = ({ cells, children }) =
         }
     }, [graph]);
 
+    // When paused transitions false → true, do nothing.
+    // When paused transitions true → false, flush all stale cells.
+    useEffect(() => {
+        if (prevPausedRef.current && !isVarPaused) {
+            const stale = [...staleCellsRef.current];
+            staleCellsRef.current.clear();
+            const ex = executorRef.current;
+            if (ex) {
+                for (const cellId of stale) {
+                    void ex.scheduleRun(cellId);
+                }
+            }
+        }
+        prevPausedRef.current = isVarPaused;
+    }, [isVarPaused]);
+
     const awaitUpstream = useCallback(async (cellId: string) => {
         const ex = executorRef.current;
         if (!ex) return;
@@ -113,8 +138,12 @@ export const ExecutorProvider: React.FC<ProviderProps> = ({ cells, children }) =
     const scheduleRun = useCallback(async (cellId: string) => {
         const ex = executorRef.current;
         if (!ex) return;
+        if (isVarPaused) {
+            staleCellsRef.current.add(cellId);
+            return;
+        }
         await ex.scheduleRun(cellId);
-    }, []);
+    }, [isVarPaused]);
 
     const registerRunFn = useCallback((cellId: string, runFn: () => Promise<void>) => {
         runFns.current.set(cellId, runFn);

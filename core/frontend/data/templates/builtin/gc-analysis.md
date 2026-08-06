@@ -355,6 +355,34 @@ AREA_CHART(x: "Time", y: ["Eden MB", "Survivor MB", "Old Gen MB"], layout: "stac
 
 ---
 
+<!-- @cell name=g1-evacuation-failures requires="G1EvacuationYoungStatistics" -->
+
+## G1 Evacuation Failures
+
+Collections where G1 could not evacuate live objects — all regions were full. Evacuation failures cause additional stop-the-world work and heap fragmentation. Repeated failures indicate the heap is too small for the promotion rate, or the `InitiatingHeapOccupancyPercent` is set too high.
+
+*Requires `G1EvacuationYoungStatistics` events.*
+
+```sql
+-- alias g1_evac_summary
+SELECT * FROM "g1-evacuation-failure-summary"
+```
+
+```sql
+-- alias g1_evac_timeline
+SELECT * FROM "g1-evacuation-failures"
+```
+
+```plot
+TABLE() ON g1_evac_summary TITLE "Evacuation Failure Summary"
+```
+
+```plot
+BAR_CHART(x: "Time", y: ["Total Failures"]) ON g1_evac_timeline TITLE "Evacuation Failures Over Time" LINK_X($start, $end) ZOOM
+```
+
+---
+
 <!-- @cell name=tenuring requires="TenuringDistribution" -->
 
 ## Survivor Tenuring Distribution
@@ -747,4 +775,22 @@ SELECT * FROM "gc-old-gen-growth" ORDER BY "Minute"
 ```plot
 LINE_CHART(x: "Minute", y: ["Old Gen Max MB", "Old Gen Min MB"]) TITLE "Old Generation Size Over Time" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
 ```
+
+---
+
+<!-- @cell name=gc-tuning-advisor requires="GarbageCollection" -->
+
+## GC Tuning Advisor
+
+Automated recommendations based on the observed GC behaviour. Each row identifies a potential problem, its severity, and a tuning suggestion. Not every finding requires action — use them as starting points for investigation.
+
+```sql
+-- alias tuning_advice
+SELECT * FROM "gc-tuning-advisor"
+```
+
+```plot
+TABLE() ON tuning_advice TITLE "GC Tuning Recommendations"
+```
+
 

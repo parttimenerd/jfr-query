@@ -1926,4 +1926,168 @@ WHERE s."when" = 'After GC'
 GROUP BY 1
 ORDER BY 1`,
   },
+
+  // ── G1 Evacuation Failures ───────────────────────────────────────────────
+  {
+    requires: 'G1EvacuationYoungStatistics',
+    sql: `CREATE OR REPLACE VIEW "g1-evacuation-failures" AS
+SELECT
+    g.startTime                                           AS "Time",
+    g.gcId                                                AS "GC ID",
+    COALESCE(y.evacuationFailed, 0)                       AS "Young Evacuation Failures",
+    COALESCE(o.evacuationFailed, 0)                       AS "Old Evacuation Failures",
+    COALESCE(y.evacuationFailed, 0)
+        + COALESCE(o.evacuationFailed, 0)                 AS "Total Failures"
+FROM GarbageCollection g
+LEFT JOIN G1EvacuationYoungStatistics y ON y.gcId = g.gcId
+LEFT JOIN G1EvacuationOldStatistics  o ON o.gcId = g.gcId
+WHERE COALESCE(y.evacuationFailed, 0) + COALESCE(o.evacuationFailed, 0) > 0
+ORDER BY g.startTime`,
+  },
+  {
+    requires: 'G1EvacuationYoungStatistics',
+    sql: `CREATE OR REPLACE VIEW "g1-evacuation-failure-summary" AS
+SELECT
+    COUNT(*)                                              AS "Collections With Failures",
+    SUM(COALESCE(y.evacuationFailed, 0)
+        + COALESCE(o.evacuationFailed, 0))                AS "Total Evacuation Failures",
+    MAX(COALESCE(y.evacuationFailed, 0)
+        + COALESCE(o.evacuationFailed, 0))                AS "Max Failures in One GC",
+    round(100.0 * COUNT(*) / (SELECT COUNT(*) FROM GarbageCollection), 1) AS "% GCs With Failure"
+FROM GarbageCollection g
+LEFT JOIN G1EvacuationYoungStatistics y ON y.gcId = g.gcId
+LEFT JOIN G1EvacuationOldStatistics  o ON o.gcId = g.gcId
+WHERE COALESCE(y.evacuationFailed, 0) + COALESCE(o.evacuationFailed, 0) > 0`,
+  },
+
+  // ── ZGC Views ────────────────────────────────────────────────────────────
+  {
+    requires: 'ZGCGarbageCollection',
+    sql: `CREATE OR REPLACE VIEW "zgc-pause-phases" AS
+SELECT
+    startTime   AS "Time",
+    gcId        AS "GC ID",
+    name        AS "Phase",
+    round(duration * 1000.0, 3) AS "Duration ms"
+FROM ZGCGarbageCollection
+ORDER BY startTime, gcId, name`,
+  },
+  {
+    requires: 'ZGCGarbageCollection',
+    sql: `CREATE OR REPLACE VIEW "zgc-cycle-stats" AS
+SELECT
+    gcId                                                   AS "GC ID",
+    MIN(startTime)                                         AS "Start",
+    round(SUM(duration) * 1000.0, 2)                       AS "Total STW ms",
+    COUNT(*)                                               AS "STW Phases"
+FROM ZGCGarbageCollection
+GROUP BY gcId
+ORDER BY gcId`,
+  },
+  {
+    requires: 'ZGCStatistics',
+    sql: `CREATE OR REPLACE VIEW "zgc-heap-stats" AS
+SELECT
+    startTime                                              AS "Time",
+    gcId                                                   AS "GC ID",
+    round(heapUsed           / 1048576.0, 1)               AS "Heap Used MB",
+    round(heapCapacity       / 1048576.0, 1)               AS "Heap Capacity MB",
+    round(heapFreeAfterGC    / 1048576.0, 1)               AS "Free After GC MB",
+    round(100.0 * heapUsed / NULLIF(heapCapacity, 0), 1)   AS "Used %"
+FROM ZGCStatistics
+ORDER BY startTime`,
+  },
+  {
+    requires: 'ZGCPhaseStatistics',
+    sql: `CREATE OR REPLACE VIEW "zgc-concurrent-phases" AS
+SELECT
+    startTime                              AS "Time",
+    gcId                                   AS "GC ID",
+    name                                   AS "Phase",
+    round(duration * 1000.0, 2)            AS "Duration ms"
+FROM ZGCPhaseStatistics
+ORDER BY startTime, gcId`,
+  },
+
+  // ── GC Tuning Advisor ────────────────────────────────────────────────────
+  {
+    requires: 'GarbageCollection',
+    buildSql: (tables) => `CREATE OR REPLACE VIEW "gc-tuning-advisor" AS
+WITH
+  gc_stats AS (
+      SELECT
+          COUNT(*)                                             AS total_gcs,
+          COUNT(*) FILTER (WHERE cause = 'System.gc()')       AS system_gcs,
+          COUNT(*) FILTER (WHERE cause = 'Allocation Failure')AS alloc_failures,
+          AVG(duration * 1000.0)                              AS avg_pause_ms,
+          MAX(duration * 1000.0)                              AS max_pause_ms,
+          COALESCE(SUM(duration), 0)                          AS total_pause_sec
+      FROM GarbageCollection
+  ),
+  total_time AS (
+      SELECT COALESCE(
+          epoch_ms(MAX(startTime)) / 1000.0
+          - epoch_ms(MIN(startTime)) / 1000.0,
+          1
+      ) AS wall_sec
+      FROM GarbageCollection
+  )${tables.has('OldGarbageCollection') ? `,
+  full_gc AS (
+      SELECT COUNT(*) AS cnt FROM OldGarbageCollection
+  )` : `,
+  full_gc AS (SELECT 0 AS cnt)`}
+SELECT issue, severity, recommendation
+FROM (
+    SELECT
+        'High GC overhead' AS issue,
+        'High' AS severity,
+        'GC is consuming >' || round(100.0 * total_pause_sec / wall_sec, 1)
+            || '% of wall-clock time. Consider increasing heap size (-Xmx) or switching to a low-pause collector (ZGC, Shenandoah).'
+            AS recommendation,
+        total_pause_sec / wall_sec AS sort_key
+    FROM gc_stats, total_time
+    WHERE total_pause_sec / wall_sec > 0.05
+
+    UNION ALL
+
+    SELECT
+        'Frequent full GCs',
+        'High',
+        full_gc.cnt || ' full GCs detected. Full GCs cause long stop-the-world pauses. Investigate heap sizing and object promotion rates.',
+        full_gc.cnt * 1.0
+    FROM full_gc
+    WHERE full_gc.cnt > 0
+
+    UNION ALL
+
+    SELECT
+        'Excessive System.gc() calls',
+        'Medium',
+        system_gcs || ' explicit System.gc() calls. Consider -XX:+DisableExplicitGC to prevent application-triggered full GCs.',
+        system_gcs * 1.0
+    FROM gc_stats
+    WHERE system_gcs > 2
+
+    UNION ALL
+
+    SELECT
+        'High allocation failure rate',
+        'Medium',
+        alloc_failures || ' allocation failures. The heap may be too small or allocation rate too high. Increase -Xmx or profile allocations.',
+        alloc_failures * 1.0
+    FROM gc_stats
+    WHERE alloc_failures > 0
+
+    UNION ALL
+
+    SELECT
+        'Long worst-case pause',
+        'Medium',
+        'Maximum pause was ' || round(max_pause_ms, 1) || ' ms. If low-latency is required, consider ZGC or Shenandoah.',
+        max_pause_ms
+    FROM gc_stats
+    WHERE max_pause_ms > 200
+)
+ORDER BY sort_key DESC`,
+  },
 ];

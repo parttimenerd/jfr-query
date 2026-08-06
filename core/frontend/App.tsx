@@ -24,6 +24,7 @@ import type { NotebookCellData, NotebookMetadata } from './types';
 import { initialNotebook } from './data/mockData';
 import { gcAnalysisNotebook } from './data/gcNotebookTemplate';
 import { parseNotebook, reconstructNotebook, tokenizeCellContent, reconstructCellContent, parseCellContent, parseCellDirective, requiresAttrToConditionSql } from './utils/notebookParser';
+import { mergeTemplate } from './utils/templateMerge';
 import { formatPlotCode } from './utils/plotFormatter';
 import { formatSql } from './utils/sqlFormatter';
 import { substituteVariables, findRemainingVariables, toSqlVariables } from './utils/variableSubstitution';
@@ -55,6 +56,8 @@ import { QuestionMarkCircleIcon } from './components/icons/QuestionMarkCircleIco
 import * as EmbeddingService from './services/ml/EmbeddingService';
 import { initPlotModel } from './services/ml/PlotGenerationService';
 import { AutocompleteRanker } from './services/ml/AutocompleteRanker';
+import { detectGCCollector, collectorToTemplate, collectorLabel, type GCCollector } from './utils/gcCollectorDetection';
+import { loadTemplate } from './services/TemplateService';
 
 export { shouldShowOnboarding } from './utils/onboarding';
 
@@ -270,6 +273,7 @@ const App: React.FC = () => {
     const [isSidebarCollapsed, setIsSidebarCollapsed] = usePersistentState('jfr-ui-sidebarCollapsed', false);
     const [isChatPanelCollapsed, setIsChatPanelCollapsed] = usePersistentState('jfr-ui-chatPanelCollapsed', true);
     const [isAutoRunEnabled, setIsAutoRunEnabled] = usePersistentState('jfr-ui-autoRunEnabled', true);
+    const [isVarPaused, setIsVarPaused] = useState(false);
     const [isMarkdownMode, setIsMarkdownMode] = useState(false);
     const [collapseTrigger, setCollapseTrigger] = useState(0);
     const [allCollapsed, setAllCollapsed] = useState(false);
@@ -297,6 +301,10 @@ const App: React.FC = () => {
         dismissWelcomeBanner();
         setIsTourOpen(true);
     }, [dismissWelcomeBanner]);
+
+    // Smart-Start: after a JFR file loads, detect the GC collector and suggest the best template.
+    const [gcSuggestion, setGcSuggestion] = useState<{ collector: GCCollector; templateName: string; label: string } | null>(null);
+    const gcDetectionRanRef = useRef(false);
 
     const [onboardingDismissed, setOnboardingDismissed] = useState(
         () => { try { return !!localStorage.getItem('jfrq:onboarding-dismissed'); } catch { return false; } }
@@ -487,12 +495,14 @@ const App: React.FC = () => {
     //   ?notebook=base64,<base64-md>   inline markdown (base64 prefix disambiguates from URL)
     //   ?jfr=<https-url>               auto-load a JFR/duckdb file (WASM mode)
     //   ?run=true                      run all queries once the DB is ready
+    //   ?template=<name>               auto-load a builtin template (e.g. gc-analysis)
     // Each runs at most once per page load.
-    const urlParamsRef = useRef<{ notebookLoaded: boolean; jfrLoaded: boolean; ranAll: boolean; varsSeeded: boolean }>({
+    const urlParamsRef = useRef<{ notebookLoaded: boolean; jfrLoaded: boolean; ranAll: boolean; varsSeeded: boolean; templateLoaded: boolean }>({
         notebookLoaded: false,
         jfrLoaded: false,
         ranAll: false,
         varsSeeded: false,
+        templateLoaded: false,
     });
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -515,7 +525,17 @@ const App: React.FC = () => {
                 console.error('Failed to decode notebook param:', err);
             }
         }
-    }, [loadNotebook]);
+        const templateName = params.get('template');
+        if (templateName && !urlParamsRef.current.templateLoaded && !urlParamsRef.current.notebookLoaded) {
+            urlParamsRef.current.templateLoaded = true;
+            loadTemplate(templateName, { mode }).then(body => {
+                const { notebookSource } = mergeTemplate(notebookMarkdown, body, 'replace');
+                loadNotebook(notebookSource);
+            }).catch(err => {
+                console.error('Failed to load template from URL param:', err);
+            });
+        }
+    }, [loadNotebook, mode, notebookMarkdown]);
 
     // Seed notebook variables from ?var.NAME=VALUE URL params.
     // Runs once after the initial render (metadata is ready at that point).
@@ -587,6 +607,20 @@ const App: React.FC = () => {
             // Optional — heuristic + cloud paths remain available.
         });
     }, [dbState]);
+
+    // Smart-Start: detect GC collector once after a file is loaded and DB is ready.
+    useEffect(() => {
+        if (dbState !== DBState.READY) {
+            gcDetectionRanRef.current = false; // reset on each new file load
+            return;
+        }
+        if (gcDetectionRanRef.current) return;
+        gcDetectionRanRef.current = true;
+        detectGCCollector(query).then(collector => {
+            const suggestion = collectorToTemplate(collector);
+            if (suggestion) setGcSuggestion({ collector, ...suggestion });
+        }).catch(() => { /* ignore */ });
+    }, [dbState, query]);
 
     // Global keyboard shortcuts. Cmd-S always intercepts (browser default is
     // unhelpful here); Cmd-Z / Cmd-Shift-Z only fire when focus is outside a
@@ -1410,7 +1444,7 @@ const App: React.FC = () => {
     return (
       <DisplaySettingsProvider value={displaySettings}>
        <SkillContextProvider>
-       <ExecutorProvider cells={cells}>
+       <ExecutorProvider cells={cells} isVarPaused={isVarPaused}>
         <div className="flex flex-col h-screen bg-gray-800 text-gray-200 font-sans">
             {isMdDragOver && (
                 <div className="fixed inset-0 z-50 bg-cyan-900/30 border-4 border-dashed border-cyan-500/60 flex items-center justify-center pointer-events-none">
@@ -1535,6 +1569,14 @@ const App: React.FC = () => {
                         <button onClick={() => setIsAutoRunEnabled(!isAutoRunEnabled)} className={`p-1.5 rounded-md transition-colors ${isAutoRunEnabled ? 'text-cyan-300 bg-cyan-900/30' : 'text-gray-400 hover:bg-gray-700/50'}`} title={isAutoRunEnabled ? "Auto-Run enabled — click to disable" : "Auto-Run disabled — click to enable"} aria-label={isAutoRunEnabled ? "Disable Auto-Run" : "Enable Auto-Run"}>
                             {isAutoRunEnabled ? <PauseCircleIcon className="w-4 h-4" /> : <PlayCircleIcon className="w-4 h-4" />}
                         </button>
+                        <button
+                            onClick={() => setIsVarPaused(v => !v)}
+                            className={`p-1.5 rounded-md transition-colors text-xs font-semibold ${isVarPaused ? 'text-amber-300 bg-amber-900/30 ring-1 ring-amber-600/40' : 'text-gray-400 hover:bg-gray-700/50'}`}
+                            title={isVarPaused ? "Variable updates paused — click to resume and re-run stale cells" : "Pause variable updates (prevents re-runs while editing variables)"}
+                            aria-label={isVarPaused ? "Resume variable updates" : "Pause variable updates"}
+                        >
+                            {isVarPaused ? '⏸ Var' : '▶ Var'}
+                        </button>
                         <button onClick={handleRunAll} disabled={isRunningAll} title="Run All Queries" aria-label="Run All Queries" className={`p-1.5 rounded-md disabled:opacity-50 ${isRunningAll ? 'text-green-400 animate-pulse' : 'text-gray-400 hover:text-green-400'}`}>
                             {isRunningAll ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"/> : <PlayIcon className="w-4 h-4"/>}
                         </button>
@@ -1618,6 +1660,35 @@ const App: React.FC = () => {
                         <button
                             onClick={dismissWelcomeBanner}
                             className="text-cyan-500 hover:text-cyan-300 text-xs transition-colors"
+                            aria-label="Dismiss"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            )}
+            {gcSuggestion && (
+                <div className="flex-shrink-0 flex items-center justify-between gap-3 px-4 py-2 bg-emerald-950/60 border-b border-emerald-800/40 text-sm">
+                    <span className="text-emerald-300/90">
+                        <span className="font-semibold">Detected {collectorLabel(gcSuggestion.collector)}</span>
+                        {' '}— open the <span className="font-medium text-emerald-200">{gcSuggestion.label}</span> template for a pre-built analysis.
+                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                            onClick={() => {
+                                loadTemplate(gcSuggestion.templateName, { mode }).then(body => {
+                                    const { notebookSource } = mergeTemplate(notebookMarkdown, body, 'replace');
+                                    loadNotebook(notebookSource);
+                                    setGcSuggestion(null);
+                                }).catch(err => console.error('Failed to load GC template:', err));
+                            }}
+                            className="px-3 py-1 rounded-md bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium transition-colors"
+                        >
+                            Open Template
+                        </button>
+                        <button
+                            onClick={() => setGcSuggestion(null)}
+                            className="text-emerald-500 hover:text-emerald-300 text-xs transition-colors"
                             aria-label="Dismiss"
                         >
                             ✕
