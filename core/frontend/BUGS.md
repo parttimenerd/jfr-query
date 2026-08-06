@@ -2985,3 +2985,41 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 37 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook
+Loaded via "Try the demo" (localStorage cleared). Tour overlay dismissed. 6 editors, 2 charts. DOM scan: 0 errors ✅
+
+### Templates tested
+- **Recording Overview** — 0 errors, 24 editors, 0 charts (no JFR loaded — conditional cells hidden, expected) ✅
+- **CPU Profiling** — 0 errors, 8 editors, 0 charts (no CPU events in demo data — expected) ✅
+
+### Interactive features
+- **Command palette** ✅ — Cmd+Shift+K opens Actions/Ask AI dialog
+- **Help modal** ✅ — `?` shortcut opens `div[role="dialog"][aria-label="Keyboard shortcuts and tips"]`
+- **Schema explorer** ✅ — GarbageCollection visible in sidebar
+- **SQL autocomplete** ✅ — main notebook editor (x=366): `FROM Gar` + Ctrl+Space → autocomplete tooltip appeared
+- **LINK_X zoom** ✅ — Shift+mouse.wheel × 5; reset button appeared
+- **Variables panel** ✅ — `$limit` and `200` inputs visible
+- **Run All** ✅ — 0 DOM errors after
+
+### Console errors
+2 ONNX runtime node-assignment warnings only — known non-bugs.
+
+### Docs check
+- `docs-site/plot-dsl.md`: HEATMAP, WATERFALL, VIOLIN, SANKEY, TREEMAP, SUNBURST, PIE all documented — current ✅
+- `docs-site/web-ui.md`: sidebar description, BRUSH/LINK_X descriptions — current ✅
+- No stale content found.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
