@@ -4053,3 +4053,51 @@ None.
 ### Deferred (carry-forward)
 - B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
 - B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+
+---
+
+## Session 65 QA Pass — 2026-08-06
+
+### Vitest
+- All tests pass ✅
+
+### Templates tested
+- Memory Leak Detection (rotation S65)
+- Container & Cloud (rotation S65)
+- Comprehensive Feature Test (for BRUSH clause test)
+
+### Pre-session work completed
+- `feat(templates): rename buttons and add live SQL preview tab` — "Use template" → "Insert", "Run with current file" → "Open & Run", added Live Preview tab that executes SQL blocks against loaded DuckDB
+- `fix(templates): substitute $var/$var refs before live preview SQL execution`
+- `fix(templates): extend var substitution to consume dot-property paths ($sel.brush.lo)`
+- Verified all 13 templates pass live preview with 0 syntax errors
+
+### Interactive features
+- Variables panel ✅
+- LINK_X zoom — Shift+scroll triggers zoom, "Reset zoom" button appears ✅
+- BRUSH clause — drag on chart writes `$sel.brush.lo`/`.hi`, downstream SQL re-runs with filtered results ✅
+- Command palette (Cmd+K) ✅
+- SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`) ✅
+- Schema explorer ✅
+- Run All ✅
+- Help modal ✅
+
+### Console errors
+- 0 real errors (2 Recharts width(-1) warnings — pre-existing expected)
+
+### Bugs found
+- None
+
+### BUGS.md open items
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- No other open non-✅ items
+
+### Docs check
+- `docs-site/web-ui.md` — template gallery buttons ("Insert", "Open & Run") not documented by name, no stale text ✅
+- `docs-site/plot-dsl.md` — LINK_X/BRUSH/ZOOM accurate ✅
+
+### Deferred (carry-forward)
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+
