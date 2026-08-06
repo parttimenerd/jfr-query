@@ -5291,3 +5291,51 @@ No open non-✅ items ✅
 
 ### Docs check
 All docs-site/*.md accurate from prior sessions; no stale content found ✅
+
+---
+
+## Session S96 — 2026-08-07
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### All 13 templates (automated: e2e/template-qa-s94.mjs)
+13/13 PASS ✅
+- Recording Overview (11 cells) ✅
+- GC Pause Analysis (47 cells) ✅
+- GC Deep Dive (21 cells) ✅
+- CPU Profiling (5 cells) ✅
+- Heap Allocation (3 cells) ✅
+- I/O & Latency (7 cells) ✅
+- JVM Internals (7 cells) ✅
+- Memory Leak Detection (4 cells) ✅
+- Container & Cloud (6 cells) ✅
+- Exceptions & Errors (3 cells) ✅
+- Threading & Contention (8 cells) ✅
+- Comprehensive Feature Test (11 cells) ✅
+- ZGC Analysis (7 cells) ✅
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures)
+- Demo: DOM error scan, scroll scan, Run All, Collapse All, Expand All, 0 console errors ✅ × 6
+- Comprehensive Feature Test: loaded (11 cells), DOM scan, LINK_X zoom, command palette, SQL autocomplete, schema explorer, help modal, resize handles (46), no overflow ✅ × 9
+- GC Pause Analysis: loaded (47 cells), DOM scan, scroll scan, LINK_X zoom, 0 console errors ✅ × 5
+- Recording Overview: loaded (11 cells), DOM scan, scroll scan ✅ × 3
+
+### Interactive features (focused: e2e/qa-s96-interactive.mjs — 4 checks, 0 failures)
+- Variables panel: toolbar chip `$session_start` → datetime-local input appeared ✅
+- BRUSH: `.recharts-brush-traveller` found, right traveller dragged left ✅
+- SQL autocomplete: `SELECT * FROM Gar` + Ctrl+Space → GarbageCollection shown ✅
+- Final DOM scan: 0 errors ✅
+- Console: 0 real errors ✅
+
+### Bugs found
+None.
+
+### Fixes applied
+- `fix(qa)`: pre-set `jfr-sidebar-editor-visible=true` in test localStorage + "Show Query Editor" fallback in `qa-s95.mjs` so SQL autocomplete test consistently finds the preview pane editor. Commit: `a3f013c`
+
+### BUGS.md open items
+No open non-✅ items ✅
+
+### Docs check
+All docs-site/*.md verified by agent audit — no stale content found ✅
