@@ -82,7 +82,29 @@ The AI's access to your data is controlled by the visibility mode (shown in the 
 - **Sanitized** — the AI sees recent rows with string values redacted.
 - **Full** — the AI sees recent rows in full. Use for analyses that require inspecting actual values.
 
-## Sharing notebooks with embedded data
+## Smart-Start banner
+
+When a JFR or CJFR file is loaded, jfr-query detects which GC collector is in use (G1, ZGC, Shenandoah, or Serial/Parallel) by checking which event tables are present. If a purpose-built analysis template exists for that collector a dismissable green banner appears at the top of the notebook:
+
+> Detected G1GC — **Open GC Analysis template** to get a pre-built analysis.
+
+Clicking the button loads the template. Clicking × or loading any template manually dismisses the banner.
+
+## Variable pause gate
+
+By default, changing a variable (editing a datetime field, dragging a slider, typing in a number box) immediately re-runs all dependent SQL cells. On a notebook with many variable-dependent cells this can cause cascading re-runs.
+
+Click the **▶ Var** button in the toolbar to pause variable-driven re-runs. While paused the button turns amber (**⏸ Var**) and any variable changes are queued. Click the button again to flush the queue — all stale cells re-run exactly once.
+
+## URL parameters
+
+Open a specific template directly via query parameters:
+
+- `?template=<name>` — load a built-in template by name (e.g. `?template=gc-analysis`, `?template=zgc-analysis`). The URL is cleaned after loading so a page refresh doesn't reload the template.
+
+Example: `http://localhost:3001/?template=gc-analysis`
+
+
 
 Notebooks are plain Markdown files. By default they contain only SQL and plot config — opening them requires the original `.jfr` or `.cjfr` file.
 

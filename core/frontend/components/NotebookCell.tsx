@@ -212,6 +212,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const [sparkleLoading, setSparkleLoading] = useState<Record<number, boolean>>({});
     const [editingBlockName, setEditingBlockName] = useState<{ type: 'sql' | 'plot'; idx: number; value: string } | null>(null);
     const [isCellCollapsed, setIsCellCollapsed] = useState(() => initialCellCollapsed ?? isConditionallyHidden ?? false);
+    const userToggledCellRef = useRef(false);
 
     const [segments, setSegments] = useState(() => tokenizeCellContent(cell.content));
     const segmentsRef = useRef(segments);
@@ -252,6 +253,14 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             onCellCollapseChange?.(cell.id, allCollapsed);
         }
     }, [collapseTrigger, allCollapsed, onCellCollapseChange, cell.id]);
+
+    // Auto-collapse when the cell's condition resolves to hidden, unless the user
+    // has manually toggled the cell open.
+    useEffect(() => {
+        if (isConditionallyHidden && !userToggledCellRef.current) {
+            setIsCellCollapsed(true);
+        }
+    }, [isConditionallyHidden]);
 
     // Auto-size: respect HEIGHT clause from any plot block, then fit small tables.
     // Skipped once the user has manually dragged the resize handle.
@@ -1150,7 +1159,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
             <div className="px-3 py-2 border-b border-gray-700/60 flex items-center justify-between bg-gray-700/20 group/header" data-testid="cell-header" onContextMenu={handleCellHeaderContextMenu}>
                 <div className="flex items-center gap-2 w-full">
                      {!presenterMode && <div draggable onDragStart={handleDragStart} onDragEnd={()=>setIsBeingDragged(false)} title="Drag to reorder (Alt+↑/↓ for keyboard)" aria-label="Drag to reorder cell" role="button" tabIndex={0} className="cursor-grab p-1 text-gray-600 hover:text-gray-400"><Bars2Icon className="w-4 h-4"/></div>}
-                    {!presenterMode && <button onClick={()=>{ const next = !isCellCollapsed; setIsCellCollapsed(next); onCellCollapseChange?.(cell.id, next); }} className="p-1 text-gray-400 hover:text-gray-300 flex-shrink-0" title={isCellCollapsed ? "Expand cell" : "Collapse cell"} aria-label={isCellCollapsed ? "Expand cell" : "Collapse cell"}>{isCellCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5"/> : <ChevronUpIcon className="w-3.5 h-3.5"/>}</button>}
+                    {!presenterMode && <button onClick={()=>{ const next = !isCellCollapsed; setIsCellCollapsed(next); userToggledCellRef.current = true; onCellCollapseChange?.(cell.id, next); }} className="p-1 text-gray-400 hover:text-gray-300 flex-shrink-0" title={isCellCollapsed ? "Expand cell" : "Collapse cell"} aria-label={isCellCollapsed ? "Expand cell" : "Collapse cell"}>{isCellCollapsed ? <ChevronDownIcon className="w-3.5 h-3.5"/> : <ChevronUpIcon className="w-3.5 h-3.5"/>}</button>}
                     {isEditingTitle ? <input type="text" value={editingTitleValue} onChange={e=>setEditingTitleValue(e.target.value)} onBlur={()=>handleTitleBlur(editingTitleValue)} onKeyDown={handleTitleKeyDown} className="text-base font-semibold bg-gray-900 border border-cyan-500 rounded-md px-2 py-0.5 w-full" autoFocus/> : <h2 onClick={()=>{if(!presenterMode){setEditingTitleValue(title||'');setIsEditingTitle(true);}}} className={`text-base font-semibold w-full text-gray-100 ${presenterMode ? '' : 'cursor-pointer'}`}>{title}</h2>}
                     {isConditionallyHidden && <span className="text-[10px] px-1.5 py-0.5 rounded border border-amber-700/60 bg-amber-900/30 text-amber-400/80 whitespace-nowrap flex-shrink-0">hidden</span>}
                     {!presenterMode && (

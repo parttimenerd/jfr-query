@@ -92,6 +92,7 @@ Optional attributes on the directive:
 | `name=` | `name=intro` | Cell handle — required. |
 | `requires=` | `requires="GarbageCollection"` | Visibility condition; see Cell visibility conditions below. |
 | `autorun="false"` | `<!-- @cell name=heavy autorun="false" -->` | Suppress automatic query execution when the notebook loads. The cell still runs when manually triggered or when the user clicks Run. Useful for expensive queries that should only run on demand. |
+| `collapsed=true` | `<!-- @cell name=details collapsed=true -->` | Start the cell collapsed on load. The user can expand it by clicking the chevron. |
 
 Cell handles are used by:
 
