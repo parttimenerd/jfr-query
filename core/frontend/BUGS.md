@@ -4135,6 +4135,64 @@ None.
 
 ---
 
+## Session 68 QA Pass — 2026-08-06
+
+### Scope
+Full syntax scan of all 13 templates + normal user typing walkthrough.
+
+### Template syntax scan (all 13)
+Live Preview run against all 13 templates via TemplateGalleryModal. Result:
+
+| Template | Syntax errors | Catalog errors |
+|---|---|---|
+| Recording Overview | 0 | 8 |
+| GC Deep Dive | 0 | 4 |
+| Container & Cloud | 0 | 5 |
+| CPU Profiling | 0 | 4 |
+| Exceptions & Errors | 0 | 2 |
+| GC Pause Analysis | 0 | 29 |
+| Heap Allocation | 0 | 0 |
+| I/O & Latency | 0 | 6 |
+| JVM Internals | 0 | 7 |
+| Memory Leak Detection | 0 | 1 |
+| Threading & Contention | 0 | 6 |
+| ZGC Analysis | 0 | 5 |
+| Comprehensive Feature Test | 0 | 0 |
+
+**Zero SQL syntax errors across all 13 templates.** ✅ All catalog errors are missing-table errors in the demo JFR (expected, not bugs).
+
+### User typing walkthrough
+Simulated realistic user session on the demo notebook:
+
+- **Autocomplete on typing** ✅ — typing `SELECT cause, COUNT(*) AS cnt FROM Gar` triggered autocomplete showing "GarbageCollection table · 20 rows"
+- **Linter on syntax error** ✅ — "Parser Error: syntax error at or near 'xSELECT'" shown inline in red with tip text
+- **Linter Binder Error** ✅ — "Referenced column "Q" not found in FROM clause! Candidate bindings: "gcId"" shown inline
+- **AI suggestion loading** ✅ — "AI suggestion loading..." appeared below linter errors
+- **`+ SQL` block insertion** ✅ — clicking "+ SQL" in cell footer added a new SQL block with `SELECT 1;` placeholder
+- **$session_start variable edit** ✅ — clicking toolbar button opened datetime-local input; changing to 11:05 triggered re-run
+- **$limit variable inline edit** ✅ — changing `$limit` from 200 → 5 in the Variables panel re-ran Query 1 and updated `LIMIT $limit: 5` inline token
+- **Cell prose live update** ✅ — prose text "The **5** variable..." updated immediately when `$limit` changed
+- **Ctrl+S save** ✅ — triggered browser download of `notebook.md`
+- **BAR_CHART rendering** ✅ — GC Causes chart rendered with grouped bars for avg_ms and count
+- **Column chips above plot editor** ✅ — cause / count / avg_ms chips visible above plot DSL editor
+- **Smart-Start banner** ✅ — "Detected Serial/Parallel GC — Open GC Analysis template" green banner visible
+- **Plot "Query has errors" state** ✅ — plot correctly shows "Query has errors — see SQL editor above" when upstream query has syntax error
+
+### Observations (not bugs)
+- Ctrl+A → type in CodeMirror via Playwright synthetic keyboard events inserts at cursor rather than replacing selection — this is a Playwright `keyboard.type()` limitation (uses `keydown/keypress` not `beforeinput`). Real browser typing correctly replaces CM selections.
+
+### Console errors
+- 2 errors: ONNX runtime EP assignment warnings (expected, not bugs) ✅
+
+### Bugs found
+- None
+
+### BUGS.md open items
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+
+---
+
 ## Session 67 QA Pass — 2026-08-06
 
 ### Vitest
