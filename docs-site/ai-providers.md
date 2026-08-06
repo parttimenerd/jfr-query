@@ -28,7 +28,7 @@ See [Local provider on GitHub Pages](#local-provider-on-github-pages) below.
 2. Paste your API key. The key is stored only in your browser's `localStorage`.
 3. Click **Test** to verify the key works.
 
-For Anthropic, the best model for JFR analysis is **claude-sonnet-4-5** or newer.
+For Anthropic, the best model for JFR analysis is **claude-sonnet-4-6** (the app's default).
 
 ---
 
