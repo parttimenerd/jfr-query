@@ -4765,3 +4765,38 @@ No open non-✅ items. All B-series bugs resolved (398 resolved entries).
 ### Docs check
 - `plot-dsl.md`: TOOLTIP COLUMNS, ON HOVER TOOLTIP, HEATMAP, TREEMAP, VIOLIN, SUNBURST all documented ✅
 - No stale content found in S82.
+
+---
+
+## QA Session 83 — 2026-08-06
+
+### Unit tests
+6206 passed, 7 skipped, 0 failed ✅
+
+### Demo notebook (fresh localStorage cleared)
+0 DOM errors. Console: 2 × HTTP 500 on /api/query (expected, not a bug), 4 × Recharts transient warnings. Clean render.
+
+### Templates tested (rotation S83)
+- **JVM Internals** — 0 DOM errors. Cells with `hidden + requires` badges for Safepoint/VMOperation events absent in demo JFR — expected ✅
+- **Exceptions & Errors** — 0 DOM errors. Cells show `hidden + requires` badges (JavaExceptionThrow absent in demo JFR — expected) ✅
+
+### Interactive features
+- Variables panel ✅ — `$session_start` click → inline editor with "Clear $session_start" button
+- LINK_X zoom ✅ — Shift+wheel on GC Pause Analysis chart index 2; reset buttons appeared; reset clicked
+- Command palette (Cmd+K) ✅ — dialog appeared
+- SQL autocomplete (Ctrl+Space after `SELECT * FROM Gar`) ✅ — GarbageCollection suggestion shown
+- Schema explorer ✅ — GarbageCollection table click → preview query in sidebar
+- Run All ✅
+- Help modal ✅ — dialog with Shift shortcut text confirmed
+
+### Console errors
+0 errors, 0 warnings ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items (398 resolved entries).
+
+### Docs check
+No stale content found in S83. All docs accurate from prior checks.
