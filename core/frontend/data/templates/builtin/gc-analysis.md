@@ -794,3 +794,194 @@ TABLE() ON tuning_advice TITLE "GC Tuning Recommendations"
 ```
 
 
+---
+
+<!-- @cell name=gc-ihop-tuning requires="G1AdaptiveIHOP" -->
+
+## G1 Adaptive IHOP Tuning
+
+G1's internal model for when to start concurrent marking. The **IHOP %** is the heap occupancy threshold at which G1 initiates a concurrent marking cycle.
+
+- Rising **IHOP %** means G1 is trying to start marking earlier because allocation is fast.
+- Rising **Last Mark Duration ms** means the concurrent cycle is taking longer — risk of not finishing before the heap fills (→ Concurrent Mode Failure).
+- **Alloc Speed** vs **Concurrent Growth** gap: if allocation speed persistently exceeds concurrent growth, G1 cannot keep up.
+
+*Requires `G1AdaptiveIHOP` events (G1 only, gc.jfc or gc-details.jfc).*
+
+```sql
+-- alias ihop_stats
+SELECT * FROM "g1-ihop-stats" ORDER BY "Time"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["IHOP %"]) ON ihop_stats TITLE "G1 IHOP Threshold % Over Time" LINK_X($start, $end) ZOOM AXIS_Y DOMAIN [0, 100] LABEL "%" FORMAT ".1f"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Alloc Speed MB/s", "Concurrent Growth MB/s"]) ON ihop_stats TITLE "Allocation Speed vs Concurrent GC Growth (MB/s)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB/s"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Last Mark Duration ms"]) ON ihop_stats TITLE "Concurrent Mark Duration Over Time (ms)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "ms"
+```
+
+---
+
+<!-- @cell name=gc-heap-regions requires="G1HeapRegionInformation" -->
+
+## G1 Heap Region Map
+
+Region count and used bytes by type over time. Each G1 region is ~1–32 MB depending on heap size.
+
+- **Humongous Start** — objects > 50% of region size; each occupies its own region(s). High count = large objects fragmenting the heap.
+- **Trash** — regions awaiting cleanup. A rising Trash count means concurrent cleanup is falling behind.
+- **Pinned** — regions that cannot be moved; increase GC complexity.
+- **Free** — available regions. A falling Free count under sustained allocation is a heap pressure signal.
+
+*Requires `G1HeapRegionInformation` events (gc-details.jfc).*
+
+```sql
+-- alias region_types
+SELECT * FROM "g1-region-types" ORDER BY "Time"
+```
+
+```plot
+AREA_CHART(x: "Time", y: ["Count"], color: "Region Type", layout: "stacked") ON region_types TITLE "G1 Heap Region Count by Type" LINK_X($start, $end) ZOOM
+```
+
+```plot
+AREA_CHART(x: "Time", y: ["Used MB"], color: "Region Type", layout: "stacked") ON region_types TITLE "G1 Heap Region Used MB by Type" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
+```
+
+---
+
+<!-- @cell name=gc-rss-vs-heap requires="ResidentSetSize" -->
+
+## OS Resident Set Size vs Committed Heap
+
+**RSS** is the amount of physical memory the JVM process is using at the OS level, sampled every second.
+
+- RSS ≈ Committed Heap: typical healthy state.
+- RSS >> Committed Heap: significant off-heap usage — check metaspace, code cache, direct buffers, native libraries.
+- RSS growing after Full GC: native memory leak.
+
+*Requires `ResidentSetSize` events (SapMachine JDK 21+, OpenJDK 22+, gc.jfc profile).*
+
+```sql
+-- alias rss_data
+SELECT * FROM "gc-rss-vs-heap" ORDER BY "Time"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["RSS MB", "Committed MB"]) ON rss_data TITLE "RSS vs Committed Heap (MB)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Off-Heap MB"]) ON rss_data TITLE "Off-Heap Memory (RSS − Committed Heap)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
+```
+
+---
+
+<!-- @cell name=gc-memory-pools requires="GCHeapMemoryPoolUsage" -->
+
+## Memory Pool Usage Detail
+
+Used and committed bytes per memory pool around each GC cycle. Provides finer granularity than the total heap summary.
+
+- **Eden** fills rapidly between GCs and resets to near-zero after a Young GC.
+- **Old** grows gradually; persistently high **Used %** signals promotion pressure.
+- **Metaspace** growth after classloading peaks = classloader leak.
+- **CodeHeap** growth = JIT-compiled code accumulation (rarely a problem but worth watching in dynamic workloads).
+
+*Requires `GCHeapMemoryPoolUsage` events (SapMachine JDK 25+ gc.jfc, or gc-details.jfc).*
+
+```sql
+-- alias pool_data
+SELECT * FROM "gc-memory-pools" ORDER BY "Time"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Used MB"], color: "Pool") ON pool_data TITLE "Memory Pool Used MB Over Time" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Used %"], color: "Pool") ON pool_data TITLE "Memory Pool Fill % Over Time" LINK_X($start, $end) ZOOM AXIS_Y DOMAIN [0, 100] LABEL "%" FORMAT ".1f"
+```
+
+---
+
+<!-- @cell name=gc-evacuation-detail requires="EvacuationInformation" -->
+
+## Evacuation Efficiency
+
+Measures how efficiently G1 copies live objects during evacuation (Young and Mixed GC).
+
+- **Regions Evacuated** — regions processed per GC; high counts = large young gen or many mixed-GC regions.
+- **Fill % per Region** — how full each evacuated region was on average. Low values (< 50%) = fragmented heap; G1 copies mostly empty space.
+- **Promoted MB** — bytes promoted to old gen per GC. Rising trend = allocation rate exceeds GC throughput.
+
+*Requires `EvacuationInformation` events (G1 only, gc.jfc or gc-details.jfc).*
+
+```sql
+-- alias evac_data
+SELECT * FROM "gc-evacuation-efficiency" ORDER BY "Time"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Bytes Copied MB", "Promoted MB"]) ON evac_data TITLE "Bytes Copied vs Promoted per GC (MB)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Fill % per Region"]) ON evac_data TITLE "Evacuation Fill % per Region — low = fragmented" LINK_X($start, $end) ZOOM AXIS_Y DOMAIN [0, 100] LABEL "%" FORMAT ".1f"
+```
+
+---
+
+<!-- @cell name=gc-promotion-failure requires="PromotionFailed" -->
+
+## GC Failure Events
+
+**Any row here means the GC fell back to a stop-the-world Full GC.** These are high-impact pause events.
+
+| Failure Type | Trigger | Usual Cause |
+|---|---|---|
+| **Promotion Failed** | Young GC can't promote objects to old gen | Old gen full, survivor overflow |
+| **Evacuation Failed** | G1 can't find a free region to copy into | Heap nearly full, fragmentation |
+| **Concurrent Mode Failure** | Concurrent marking didn't finish in time | Allocation rate too high for IHOP threshold |
+
+Each event typically causes a pause 10–100× longer than a normal Young GC.
+
+*Requires `PromotionFailed` events. `EvacuationFailed` and `ConcurrentModeFailure` shown if present.*
+
+```sql
+SELECT * FROM "gc-failure-events" ORDER BY "Time"
+```
+
+```plot
+TABLE() TITLE "GC Failure Events — each row triggered a Full GC"
+```
+
+---
+
+<!-- @cell name=gc-concurrent-failure requires="ConcurrentModeFailure" -->
+
+## Concurrent Mode Failures
+
+Each event means concurrent marking could not complete before the heap was exhausted, forcing a stop-the-world Full GC. Typically caused by:
+- Allocation rate exceeding the concurrent mark throughput
+- IHOP threshold set too high (mark starts too late)
+- Long concurrent mark duration (object graph too large)
+
+Cross-reference with the **Adaptive IHOP** cell above: if `Last Mark Duration` is rising and failures appear, G1 needs more headroom (`-XX:G1ReservePercent`, smaller `-XX:InitiatingHeapOccupancyPercent`).
+
+*Requires `ConcurrentModeFailure` events (gc.jfc or gc-details.jfc).*
+
+```sql
+SELECT startTime AS "Time", gcId AS "GC ID"
+FROM ConcurrentModeFailure
+ORDER BY startTime
+```
+
+```plot
+TABLE() TITLE "Concurrent Mode Failure Events"
+```
