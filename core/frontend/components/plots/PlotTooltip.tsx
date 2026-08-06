@@ -95,7 +95,7 @@ export const PlotTooltip: React.FC<PlotTooltipProps> = ({
             <div className={boxCls}>
                 {label !== undefined && (
                     <div className={headerCls}>
-                        {labelFormatter ? labelFormatter(label) : formatTooltipValue(label)}
+                        {labelFormatter ? labelFormatter(label) : fmt(label)}
                     </div>
                 )}
                 {shown.map((e) => (
@@ -103,7 +103,7 @@ export const PlotTooltip: React.FC<PlotTooltipProps> = ({
                         <span className={labelCls} style={{ color: e.color ? `${e.color}cc` : undefined }}>
                             {e.name.replace(/_/g, ' ')}
                         </span>
-                        <span className={valueCls}>{formatTooltipValue(e.value)}</span>
+                        <span className={valueCls}>{fmt(e.value)}</span>
                     </div>
                 ))}
             </div>
@@ -116,7 +116,7 @@ export const PlotTooltip: React.FC<PlotTooltipProps> = ({
             const formatted = entryFormatter(e.value, e.name, e);
             return formatted ? { ...e, name: formatted[1], displayValue: formatted[0] } : null;
           }).filter(Boolean) as Array<PlotTooltipEntry & { displayValue: string }>
-        : payload.map(e => ({ ...e, displayValue: formatTooltipValue(e.value) }));
+        : payload.map(e => ({ ...e, displayValue: fmt(e.value) }));
 
     if (entries.length === 0 && label === undefined) return null;
 
@@ -124,7 +124,7 @@ export const PlotTooltip: React.FC<PlotTooltipProps> = ({
         <div className={boxCls}>
             {label !== undefined && (
                 <div className={headerCls}>
-                    {labelFormatter ? labelFormatter(label) : formatTooltipValue(label)}
+                    {labelFormatter ? labelFormatter(label) : fmt(label)}
                 </div>
             )}
             <div className="space-y-0.5">
