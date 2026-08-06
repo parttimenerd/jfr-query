@@ -2907,6 +2907,43 @@ None new.
 
 ---
 
+## Session 36 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook
+Loaded via "Try the demo" (localStorage cleared). Tour overlay dismissed. 6 editors, 2 charts. DOM scan: "Query has errors" from test edit only — no real errors ✅
+
+### Templates tested
+- **JVM Internals** — 0 errors ✅
+- **Container & Cloud** — 0 errors ✅
+
+### Interactive features
+- **Command palette** ✅ — Cmd+K opens Actions/Ask AI dialog
+- **Help modal** ✅ — `div[role="dialog"]` aria-label "Keyboard shortcuts and tips"
+- **Schema explorer** ✅ — tables with row counts visible in sidebar; column data loads in preview pane
+- **SQL autocomplete** ✅ — main notebook editor (x=366): `SELECT * FROM Gar` + Ctrl+Space → autocomplete tooltip appeared
+- **LINK_X zoom** ✅ — Shift+mouse.wheel × 5; "Reset Layout" button appeared
+- **Variables panel** ✅ — `$limit` and `200` inputs visible in sidebar
+- **Run All** ✅ — 0 DOM errors after
+
+### Console errors
+2 ONNX runtime node-assignment warnings only — known non-bugs.
+
+### Docs check
+- `docs-site/ai-providers.md`: `claude-sonnet-4-6` default confirmed correct vs `AnthropicProvider.ts` — no stale content.
+- No other stale content found.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
 ## Session 35 — 2026-08-06
 
 ### Vitest
