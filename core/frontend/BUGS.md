@@ -5244,3 +5244,50 @@ No stale content found ✅
 - Added e2e/template-qa-s94.mjs and e2e/demo-qa-s94.mjs for automated QA scripting
 - Template QA now uses separate browser contexts per template with localStorage pre-set to suppress tour overlay
 - Gallery dialog interaction replaces ?template= URL approach to ensure actual template content loads
+
+---
+
+## Session S95 — 2026-08-07
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### All 13 templates (automated: e2e/template-qa-s94.mjs)
+13/13 PASS (Recording Overview, GC Pause Analysis, GC Deep Dive, CPU Profiling, Heap Allocation, I/O & Latency, JVM Internals, Memory Leak Detection, Container & Cloud, Exceptions & Errors, Threading & Contention, Comprehensive Feature Test, ZGC Analysis) ✅
+
+### Automated full QA (e2e/qa-s95.mjs — 23 checks, 0 failures)
+- Demo: DOM error scan (0 errors) ✅
+- Demo: DOM scan after full scroll (0 errors) ✅
+- Demo: Run All (settled, 0 errors) ✅
+- Demo: Collapse All ✅
+- Demo: Expand All ✅
+- Demo: 0 console errors ✅
+- Comprehensive Feature Test loaded (11 cells) ✅
+- Comprehensive: DOM scan (0 errors) ✅
+- LINK_X zoom: Shift+scroll zoom activated (Reset button appeared) ✅
+- Command palette: opened ✅
+- Schema explorer: GarbageCollection expanded, columns with types visible ✅
+- Help modal: opened via toolbar button, shortcut table visible ✅
+- Plot resize: 53 resize handles found ✅
+- UI polish: no obvious text overflow ✅
+- Console: 0 real errors ✅
+- GC Pause Analysis loaded (47 cells) ✅
+- GC Pause Analysis: DOM scan (0 errors) ✅
+- GC Pause Analysis: DOM scan after full scroll (0 errors) ✅
+- LINK_X zoom on GC Pause Analysis chart ✅
+- GC Pause Analysis: 0 real console errors ✅
+- Recording Overview loaded (11 cells) ✅
+- Recording Overview: DOM scan (0 errors) ✅
+- Recording Overview: DOM scan after scroll (0 errors) ✅
+
+### Bugs found
+None.
+
+### Fix applied
+- `fix(qa)`: filter `Failed to load resource` network errors in `qa-s95.mjs` console error listener — HTTP 500 `/api/query` probe (no Java backend in test env) was causing false-positive test failures. Extended existing `/api/` filter to also exclude `Failed to load resource` and `net::ERR_` browser messages. Commit: `3f68e6b`
+
+### BUGS.md open items
+No open non-✅ items ✅
+
+### Docs check
+All docs-site/*.md accurate from prior sessions; no stale content found ✅
