@@ -3839,3 +3839,39 @@ None.
 ### Deferred (carry-forward)
 - B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
 - B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+
+---
+
+## QA Session 59 — 2026-08-06
+
+### Templates tested
+- **Recording Overview** ✅ — 3 charts rendered, 0 errors
+- **CPU Profiling** ✅ — 4 cells load with "hidden + requires" badges (correct — no CPULoad/ExecutionSample in demo JFR); 0 errors
+- **GC Analysis** ✅ — loaded via Smart-Start "Open Template" banner; 13 charts rendered post-zoom
+
+### Interactive features
+- **Variables panel** ✅ — expanded Notebook Variables, saw `$limit`, `$session_start`, `$session_end` with editable fields and "Add Variable" button
+- **LINK_X zoom** ✅ — Shift+drag on Allocation Rate chart; tooltip ("11:09:10.00 / Alloc MB/s: 0") + hint ("drag=pan · ⌥drag=select · ⌥scroll=zoom") + "reset" button all appeared; linked charts re-ran
+- **Command palette** ✅ — Cmd+K opened "Actions / Ask AI" dialog with full action list (Format all cells, Run all queries, Add new cell, etc.)
+- **SQL autocomplete** ✅ — `SELECT * FROM Gar` + Ctrl+Space in preview pane → "GarbageCollection" completion dropdown shown
+- **Schema explorer** ✅ — clicked GarbageCollection → column tooltip with types (duration: DECIMAL(5,4), gcId: INTEGER, startTime: TIMESTAMP WITH TIME ZONE, name/cause: VARCHAR)
+- **Run All** ✅ — no errors, charts rendered
+- **Help modal** ✅ — "Keyboard Shortcuts & Tips" with Global/Queries/Tabs/Command Palette Prefixes/Hidden Features sections; "Take the guided tour" button present
+
+### Console errors
+- 0 real errors (ONNX runtime warnings excluded per spec)
+
+### Bugs found
+- None
+
+### BUGS.md
+- No open non-✅ items beyond B-032 and B-205 (both long-standing deferred)
+
+### Docs check
+- `docs-site/plot-dsl.md` — LINK_X, BRUSH, ZOOM, tooltip docs all accurate ✅
+- `docs-site/web-ui.md` — Smart-Start banner, LINK_X zoom gestures all accurate ✅
+- `docs-site/notebook-format.md` — `requires=`, conditional blocks, templating all accurate ✅
+
+### Deferred (carry-forward)
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
