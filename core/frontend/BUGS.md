@@ -2904,3 +2904,47 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 35 — 2026-08-06
+
+### Vitest
+6210 passed, 0 failed.
+
+### Demo notebook
+Loaded via "Try the demo". 6 editors, 2 charts. DOM scan: 0 errors ✅
+
+### Templates tested
+- **Heap Allocation** — 0 errors, 4 editors ✅
+- **I/O & Latency** — 0 errors, 10 editors ✅
+- **Comprehensive Feature Test** — 0 errors, 24 editors ✅ (used for BRUSH + variables)
+
+### Interactive features
+- **Command palette** ✅ — Cmd+K opens Actions/Ask AI dialog
+- **Help modal** ✅ — `div[role="dialog"]` aria-label "Keyboard shortcuts and tips"
+- **Schema explorer** ✅ — tables with row counts; clicking GarbageCollection loads column preview (gcId, name, startTime, duration, sumOfPauses…) in preview pane
+- **SQL autocomplete** ✅ — main notebook editor (x=366): `SELECT * FROM Gar` + Ctrl+Space → "GarbageCollection table · 20 rows"
+- **LINK_X zoom** ✅ — Shift+mouse.wheel; "Reset Layout" button appeared and clicked
+- **BRUSH clause** ✅ — drag on crosshair div → epoch timestamp `1710496815145` appeared; downstream SQL updated
+- **Variables panel** ✅ — 13 inline text inputs for `$limit`, `$gc_id` etc. visible in Comprehensive Feature Test
+- **Tooltip on hover** ✅ — "11:00:19.70 Pause (ms) 7.5" shown on LINE_CHART hover
+- **Run All** ✅ — 0 DOM errors after
+
+### UI polish checks
+- No overflow/truncation issues ✅
+- No zero-height plot elements ✅
+- No broken layouts ✅
+
+### Console errors
+0 errors (not even ONNX warnings this run), 14 warnings (recharts/non-critical).
+
+### Docs check
+No stale content found.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
