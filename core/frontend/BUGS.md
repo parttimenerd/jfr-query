@@ -3072,6 +3072,49 @@ None new.
 
 ---
 
+## Session 41 — 2026-08-06
+
+### Vitest
+Not re-run this session (previous session confirmed 6203 passed, 0 failed; no new test-touching changes).
+
+### Templates tested (full sweep — all 12 templates)
+- **Recording Overview** — 0 errors, 25 editors ✅
+- **CPU Profiling** — 0 errors, 9 editors ✅
+- **GC Deep Dive** — 0 errors, 39 editors ✅
+- **Container & Cloud** — 0 errors, 11 editors ✅
+- **Exceptions & Errors** — 0 errors, 5 editors ✅
+- **GC Pause Analysis** — 0 errors, 78 editors, 17 charts ✅
+- **Heap Allocation** — 0 errors, 5 editors ✅
+- **I/O & Latency** — 0 errors, 13 editors ✅
+- **JVM Internals** — 0 errors, 16 editors ✅
+- **Memory Leak Detection** — 0 errors, 7 editors, 2 charts ✅
+- **Threading & Contention** — 0 errors, 16 editors ✅
+- **Comprehensive Feature Test** — 0 errors, 24 editors, 20 charts after Run All ✅
+
+### Interactive features
+- **Command palette** ✅ — button click opens dialog
+- **Keyboard shortcuts modal** ✅ — dialog opens with correct content
+- **Collapse All / Expand All** ✅ — 24 editors → 1 (collapsed) → 24 (expanded)
+- **SQL autocomplete** ✅ — typing `FROM Garb` shows `GarbageCollection · table · 20 rows`
+- **Run All Queries** ✅ — Comprehensive Feature Test: 0 errors, 20 charts rendered
+
+### Console errors
+0 errors, 50 warnings (ONNX/recharts — known non-bugs).
+
+### Bugs fixed this session
+
+#### 🔴 [B-NEW-41] LINK_X wiring broken after first zoom/pan interaction
+**Where:** `core/frontend/components/PlotRenderer.tsx`
+**Root cause:** `substituteVariables()` replaces `$start`/`$end` in the plot config string with their current timestamp values before `parseComposite()` runs. The Ohm grammar rule `LinkXArg = varRef | ident` only matches `$`-prefixed names — quoted timestamp strings like `'2024-03-15T10:00:36Z'` do not match, so `linkX` is never set on the parsed result. `InteractivePlotWrapper` is therefore never mounted; `StandaloneZoomWrapper` is used instead; zoom/pan no longer writes to notebook variables.
+**Fix:** Parse structural clauses (`LINK_X`, `BRUSH`) from the original un-substituted config via `originalFlatConfigs` / `originalParsedRoot` / `recoverStructural` helper. Patch `linkX`, `brush`, `linkXMaster`, `linkXClamp` back onto the substituted parse result before rendering. Applied to both single-plot and composite-leaf paths.
+**Commit:** `b9d025b`
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
 ## Session 40 — 2026-08-06
 
 ### Vitest
