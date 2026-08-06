@@ -2631,3 +2631,48 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 27 — 2026-08-06
+
+**Scope:** Full template sweep (all 12 templates), demo notebook (variables, Run All, Collapse/Expand, Schema Explorer), console check.
+
+### Template results (all 12)
+
+| Template | Charts | Status |
+|----------|--------|--------|
+| GC Pause Analysis | 37 | ✅ PASS |
+| Recording Overview | 7 | ✅ PASS |
+| CPU Profiling | 0 | ✅ PASS (no ExecutionSample data) |
+| Heap Allocation | 4 | ✅ PASS |
+| I/O & Latency | 0 | ✅ PASS (no I/O data) |
+| JVM Internals | 0 | ✅ PASS (no JVM internals data) |
+| Memory Leak Detection | 2 | ✅ PASS |
+| Threading & Contention | 0 | ✅ PASS (no contention data) |
+| Container & Cloud | 0 | ✅ PASS (no container data) |
+| Exceptions & Errors | 0 | ✅ PASS (no exception data) |
+| Comprehensive Feature Test | 20 | ✅ PASS |
+| GC Deep Dive | 18 | ✅ PASS |
+
+Zero Catalog Error / Binder Error / Parser Error / Invalid plot errors across all templates.
+
+### Demo notebook results
+
+- **DOM scan:** 0 errors ✅
+- **Variables:** `$session_start` / `$session_end` in header ✅
+- **Run All:** 0 errors, 0 stuck spinners ✅
+- **Collapse All:** 0 large charts visible after collapse ✅
+- **Expand All:** 5 charts restored ✅
+- **Schema Explorer:** GarbageCollection → `gcId` columns shown ✅
+
+### Console
+
+- 0 JS errors; 2 ONNX runtime warnings (expected, not bugs) ✅
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
