@@ -17,6 +17,7 @@ const LS_SUPPRESS = [
   { name: 'jfr-tour-seen',               value: '1' },
   { name: 'jfrq:onboarding-dismissed',   value: '1' },
   { name: 'jfrq:ai-nudge-dismissed',     value: '1' },
+  { name: 'jfr-sidebar-editor-visible',  value: 'true' },
 ];
 
 const ERROR_TERMS = [
@@ -357,7 +358,15 @@ function warn(label) { console.log(`  ⚠  ${label}`); }
         const tab = await page.$(sel);
         if (tab) { await tab.click(); await page.waitForTimeout(500); break; }
       }
-      const previewEl = await page.$('[data-testid="preview-editor"]');
+      // If preview editor still hidden, click the Show Query Editor toggle button
+      let previewEl = await page.$('[data-testid="preview-editor"]');
+      if (!previewEl) {
+        for (const sel of ['button[title="Show Query Editor"]', 'button[aria-label="Show Query Editor"]']) {
+          const btn = await page.$(sel);
+          if (btn) { await btn.click(); await page.waitForTimeout(400); break; }
+        }
+        previewEl = await page.$('[data-testid="preview-editor"]');
+      }
       if (previewEl) {
         const cm = await previewEl.$('.cm-editor');
         if (cm) {
