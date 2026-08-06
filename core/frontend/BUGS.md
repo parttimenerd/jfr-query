@@ -5377,3 +5377,39 @@ No open non-✅ items ✅
 ### Docs check
 - plot-dsl.md: WATERFALL, VIOLIN, HEATMAP, SANKEY, TREEMAP, SUNBURST — all documented with examples ✅
 - No stale content found ✅
+
+---
+
+## Session S98 — 2026-08-07
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### All 13 templates (automated: e2e/template-qa-s94.mjs)
+13/13 PASS ✅
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Interactive features (focused: e2e/qa-s96-interactive.mjs — 5 checks, 0 failures) ✅
+- Variables panel: toolbar chip `$session_start` → datetime-local input ✅
+- BRUSH: right traveller dragged left ✅
+- SQL autocomplete: GarbageCollection shown ✅
+- Final DOM scan: 0 errors ✅
+- Console: 0 real errors ✅
+
+### Template rotation (e2e/qa-s98-rotation.mjs — 3/3 PASS)
+- I/O & Latency: loaded, DOM scan 0 errors ✅
+- JVM Internals: loaded, DOM scan 0 errors ✅
+- Threading & Contention: loaded, DOM scan 0 errors ✅
+
+### Code audit
+- `core/frontend/utils/jfrToWasmLoader.ts:7-11`: stale/garbled comment about worker count replaced with accurate description of memory budget rationale. Commit: `ce82a00`
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items ✅
+
+### Docs check
+- web-ui.md: keyboard shortcuts, smart-start banner, template URL params — all accurate ✅
