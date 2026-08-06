@@ -4007,3 +4007,49 @@ None.
 ### Deferred (carry-forward)
 - B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
 - B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+
+---
+
+## QA Session 64 — 2026-08-06
+
+### vitest
+- 6206 passed, 0 failures ✅
+
+### Demo load
+- localStorage cleared, demo loaded fresh ✅
+- DOM scan: 0 errors, 2 charts (bar + line), 5 cells ✅
+
+### Templates tested (rotation: CPU Profiling + Heap Allocation)
+- **CPU Profiling** ✅ — 4 cells, correctly gated by `requires=` (no ExecutionSample/CPULoad events in demo JFR). 8 requires badges, 0 template errors.
+- **Heap Allocation** ✅ — 2 charts (Top Allocating Classes bar + Allocation Rate line), 0 errors.
+
+### Interactive features
+- **Variables panel** ✅ — `$session_start` button visible; click opened datetime editor
+- **LINK_X zoom** ✅ — Shift+drag on demo Step 3 chart → "reset" button appeared
+- **BRUSH clause** ✅ — Comprehensive Feature Test brush traveller drag filtered downstream table 20 → 1 rows
+- **Command palette** ✅ — Cmd+K opened palette (also confirmed ⇧⇧ works)
+- **SQL autocomplete** ✅ — Ctrl+Space after `SELECT * FROM Gar` → "GarbageCollection table · 20 rows"
+- **Schema explorer** ✅ — clicked GarbageCollection → 30 rows in preview table
+- **Run All** ✅ — queries ran, charts rendered, no errors
+- **Help modal** ✅ — Keyboard Shortcuts dialog opened
+
+### Console errors
+- 0 real errors (2 ONNX session_state.cc warnings — pre-existing expected)
+
+### Bugs found
+- None
+
+### BUGS.md open items
+- B-032: `✅ PARTIALLY FIXED` — only per-editor Cmd-Enter wiring deferred (minor)
+- B-205: LATERAL join scope — still deferred (low priority, complex)
+- No other open non-✅ items
+
+### Docs check
+- `docs-site/web-ui.md` — added **Keyboard shortcuts** section documenting ⇧⇧/Cmd+K command palette and other shortcuts (previously undocumented) ✅
+- `docs-site/plot-dsl.md` — LINK_X/BRUSH/ZOOM accurate ✅
+- `docs-site/notebook-format.md` — requires=, conditional blocks, variables accurate ✅
+- `docs-site/views-macros.md` — 6 new conditional GC views added in S63, still accurate ✅
+
+### Deferred (carry-forward)
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)

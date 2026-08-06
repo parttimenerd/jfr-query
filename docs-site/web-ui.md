@@ -96,6 +96,18 @@ By default, changing a variable (editing a datetime field, dragging a slider, ty
 
 Click the **▶ Var** button in the toolbar to pause variable-driven re-runs. While paused the button turns amber (**⏸ Var**) and any variable changes are queued. Click the button again to flush the queue — all stale cells re-run exactly once.
 
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `⇧⇧` (double Shift) or `Cmd/Ctrl+K` | Open command palette |
+| `Cmd/Ctrl+S` | Save notebook |
+| `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` | Undo / Redo |
+| `Cmd/Ctrl+Enter` (in SQL editor) | Run current cell |
+| `?` (outside an input field) | Open keyboard shortcuts reference |
+
+The **command palette** (⇧⇧ or Cmd+K) lets you search and run any notebook action — run all, collapse/expand, toggle AI, load templates, and more. It also has an **Ask AI** tab when an AI provider is configured.
+
 ## URL parameters
 
 Open a specific template directly via query parameters:
