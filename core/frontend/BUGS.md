@@ -3115,6 +3115,54 @@ Not re-run this session (previous session confirmed 6203 passed, 0 failed; no ne
 
 ---
 
+## Session 42 — 2026-08-06
+
+### Vitest
+6203 passed, 7 skipped, 0 failed.
+
+### Demo notebook
+Loaded clean after clearing localStorage + dismissing product tour. 6 editors, 5 charts. DOM scan: 0 errors ✅
+
+### Templates tested
+- **GC Pause Analysis** — 0 errors, 77 editors, 37 charts (Run All) ✅
+- **Threading & Contention** — 0 errors, 15 editors, 0 charts (no threading events in demo data — expected) ✅
+
+### Interactive features
+- **Variables panel** ✅ — `$session_start` / `$session_end` header buttons present
+- **LINK_X zoom** ✅ — Shift+scroll on `InteractivePlotWrapper` chart (svg[4], 1034×200); reset button appeared
+- **BRUSH** ✅ — BRUSH clause present in Comprehensive Feature Test; 44 bars found; drag performed without error
+- **Command palette** ✅ — button click opens dialog; search text accepted
+- **SQL autocomplete** ✅ — `SELECT * FROM Gar` → `GarbageCollection · table · 20 rows`
+- **Schema explorer** ✅ — GarbageCollection click → preview table with columns (gcId, name, startTime, duration, cause …)
+- **Chart tooltip** ✅ — hover on bar chart rectangle shows tooltip
+- **Resize handles** ✅ — 53 resize handles present
+- **Collapse/Expand** ✅ (verified in session 41)
+- **Help modal** ✅ — opens with keyboard shortcuts content
+- **Run All** ✅ — Comprehensive Feature Test: 0 errors, 20 charts
+
+### Console errors
+0 errors, 12 warnings (ONNX/recharts — known non-bugs).
+
+### UI polish
+- No zero-height cells
+- No text overflow issues
+- 53 resize handles present on plots
+
+### Open bugs checked
+- **B-057** (raw-markdown editor virtualization): still deferred.
+- **B-205** (LATERAL join inner-subquery scope): still open, deferred.
+
+### Docs check
+- `docs-site/views-macros.md`: all 3 conditional views (`g1-heap-regions`, `metaspace-over-time`, `tenuring-distribution`) correctly documented ✅
+- `docs-site/plot-dsl.md`: FLAMEGRAPH canonical name + FLAME alias matches registry ✅
+- `docs-site/notebook-format.md`: `autorun="false"` confirmed supported in parser ✅
+- No stale content found.
+
+### Bugs found
+None new.
+
+---
+
 ## Session 40 — 2026-08-06
 
 ### Vitest
