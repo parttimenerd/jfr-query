@@ -882,7 +882,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
                     // window are picked up correctly.
                     const latestSql = parsedSqlBlocksRef.current?.[i] ?? sql;
                     handleRunRef.current(latestSql, i);
-                }, 800);
+                }, 200);
             }
         });
         for (let i = parsedSqlBlocks.length; i < (prevSqls?.length || 0); i++) if(runTimersRef.current[i]) { clearTimeout(runTimersRef.current[i]); delete runTimersRef.current[i]; }
