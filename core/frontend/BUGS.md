@@ -5089,3 +5089,33 @@ No open non-✅ items ✅
 ### Docs check
 - `docs-site/browser-architecture.md`: worker count "2–3" was stale (actual: 1–2 after perf improvement). Updated to "1–2 Web Workers" ✅
 - All other docs-site/*.md: no stale markers found ✅
+
+---
+
+## Session S91 — 2026-08-06
+
+### Vitest
+256 passed | 1 skipped (257 files) / 6206 passed | 7 skipped (6213 tests) ✅
+
+### All 11 templates (subagent scan)
+- Recording Overview, CPU Profiling, GC Analysis, Heap Allocation, I/O & Latency, JVM Internals, Memory Leak Detection, Container & Cloud, Exception & Error Analysis, Comprehensive Feature Test, Thread & Locking: 0 DOM errors, 0 failed cells ✅
+
+### Demo notebook interactive features
+- DOM error scan: 0 errors ✅
+- Variables ($limit: 200 → 50, tooltip updated to `$limit = 50`, cell re-ran automatically): ✅
+- Collapse All (all 5 cells collapsed to header-only): ✅
+- Expand All (all cells restored with content): ✅
+- Schema Explorer (GarbageCollection → duration/sumOfPauses/longestPause/gcId/startTime/name/cause columns, data preview): ✅
+- Run All: 0 failed, 0 running after ✅
+
+### Console errors
+2 ONNX runtime warnings only — 0 real errors ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+No open non-✅ items ✅
+
+### Docs check
+No stale content found ✅
