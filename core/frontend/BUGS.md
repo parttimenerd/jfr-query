@@ -1501,6 +1501,18 @@ Triage source: codebase walkthrough (App.tsx, NotebookCell.tsx, SQLEditor.tsx, P
 **Observed:** The `.catch()` handler set `aiErrorSuggestions[i]: null` (the "loading" sentinel) instead of clearing the entry, causing the spinner to stay visible indefinitely on proxy failure.
 **Fix:** Changed the catch block to delete the key from the map (`delete n[i]`), so `aiErrorSuggestions[i]` becomes `undefined` and the loading UI is hidden.
 
+### 🟡 [B-250] `PlotRenderer.tsx` — BRUSH clause `$varName` never written to `allVariables`; shows as `cm-undefVar` in CodeMirror ✅ FIXED
+**Where:** `components/PlotRenderer.tsx:908` (`makeBrushVarHandler`)
+**Repro:** Load Comprehensive Feature Test. Drag the brush on "Pause Timeline". `$sel` stays orange (`cm-undefVar`) in all SQL editors; Varbar shows no `$sel` pill.
+**Observed:** `makeBrushVarHandler` wrote only `$sel.brush.lo` and `$sel.brush.hi` into `allVariables` (the sub-keys). The base `$sel` key was absent, so CodeMirror's `variableRegex` matched `$sel` but `hasOwnProperty(spec.variables, '$sel')` returned false → `cm-undefVar`. Varbar filtered the sub-keys via `BRUSH_SUB_KEY_RE` so nothing was visible.
+**Fix:** Also write `$sel = JSON.stringify({lo, hi})` (or `{x_lo, x_hi, y_lo, y_hi}` for XY mode) alongside the flat sub-keys. On clear, delete the parent key from metadata. Varbar's `formatBrushObj` path already parses this JSON into a `lo…hi` display string.
+
+### 🔴 [B-251] `PlotRenderer.tsx` — BRUSH `$sel` JSON value substituted into plot DSL, breaking parser ✅ FIXED
+**Where:** `components/PlotRenderer.tsx:1042` (`substituteVariables` call on plot config)
+**Repro:** Trigger a brush drag so `$sel = {"lo":..., "hi":...}` is set. The plot cell containing `BRUSH $sel MODE X` immediately shows "Invalid plot configuration. Expected a function call like 'TABLE()', but found extra text."
+**Observed:** `substituteVariables(config, allVariables)` replaced `$sel` in the plot DSL string with its JSON value, producing `BRUSH {"lo":...} MODE X` which the DSL parser rejected. BRUSH/LINK binding targets are output declarations, not input references.
+**Fix:** Before calling `substituteVariables` on a plot config, scan the raw config for BRUSH and LINK binding-target variable names and exclude those keys from the substitution variables map.
+
 ---
 
 ## Comprehensive QA pass — 2026-08-05
