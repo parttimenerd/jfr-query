@@ -914,6 +914,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                 const { lo, hi, x_lo, x_hi, y_lo, y_hi } = brushObj;
                 if (mode === 'xy' && x_lo != null && x_hi != null && y_lo != null && y_hi != null) {
                     handleVariableChange({
+                        [brushVarName]: JSON.stringify({ x_lo, x_hi, y_lo, y_hi }),
                         [`${brushVarName}.brush.x_lo`]: String(x_lo),
                         [`${brushVarName}.brush.x_hi`]: String(x_hi),
                         [`${brushVarName}.brush.y_lo`]: String(y_lo),
@@ -929,6 +930,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                     const loStr = String(lo);
                     const hiStr = String(hi);
                     handleVariableChange({
+                        [brushVarName]: JSON.stringify({ lo, hi }),
                         [`${brushVarName}.brush.lo`]: loStr,
                         [`${brushVarName}.brush.hi`]: hiStr,
                     });
@@ -939,7 +941,11 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
                         cellName: cellNameRef.current,
                     });
                 } else {
-                    // Brush cleared.
+                    // Brush cleared — remove the parent key too.
+                    const current = metadataRef.current;
+                    const next = { ...current.variables };
+                    delete next[brushVarName];
+                    onMetadataChange({ ...current, variables: next });
                     plotBrushStore.clear(brushVarName, cellNameRef.current);
                 }
             }
