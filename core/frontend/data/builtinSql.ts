@@ -2130,7 +2130,7 @@ ORDER BY startTime, type`,
         ? `,\n    round(COALESCE(h.heapCommitted, 0) / 1048576.0, 1) AS "Committed MB",\n    round((r.size - COALESCE(h.heapCommitted, 0)) / 1048576.0, 1) AS "Off-Heap MB"`
         : ``;
       const heapJoin = hasHeap
-        ? `\nLEFT JOIN (\n  SELECT bucket_ms(startTime, 5000) AS b, MAX(COALESCE("heapSpace$committedSize", heapCommitted)) AS heapCommitted\n  FROM GCHeapSummary GROUP BY 1\n) h ON h.b = bucket_ms(r.startTime, 5000)`
+        ? `\nLEFT JOIN (\n  SELECT bucket_ms(startTime, 5000) AS b, MAX(heapCommitted) AS heapCommitted\n  FROM GCHeapSummary GROUP BY 1\n) h ON h.b = bucket_ms(r.startTime, 5000)`
         : ``;
       return `CREATE OR REPLACE VIEW "gc-rss-vs-heap" AS
 SELECT
