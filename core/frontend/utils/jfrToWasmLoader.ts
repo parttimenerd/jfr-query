@@ -7,9 +7,8 @@ const PERF_KEY = 'jfr_import_ms_per_byte';
 // Each worker allocates a GraalVM WebAssembly linear memory that grows with
 // chunk size — typically 300–600 MB per worker for real JFR files.
 // Browser renderer processes are capped at ~1–2 GB total (OS sandbox), so
-// 3 workers risk OOM on larger files. Cap at 2 workers as the safe default;
-// allow 3 only on machines with ≥16 GB where the OS may grant a larger cap.
-// Override via URL: ?maxWorkers=N
+// running more than 2 workers risks OOM on larger files. Default is 1 worker;
+// 2 workers on devices with ≥8 GB RAM. Override via URL: ?maxWorkers=N
 function getMaxWorkers(): number {
   const override = new URLSearchParams(location.search).get('maxWorkers');
   const n = parseInt(override, 10);
