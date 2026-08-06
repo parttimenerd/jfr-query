@@ -82,11 +82,34 @@ function isInsideLinkArgs(pos: number, linkRanges: Array<[number, number]>): boo
   return false;
 }
 
+// Returns ranges of SQL double-quoted identifiers (e.g. "stackTrace$topMethod") so
+// $-matches inside them are not treated as variable references.
+function buildQuotedIdentifierRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === '"') {
+      const start = i;
+      i++;
+      while (i < text.length && text[i] !== '"') {
+        if (text[i] === '\\') i++; // skip escaped char
+        i++;
+      }
+      ranges.push([start, i + 1]);
+      i++;
+    } else {
+      i++;
+    }
+  }
+  return ranges;
+}
+
 function buildDecorations(state: EditorState): DecorationSet {
   const spec = state.field(variableSpec);
   if (!spec) return Decoration.none;
   const text = state.doc.toString();
   const linkRanges = buildLinkArgRanges(text);
+  const quotedRanges = buildQuotedIdentifierRanges(text);
   const ranges: Range<Decoration>[] = [];
   let match: RegExpExecArray | null;
   variableRegex.lastIndex = 0;
@@ -96,6 +119,9 @@ function buildDecorations(state: EditorState): DecorationSet {
     const end = start + name.length;
     // Variables inside LINK_X/LINK_Y/LINK_XY/LINK_SCROLL/BRUSH are binding targets — not "undefined".
     if (isInsideLinkArgs(start, linkRanges)) continue;
+    // $-tokens inside SQL double-quoted identifiers (e.g. "stackTrace$topMethod") are field
+    // path selectors in CJFR, not variable references — skip them.
+    if (isInsideLinkArgs(start, quotedRanges)) continue;
     const defined = Object.prototype.hasOwnProperty.call(spec.variables, name);
     ranges.push(
       Decoration.mark({
