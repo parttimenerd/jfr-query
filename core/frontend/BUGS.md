@@ -3764,3 +3764,31 @@ None.
 
 **Deferred (carry-forward):**
 - B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+
+---
+
+## QA Session 57 — 2026-08-06
+
+**Unit tests:** 6206 passed, 7 skipped
+**Templates tested:** I/O & Latency, JVM Internals
+
+**Interactive features:**
+- Variables panel: PASS — clicked `$session_start`, changed value, variable updated in header
+- LINK_X zoom: PASS — Shift+scroll zoomed chart; "Reset zoom" button appeared; hint chip "drag=pan · ⇧drag=select · ⇧scroll=zoom" visible on hover
+- Command palette: PASS — Cmd+K opened; typed "gc"; completions GCHeapSummary/GarbageCollection/GCPhasePause appeared; Escape closed
+- SQL autocomplete: PASS — typed `SELECT * FROM Gar`, Ctrl+Space → `GarbageCollection table · 20 rows` popup
+- Schema explorer: PASS — clicked GarbageCollection in sidebar; columns expanded with types INTEGER, TIMESTAMP WITH TIME ZONE, VARCHAR
+- Run All: PASS — all cells executed, zero DOM errors
+- Keyboard shortcuts: PASS — modal opened via toolbar button showing Global/Queries/Tabs/Command Palette sections
+
+**Console errors:** 0 real errors (ONNX warnings and "conditional view failed" excluded; 4 recharts width(-1)/height(-1) warnings are transient and expected during initial mount of collapsed cells)
+
+**Bugs found and fixed:** None
+
+**Docs check:** `web-ui.md` and `notebook-format.md` reviewed — both accurate and up to date.
+
+**Deferred:**
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- BRUSH live demo: no built-in template demonstrates BRUSH end-to-end
+- BIG_NUMBER not showcased in any built-in template
