@@ -4321,3 +4321,44 @@ None.
 - `docs-site/views-macros.md` — 6 new conditional views (g1-ihop-stats, g1-region-types, gc-rss-vs-heap, gc-memory-pools, gc-evacuation-efficiency, gc-failure-events) all documented ✅
 - No stale content found.
 
+---
+
+## QA Session 71 — 2026-08-06
+
+### Vitest
+6206 passed, 7 skipped, 0 failed ✅
+
+### Demo notebook (fresh localStorage cleared)
+- DOM scan: 0 errors ✅
+- 2 charts, 6 editors ✅
+
+### Templates tested (rotation S71)
+- **Exceptions & Errors** — Live Preview: Catalog errors (JavaExceptionThrown/JavaErrorThrown absent in demo JFR — expected); loaded: intro prose correct, "Exceptions by Class" + "Errors" cells show `hidden + requires` badges; 0 DOM errors ✅
+- **Container & Cloud** — loaded via Open & Run; all 5 cells show `hidden + requires` badges (container events absent — expected); intro prose with correct tag list (container, kubernetes, docker, cloud); 0 DOM errors ✅
+
+### Interactive features
+| Feature | Result |
+|---|---|
+| Variables panel (`$session_start` click) | ✅ PASS — datetime-local input appeared with value `2024-03-15T11:00` |
+| LINK_X zoom (Shift+scroll on GC Analysis chart) | ✅ PASS — 3 "reset" buttons appeared on linked charts |
+| Command palette (Cmd+K) | ✅ PASS — "Actions" dialog opened |
+| SQL autocomplete (`SELECT * FROM Gar` + Ctrl+Space) | ✅ PASS — GarbageCollection completion shown |
+| Schema explorer (GarbageCollection click) | ✅ PASS — gcId, startTime columns confirmed |
+| Help modal | ✅ PASS — Keyboard Shortcuts dialog opened |
+| Run All Queries | ✅ PASS — 0 DOM errors after run |
+
+### Console errors
+0 real errors (14 warnings: ONNX/recharts — expected per spec) ✅
+
+### Bugs found
+None.
+
+### BUGS.md open items
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope (low priority, complex, deferred)
+
+### Docs check
+- `docs-site/web-ui.md` — template URL params (`?template=gc-analysis`, `?template=zgc-analysis`) still accurate; 13 built-in templates confirmed present in `data/templates/builtin/` ✅
+- `docs-site/notebook-format.md` — `requires=`, `autorun="false"`, `collapsed=true`, `cellConditions` all accurately documented ✅
+- No stale content found.
+
