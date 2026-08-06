@@ -3699,3 +3699,44 @@ None.
 
 ### Test results
 - **6206 passed** (3 new tests), 7 skipped — all green.
+
+---
+
+## QA Session 55 — 2026-08-06
+
+**Focus:** Full QA pass — demo notebook, GC Pause Analysis + Recording Overview templates, all interactive features.
+
+### Demo notebook
+- DOM scan: **0 errors**
+- Charts render: ✅ (208 SVG elements, 2 Recharts wrappers, all with positive dimensions)
+- Tooltip on hover: ✅ (line chart tooltip showed correct value at cursor)
+
+### Templates tested
+| Template | DOM errors | Charts |
+|---|---|---|
+| GC Pause Analysis | 0 | ✅ renders, tooltips work |
+| Recording Overview | 0 | ✅ bar chart + table correct |
+
+### Interactive features
+| Feature | Result |
+|---|---|
+| Variables panel (`$session_start` click-to-edit) | ✅ PASS |
+| Command palette (⇧⇧ button, type "gc") | ✅ PASS — tables + columns filtered correctly |
+| Schema Explorer (click GarbageCollection) | ✅ PASS — column list shown in hover popover |
+| Run All Queries | ✅ PASS — 0 DOM errors after re-run |
+| Keyboard Shortcuts modal | ✅ PASS — modal opened, shortcuts listed |
+| SQL autocomplete in preview pane (Ctrl+Space) | ✅ PASS — `cm-tooltip-autocomplete` dropdown appeared |
+
+### Console errors (localhost:3001 only)
+- 2 ONNX warnings (excluded per spec)
+- Recharts width/height(-1) warnings during initial render — expected, all charts render correctly once laid out
+
+### Bugs found and fixed
+
+#### B-208 — PlotTooltip ignores `decimalPlaces` setting in tooltipColumns and default render paths
+- **Severity:** 🟠 silently wrong
+- **File:** `core/frontend/components/plots/PlotTooltip.tsx`
+- **Root cause:** `fmt` closure (binding `settings.decimalPlaces`) was defined on line 76 but never called. Lines 98, 106, 119, 127 all called bare `formatTooltipValue()` which hardcodes 3 decimal places, ignoring the user setting.
+- **Fix:** Replaced all four bare `formatTooltipValue()` calls in the render paths with `fmt()`.
+- **Commit:** `929cfe2` — fix(tooltip): use settings decimal places in all PlotTooltip render paths
+- **Tests:** 6206 passed, 7 skipped — all green.
