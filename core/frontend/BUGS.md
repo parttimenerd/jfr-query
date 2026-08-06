@@ -2866,3 +2866,41 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 34 — 2026-08-06
+
+### Vitest
+6210 passed, 0 failed.
+
+### All 12 templates — DOM errors after Run All
+- **GC Pause Analysis** — 0 errors, 77 editors ✅
+- **Recording Overview** — 0 errors, 24 editors ✅
+- **CPU Profiling** — 0 errors, 8 editors ✅
+- **Heap Allocation** — 0 errors, 4 editors ✅
+- **I/O & Latency** — 0 errors, 10 editors ✅
+- **JVM Internals** — 0 errors, 15 editors ✅
+- **Memory Leak Detection** — 0 errors, 6 editors ✅
+- **Threading & Contention** — 0 errors, 15 editors ✅
+- **Container & Cloud** — 0 errors, 10 editors ✅
+- **Exceptions & Errors** — 0 errors, 4 editors ✅
+- **Comprehensive Feature Test** — 0 errors, 23 editors ✅
+- **GC Deep Dive** — 0 errors, 38 editors ✅
+
+### Demo notebook
+Loaded via "Try the demo". DOM scan initial + after Run All: 0 errors ✅
+- Schema explorer ✅ — GarbageCollection (20), GCHeapSummary (40), GCPhasePause (40), HeapSnapshot (150), ObjectAllocationSample (25)
+- Run All ✅ — 0 errors
+- Collapse All ✅ — 0 charts after collapse
+- Expand All ✅ — 2 charts restored
+
+### Console errors
+2 ONNX runtime node-assignment warnings only — known non-bugs.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
