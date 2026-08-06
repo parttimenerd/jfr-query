@@ -3842,6 +3842,49 @@ None.
 
 ---
 
+## QA Session 60 — 2026-08-06
+
+### Unit tests
+- 6206 passed, 7 skipped, 0 failures ✅
+
+### Demo notebook
+- Fresh load (localStorage cleared): 10 cells, 5 charts, 6 editors, 0 DOM errors ✅
+- Guided tour overlay appeared (dismissed with Skip) ✅
+- Smart-Start GC detection banner present ✅
+
+### Templates tested
+- **Heap Allocation** ✅ — intro markdown correct; "Top Allocating Classes" + "Allocation Rate" cells show requires badge (no ObjectAllocationSample in demo JFR); 0 errors
+- **I/O & Latency** ✅ — intro markdown with Required events list renders correctly; cells (Combined Latency Overview, File Reads/Writes by Path, Socket Reads by Host, Thread Blocking) all show hidden+requires badges correctly; 0 errors
+
+### Interactive features
+- **Variables panel** ✅ — Notebook Variables (3) expanded: `$limit=20`, `$session_start`, `$session_end` with edit fields and "Add Variable" button
+- **LINK_X zoom** ✅ — Shift+drag on "Allocation Rate (sampled MB/s)" LINE_CHART LINK_X($start,$end) ZOOM → 5 reset buttons appeared on linked charts; hint "drag=pan · ⇧drag=select · ⇧scroll=zoom" confirmed
+- **Command palette** ✅ — Cmd+K opened dialog with Actions / Ask AI tabs
+- **SQL autocomplete** ✅ — `SELECT * FROM Gar` + Ctrl+Space → "GarbageCollection table · 20 rows" completion
+- **Schema explorer** ✅ — GarbageCollection tooltip with columns and types
+- **Run All** ✅ — GC Analysis: 25 charts, 0 DOM errors
+- **Help modal** ✅ — "Keyboard Shortcuts & Tips" dialog opened
+
+### Console errors
+- 0 real errors (ONNX warnings excluded per spec)
+
+### Bugs found
+- None
+
+### BUGS.md
+- No open non-✅ items beyond B-032 and B-205 (both long-standing deferred)
+
+### Docs check
+- `docs-site/plot-dsl.md` — LINK_X, LINK_Y, LINK_XY, BRUSH, ZOOM, tooltip docs all accurate ✅
+- `docs-site/web-ui.md` — Smart-Start banner, GC template URL param all accurate ✅
+- `docs-site/views-macros.md` — built-in views listed accurately ✅
+
+### Deferred (carry-forward)
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+
+---
+
 ## QA Session 59 — 2026-08-06
 
 ### Templates tested
