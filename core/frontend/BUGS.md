@@ -2830,3 +2830,39 @@ None new.
 ### Deferred (carry-forward)
 - **B-057** (raw-markdown editor virtualization): still open, deferred.
 - **B-205** (LATERAL join scope in completions): still open, deferred.
+
+---
+
+## Session 33 — 2026-08-06
+
+### Vitest
+6210 passed, 0 failed.
+
+### Demo notebook
+localStorage cleared, loaded via "Try the demo". Tour overlay appeared (1/7) and was dismissed with "Skip". DOM scan: 0 errors ✅
+
+### Templates tested
+- **Recording Overview** — 0 DOM errors, 24 editors ✅
+- **CPU Profiling** — 0 DOM errors, 8 editors ✅ (cells with "hidden"/"requires" badges expected — demo JFR lacks ExecutionSample events)
+
+### Interactive features
+- **Variables panel** ✅ — `$session_start`/`$session_end` controls visible in toolbar (CPU Profiling template)
+- **Command palette** ✅ — Cmd+K opens Actions/Ask AI dialog
+- **Help modal** ✅ — "Keyboard Shortcuts & Tips" `div[role="dialog"]` with aria-label "Keyboard shortcuts and tips"
+- **Schema explorer** ✅ — GarbageCollection (20), GCHeapSummary (40), GCPhasePause (40), HeapSnapshot (150), ObjectAllocationSample (25)
+- **SQL autocomplete** ✅ — `SELECT * FROM Gar` + Ctrl+Space → `.cm-tooltip-autocomplete` shows "GarbageCollection table · 20 rows"
+- **LINK_X zoom** ✅ — Shift+mouse.wheel on demo notebook LINE_CHART; "Reset Layout" button appeared and was clicked
+- **Run All** ✅ — "Run All Queries" clicked on CPU Profiling; 0 DOM errors after
+
+### Console errors
+2 ONNX runtime node-assignment warnings only — known non-bugs.
+
+### Docs check
+No stale content found.
+
+### Bugs found
+None new.
+
+### Deferred (carry-forward)
+- **B-057** (raw-markdown editor virtualization): still open, deferred.
+- **B-205** (LATERAL join scope in completions): still open, deferred.
