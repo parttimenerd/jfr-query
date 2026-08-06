@@ -4133,3 +4133,39 @@ None.
 - B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
 - B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
 
+---
+
+## Session 67 QA Pass — 2026-08-06
+
+### Vitest
+- 6206 tests passing, 257 files, 1 skipped ✅
+
+### Templates tested (rotation S67)
+- GC Deep Dive (`gc-extended.md`) — NEW template, first time tested. Live Preview: 215 rows, 0 errors ✅. Loaded: 21 cells, 5 charts, 0 DOM errors ✅
+- CPU Profiling — Live Preview: 0 errors (CPULoad/ExecutionSample tables absent from demo JFR — all cells have `requires=` guards, not a bug) ✅
+
+### Interactive features
+- Variables panel ✅ — ▶ Var → ⏸ Var toggle; `$session_start`/`$session_end` controls in toolbar
+- LINK_X zoom ✅ — Shift+scroll on `heap-over-time` chart → "Reset zoom" button appeared in cell
+- Command palette ✅ — Cmd+K opened
+- SQL autocomplete ✅ — Ctrl+Space after `SELECT * FROM Gar` → "GarbageCollection" suggestion
+- Schema explorer ✅ — 67 items (5 event tables + columns)
+- Run All ✅
+- Help modal ✅ — Keyboard Shortcuts & Tips modal opened with all sections
+
+### Console errors
+- 0 real errors (10 warnings: ONNX + Recharts width + conditional view failed — all expected/not bugs) ✅
+
+### Bugs found
+- None
+
+### BUGS.md open items
+- B-032: Cmd-Enter to run focused cell (partially fixed, per-editor wiring still open)
+- B-205: LATERAL join inner-subquery scope in completions (low priority, complex)
+- No other open non-✅ items
+
+### Docs check
+- `docs-site/web-ui.md` — accurate; `?template=gc-analysis` and `?template=zgc-analysis` examples still valid ✅
+- `docs-site/views-macros.md` — accurate ✅
+- GC Deep Dive template (`gc-extended`) not in web-ui.md by name — intentional (docs give examples, not exhaustive list) ✅
+
