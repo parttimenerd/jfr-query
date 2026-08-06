@@ -1044,6 +1044,14 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
         const rows = splitTopLevelConfigs(effectiveConfig).map(rowStr => rowStr.split(';').map(c => c.trim()).filter(Boolean)).filter(row => row.length > 0);
 
         const flatConfigs = rows.flat();
+
+        // Parse the original (pre-substitution) config to recover structural variable
+        // references in LINK_X / BRUSH clauses. Variable substitution replaces $start/$end
+        // with their current values, which breaks LINK_X argument parsing because the
+        // grammar expects $-prefixed names, not quoted timestamp strings.
+        const originalFlatConfigs = splitTopLevelConfigs(
+            expandPlotConstants(config?.trim() || 'TABLE()').expanded.trim() || 'TABLE()'
+        ).flatMap(rowStr => rowStr.split(';').map(c => c.trim()).filter(Boolean));
         if (flatConfigs.length === 0) return <div className="p-4 text-center text-gray-500 text-sm">Empty plot config.</div>;
 
         const isMainConfigFunctionCall = /^\w+\s*\(.*\)\s*$/s.test(parsePlotCall(flatConfigs[0]).mainConfig);
@@ -1052,16 +1060,51 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
         }
 
         const isMulti = flatConfigs.length > 1;
+        let flatIdx = 0;
         const grid = rows.map((rowConfigs, rowIndex) => (
             <div key={`r-${rowIndex}`} className="flex-1 flex gap-4 min-h-0">
                 {rowConfigs.map((singleConfig, colIndex) => {
+                    // Parse structural clauses (LINK_X var names, BRUSH var names) from the
+                    // original un-substituted config so that variable substitution cannot
+                    // overwrite $start/$end with their current values and break LINK_X wiring.
+                    const originalConfig = originalFlatConfigs[flatIdx] ?? singleConfig;
+                    flatIdx++;
                     let outerClauses = ''; let mainConfig = singleConfig;
                     try {
                         // Try composite first; falls through to single-call shape when no `+`/ROW/COL is present.
                         const parsedRoot = parseComposite(singleConfig);
+                        // Recover structural variable-name clauses (LINK_X, BRUSH) from the
+                        // original config. Substitution may have replaced $start/$end with
+                        // their current timestamp values, making the LINK_X args unrecognisable
+                        // as variable names. The original parse always has the $-prefixed names.
+                        const originalParsedRoot = parseComposite(originalConfig);
+                        if (!parsedRoot.linkX && originalParsedRoot.linkX) parsedRoot.linkX = originalParsedRoot.linkX;
+                        if (!parsedRoot.linkXMaster && originalParsedRoot.linkXMaster) parsedRoot.linkXMaster = originalParsedRoot.linkXMaster;
+                        if (parsedRoot.linkXClamp === undefined && originalParsedRoot.linkXClamp !== undefined) parsedRoot.linkXClamp = originalParsedRoot.linkXClamp;
+                        if (!parsedRoot.brush && originalParsedRoot.brush) parsedRoot.brush = originalParsedRoot.brush;
 
                         // Leaf renderer used by both the single-plot path and CompositeRenderer.
+                        // Helper: recover structural variable-name clauses from the original
+                        // un-substituted leaf so LINK_X/BRUSH variable references survive substitution.
+                        const recoverStructural = (leaf: ParsedPlotCall, origLeaf: ParsedPlotCall | undefined): ParsedPlotCall => {
+                            if (!origLeaf) return leaf;
+                            const patched = { ...leaf };
+                            if (!patched.linkX && origLeaf.linkX) patched.linkX = origLeaf.linkX;
+                            if (!patched.linkXMaster && origLeaf.linkXMaster) patched.linkXMaster = origLeaf.linkXMaster;
+                            if (patched.linkXClamp === undefined && origLeaf.linkXClamp !== undefined) patched.linkXClamp = origLeaf.linkXClamp;
+                            if (!patched.brush && origLeaf.brush) patched.brush = origLeaf.brush;
+                            return patched;
+                        };
+                        // Flatten original leaves by index to match substituted composite children.
+                        const originalLeaves = (() => {
+                            const collect = (node: ParsedPlotCall): ParsedPlotCall[] =>
+                                node.composite ? node.composite.children.flatMap(collect) : [node];
+                            return collect(originalParsedRoot);
+                        })();
+                        let origLeafIdx = 0;
                         const renderLeaf = (leaf: ParsedPlotCall): React.ReactNode => {
+                            const origLeaf = originalLeaves[origLeafIdx++];
+                            leaf = recoverStructural(leaf, origLeaf);
                             const leafMain = leaf.mainConfig;
                             const leafTypeName = normalizePlotName(leafMain.match(/^(\w+)/)?.[1] || 'TABLE');
                             const leafReg = plotRegistry[leafTypeName];
