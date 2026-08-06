@@ -176,7 +176,7 @@ const BarChartComponent: React.FC<{ config: BarChartConfig; data: any[]; isAnima
             textAnchor: "end",
             interval: 0,
             height: 60,
-            tickFormatter: makeTickFormatter(axisXClause) ?? undefined,
+            tickFormatter: makeTickFormatter(axisXClause) ?? (isTimeAxis ? (l: any) => formatTimestamp(l, settings.timeFormat) : undefined),
             scale: mapAxisScale(axisXClause),
             label: xLabelFromClause ? { value: xLabelFromClause, position: 'insideBottom', fill: '#9ca3af', fontSize: 12, offset: -5 } : undefined
         }),
