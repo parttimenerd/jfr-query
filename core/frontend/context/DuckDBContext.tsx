@@ -254,10 +254,21 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const wasmConnRef = useRef<AsyncDuckDBConnection | null>(null);
   // In-flight eager init promise — loadFile awaits this instead of re-initializing.
   const wasmInitPromiseRef = useRef<Promise<void> | null>(null);
+  const queryCacheRef = useRef<Map<string, any[]>>(new Map());
 
   const executeQuery = useCallback(async (sql: string): Promise<any> => {
     if (mode === 'wasm') {
         if (!wasmConnRef.current) throw new Error('WASM DB not initialized');
+        const cleaned = sql.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+        const isSelect = /^select\b/i.test(cleaned);
+        const noCache = /--\s*no-cache/i.test(sql);
+        if (isSelect && !noCache) {
+            const cached = queryCacheRef.current.get(sql);
+            if (cached !== undefined) return cached;
+            const result = await runWasmQuery(wasmConnRef.current, sql);
+            queryCacheRef.current.set(sql, result);
+            return result;
+        }
         return runWasmQuery(wasmConnRef.current, sql);
     }
     return executeRemoteQuery(sql);
@@ -407,6 +418,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setDbState(DBState.IMPORTING);
     setImportProgress(0.01);
     setErrorMessage(null);
+    queryCacheRef.current.clear();
     try {
       if (!wasmDbRef.current) {
         if (wasmInitPromiseRef.current) {
@@ -462,6 +474,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const loadDemo = useCallback(async () => {
     setDbState(DBState.IMPORTING);
     setErrorMessage(null);
+    queryCacheRef.current.clear();
     try {
       if (!wasmDbRef.current) {
         if (wasmInitPromiseRef.current) {
@@ -533,6 +546,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const loadServerFile = useCallback(async (path: string) => {
     setDbState(DBState.IMPORTING);
     setErrorMessage(null);
+    queryCacheRef.current.clear();
     try {
       const r = await fetch('/api/load-file', {
         method: 'POST',
