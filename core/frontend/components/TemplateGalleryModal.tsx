@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { XMarkIcon } from './icons/XMarkIcon';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -6,6 +6,7 @@ import rehypeKatex from 'rehype-katex';
 import { listTemplates, loadTemplate, type TemplateMeta } from '../services/TemplateService';
 import { mergeTemplate, type InsertMode } from '../utils/templateMerge';
 import StaticCodeHighlighter from './StaticCodeHighlighter';
+import { DataContext } from '../context/DuckDBContext';
 
 interface TemplateGalleryModalProps {
     isOpen: boolean;
@@ -22,9 +23,32 @@ interface TemplateGalleryModalProps {
     onRunAll?: () => void;
 }
 
+type PreviewTab = 'preview' | 'live';
+
+interface LiveResult {
+    sql: string;
+    rows: Record<string, unknown>[] | null;
+    error: string | null;
+    running: boolean;
+}
+
+/** Extract all ```sql … ``` blocks from template body (with alias comment stripped). */
+function extractSqlBlocks(body: string): string[] {
+    const blocks: string[] = [];
+    const re = /```sql\s*\n([\s\S]*?)```/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(body)) !== null) {
+        // Strip alias comment line(s)
+        const sql = m[1].replace(/^--\s*alias\s+\S+.*\n?/gm, '').trim();
+        if (sql) blocks.push(sql);
+    }
+    return blocks;
+}
+
 const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
     isOpen, onClose, currentSource, onInsert, mode, hasLoadedFile, onRunAll,
 }) => {
+    const { query } = useContext(DataContext);
     const [templates, setTemplates] = useState<TemplateMeta[]>([]);
     const [selected, setSelected] = useState<TemplateMeta | null>(null);
     const [body, setBody] = useState<string>('');
@@ -32,6 +56,9 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
     const [tagFilter, setTagFilter] = useState<string | null>(null);
     const [insertMode, setInsertMode] = useState<InsertMode>('replace');
     const [error, setError] = useState<string | null>(null);
+    const [previewTab, setPreviewTab] = useState<PreviewTab>('preview');
+    const [liveResults, setLiveResults] = useState<LiveResult[]>([]);
+    const liveRunRef = useRef(0);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -42,6 +69,8 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
         setTagFilter(null);
         setError(null);
         setInsertMode('replace');
+        setPreviewTab('preview');
+        setLiveResults([]);
         let cancelled = false;
         listTemplates({ mode })
             .then(list => { if (!cancelled) setTemplates(list); })
@@ -53,6 +82,7 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
         if (!selected) { setBody(''); return; }
         setBody('');
         setError(null);
+        setLiveResults([]);
         let cancelled = false;
         loadTemplate(selected.name, { mode })
             .then(b => { if (!cancelled) setBody(b); })
@@ -66,6 +96,36 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
         document.addEventListener('keydown', handler, true);
         return () => document.removeEventListener('keydown', handler, true);
     }, [isOpen, onClose]);
+
+    // Run SQL blocks when Live tab is active and body is loaded.
+    useEffect(() => {
+        if (previewTab !== 'live' || !body || !hasLoadedFile) return;
+        const blocks = extractSqlBlocks(body);
+        if (blocks.length === 0) return;
+        const runId = ++liveRunRef.current;
+        const initial: LiveResult[] = blocks.map(sql => ({ sql, rows: null, error: null, running: true }));
+        setLiveResults(initial);
+        blocks.forEach((sql, i) => {
+            query(sql)
+                .then(rows => {
+                    if (liveRunRef.current !== runId) return;
+                    setLiveResults(prev => {
+                        const next = [...prev];
+                        next[i] = { sql, rows, error: null, running: false };
+                        return next;
+                    });
+                })
+                .catch(err => {
+                    if (liveRunRef.current !== runId) return;
+                    setLiveResults(prev => {
+                        const next = [...prev];
+                        next[i] = { sql, rows: null, error: String(err), running: false };
+                        return next;
+                    });
+                });
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [previewTab, body, hasLoadedFile]);
 
     const allTags = useMemo(() => {
         const set = new Set<string>();
@@ -199,15 +259,44 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
                                         {selected.license && <span className="text-xs text-gray-500">{selected.license}</span>}
                                     </div>
                                     {selected.description && <p className="text-sm text-gray-400">{selected.description}</p>}
+                                    {/* Tab switcher */}
+                                    <div className="flex gap-1 mt-3">
+                                        <button
+                                            onClick={() => setPreviewTab('preview')}
+                                            className={`px-3 py-1 text-xs rounded ${previewTab === 'preview' ? 'bg-cyan-700 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                                            Preview
+                                        </button>
+                                        <button
+                                            onClick={() => setPreviewTab('live')}
+                                            disabled={!hasLoadedFile}
+                                            title={hasLoadedFile ? 'Run SQL queries against the loaded file and show results' : 'Load a JFR file to enable live preview'}
+                                            className={`px-3 py-1 text-xs rounded ${previewTab === 'live' ? 'bg-cyan-700 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'} disabled:opacity-40 disabled:cursor-not-allowed`}>
+                                            Live Preview
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="flex-grow overflow-y-auto p-4 prose prose-sm prose-invert max-w-none">
-                                    {/* Preview does NOT execute SQL — render the body as plain markdown. */}
-                                    <ReactMarkdown
-                                        remarkPlugins={[remarkMath]}
-                                        rehypePlugins={[rehypeKatex]}
-                                        components={previewMarkdownComponents}
-                                    >{stripFrontMatter(body)}</ReactMarkdown>
-                                </div>
+                                {previewTab === 'preview' ? (
+                                    <div className="flex-grow overflow-y-auto p-4 prose prose-sm prose-invert max-w-none">
+                                        {/* Preview does NOT execute SQL — render the body as plain markdown. */}
+                                        <ReactMarkdown
+                                            remarkPlugins={[remarkMath]}
+                                            rehypePlugins={[rehypeKatex]}
+                                            components={previewMarkdownComponents}
+                                        >{stripFrontMatter(body)}</ReactMarkdown>
+                                    </div>
+                                ) : (
+                                    <div className="flex-grow overflow-y-auto p-4 space-y-4">
+                                        {liveResults.length === 0 && !body && (
+                                            <p className="text-gray-500 text-sm">Loading template…</p>
+                                        )}
+                                        {liveResults.length === 0 && body && (
+                                            <p className="text-gray-500 text-sm">No SQL queries found in this template.</p>
+                                        )}
+                                        {liveResults.map((r, i) => (
+                                            <LiveResultBlock key={i} result={r} index={i} />
+                                        ))}
+                                    </div>
+                                )}
                             </>
                         ) : (
                             <div className="flex-grow flex items-center justify-center text-gray-500">Select a template to preview.</div>
@@ -238,15 +327,15 @@ const TemplateGalleryModal: React.FC<TemplateGalleryModalProps> = ({
                         {hasLoadedFile && onRunAll && (
                             <button onClick={handleRunWithFile}
                                 disabled={!selected || !body}
-                                title="Replace notebook with this template and run all queries against the loaded file"
+                                title="Replace notebook with this template and immediately run all queries against the loaded file"
                                 className="px-4 py-1.5 rounded text-sm bg-green-700 hover:bg-green-600 disabled:bg-gray-700 disabled:text-gray-500 text-white">
-                                Run with current file
+                                Open &amp; Run
                             </button>
                         )}
                         <button onClick={handleInsert}
                             disabled={!selected || !body}
                             className="px-4 py-1.5 rounded text-sm bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 disabled:text-gray-500 text-white">
-                            Use template
+                            Insert
                         </button>
                     </div>
                 </footer>
@@ -269,6 +358,69 @@ const TemplateRow: React.FC<{ template: TemplateMeta; selected: boolean; onClick
         )}
     </button>
 );
+
+const MAX_LIVE_ROWS = 100;
+
+const LiveResultBlock: React.FC<{ result: LiveResult; index: number }> = ({ result, index }) => {
+    if (result.running) {
+        return (
+            <div className="border border-gray-700 rounded p-3">
+                <div className="text-xs text-gray-500 mb-1">Query {index + 1}</div>
+                <div className="text-xs text-gray-400 animate-pulse">Running…</div>
+            </div>
+        );
+    }
+    if (result.error) {
+        return (
+            <div className="border border-red-800/40 rounded p-3">
+                <div className="text-xs text-gray-500 mb-1">Query {index + 1}</div>
+                <div className="text-xs font-mono text-red-400 whitespace-pre-wrap">{result.error}</div>
+            </div>
+        );
+    }
+    if (!result.rows || result.rows.length === 0) {
+        return (
+            <div className="border border-gray-700 rounded p-3">
+                <div className="text-xs text-gray-500 mb-1">Query {index + 1}</div>
+                <div className="text-xs text-gray-500 italic">No rows returned.</div>
+            </div>
+        );
+    }
+    const cols = Object.keys(result.rows[0]);
+    const rows = result.rows.slice(0, MAX_LIVE_ROWS);
+    const truncated = result.rows.length > MAX_LIVE_ROWS;
+    return (
+        <div className="border border-gray-700 rounded overflow-hidden">
+            <div className="px-3 py-1.5 bg-gray-900/50 text-xs text-gray-500">
+                Query {index + 1} — {result.rows.length} row{result.rows.length !== 1 ? 's' : ''}
+                {truncated && <span className="ml-1 text-amber-400">(showing first {MAX_LIVE_ROWS})</span>}
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                    <thead>
+                        <tr className="bg-gray-900/40 border-b border-gray-700">
+                            {cols.map(c => (
+                                <th key={c} className="px-2 py-1.5 text-left text-gray-400 font-medium whitespace-nowrap">{c}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((row, ri) => (
+                            <tr key={ri} className={ri % 2 === 0 ? '' : 'bg-gray-900/20'}>
+                                {cols.map(c => (
+                                    <td key={c} className="px-2 py-1 text-gray-300 whitespace-nowrap max-w-[200px] truncate"
+                                        title={String(row[c] ?? '')}>
+                                        {row[c] === null || row[c] === undefined ? <span className="text-gray-600">null</span> : String(row[c])}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
 
 function stripFrontMatter(body: string): string {
     return body
