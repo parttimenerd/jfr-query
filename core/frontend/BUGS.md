@@ -7349,4 +7349,63 @@ README.md line 54: updated `gpt-3.5-turbo` → `gpt-4o-mini` as the "basic" Open
 - ZGC Analysis shows 0 charts as expected — the demo JFR uses G1GC, not ZGC; the template renders correctly (7 visible cells, 1 with aggregate stats table) just without ZGC-specific event charts.
 - Container & Cloud and Exceptions & Errors show 0 charts; no container or exception events in the demo recording.
 - GC Pause Analysis 37 charts confirms that template is fully functional.
+
+---
+
+## Session S152 QA — 2026-08-07 (Playwright headless)
+
+**Templates tested:** I/O & Latency (interactive), Threading & Contention (interactive), + all 13 DOM sweep  
+**Method:** Playwright headless node script (`e2e/qa-s152.mjs`)
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Demo notebook | ✅ 0 errors, 5 charts |
+| Demo: variables panel | ⚪ skip (no variable input with $ context in demo notebook cell scope) |
+| Demo: run all | ✅ PASS |
+| Demo: collapse/expand | ✅ PASS |
+| Demo: schema explorer | ⚪ partial (sidebar text query timed out — known sidepanel state) |
+| Demo: help modal | ✅ PASS |
+| I/O & Latency | ✅ 0 errors, 0 charts (no file I/O events in demo JFR) |
+| I/O: LINK_X zoom | ⚪ skip (0 charts — expected with demo JFR) |
+| I/O: command palette | ✅ PASS (opened, typed "io", dismissed) |
+| I/O: SQL autocomplete | ⚪ skip (no CM6 editor found outside plot block in initial view) |
+| I/O: plot tooltip | ⚪ skip (0 charts — expected with demo JFR) |
+| I/O: resize handle | ✅ PASS |
+| Threading & Contention | ✅ 0 errors, 0 charts (no thread contention events in demo JFR) |
+| Threading: LINK_X zoom | ⚪ skip (0 charts — expected with demo JFR) |
+| Threading: BRUSH clause | ⚪ n/a (no BRUSH clause in Threading template) |
+| Threading: variables | ⚪ skip (no variable inputs with $ context) |
+| Threading: command palette | ✅ PASS (opened, typed "thread", dismissed) |
+| Threading: plot tooltip | ⚪ skip (0 charts — expected with demo JFR) |
+| GC Pause Analysis | ✅ 0 errors, 37 charts |
+| GC Deep Dive | ✅ 0 errors, 23 charts |
+| Memory Leak Detection | ✅ 0 errors, 2 charts |
+| Heap Allocation | ✅ 0 errors, 4 charts |
+| CPU Profiling | ✅ 0 errors, 0 charts (no CPU profiling events in demo JFR) |
+| JVM Internals | ✅ 0 errors, 0 charts (no JVM internal events in demo JFR) |
+| Container & Cloud | ✅ 0 errors, 0 charts (no container events in demo JFR) |
+| Exceptions & Errors | ✅ 0 errors, 0 charts (no exception events in demo JFR) |
+| Recording Overview | ✅ 0 errors, 7 charts |
+| Comprehensive Feature Test | ✅ 0 errors, 20 charts |
+| ZGC Analysis | ✅ 0 errors, 0 charts (demo JFR uses G1GC, not ZGC) |
+| UI polish: zero-height cells | ✅ 0 |
+| UI polish: text overflow | ✅ none |
+| UI polish: visible .error | ✅ 0 |
+| Console errors (real) | ✅ 0 |
+
+**Console errors (real): 0** ✅
+
+### Bugs found
+
+None.
+
+### Notes
+
+- I/O & Latency and Threading & Contention both load cleanly with 0 DOM errors; 0 charts is expected since the demo JFR recording contains no `FileRead`/`SocketRead`/`ThreadPark`/`JavaMonitorWait` events that these templates visualize.
+- Command palette (Meta+K) confirmed working on both interactive templates.
+- Resize handle confirmed working on I/O & Latency.
+- All 13 templates pass DOM scan with 0 errors.
+- GC Pause Analysis 37 charts and Comprehensive Feature Test 20 charts confirm the chart-heavy templates remain fully functional.
 - SQL autocomplete now passes cleanly (tooltip returned table suggestions) — improvement over S148/S150 "first-focus activation" partial.
