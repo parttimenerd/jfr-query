@@ -2022,7 +2022,7 @@ WITH
       SELECT
           COUNT(*)                                             AS total_gcs,
           COUNT(*) FILTER (WHERE cause = 'System.gc()')       AS system_gcs,
-          COUNT(*) FILTER (WHERE cause = 'Allocation Failure')AS alloc_failures,
+          COUNT(*) FILTER (WHERE cause = 'Allocation Failure') AS alloc_failures,
           AVG(duration * 1000.0)                              AS avg_pause_ms,
           MAX(duration * 1000.0)                              AS max_pause_ms,
           COALESCE(SUM(duration), 0)                          AS total_pause_sec
