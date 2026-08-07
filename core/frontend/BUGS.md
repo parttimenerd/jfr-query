@@ -5508,3 +5508,39 @@ Implicitly verified by consistent template-qa-s94 baseline ✅
 
 ### Bugs found
 None.
+
+---
+
+## Session S102 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### All 13 templates (automated: e2e/template-qa-s94.mjs)
+13/13 PASS ✅ — all cell/SVG counts stable
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Interactive features (e2e/qa-s96-interactive.mjs — 5/5 PASS) ✅
+
+### GC Deep Dive deep scan (gc-template-qa.mjs)
+- 512 SVGs, idle=true, 0 DOM errors on full scroll ✅
+- 0 console errors ✅
+- All new GC deep-dive cells (IHOP, regions, RSS, memory pools, evacuation, failure events, concurrent mode) render correctly with demo data (shown as hidden/amber badge — expected, events not in demo JFR) ✅
+
+### builtinSql.test.ts
+- 10/10 PASS ✅ — CONDITIONAL_VIEWS_SQL entries including 6 new GC deep-dive views all valid
+
+### BUGS.md open items audit
+- B-NEW-41: commit `b9d025b` ✅ fixed
+- B-206: commit `626358b` ✅ fixed
+- B-208: commit `929cfe2` ✅ fixed
+- No open items ✅
+
+### Docs check
+- `ai-providers.md`: claude-sonnet-4-6 matches AnthropicProvider.ts:100-101 ✅
+- `getting-started.md`: Java 21+, port 4244, .jfr/.cjfr accepted ✅
+- `cli.md`: `serve`/`query`/`import`/`macros`/`views`/`context` commands all accurate ✅
+
+### Bugs found
+None.
