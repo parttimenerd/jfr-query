@@ -5479,3 +5479,32 @@ Implicitly verified by consistent template-qa-s94 baseline ✅
 ### Docs check
 - `variables.md`: BRUSH struct access, LINK_X gestures, URL seeding — all accurate ✅
 - `browser-architecture.md`: worker count, memory budget, WASM pre-compilation, row limit 50k — all accurate ✅
+
+---
+
+## Session S101 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Interactive features (e2e/qa-s96-interactive.mjs — 5/5 PASS) ✅
+- Variables panel, BRUSH, SQL autocomplete, DOM scan, console — all pass
+
+### Template rotation (e2e/qa-s101-rotation.mjs — 3/3 PASS)
+- Heap Allocation: 173 SVGs, 0 DOM errors ✅
+- I/O & Latency: 146 SVGs, 0 DOM errors ✅
+- Console: 0 real errors ✅
+
+### BUGS.md open items audit
+- B-NEW-41 (LINK_X wiring): commit `b9d025b` — confirmed FIXED ✅
+- No other open items found ✅
+
+### Docs check
+- `browser-architecture.md`: row limit (50,000 / `-- no-limit`) matches `DuckDBContext.tsx:575,590` ✅
+- `notebook-format.md`: `requires=`, `cellConditions`, `input=` widgets all documented ✅
+- `plot-dsl.md`: 52 occurrences of chart types including VIOLIN/WATERFALL/HEATMAP/SANKEY/TREEMAP/SUNBURST ✅
+
+### Bugs found
+None.
