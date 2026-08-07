@@ -5801,3 +5801,54 @@ Recording Overview: 239 SVGs, GC Pause Analysis: 723 SVGs, GC Deep Dive: 512 SVG
 
 ### Template audit
 Full pass over all 13 templates and all CONDITIONAL_VIEWS_SQL entries: no other issues found.
+
+---
+
+## Session S112 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Interactive features (e2e/qa-s96-interactive.mjs — 5/5 PASS) ✅
+
+### Template rotation (e2e/qa-s112-rotation.mjs — 3/3 PASS)
+- Container & Cloud: 142 SVGs, 0 DOM errors ✅
+- Comprehensive Feature Test: 273 SVGs, 0 DOM errors ✅
+- Console: 0 real errors ✅
+
+### Deep interactive probe (e2e/qa-s112-deep-interactive.mjs)
+- Variable chip → input → change → cells respond ✅
+- Command palette: Cmd+K opens, typed "run", 0 items shown ✅
+- Console: 0 real errors ✅
+- BRUSH not found in GC Pause Analysis — expected (BRUSH only in Comprehensive Feature Test)
+- Tooltip not visible in headless — known headless limitation
+
+### UI probe findings
+- Run All button: `aria-label="Run All Queries"` (qa-s95 already uses this correctly)
+- Help button: `aria-label="Keyboard Shortcuts"` (qa-s95 already uses this correctly)
+- Schema explorer: click table → type annotations appear (INTEGER, TIMESTAMP WITH TIME ZONE, VARCHAR) ✅
+
+### Code audit — 3 bugs found and fixed
+
+#### 🔴 [B-NEW-43] `gc-evacuation-efficiency` view uses non-existent column names ✅ FIXED
+**Where:** `core/frontend/data/builtinSql.ts` (gc-evacuation-efficiency view)
+**Root cause:** View used `e.regionsEvacuated`, `e.bytesPromoted`, `e.allocationContextWeight` — none of which exist in the `EvacuationInformation` JFR event. Actual columns are `cSetRegions`, `allocationRegionsUsedBefore/After`, `bytesCopied`.
+**Fix:** `regionsEvacuated → cSetRegions`, `bytesPromoted → allocationRegionsUsedAfter - allocationRegionsUsedBefore`, removed `allocationContextWeight`. Verified against real JFR data.
+**Commit:** `6b52c54`
+
+#### 🔴 [B-NEW-44] `g1-ihop-stats` view uses non-existent column names ✅ FIXED
+**Where:** `core/frontend/data/builtinSql.ts` (g1-ihop-stats view)
+**Root cause:** View used `a.occupancy`, `a.initiatingOccupancy`, `a.mutatorAllocationSpeed`, `a.concurrentGCGrowth`, `a.lastMarkingLength` — none exist. Actual column names verified via JFR API: `currentOccupancy`, `thresholdPercentage`, `predictedAllocationRate`, `predictedMarkingDuration`.
+**Fix:** All column references corrected. `concurrentGCGrowth` has no equivalent, removed. Updated gc-analysis.md cell prose and plots to match.
+**Commit:** `aa696d5`
+
+#### 🔴 [B-NEW-45] `gc-failure-events` view uses non-existent columns on PromotionFailed/EvacuationFailed ✅ FIXED
+**Where:** `core/frontend/data/builtinSql.ts` (gc-failure-events buildSql)
+**Root cause:** View used `promotionSize` (no such column) and `failures` (no such column) for the two failure event tables. The actual struct is `promotionFailed$totalSize`, `promotionFailed$objectCount`, `evacuationFailed$totalSize`, `evacuationFailed$objectCount`.
+**Fix:** Updated to use the correct flattened struct column names.
+**Commit:** `aa696d5`
+
+### Docs check
+- All docs-site/*.md re-audited by subagent: all accurate, no stale content found
