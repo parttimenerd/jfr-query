@@ -5640,3 +5640,33 @@ None.
 
 ### Bugs found
 None.
+
+---
+
+## Session S106 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### All 13 templates (automated: e2e/template-qa-s94.mjs)
+13/13 PASS ✅ — all cell/SVG counts stable
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Interactive features (e2e/qa-s96-interactive.mjs — 5/5 PASS) ✅
+
+### Code audit: query result cache (commit 34798e6)
+- New `queryCacheRef` in `DuckDBContext.tsx` caches `SELECT` results by SQL string (WASM mode only).
+- Cache cleared on all three load paths: `loadFile`, `loadDemo`, `loadServerFile` ✅
+- `-- no-cache` comment flag bypasses cache for forced re-execution ✅
+- `-- no-limit` and `-- no-cache` use separate cache keys (different SQL strings) → no cross-contamination ✅
+- No bugs found in implementation.
+
+### Docs fix
+- `docs-site/browser-architecture.md`: added documentation for `-- no-cache` query comment alongside existing `-- no-limit` entry. Commit: `f1f39d1`
+
+### BUGS.md open items
+No open non-✅ items ✅
+
+### Bugs found
+None (one docs omission fixed).
