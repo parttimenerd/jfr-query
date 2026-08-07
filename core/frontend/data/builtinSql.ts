@@ -1476,13 +1476,14 @@ ORDER BY COUNT(*) DESC`,
     requires: 'VirtualThreadPinned',
     sql: `CREATE OR REPLACE VIEW "pinned-threads" AS
 SELECT
-    (c.javaName || '.' || vtp.stackTrace$topApplicationMethod) AS "Method",
+    (c.javaName || '.' || m.name || m.descriptor) AS "Method",
     COUNT(*) AS "Pinned Count",
     format_duration(MAX(vtp.duration)) AS "Longest Pinning",
     format_duration(SUM(vtp.duration)) AS "Total Time Pinned"
 FROM VirtualThreadPinned vtp
-JOIN Class c ON vtp.stackTrace$topApplicationClass = c._id
-GROUP BY vtp.stackTrace$topApplicationMethod, vtp.stackTrace$topApplicationClass, c.javaName
+JOIN Method m ON vtp.stackTrace$topApplicationMethod = m._id
+JOIN Class c ON m.type = c._id
+GROUP BY vtp.stackTrace$topApplicationMethod, c.javaName, m.name, m.descriptor
 ORDER BY SUM(vtp.duration) DESC`,
   },
   {
