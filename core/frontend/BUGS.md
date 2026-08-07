@@ -8090,3 +8090,51 @@ None.
 - JVM Internals: 0 charts expected — demo JFR has no JIT/Compiler event data matching those views.
 - docs-site: all clean — no stale content found.
 - No open non-✅ items beyond B-211 ✅
+
+---
+
+## QA Session S169 — 2026-08-07
+
+**Focus:** Full all-13-templates + demo interactive pass (reusing qa-s165.mjs). Deep source audit. SQL syntax fix.
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Vitest 6232/6232 | ✅ |
+| Demo: charts rendered, DOM clean | ✅ |
+| All interactive features (8/8) | ✅ |
+| Recording Overview (3 charts, LINK_X ✅) | ✅ |
+| GC Deep Dive (7 charts, LINK_X ✅) | ✅ |
+| GC Pause Analysis (13 charts, LINK_X ✅) | ✅ |
+| CPU Profiling (1 prose cell rendered; 0 charts as expected) | ✅ |
+| Heap Allocation (2 charts, LINK_X ✅) | ✅ |
+| I/O & Latency (0 charts) | ✅ |
+| JVM Internals (0 charts) | ✅ |
+| Memory Leak Detection (1 chart, LINK_X ✅) | ✅ |
+| Container & Cloud (0 charts) | ✅ |
+| Exceptions & Errors (0 charts) | ✅ |
+| Threading & Contention (0 charts) | ✅ |
+| ZGC Analysis (0 charts) | ✅ |
+| Comprehensive Feature Test (6 charts, LINK_X ✅, BRUSH ✅) | ✅ |
+| Console errors (excl. /api/query 500s) | ✅ 0 |
+
+**Note:** qa-s165.mjs (all-templates pass) showed 1 flaky failure on `CPU Profiling: cells=0` under load during the 13-template sequential run. Probe confirmed 3/3 isolated runs pass — the intro cell always renders (cells=1). Flakiness is timing under load, not a real bug.
+
+**Result: All checks pass** ✅ (1 timing fluke in sequential run, confirmed not a real failure)
+
+### Bugs found and fixed
+
+#### B-212 — Missing space before AS in gc-tuning-advisor SQL
+- **Severity:** 🟠 potential SQL syntax issue (DuckDB may tolerate it but it's non-standard)
+- **File:** `core/frontend/data/builtinSql.ts` line 2025
+- **Root cause:** `COUNT(*) FILTER (WHERE cause = 'Allocation Failure')AS alloc_failures,` — missing space between `)` and `AS`.
+- **Fix:** Added space: `COUNT(*) FILTER (WHERE cause = 'Allocation Failure') AS alloc_failures,`
+- **Commit:** `88df759` — fix(gc): add missing space before AS in gc-tuning-advisor FILTER clause
+- **Tests:** 6232/6232 pass ✅
+
+### Notes
+
+- Deep source audit confirmed no other latent bugs: plot parser, PlotTooltip, all template requires= guards, all view dependencies all clean.
+- CPU Profiling template: all 4 data cells correctly hidden behind `requires=CPULoad` / `requires=ExecutionSample` guards; 1 intro prose cell always renders.
+- No open non-✅ items beyond B-212 ✅
