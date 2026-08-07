@@ -7806,7 +7806,41 @@ None.
 - docs-site `ai-providers.md:115` references `localhost:3001` in the context of `npm run dev` — correct for that use case, not stale.
 - No open non-✅ items beyond B-211 ✅
 
-## QA Session S162 — 2026-08-07
+## QA Session S163 — 2026-08-07
+
+**Focus:** Full QA pass. Templates: Threading & Contention, Comprehensive Feature Test. Interactive: variables+popup, LINK_X zoom, command palette, SQL autocomplete, schema explorer, help modal. BRUSH tested via Comprehensive Feature Test (6 charts, brush elements confirmed).
+
+**Scripts:** `core/frontend/e2e/qa-s163.mjs`
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Vitest 6232/6232 | ✅ |
+| Demo: charts rendered, DOM clean | ✅ |
+| Variables: tokens visible + editor opens | ✅ |
+| LINK_X zoom: reset button appeared | ✅ |
+| Command palette (Cmd+K) | ✅ |
+| SQL autocomplete (Ctrl+Space) | ✅ |
+| Schema explorer: items visible | ✅ |
+| Help modal opens + shortcut content | ✅ |
+| Threading & Contention: cells rendered, DOM clean | ✅ (0 charts — no JavaMonitorEnter events in demo JFR) |
+| Comprehensive Feature Test: cells rendered, DOM clean | ✅ (6 charts) |
+| BRUSH: recharts-brush elements in Comprehensive | ✅ |
+| Console errors (excl. /api/query 500s) | ✅ 0 |
+
+**Result: 16/16 checks pass** ✅
+
+### Bugs found
+
+None.
+
+### Notes
+
+- BRUSH check moved to Comprehensive Feature Test template which has synthetic data producing actual brush charts. Demo notebook does not use BRUSH clause.
+- `?template=gc-analysis` and `?template=zgc-analysis` URL parameter slugs confirmed correct vs template filenames.
+- plot-dsl.md alias table confirmed matches SHAPE_NORMALIZE after commit 850bf39 (HIST, HEAT, BOX, FLAME, TREE, FALL all now implemented).
+- No open non-✅ items beyond B-211 ✅
 
 **Focus:** Full comprehensive pass. Templates: Container & Cloud, Exceptions & Errors. Interactive: variables+popup, LINK_X zoom, BRUSH check, command palette, SQL autocomplete, schema explorer expand+types, Run All, help modal. UI polish: tooltip, resize handles, overflow, console errors.
 
