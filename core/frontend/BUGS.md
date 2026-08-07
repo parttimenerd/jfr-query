@@ -6997,3 +6997,51 @@ None. All features working correctly. ✅
 ### Test script artifacts identified and fixed
 - SQL autocomplete test previously typed into the last `.cm-editor` (a notebook cell), contaminating it and causing "Invalid plot configuration" errors on Run All. Fixed by using `!ed.closest('[data-cell-id]')` to find the sidebar preview pane editor, then using a read-only CM6 content check to avoid modifying any editor state.
 - LINK_X zoom test required `scrollIntoViewIfNeeded()` before Shift+scroll — charts are rendered at y=2000+ inside an `overflow-auto` container, outside the 900px viewport. Fixed in the test script.
+
+---
+
+## Session S144 — 2026-08-07
+
+### S144 Full QA Pass
+
+**Templates tested:** Recording Overview, CPU Profiling
+
+**QA script:** `e2e/qa-s144.mjs`
+
+**Results — Demo notebook:**
+- 0 DOM errors, 209 SVGs, 5 cells ✅
+
+**Results — Recording Overview template:**
+- 0 DOM errors, 7 charts, 0 errors after Run All ✅
+
+**Results — CPU Profiling template:**
+- 0 DOM errors, 0 charts (expected — flamegraph/stacktrace data not in demo JFR) ✅
+
+**Interactive features (on GC Pause Analysis template):**
+- Variables panel ($session_start datetime-local input): ✅
+- LINK_X zoom (Shift+scroll): ✅
+- Command palette (Cmd+K): ✅
+- Schema explorer + CM6 preview pane: ✅
+- SQL autocomplete (CM6 extension present): ✅
+- Help modal with shortcuts: ✅
+- Run All: 0 errors, 37 charts ✅
+- Chart tooltip: ✅
+- Resize handles: 25 ✅
+- Collapse/Expand All: ✅
+
+**Console errors (real): 0** ✅  
+**Zero-height cells: 0** ✅
+
+Note: `wasm streaming compile failed` + `falling back to ArrayBuffer instantiation` appear during DuckDB WASM init in Playwright headless — these are DuckDB-WASM internal fallback messages, not app errors. Added to the QA script filter.
+
+### Bugs found and fixed
+
+**B-206** — `VIOLIN_PLOT`, `SUNBURST`, `SANKEY`, `CROSSTAB`, `BIG_NUMBER` missing from `SHAPE_NORMALIZE` in `parser.ts`
+
+- **Symptom:** These 5 plot types were not recognized by the plot DSL parser, causing (a) the formatter to treat them as regular identifiers instead of shape names, (b) multi-word tail clause boundary detection (LEGEND/PALETTE/BRUSH/AXIS_X/AXIS_Y/TOOLTIP clauses) not stopping at these shapes when parsing composite `+` plots.
+- **Root cause 1:** `SHAPE_NORMALIZE` in `core/frontend/components/editor/plot/parser.ts` only listed shapes added in the original implementation — the newer plot types were never added to the map.
+- **Root cause 2 (related):** Line 938 used `KNOWN_SHAPES.has(pk.text.toUpperCase())` but `KNOWN_SHAPES` keys are lowercase — so the boundary guard never matched ANY shape, even existing ones like `LINE_CHART`. Fixed to `.toLowerCase()`.
+- **Fix:** Added `violin_plot`, `sunburst`, `sankey`, `crosstab`, `big_number` to `SHAPE_NORMALIZE`. Fixed line 938 case check. Added 10 regression tests.
+- **Files:** `core/frontend/components/editor/plot/parser.ts`, `core/frontend/tests/components/editor/plot/newShapes.test.ts`
+- **Commit:** d6327e4
+- **Status:** ✅ Fixed
