@@ -7173,6 +7173,7 @@ None. App clean across all 4 templates.
 
 ## Session S148 QA — 2026-08-07 (Playwright headless)
 
+
 **Templates tested:** Recording Overview (interactive), CPU Profiling (interactive)  
 **Method:** Playwright headless node script (`e2e/qa-s148.mjs`)
 
@@ -7199,6 +7200,54 @@ None. App clean across all 4 templates.
 
 **Console errors (real): 0** ✅  
 **BUGS.md open items:** none — all items ✅ resolved as of S147
+
+### Bugs found
+
+None.
+
+---
+
+## Session S149 QA — 2026-08-07 (Playwright headless)
+
+**Templates tested:** Demo notebook, Heap Allocation (interactive), JVM Internals (interactive), I/O & Latency (DOM scan), Threading & Contention (DOM scan), Comprehensive Feature Test (DOM scan), ZGC Analysis (DOM scan)  
+**Method:** Playwright headless node script (`e2e/qa-s149.mjs`)
+
+### Notes on interactive pass without JFR file
+
+Heap Allocation and JVM Internals were loaded without a JFR file (no demo data for those templates). As expected: all SQL cells are hidden behind `requires=` clauses, so 0 charts render and Run All / SQL autocomplete have no visible editors to interact with. These are correct behaviors, not bugs. Interactive features for these templates can only be fully tested with a matching JFR file loaded.
+
+### Summary
+
+| Check | Result |
+|---|---|
+| Demo notebook | ✅ 0 errors, 5 charts |
+| Heap Allocation | ✅ 0 errors, 0 charts (no JFR — all cells hidden behind requires=ObjectAllocationSample) |
+| JVM Internals | ✅ 0 errors, 0 charts (no JFR — all cells hidden) |
+| Variables panel (Heap) | ✅ PASS — `insertMode` input found and value changed |
+| LINK_X zoom (Heap) | ⚪ SKIP — no recharts surface rendered without JFR data |
+| Run All (Heap) | ⚪ SKIP — toolbar not present without JFR file loaded (wasm landing mode) |
+| Command palette (JVM) | ✅ PASS — Meta+k opened palette |
+| Schema explorer (JVM) | ✅ PARTIAL — schema tab text found; chevron clicked but column list not confirmed (headless) |
+| SQL autocomplete (JVM) | ⚪ SKIP — no visible CM6 editors outside plot blocks (all cells hidden) |
+| I/O & Latency | ✅ 0 errors, 0 charts (no JFR) |
+| Threading & Contention | ✅ 0 errors, 0 charts (no JFR) |
+| Comprehensive Feature Test | ✅ 0 errors, 2 charts |
+| ZGC Analysis | ✅ 0 errors, 0 charts (no JFR) |
+| GC Deep Dive (gc-extended.md) | ⚪ NOT TESTED this session (titled "GC Deep Dive" — QA script searched wrong name) |
+| Zero-height cells | ✅ 0 |
+| Text overflow | ✅ none |
+| Visible .error elements | ✅ none |
+
+**Console errors (real): 0** ✅
+
+### PlotTooltip.tsx regression check
+
+`git diff HEAD core/frontend/components/plots/PlotTooltip.tsx` returns empty — working tree matches HEAD despite appearing in `git status`. The file has no uncommitted changes. Recent commits are all sound:
+- `fix(tooltip): use settings decimal places in all PlotTooltip render paths` — dp from SettingsContext used consistently
+- `fix(tooltip): return null when all entries filtered and no label to avoid empty box` — line 121 null guard added
+- `feat(plots): unify all plot tooltips to PlotTooltip` — consolidation
+
+No concerns: null checks on lines 72 and 121 are solid; `entryFormatter` null results filtered via `.filter(Boolean)`.
 
 ### Bugs found
 
