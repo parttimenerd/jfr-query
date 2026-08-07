@@ -7766,3 +7766,42 @@ None.
 - Help button uses `aria-label="Keyboard Shortcuts"` (not "help" or "?") — updated QA script selector accordingly.
 - HTTP 500 on `/api/query` confirmed NOT a bug — `probeServer()` in DuckDBContext explicitly ignores 500s (`silent: true`); expected in WASM-only dev mode.
 - No open non-✅ items beyond B-211 ✅
+
+## QA Session S161 — 2026-08-07
+
+**Focus:** Full interactive + template pass. Templates: Heap Allocation, Memory Leak Detection. Interactive: variables + editor popup, LINK_X zoom (Shift+WheelEvent on `.group` wrapper), command palette, SQL autocomplete, schema explorer, Run All, help modal. Docs-site re-audit.
+
+**Scripts:** `core/frontend/e2e/qa-s161.mjs`, `core/frontend/e2e/qa-probe-zoom.mjs` – `qa-probe-zoom5.mjs`
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Vitest 6232/6232 | ✅ |
+| Demo Run All: charts rendered | ✅ |
+| Demo DOM clean | ✅ |
+| Variables: $-prefixed tokens visible | ✅ |
+| Variables: click opens editor popup | ✅ |
+| LINK_X: recharts containers rendered | ✅ |
+| LINK_X zoom: reset button appeared after Shift+scroll | ✅ |
+| Command palette (Cmd+K) | ✅ |
+| SQL autocomplete (Ctrl+Space, 8 items) | ✅ |
+| Schema explorer has items | ✅ |
+| Help modal (Keyboard Shortcuts) shows shortcut content | ✅ |
+| Help modal opens | ✅ |
+| Heap Allocation: cells rendered, DOM clean | ✅ (2 charts) |
+| Memory Leak Detection: cells rendered, DOM clean | ✅ (1 chart) |
+| Console errors (excl. /api/query 500s) | ✅ 0 |
+
+**Result: 16/16 checks pass** ✅
+
+### Bugs found
+
+None.
+
+### Notes
+
+- LINK_X zoom in headless Playwright requires dispatching `WheelEvent` with `shiftKey: true` directly on the `.group` wrapper div (the ZoomableWrapper's root `div.group`), not the `.recharts-responsive-container`. `page.keyboard.down('Shift') + page.mouse.wheel()` does not set `shiftKey` on the native wheel event in headless Chrome.
+- The demo's LINK_X chart is the second chart (LINE_CHART at index 1); the first chart is a BAR_CHART without LINK_X. QA script now iterates all charts to find one with a `.group` wrapper that responds to zoom.
+- docs-site `ai-providers.md:115` references `localhost:3001` in the context of `npm run dev` — correct for that use case, not stale.
+- No open non-✅ items beyond B-211 ✅
