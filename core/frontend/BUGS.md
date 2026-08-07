@@ -5878,3 +5878,25 @@ Full pass over all 13 templates and all CONDITIONAL_VIEWS_SQL entries: no other 
 
 ### Bugs found
 None.
+
+## Session S114 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo + interactive (qa-s95.mjs — 24/24 PASS) ✅
+### Interactive features (qa-s96-interactive.mjs — 5/5 PASS) ✅
+
+### Template rotation (e2e/qa-s114-rotation.mjs — 3/3 PASS)
+- Exceptions & Errors: 130 SVGs, 0 DOM errors ✅
+- Heap Allocation: 129 SVGs, 0 DOM errors ✅
+- Console: 0 real errors ✅
+
+### BUGS.md open items
+- No open items beyond B-205 found ✅
+
+### Docs check
+- No stale content found ✅
+
+### Bugs found
+None.
