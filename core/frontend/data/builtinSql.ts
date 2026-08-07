@@ -2204,4 +2204,16 @@ SELECT * FROM (
 ORDER BY "Time"`;
     },
   },
+  {
+    requires: 'GCErgonomicTrace',
+    sql: `CREATE OR REPLACE VIEW "GCErgoLog" AS
+SELECT
+    startTime                                                        AS "Time",
+    gcId                                                             AS "GC ID",
+    replace(tag, '+', ',')                                           AS "Tag",
+    level                                                            AS "Level",
+    regexp_replace(message, '^GC\\(\\d+\\)\\s+', '')                 AS "Message"
+FROM GCErgonomicTrace
+ORDER BY startTime`,
+  },
 ];

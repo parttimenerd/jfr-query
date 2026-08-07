@@ -107,7 +107,7 @@ function usePersistentState<T>(key: string, defaultValue: T): [T, React.Dispatch
 
 const App: React.FC = () => {
     const {
-        dbState, mode, sourceType, errorMessage, serverProbeError, query, refreshSchema, loadFile, loadDemo, loadErgoLog,
+        dbState, mode, sourceType, errorMessage, serverProbeError, query, refreshSchema, loadFile, loadDemo,
         recordingStart, recordingEnd, schema, importProgress, wasmInitializing,
     } = useContext(DataContext);
     
@@ -456,20 +456,7 @@ const App: React.FC = () => {
             // Only handle data-file drops when the notebook is already loaded —
             // JFRDropZone owns the drop target during the landing/import phase.
             if (dbState !== DBState.READY) return;
-            const logFile = files.find(f => /\.log$/i.test(f.name));
             const dataFile = files.find(f => /\.(jfr|cjfr|duckdb|db)$/i.test(f.name));
-            if (logFile && !dataFile) {
-                e.preventDefault();
-                void (async () => {
-                    try {
-                        const count = await loadErgoLog(logFile);
-                        setInvalidFileToast(`Loaded ${count} gc+ergo log rows from "${logFile.name}" into GCErgoLog table.`);
-                    } catch (err: any) {
-                        setInvalidFileToast(`Failed to load log file: ${err.message ?? err}`);
-                    }
-                })();
-                return;
-            }
             if (dataFile) {
                 e.preventDefault();
                 void (async () => {
@@ -489,7 +476,7 @@ const App: React.FC = () => {
             } else if (files.length > 0) {
                 e.preventDefault();
                 const name = files[0].name;
-                setInvalidFileToast(`Unsupported file type: "${name}". Drop a .jfr, .cjfr, .duckdb, or .log (gc+ergo Xlog) file.`);
+                setInvalidFileToast(`Unsupported file type: "${name}". Drop a .jfr, .cjfr, or .duckdb file.`);
             }
         };
         window.addEventListener('dragover', onDragOver);
@@ -501,7 +488,7 @@ const App: React.FC = () => {
             window.removeEventListener('drop', onDrop);
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loadNotebook, loadFile, loadErgoLog, dbState]);
+    }, [loadNotebook, loadFile, dbState]);
 
 
     //   ?notebook=<https-url>          fetch markdown notebook

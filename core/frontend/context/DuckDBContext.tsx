@@ -3,7 +3,6 @@ import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
 import { TableSchema, ViewSchema, MacroSchema } from '../types';
 import { initDuckDBWasm, loadDuckDbFileIntoWasm } from '../utils/duckdbWasmLoader';
 import { loadJfrIntoWasm, loadCjfrIntoWasm, resetWasmDatabase } from '../utils/jfrToWasmLoader';
-import { loadGcErgoLogIntoWasm } from '../utils/gcErgoLogLoader';
 import { DEMO_SETUP_SQL } from '../data/demoNotebook';
 import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL, CONDITIONAL_VIEWS_SQL } from '../data/builtinSql';
 
@@ -60,7 +59,6 @@ interface DataContextType {
   loadFile: (source: File | Uint8Array, fileName: string, stacktraceDepth?: number) => Promise<void>;
   loadServerFile: (path: string) => Promise<void>;
   loadDemo: () => Promise<void>;
-  loadErgoLog: (source: File | string) => Promise<number>;
 }
 
 export const DataContext = createContext<DataContextType>({
@@ -80,7 +78,6 @@ export const DataContext = createContext<DataContextType>({
   loadFile: async () => { throw new Error('DataContext not initialized'); },
   loadServerFile: async () => { throw new Error('DataContext not initialized'); },
   loadDemo: async () => { throw new Error('DataContext not initialized'); },
-  loadErgoLog: async () => { throw new Error('DataContext not initialized'); },
 });
 
 const executeRemoteQuery = async (sql: string): Promise<any> => {
@@ -572,13 +569,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [fetchSchemaFor]);
 
-  const loadErgoLog = useCallback(async (source: File | string): Promise<number> => {
-    if (!wasmConnRef.current) throw new Error('No DuckDB connection — load a JFR file first.');
-    const count = await loadGcErgoLogIntoWasm(source, wasmConnRef.current);
-    await fetchSchemaFor((sql) => runWasmQuery(wasmConnRef.current!, sql), false);
-    return count;
-  }, [fetchSchemaFor]);
-
   // Maximum rows returned by a user-facing query.
   // Prevents OOM when querying large JFR tables (e.g. 5M ExecutionSample rows) in WASM mode.
   // Append "-- no-limit" to a query to bypass this cap.
@@ -640,9 +630,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const contextValue = useMemo(() => ({
     dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
-    recordingStart, recordingEnd, importProgress, wasmInitializing, refreshSchema, loadFile, loadServerFile, loadDemo, loadErgoLog,
+    recordingStart, recordingEnd, importProgress, wasmInitializing, refreshSchema, loadFile, loadServerFile, loadDemo,
   }), [dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
-    recordingStart, recordingEnd, importProgress, wasmInitializing, refreshSchema, loadFile, loadServerFile, loadDemo, loadErgoLog]);
+    recordingStart, recordingEnd, importProgress, wasmInitializing, refreshSchema, loadFile, loadServerFile, loadDemo]);
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;
 };
