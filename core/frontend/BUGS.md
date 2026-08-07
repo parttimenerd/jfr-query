@@ -8052,3 +8052,41 @@ None.
 - GC Deep Dive renders 7 charts with demo JFR data; LINK_X zoom works on its time-series charts.
 - ZGC Analysis renders cells but 0 charts (expected: demo JFR uses G1 GC, not ZGC).
 - No open non-✅ items beyond B-211 ✅
+
+---
+
+## QA Session S168 — 2026-08-07
+
+**Focus:** Full QA pass. Templates: I/O & Latency, JVM Internals. Interactive: variables+popup, LINK_X zoom, Collapse/Expand All, command palette, SQL autocomplete, schema explorer, help modal.
+
+**Scripts:** `core/frontend/e2e/qa-s168.mjs`
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Vitest 6232/6232 | ✅ |
+| Demo: charts rendered, DOM clean | ✅ |
+| Variables: tokens visible + editor opens | ✅ |
+| LINK_X zoom: reset button appeared | ✅ |
+| Collapse All / Expand All | ✅ |
+| Command palette (Cmd+K) | ✅ |
+| SQL autocomplete (Ctrl+Space) | ✅ |
+| Schema explorer: items visible | ✅ |
+| Help modal opens + shortcut content | ✅ |
+| I/O & Latency: cells rendered, DOM clean (0 charts) | ✅ |
+| JVM Internals: cells rendered, DOM clean (0 charts) | ✅ |
+| Console errors (excl. /api/query 500s) | ✅ 0 |
+
+**Result: 17/17 checks pass** ✅
+
+### Bugs found
+
+None.
+
+### Notes
+
+- I/O & Latency: 0 charts expected — demo JFR has no Socket/File I/O event data.
+- JVM Internals: 0 charts expected — demo JFR has no JIT/Compiler event data matching those views.
+- docs-site: all clean — no stale content found.
+- No open non-✅ items beyond B-211 ✅
