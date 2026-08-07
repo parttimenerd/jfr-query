@@ -6104,3 +6104,40 @@ Passed (all green) ✅
 
 ### Bugs found
 None. 39/39 checks passed across all 13 templates.
+
+## Session S120 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- DOM scan: 0 errors ✅
+- 0 cells, 209 SVGs ✅
+- Scroll DOM scan: 0 errors ✅
+
+### Interactive features
+- Variables: opened, value changed ✅ (using `[aria-label^="Value for"]` selector)
+- Collapse All / Expand All: clicked ✅
+- Run All: 0 DOM errors ✅
+- Schema explorer: GarbageCollection preview appeared ✅
+- Command palette (Cmd+K): opened ✅
+- SQL autocomplete: completions appeared ✅
+- Help modal: shortcut content visible ✅
+- LINK_X zoom: Reset button appeared after WheelEvent dispatch on div.group ✅
+- Tooltip hover: appeared on chart hover ✅
+
+### Template rotation
+- GC Pause Analysis: 0 DOM errors ✅
+- Recording Overview: 239 SVGs, 0 errors ✅
+
+### Open BUGS.md items
+- No open non-✅ items beyond B-205 ✅
+
+### Docs audit
+- `plot-dsl.md`: SORT ASC/DESC, LIMIT documented correctly; SORT $var $dir is runtime-only behavior (not user-typed), docs accurate ✅
+- `views-macros.md`: all views/macros accurate ✅
+- `variables.md`, `web-ui.md`: accurate ✅
+- Editor SHAPE_NORMALIZE investigated: VIOLIN_PLOT, SUNBURST, SANKEY, BIG_NUMBER etc. are in shapeRegistry (from plotRegistry), not only in SHAPE_NORMALIZE — linter recognizes them correctly ✅
+
+### Bugs found
+None. 17/17 checks passed.
