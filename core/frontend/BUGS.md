@@ -5696,3 +5696,29 @@ None (one docs omission fixed).
 
 ### Bugs found
 None.
+
+---
+
+## Session S108 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Interactive features (e2e/qa-s96-interactive.mjs — 5/5 PASS) ✅
+
+### Template rotation (e2e/qa-s108-rotation.mjs — 3/3 PASS)
+- Exceptions & Errors: 130 SVGs, 0 DOM errors ✅
+- Recording Overview: 199 SVGs, 0 DOM errors ✅
+- Console: 0 real errors ✅
+
+### BUGS.md open items
+- B-NEW-41: commit `b9d025b` ✅ fixed
+- No open items ✅
+
+### Docs fix
+**`docs-site/index.md`**: "12 chart types" was stale — the app now has 19 distinct plot types (TABLE, BAR_CHART, PIE_CHART, LINE_CHART, SCATTER_PLOT, HEATMAP, FLAMEGRAPH, HISTOGRAM, BOX_PLOT, AREA_CHART, GANTT, RANGE, TREEMAP, WATERFALL, VIOLIN_PLOT, SUNBURST, SANKEY, CROSSTAB, BIG_NUMBER). Updated feature bullet to "19 chart types" with full list. Commit: `1bff49c`
+
+### Bugs found
+None. One docs staleness fixed.
