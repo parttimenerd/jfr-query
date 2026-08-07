@@ -5900,3 +5900,37 @@ None.
 
 ### Bugs found
 None.
+
+## Session S115 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### All 13 templates (full rotation) — 0 DOM errors
+- Recording Overview: 239 SVGs ✅
+- CPU Profiling: 138 SVGs ✅
+- Heap Allocation: 129 SVGs ✅
+- I/O & Latency: 146 SVGs ✅
+- JVM Internals: 146 SVGs ✅
+- Memory Leak Detection: 134 SVGs ✅
+- Container & Cloud: 142 SVGs ✅
+- Exceptions & Errors: 130 SVGs ✅
+- Threading & Contention: 150 SVGs ✅
+- GC Pause Analysis: 661 SVGs ✅
+- Comprehensive Feature Test: 189 SVGs ✅
+- GC Deep Dive: 512 SVGs ✅
+- ZGC Analysis: 166 SVGs ✅
+- Console: 0 real errors ✅
+
+### Demo notebook
+- Initial DOM scan: 0 errors ✅
+- Variables panel chip: clicked ✅
+- Run All: 0 DOM errors ✅
+- Schema explorer: opened ✅
+- Full scroll DOM scan: 0 errors ✅
+
+### Bugs found and fixed
+- **B-NEW-46** `fix(gc)`: `gc-rss-vs-heap` view had unstable schema — "Committed MB" and "Off-Heap MB" columns were omitted entirely when `GCHeapSummary` absent, causing plots to fail on ResidentSetSize-only recordings. Fixed by always emitting `NULL::DOUBLE` for those columns. Commit: dceb002.
+
+### Source audit finding
+- `gc-rss-vs-heap` cell in gc-analysis.md references columns that previously only existed conditionally — fixed by stabilising view schema (B-NEW-46 above). ✅
