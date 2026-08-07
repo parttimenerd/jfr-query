@@ -5975,3 +5975,41 @@ None.
 
 ### Bugs found
 None.
+
+## Session S117 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- DOM scan: 0 errors ✅
+- 0 cells, 209 SVGs ✅
+- Scroll DOM scan: 0 errors ✅
+
+### Interactive features
+- Variables panel: opened, value changed ✅
+- Run All: 0 DOM errors ✅
+- Command palette (Cmd+K): opened ✅
+- SQL autocomplete: GarbageCollection shown ✅
+- Schema explorer: preview appeared ✅
+- Help modal: shortcut content visible ✅
+
+### Template rotation
+- Recording Overview: 171 SVGs, 0 DOM errors ✅
+- CPU Profiling: 71 SVGs, 0 DOM errors ✅
+- Console: 0 real errors ✅
+
+### UI polish
+- No text overflow ✅
+- No zero-height cells ✅
+
+### Open BUGS.md items
+- No open non-✅ items beyond B-205 found ✅
+
+### Docs audit
+- `plot-dsl.md`: TOOLTIP COLUMNS, ON HOVER TOOLTIP, BRUSH modes accurate ✅
+- `web-ui.md`: variable pause gate, command palette docs accurate ✅
+- `views-macros.md`: all conditional GC views still present ✅
+
+### Bugs found
+None.
