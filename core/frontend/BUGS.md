@@ -7805,3 +7805,44 @@ None.
 - The demo's LINK_X chart is the second chart (LINE_CHART at index 1); the first chart is a BAR_CHART without LINK_X. QA script now iterates all charts to find one with a `.group` wrapper that responds to zoom.
 - docs-site `ai-providers.md:115` references `localhost:3001` in the context of `npm run dev` — correct for that use case, not stale.
 - No open non-✅ items beyond B-211 ✅
+
+## QA Session S162 — 2026-08-07
+
+**Focus:** Full comprehensive pass. Templates: Container & Cloud, Exceptions & Errors. Interactive: variables+popup, LINK_X zoom, BRUSH check, command palette, SQL autocomplete, schema explorer expand+types, Run All, help modal. UI polish: tooltip, resize handles, overflow, console errors.
+
+**Scripts:** `core/frontend/e2e/qa-s162.mjs`, `core/frontend/e2e/qa-probe-overflow.mjs`
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Vitest 6232/6232 | ✅ |
+| Demo: charts rendered, DOM clean | ✅ |
+| Variables: $-prefixed tokens visible | ✅ |
+| Variables: click opens editor | ✅ |
+| LINK_X zoom: reset button appeared | ✅ |
+| BRUSH: no brush in demo (expected) | ✅ |
+| Command palette (Cmd+K) | ✅ |
+| SQL autocomplete (Ctrl+Space) | ✅ |
+| Schema explorer: items + column types | ✅ |
+| Help modal opens + shows shortcuts | ✅ |
+| Chart tooltip visible on hover (2 els) | ✅ |
+| Resize handles present (20 els) | ✅ |
+| Overflow: no unexpected overflow | ✅ |
+| Container & Cloud: cells rendered, DOM clean | ✅ |
+| Exceptions & Errors: cells rendered, DOM clean | ✅ |
+| Console errors (excl. /api/query 500s) | ✅ 0 |
+
+**Result: 18/18 checks pass** ✅
+
+### Bugs found
+
+None.
+
+### Notes
+
+- Template gallery name: **`Exceptions & Errors`** (not `Exception & Error Analysis` — previous QA scripts used wrong name). Correct aria-label is `Select template: Exceptions & Errors`.
+- `ResizablePanel` outer wrapper has `scrollWidth > clientWidth` by ~11px due to the resize handle's collapse button extending beyond the panel edge — this is intentional (the `overflow: hidden` clips it). Not a bug.
+- AI Assistant panel at `clientW=0` (collapsed) registers scrollWidth=400 — also not a bug since it's not visible.
+- docs-site: no stale content found beyond items already fixed in S160 (ports) and S161 (n/a).
+- No open non-✅ items beyond B-211 ✅
