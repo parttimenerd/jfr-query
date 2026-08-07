@@ -6916,3 +6916,42 @@ None. 20/20 checks passed.
 
 ### Bugs found
 None. 40/40 checks passed across all 13 templates.
+
+---
+
+## Session S142 — 2026-08-07
+
+### S142 Big File Testing
+
+**Files tested:**
+- HA_gc_details.jfr (3.2 MB) — G1HeapRegionInformation, ConcurrentModeFailure
+- jvm17-gc-jfc (6.7 MB) — basic GC events
+- renaissance-all_gc_details_G1.jfr (242 MB) — G1 full profile
+
+**Import results:**
+- All files imported successfully, including 242 MB (18 chunks, 2 workers, ~59s) ✅
+- No hard size limit in the code — chunk-based streaming via `File.slice()` ✅
+- 242 MB file: `GarbageCollection`, `G1HeapRegionInformation`, `ConcurrentModeFailure`, `ResidentSetSize`, `GCHeapMemoryPoolUsage` all present ✅
+
+**GC Pause Analysis template on 242 MB G1 file:**
+- gc-heap-regions (requires G1HeapRegionInformation): visible ✅
+- gc-rss-vs-heap (requires ResidentSetSize): visible ✅
+- gc-memory-pools (requires GCHeapMemoryPoolUsage): visible ✅
+- gc-concurrent-failure (requires ConcurrentModeFailure): visible ✅
+- gc-ihop-tuning (requires G1AdaptiveIHOP): hidden (table not in file) ✅
+- gc-evacuation-detail (requires EvacuationInformation): hidden (table not in file) ✅
+- gc-promotion-failure (requires PromotionFailed): hidden (table not in file) ✅
+- 79 charts rendered, 0 hard errors ✅
+
+**Investigation: requires= detection using "Requires" text in cell body**
+- `qa-s142-gcanalysis.mjs` used text search for "requires" to detect hidden cells — false positive!
+- Cell bodies contain "Requires `EventTable` events (gc.jfc)" as documentation text
+- Height-based detection (h<80 = hidden) is accurate; added to future test scripts
+- Root cause of confusion: no real bug — all 7 new GC deep-dive cells work correctly
+
+### Console errors during import (normal/expected)
+- `Binder Error: Referenced column "view_name" not found in information_schema.views` — fixed in builtinSql.ts (prior session)
+- `Catalog Error: Table with name X does not exist! Did you mean "chunkN_X"?` — conditional views run in worker contexts before merge phase; these are expected and harmless
+
+### Bugs found
+None. All new GC deep-dive cells work correctly on real JFR files. ✅
