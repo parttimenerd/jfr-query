@@ -7527,3 +7527,41 @@ None.
 - `cm-lintRange cm-lintRange-error` spans on ZGC table names (`zgc_pauses`, `zgc_long_pauses`, `zgc_cycles`, `zgc_concurrent`, `zgc_tuning`) in ZGC Analysis template: these are SQL schema linter underlines for views that don't exist in the demo G1GC JFR. Expected and correct behavior — the linter correctly marks non-existent schema objects. Not a bug.
 - All 11 remaining templates: 0 DOM errors. Chart counts match expected pattern for demo JFR.
 - Docs check: README model names (`claude-sonnet-4-6`, `gemini-2.5-flash`, `gpt-4o`/`gpt-4o-mini`) all match source code in `AnthropicProvider.ts`, `GeminiProvider.ts`, `OpenAiProvider.ts`. No stale docs found.
+
+---
+
+## QA Session S156 — 2026-08-07
+
+**Focus:** Full interactive QA pass after GCErgoLog CONDITIONAL_VIEWS_SQL entry added. Verifies tour overlay suppression, variables panel, Run All, command palette, keyboard shortcuts, and 2 templates.
+
+**Script:** `core/frontend/e2e/qa-s156-final.mjs`
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Tour overlay absent (addInitScript) | ✅ PASS |
+| Demo: 2 charts | ✅ PASS |
+| Demo: 10 cell elements | ✅ PASS |
+| Variables panel: 2 variable buttons | ✅ PASS |
+| Variable edit input opens | ✅ PASS |
+| Run All Queries button visible | ✅ PASS |
+| Charts preserved after Run All | ✅ 2 charts before and after |
+| Command Palette button + dialog | ✅ PASS |
+| Keyboard Shortcuts button + modal | ✅ PASS |
+| Template gallery opens | ✅ PASS |
+| Exceptions & Errors template | ✅ 10 cell elements, 2 charts |
+| Container & Cloud template | ✅ 10 cell elements, 2 charts |
+| Console errors (real) | ✅ 0 |
+
+**Result: 18/18 checks passed** ✅
+
+### Bugs found
+
+None.
+
+### Notes
+
+- Key fix from prior S156 attempts: `localStorage.setItem(...)` must be called via `page.addInitScript()` BEFORE `page.goto()` — React reads `jfr-tour-seen` at initial render, and setting it after navigation does not prevent `TourOverlay` from showing.
+- GCErgoLog view entry in `CONDITIONAL_VIEWS_SQL` has no visible effect on demo JFR (no `GCErgonomicTrace` table present), as expected. View creation is guarded by `requires=`.
+- Vitest: 6232 tests pass (257 test files, 1 skipped).
