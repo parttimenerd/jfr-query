@@ -805,12 +805,13 @@ export async function resetWasmDatabase(conn: AsyncDuckDBConnection): Promise<vo
 
   // Drop all user views first (views may reference tables).
   const viewsResult = await conn.query(
-    `SELECT view_name FROM information_schema.views WHERE table_schema='main'`
+    `SELECT table_name FROM information_schema.views WHERE table_schema='main'`
   ).catch(() => null);
   if (viewsResult) {
-    const viewNames = viewsResult.toArray().map((r: any) => `"${String(r.view_name).replace(/"/g, '""')}"`);
-    if (viewNames.length > 0) {
-      await conn.query(`DROP VIEW IF EXISTS ${viewNames.join(', ')}`).catch(() => {});
+    const viewNames = viewsResult.toArray().map((r: any) => `"${String(r.table_name).replace(/"/g, '""')}"`);
+    // DuckDB WASM only supports dropping one object at a time.
+    for (const name of viewNames) {
+      await conn.query(`DROP VIEW IF EXISTS ${name}`).catch(() => {});
     }
   }
 
@@ -820,11 +821,9 @@ export async function resetWasmDatabase(conn: AsyncDuckDBConnection): Promise<vo
   ).catch(() => null);
   if (tablesResult) {
     const tableNames = tablesResult.toArray().map((r: any) => `"${String(r.table_name).replace(/"/g, '""')}"`);
-    // Drop in batches to avoid huge SQL strings.
-    const BATCH = 50;
-    for (let i = 0; i < tableNames.length; i += BATCH) {
-      const batch = tableNames.slice(i, i + BATCH);
-      await conn.query(`DROP TABLE IF EXISTS ${batch.join(', ')}`).catch(() => {});
+    // DuckDB WASM only supports dropping one object at a time.
+    for (const name of tableNames) {
+      await conn.query(`DROP TABLE IF EXISTS ${name}`).catch(() => {});
     }
   }
 
