@@ -7045,3 +7045,59 @@ Note: `wasm streaming compile failed` + `falling back to ArrayBuffer instantiati
 - **Files:** `core/frontend/components/editor/plot/parser.ts`, `core/frontend/tests/components/editor/plot/newShapes.test.ts`
 - **Commit:** d6327e4
 - **Status:** ✅ Fixed
+
+---
+
+## Session S145 — 2026-08-07
+
+### S145 Full QA Pass — all 13 templates
+
+**Templates tested:** All 13 (Recording Overview, CPU Profiling, Heap Allocation, I/O & Latency, JVM Internals, Memory Leak Detection, Container & Cloud, Exceptions & Errors, Comprehensive Feature Test, GC Pause Analysis, ZGC Analysis, GC Deep Dive, Threading & Contention)
+
+**QA scripts:** `e2e/qa-s145.mjs`, `e2e/qa-s145b.mjs`
+
+**Results — all 13 templates:** 0 DOM errors, combined 70+ charts rendered ✅
+
+**Interactive features (GC Pause Analysis template):**
+- Variables panel ($session_start datetime-local input): ✅
+- LINK_X zoom (Shift+scroll): ✅
+- Command palette (Cmd+K): ✅
+- Schema explorer + CM6 preview pane: ✅
+- Help modal with shortcuts: ✅
+- Chart tooltip: ✅
+- Resize handles: 25 ✅
+- Collapse/Expand All: ✅
+
+**Console errors (real): 0** ✅  
+**Zero-height cells: 0** ✅  
+**TypeScript errors: 0** ✅ (zero after fixes below)
+
+### Bugs found and fixed
+
+**B-207** — TypeScript errors in lint.ts, plotTypes.ts, AutocompleteRanker.test.ts, notebookParser.ts
+
+**B-207a** — `lint.ts` local `PlotScopeView` missing `queryRefs` field
+- **Symptom:** TS2339 error — `queryRefs` used at lint.ts:496 but not in the interface.
+- **Root cause:** `lint.ts` declared its own minimal `PlotScopeView` without `queryRefs`, while the full type in `notebookPlotScope.ts` includes it. The linter code references `deps.notebookScope?.queryRefs`.
+- **Fix:** Added `queryRefs?: ReadonlyArray<...>` to the local `PlotScopeView` interface.
+- **File:** `core/frontend/components/editor/plot/lint.ts`
+
+**B-207b** — `plotTypes.ts` `PlotRegistration.component` missing cross-cutting props
+- **Symptom:** TS2322 — `onCellVariableChange`, `domainY`, `gestureName`, `onVariableChange` passed by PlotRenderer but absent from the shared component props type.
+- **Fix:** Added `domainY?`, `gestureName?`, `onVariableChange?`, `onCellVariableChange?` to the `component` prop type in `PlotRegistration`.
+- **File:** `core/frontend/components/plots/plotTypes.ts`
+
+**B-207c** — `AutocompleteRanker.test.ts` missing `isViewName` + `plotClause` weights
+- **Symptom:** TS2739 — `Weights` gained `isViewName` + `plotClause` but test fixture was not updated.
+- **Fix:** Added both fields to the `W` constant in the test.
+- **File:** `core/frontend/tests/ml/AutocompleteRanker.test.ts`
+
+**B-207d** — `notebookParser.ts` Ohm.js `addOperation<Record<string,string>>` type conflict
+- **Symptom:** TS2322 — Ohm.js leaf rule actions (AttrValue_*) legitimately return `string`, not `Record<string,string>`, but the operation generic enforces the root return type on all rules.
+- **Fix:** Widened `addOperation<Record<string,string>>` to `addOperation<unknown>`; call site already casts with `as Record<string, string>`.
+- **File:** `core/frontend/utils/notebookParser.ts`
+
+**Commit:** c7bfef3
+**Status:** All ✅ fixed — 0 TypeScript errors, 6216 tests pass.
+
+- No open non-✅ items beyond B-205 ✅
