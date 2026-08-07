@@ -5670,3 +5670,29 @@ No open non-✅ items ✅
 
 ### Bugs found
 None (one docs omission fixed).
+
+---
+
+## Session S107 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Interactive features (e2e/qa-s96-interactive.mjs — 5/5 PASS) ✅
+
+### Template rotation (e2e/qa-s107-rotation.mjs — 3/3 PASS)
+- CPU Profiling: 138 SVGs, 0 DOM errors ✅
+- Threading & Contention: 150 SVGs, 0 DOM errors ✅
+- Console: 0 real errors ✅
+
+### BUGS.md open items
+- B-NEW-41: commit `b9d025b` ✅ fixed
+- No open items ✅
+
+### Docs check
+- `browser-architecture.md`: `-- no-cache` entry added in S106 (commit `f1f39d1`) — confirmed accurate ✅
+
+### Bugs found
+None.
