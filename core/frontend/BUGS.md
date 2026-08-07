@@ -7920,3 +7920,52 @@ None.
 - AI Assistant panel at `clientW=0` (collapsed) registers scrollWidth=400 — also not a bug since it's not visible.
 - docs-site: no stale content found beyond items already fixed in S160 (ports) and S161 (n/a).
 - No open non-✅ items beyond B-211 ✅
+
+---
+
+## QA Session S165 — 2026-08-07
+
+**Focus:** Full pass covering ALL 13 templates + complete demo notebook interactive suite (vitest 6232/6232, all templates, all interactive features).
+
+**Scripts:** `core/frontend/e2e/qa-s165.mjs`
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Vitest 6232/6232 | ✅ |
+| Demo: charts rendered, DOM clean | ✅ |
+| Variables: tokens visible + editor opens | ✅ |
+| LINK_X zoom: reset button appeared | ✅ |
+| Collapse All / Expand All | ✅ |
+| Command palette (Cmd+K) | ✅ |
+| SQL autocomplete (Ctrl+Space) | ✅ |
+| Schema explorer: items visible | ✅ |
+| Help modal opens + shortcut content | ✅ |
+| Recording Overview (3 charts, LINK_X ✅) | ✅ |
+| GC Deep Dive (7 charts, LINK_X ✅) | ✅ |
+| GC Pause Analysis (13 charts, LINK_X ✅) | ✅ |
+| CPU Profiling (0 charts — no CPU data in demo JFR) | ✅ |
+| Heap Allocation (2 charts, LINK_X ✅) | ✅ |
+| I/O & Latency (0 charts) | ✅ |
+| JVM Internals (0 charts) | ✅ |
+| Memory Leak Detection (1 chart, LINK_X ✅) | ✅ |
+| Container & Cloud (0 charts) | ✅ |
+| Exceptions & Errors (0 charts) | ✅ |
+| Threading & Contention (0 charts) | ✅ |
+| ZGC Analysis (0 charts) | ✅ |
+| Comprehensive Feature Test (6 charts, LINK_X ✅, BRUSH ✅) | ✅ |
+| Console errors (excl. /api/query 500s) | ✅ 0 |
+
+**Result: 40/40 checks pass** ✅
+
+### Bugs found
+
+None.
+
+### Notes
+
+- All 13 templates render cells and pass DOM scan cleanly.
+- Templates with charts: Recording Overview (3), GC Deep Dive (7), GC Pause Analysis (13), Heap Allocation (2), Memory Leak Detection (1), Comprehensive Feature Test (6).
+- Templates with 0 charts expected (no matching events in demo JFR): CPU Profiling, I/O & Latency, JVM Internals, Container & Cloud, Exceptions & Errors, Threading & Contention, ZGC Analysis.
+- No open non-✅ items beyond B-211 ✅
