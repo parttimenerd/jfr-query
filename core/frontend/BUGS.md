@@ -3115,7 +3115,7 @@ Not re-run this session (previous session confirmed 6203 passed, 0 failed; no ne
 
 ### Bugs fixed this session
 
-#### 🔴 [B-NEW-41] LINK_X wiring broken after first zoom/pan interaction
+#### 🔴 [B-NEW-41] LINK_X wiring broken after first zoom/pan interaction ✅ FIXED
 **Where:** `core/frontend/components/PlotRenderer.tsx`
 **Root cause:** `substituteVariables()` replaces `$start`/`$end` in the plot config string with their current timestamp values before `parseComposite()` runs. The Ohm grammar rule `LinkXArg = varRef | ident` only matches `$`-prefixed names — quoted timestamp strings like `'2024-03-15T10:00:36Z'` do not match, so `linkX` is never set on the parsed result. `InteractivePlotWrapper` is therefore never mounted; `StandaloneZoomWrapper` is used instead; zoom/pan no longer writes to notebook variables.
 **Fix:** Parse structural clauses (`LINK_X`, `BRUSH`) from the original un-substituted config via `originalFlatConfigs` / `originalParsedRoot` / `recoverStructural` helper. Patch `linkX`, `brush`, `linkXMaster`, `linkXClamp` back onto the substituted parse result before rendering. Applied to both single-plot and composite-leaf paths.
@@ -7252,3 +7252,47 @@ No concerns: null checks on lines 72 and 121 are solid; `entryFormatter` null re
 ### Bugs found
 
 None.
+
+---
+
+## Session S150 QA — 2026-08-07 (Playwright headless)
+
+**Templates tested:** GC Deep Dive (interactive), Comprehensive Feature Test (interactive), I/O & Latency (DOM scan), ZGC Analysis (DOM scan)
+**Method:** Playwright headless node script (`e2e/qa-s150.mjs`)
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| DEMO notebook | ✅ 0 errors, 5 charts |
+| DEMO variables panel | ⚪ skip (variable input not in sidebar selector scope) |
+| DEMO run all | ✅ PASS |
+| DEMO collapse/expand | ✅ PASS |
+| DEMO schema explorer | ✅ PASS (10 items visible) |
+| DEMO help modal | ✅ PASS |
+| GC Deep Dive | ✅ 0 errors, 23 charts |
+| GC Deep Dive LINK_X zoom | ✅ PASS (reset button visible after Shift+scroll) |
+| GC Deep Dive BRUSH | ⚪ skip (GC Deep Dive has no BRUSH chart; Comprehensive Feature Test does) |
+| GC Deep Dive command palette | ✅ PASS (Meta+K opened) |
+| Comprehensive Feature Test | ✅ 0 errors, 20 charts |
+| Comprehensive SQL autocomplete | ⚪ partial (editor found but tooltip did not appear — known limitation: first-focus activation) |
+| Comprehensive plot tooltip | ✅ PASS (`11:00:34.50 / Pause (ms): 24.3`) |
+| Comprehensive resize handle | ✅ PASS |
+| I/O & Latency | ✅ 0 errors, 0 charts (expected — demo JFR has no I/O events) |
+| ZGC Analysis | ✅ 0 errors, 0 charts (expected — demo JFR uses non-ZGC collector) |
+| UI polish: zero-height cells | ✅ 0 |
+| UI polish: text overflow | ✅ none |
+| UI polish: visible .error | ✅ 0 |
+| Console errors (real) | ✅ 0 |
+| Vitest suite | ✅ 6216 passed, 7 skipped, 0 failed |
+
+### Bugs found
+
+**B-NEW-41 heading missing ✅ FIXED marker** — The `[B-NEW-41] LINK_X wiring broken` heading lacked the `✅ FIXED` suffix even though the body documents the fix commit (`b9d025b`) and every session entry noted it as fixed. The heading was updated in this session.
+
+### Notes
+
+- I/O & Latency and ZGC Analysis show 0 charts because the demo `.jfr` file does not contain FileRead, SocketRead, or ZGC events. This is expected and not a bug.
+- SQL autocomplete partial result is consistent with S148 finding ("mouse-click focus required for first activation").
+- GC Deep Dive BRUSH skip is expected — no BRUSH chart in that template (BRUSH is implemented and unit-tested but no built-in template demonstrates it end-to-end).
+- PlotTooltip.tsx modification in git status (from S149 session header) confirmed clean — diff shows only whitespace in S149 uncommitted diff that was already committed.
