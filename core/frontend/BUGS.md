@@ -6181,6 +6181,54 @@ None. 17/17 checks passed.
 ### Bugs found
 None. 20/20 checks passed.
 
+## Session S123 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook (Batch A)
+- DOM scan: 0 errors ✅
+- 0 cells, 209 SVGs ✅
+- Scroll scan: 0 errors ✅
+
+### Interactive features (Batch A)
+- Variables: opened, value changed ✅
+- Collapse All / Expand All: clicked ✅
+- Run All: 0 DOM errors ✅
+- Schema explorer: GarbageCollection preview appeared ✅
+- Command palette (Cmd+K): opened ✅
+- SQL autocomplete: GarbageCollection completions ✅
+- Help modal: shortcut content visible ✅
+- LINK_X zoom (GC Pause Analysis): Reset button appeared ✅
+
+### Template rotation (all 13 templates across 3 batches)
+**Batch A:**
+- Recording Overview: 238 SVGs, 0 errors ✅
+- CPU Profiling: 138 SVGs, 0 errors ✅
+- I/O & Latency: 146 SVGs, 0 errors ✅
+
+**Batch B:**
+- Container & Cloud: 142 SVGs, 0 errors ✅
+- Exceptions & Errors: 130 SVGs, 0 errors ✅
+- Heap Allocation: 130 SVGs, 0 errors ✅
+- JVM Internals: 146 SVGs, 0 errors ✅
+- Threading & Contention: 150 SVGs, 0 errors ✅
+
+**Batch C:**
+- Memory Leak Detection: 156 SVGs, 0 errors ✅
+- ZGC Analysis: 166 SVGs, 0 errors ✅
+- GC Deep Dive: 424 SVGs, 0 errors ✅
+- Comprehensive Feature Test: 269 SVGs, 0 errors ✅
+
+### Console
+- 0 real errors across all batches ✅
+
+### Open BUGS.md items
+- No open non-✅ items beyond B-205 ✅
+
+### Bugs found
+None. 40/40 checks passed across all 13 templates.
+
 ## Session S122 — 2026-08-07
 
 ### Vitest
