@@ -5722,3 +5722,28 @@ None.
 
 ### Bugs found
 None. One docs staleness fixed.
+
+---
+
+## Session S109 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Interactive features (e2e/qa-s96-interactive.mjs — 5/5 PASS) ✅
+
+### Template rotation (e2e/qa-s109-rotation.mjs — 3/3 PASS)
+- Heap Allocation: 167 SVGs, 0 DOM errors ✅
+- I/O & Latency: 146 SVGs, 0 DOM errors ✅
+- Console: 0 real errors ✅
+
+### BUGS.md open items
+- No open items ✅
+
+### Docs check
+- All docs-site/*.md checked — no staleness found (index.md fixed in S108, browser-architecture.md fixed in S106)
+
+### Bugs found
+None.
