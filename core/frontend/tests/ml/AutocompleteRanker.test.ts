@@ -21,6 +21,8 @@ const W: Weights = {
     isTable: 0.2,
     aggContext: 0.2,
     inValuePos: 0,
+    isViewName: 0.3,
+    plotClause: 0.3,
 };
 
 describe('extractCursorWord', () => {

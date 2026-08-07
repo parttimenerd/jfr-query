@@ -24,6 +24,8 @@ import { KNOWN_SHAPES, UPPERCASE_TAIL_KEYWORDS, LOWERCASE_TAIL_KEYS } from './pa
 export interface PlotScopeView {
     /** Named plots in scope (this cell + prior cells). */
     namedPlots: Array<{ plotName: string; hasBrush?: boolean; shape?: string }>;
+    /** SQL query refs in scope (1-based index → alias + sql). */
+    queryRefs?: ReadonlyArray<{ index: number; cellId: string; sql: string; alias?: string }>;
 }
 
 export interface PlotLintDeps {

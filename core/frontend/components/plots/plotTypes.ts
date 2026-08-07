@@ -61,10 +61,16 @@ export interface PlotRegistration<TConfig = any> {
     // For multi-query plots, this provides context for legends etc.
     dataSources?: { name: string; data: any[] }[];
     domainX?: [any, any];
+    domainY?: [number, number];
     isAnimationActive?: boolean;
     animationDuration?: number;
     // W4 — Cross-cutting clause props forwarded by PlotRenderer. Each plot
     // reads only the fields it cares about; axis-less plots ignore axisX/axisY.
     clauses?: import('../../utils/plotParser').ParsedPlotCall;
+    // Brush gesture props (forwarded when BRUSH clause present).
+    gestureName?: string;
+    onVariableChange?: (vars: Record<string, unknown>) => void;
+    // Cell-level variable change callback (used by TABLE for sort vars).
+    onCellVariableChange?: (vars: Record<string, string>) => void;
   }>;
 }

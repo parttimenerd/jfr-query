@@ -16,7 +16,9 @@ const _cellDirectiveGrammar = ohm.grammar(cellDirectiveSrc);
 const _cellDirectiveSemantics = _cellDirectiveGrammar.createSemantics();
 
 // Returns a flat Record<string, string> of all parsed attributes.
-_cellDirectiveSemantics.addOperation<Record<string, string>>('attrs', {
+// Note: individual rule actions return string | string[] | Record<string,string>;
+// the generic type widened to avoid Ohm.js action return-type narrowing issues.
+_cellDirectiveSemantics.addOperation<unknown>('attrs', {
     Directive(_ws, _open, _ws2, _atCell, _ws3, attrs, _ws4, _close, _nl) {
         return attrs.attrs();
     },
