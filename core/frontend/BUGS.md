@@ -7969,3 +7969,45 @@ None.
 - Templates with charts: Recording Overview (3), GC Deep Dive (7), GC Pause Analysis (13), Heap Allocation (2), Memory Leak Detection (1), Comprehensive Feature Test (6).
 - Templates with 0 charts expected (no matching events in demo JFR): CPU Profiling, I/O & Latency, JVM Internals, Container & Cloud, Exceptions & Errors, Threading & Contention, ZGC Analysis.
 - No open non-✅ items beyond B-211 ✅
+
+---
+
+## QA Session S166 — 2026-08-07
+
+**Focus:** Full Playwright MCP browser QA pass. Templates: GC Pause Analysis, Comprehensive Feature Test. Interactive: all 8 features via direct browser control. UI polish inspection. docs-site audit.
+
+**Method:** Playwright MCP direct browser control (not headless script).
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Vitest 6232/6232 | ✅ |
+| Demo: charts rendered (2), DOM clean | ✅ |
+| Variables: $session_start popup opened | ✅ |
+| LINK_X zoom: reset button appeared | ✅ |
+| Command palette (Cmd+K) | ✅ |
+| SQL autocomplete (Ctrl+Space) | ✅ |
+| Schema explorer: 68 items, columns+types visible | ✅ |
+| Help modal: ⌘/Ctrl shortcuts visible | ✅ |
+| Collapse All / Expand All | ✅ |
+| GC Pause Analysis: 86 cells, 13 charts, DOM clean | ✅ |
+| Comprehensive Feature Test: 33 cells, 6 charts, BRUSH ✅ | ✅ |
+| Console errors (excl. /api/query 500s) | ✅ 0 |
+
+**Result: All checks pass** ✅
+
+### Bugs found
+
+None.
+
+### Docs fix
+
+- `docs-site/ai-providers.md` line 115: `localhost:3001` → `localhost:3000` (matches vite.config.ts `port: 3000` default). Committed.
+
+### Notes
+
+- Demo notebook has 2 charts (BAR_CHART + LINE_CHART) — correct, this is the GC analysis demo with a real JFR recording loaded.
+- Schema explorer shows 68 list items after demo JFR load.
+- All console errors are expected `/api/query` HTTP 500s (no JFR file upload in headless mode).
+- No open non-✅ items beyond B-211 ✅
