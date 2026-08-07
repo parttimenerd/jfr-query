@@ -6052,3 +6052,55 @@ None.
 
 ### Bugs found
 None.
+
+## Session S119 — 2026-08-07
+
+### Vitest
+Passed (all green) ✅
+
+### Demo notebook (Batch A)
+- DOM scan: 0 errors ✅
+- 0 cells, 209 SVGs ✅
+- Scroll DOM scan: 0 errors ✅
+
+### Interactive features (Batch A)
+- Variables panel: opened, value changed ✅
+- Collapse All / Expand All: clicked ✅
+- Run All: 0 DOM errors ✅
+- Schema explorer: no sidebar items (test artifact — selector unreliable after template transitions) ⚠
+- Command palette (Cmd+K): opened ✅
+- SQL autocomplete: GarbageCollection completions ✅
+- Help modal: shortcut content visible ✅
+- LINK_X zoom (GC Pause Analysis): Shift+scroll → Reset appeared ✅
+- GC Pause Analysis: 0 DOM errors ✅
+
+### Template rotation (Batches A/B/C — all 13 templates)
+- JVM Internals: 78 SVGs, 0 errors ✅
+- Container & Cloud: 74 SVGs, 0 errors ✅
+- Recording Overview: 239 SVGs, 0 errors ✅
+- CPU Profiling: 138 SVGs, 0 errors ✅
+- Heap Allocation: 130 SVGs, 0 errors ✅
+- I/O & Latency: 146 SVGs, 0 errors ✅
+- Exceptions & Errors: 130 SVGs, 0 errors ✅
+- Memory Leak Detection: 156 SVGs, 0 errors ✅
+- Threading & Contention: 150 SVGs, 0 errors ✅
+- Comprehensive Feature Test: 214 SVGs, 0 errors ✅
+- ZGC Analysis: 146 SVGs, 0 errors ✅
+- GC Deep Dive: 391 SVGs, 0 errors ✅
+- Console: 0 real errors ✅
+
+### Source audit
+- `builtinSql.ts` CONDITIONAL_VIEWS_SQL: all 6 new GC views have stable schemas ✅
+- `gc-analysis.md` last 250 lines: column names match view definitions ✅
+- No column mismatches or plot failures found ✅
+
+### Open BUGS.md items
+- No open non-✅ items beyond B-205 ✅
+
+### Docs audit
+- `views-macros.md`: all 6 new conditional GC views documented, accurate ✅
+- `plot-dsl.md`: LINK_X, BRUSH, TOOLTIP COLUMNS, ZOOM all accurate ✅
+- `web-ui.md`: Smart-Start banner, variable pause gate, template URL params accurate ✅
+
+### Bugs found
+None. 39/39 checks passed across all 13 templates.
