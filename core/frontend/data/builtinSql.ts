@@ -2164,13 +2164,12 @@ ORDER BY startTime, name`,
 SELECT
     e.startTime                                                             AS "Time",
     e.gcId                                                                  AS "GC ID",
-    e.regionsEvacuated                                                      AS "Regions Evacuated",
+    e.cSetRegions                                                           AS "Regions Evacuated",
     round(e.bytesCopied / 1048576.0, 2)                                     AS "Bytes Copied MB",
-    round(e.bytesPromoted / 1048576.0, 2)                                   AS "Promoted MB",
-    CASE WHEN e.regionsEvacuated > 0
-         THEN round(e.bytesCopied / (e.regionsEvacuated * 1048576.0) * 100, 1)
-         ELSE NULL END                                                       AS "Fill % per Region",
-    round(e.allocationContextWeight / 1048576.0, 2)                         AS "Alloc Context MB"
+    round((e.allocationRegionsUsedAfter - e.allocationRegionsUsedBefore) / 1048576.0, 2) AS "Promoted MB",
+    CASE WHEN e.cSetRegions > 0
+         THEN round(e.bytesCopied / (e.cSetRegions * 1048576.0) * 100, 1)
+         ELSE NULL END                                                       AS "Fill % per Region"
 FROM EvacuationInformation e
 ORDER BY e.startTime`,
   },
