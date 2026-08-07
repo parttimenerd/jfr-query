@@ -14,8 +14,9 @@ or through a notebook-style web UI where every cell can be a SQL query, a chart,
 
 - **Notebook-style analysis** — compose SQL cells, prose, and charts in one document; inline
   `${SELECT …}` expressions embed query results directly in text
-- **12 chart types** — line, bar, scatter, heatmap, flamegraph, histogram, box plot, area,
-  pie, Gantt, range, and table — all with interactive tooltips
+- **19 chart types** — line, bar, area, scatter, heatmap, flamegraph, histogram, box plot,
+  pie, Gantt, range, table, treemap, waterfall, violin, sunburst, Sankey, crosstab, and
+  big-number stat cards — all with interactive tooltips
 - **Built-in templates** — ready-made analyses for GC, heap allocation, threading, and
   exceptions; open from the **New from template** button
 - **Variable controls** — parameterise queries with sliders, dropdowns, and text inputs; every
