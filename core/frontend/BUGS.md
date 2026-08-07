@@ -5934,3 +5934,44 @@ None.
 
 ### Source audit finding
 - `gc-rss-vs-heap` cell in gc-analysis.md references columns that previously only existed conditionally — fixed by stabilising view schema (B-NEW-46 above). ✅
+
+## Session S116 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- Initial DOM scan: 0 errors ✅
+- 0 cells, 209 SVGs loaded ✅
+- Full-scroll DOM scan: 0 errors ✅
+
+### Interactive features
+- Variables panel: chip opened, value changed ✅
+- Run All: 0 DOM errors after re-run ✅
+- Collapse All / Expand All: clicked ✅
+- Command palette (Cmd+K): opened, typed "run" ✅
+- Help modal: opened, shortcut table visible ✅
+- Schema explorer: table clicked, preview SQL appeared ✅
+- SQL autocomplete: Ctrl+Space → GarbageCollection shown ✅
+- LINK_X zoom (GC Pause Analysis): Shift+scroll → Reset button appeared ✅
+- Plot resize: drag handle worked ✅
+
+### Template rotation
+- GC Pause Analysis: 706 SVGs, 0 DOM errors ✅
+- Memory Leak Detection: 89 SVGs, 0 DOM errors ✅
+- Console: 0 real errors ✅
+
+### UI Polish
+- No text overflow detected ✅
+- No zero-height cells ✅
+
+### Docs audit
+- `views-macros.md`: all 6 new conditional GC views present ✅
+- `plot-dsl.md`: LINK_X/BRUSH/ZOOM clauses accurate ✅
+- `web-ui.md`: Smart-Start banner, template URL params accurate ✅
+
+### Open BUGS.md items
+- All items confirmed ✅ fixed (B-NEW-41, B-206, B-208, B-NEW-42–46)
+
+### Bugs found
+None.
