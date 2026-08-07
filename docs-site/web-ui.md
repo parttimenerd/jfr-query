@@ -114,7 +114,7 @@ Open a specific template directly via query parameters:
 
 - `?template=<name>` — load a built-in template by name (e.g. `?template=gc-analysis`, `?template=zgc-analysis`). The URL is cleaned after loading so a page refresh doesn't reload the template.
 
-Example: `http://localhost:3001/?template=gc-analysis`
+Example: `http://localhost:4244/?template=gc-analysis`
 
 
 

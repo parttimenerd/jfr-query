@@ -165,7 +165,7 @@ TABLE() ON selected
 You can pre-populate cell-local or notebook-level variables via URL query parameters using the `var.NAME=VALUE` syntax:
 
 ```
-http://localhost:3001/?var.threshold=500&var.event_type=GC
+http://localhost:4244/?var.threshold=500&var.event_type=GC
 ```
 
 - The `var.` prefix is stripped; the remainder becomes the variable name.
