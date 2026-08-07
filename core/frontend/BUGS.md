@@ -5612,3 +5612,31 @@ None.
 
 ### Bugs found
 None.
+
+---
+
+## Session S105 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Interactive features (e2e/qa-s96-interactive.mjs — 5/5 PASS) ✅
+
+### Template rotation (e2e/qa-s105-rotation.mjs — 3/3 PASS)
+- Container & Cloud: 142 SVGs, 0 DOM errors, 0 scroll errors ✅
+- Comprehensive Feature Test: 273 SVGs, 0 DOM errors, 0 scroll errors ✅
+- Console: 0 real errors ✅
+
+### BUGS.md open items audit
+- B-NEW-41: commit `b9d025b` ✅ fixed
+- No open items ✅
+
+### Docs check
+- `plot-dsl.md`: linking/brushing section (LINK_X, LINK_Y, BRUSH), axes, tooltips, composite plots — all accurate ✅
+- Tail clauses section headings confirmed: Titles, Data source, Sorting, Legend, Palette, Linking/brushing, Axes, Tooltips, Constants ✅
+- 29 occurrences of key clause names (BRUSH, ZOOM, LINK_X, ON HOVER, FORMAT, DOMAIN, TOOLTIP COLUMNS) ✅
+
+### Bugs found
+None.
