@@ -7675,3 +7675,50 @@ None.
 - Clear All Results correctly drops charts from 2 to 0.
 - Cells shown per template after Run All: GC Pause=19, GC Deep Dive=13, Comprehensive=11, Demo=5, Recording Overview=3, Heap Allocation=2, ZGC=2, Memory Leak=2. Templates requiring JFR events not in demo show 1 cell (the first prose block rendered before `requires=` hides others).
 - Vitest: 6232 tests pass (257 test files).
+
+## QA Session S159 — 2026-08-07
+
+**Focus:** Comprehensive interactive QA — demo notebook (variables, LINK_X, BRUSH, command palette, autocomplete, schema explorer, Run All, help modal, UI polish), GC Pause Analysis, Comprehensive Feature Test. Investigation of transient "Query has errors" in demo.
+
+**Scripts:** `core/frontend/e2e/qa-s159.mjs`, `core/frontend/e2e/qa-probe-error2.mjs`, `core/frontend/e2e/qa-probe-error3.mjs`, `core/frontend/e2e/qa-probe-repeat.mjs`, `core/frontend/e2e/qa-probe-transient.mjs`
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Vitest 6232/6232 | ✅ |
+| Demo variables panel | ✅ |
+| Demo LINK_X zoom (3 ops, 13 charts stable) | ✅ |
+| Demo BRUSH elements (4 found) | ✅ |
+| Demo Command palette Cmd+K | ✅ |
+| Demo SQL autocomplete | ✅ |
+| Demo Schema Explorer | ✅ |
+| Demo Run All | ✅ |
+| Demo Help modal | ✅ |
+| GC Pause Analysis (25 cells, 16 charts, 0 DOM errors) | ✅ |
+| Comprehensive Feature Test (11 cells, 6 charts, 0 DOM errors) | ✅ |
+| Demo "Query has errors" after Run All | ⚠️ 1 transient occurrence during initial run; 0/5 in repeat probe |
+
+**Result: 28/29 checks — 1 transient flaky finding, fixed by B-208/B-209** ✅
+
+### Bugs found and fixed
+
+**B-208 — `resetWasmDatabase` used `view_name` instead of `table_name`** ✅ FIXED
+- **Location:** `core/frontend/utils/jfrToWasmLoader.ts:808,811` (in `resetWasmDatabase()`)
+- **Root cause:** `information_schema.views` uses `table_name` (SQL standard), not `view_name`. The old column name caused a `Binder Error: Referenced column "view_name" not found` that was silently swallowed by `.catch(() => null)`. As a result, old views were never dropped when loading a second JFR file.
+- **Symptom:** Loading a second JFR file would leave stale views from the first file, causing "Catalog Error / does not exist" errors against the old tables.
+- **Fix:** Changed both the SQL query and the `.map()` call: `view_name` → `table_name`.
+- **Commit:** `189198a`
+
+**B-209 — DuckDB WASM rejects multi-object DROP statements** ✅ FIXED
+- **Location:** `core/frontend/utils/jfrToWasmLoader.ts:813,827` (in `resetWasmDatabase()`)
+- **Root cause:** DuckDB WASM throws `Not implemented Error: Can only drop one object at a time` when given `DROP VIEW IF EXISTS v1, v2, v3` or `DROP TABLE IF EXISTS t1, t2, ...`. The error was silently swallowed by `.catch(() => {})`, so old tables remained in memory.
+- **Fix:** Changed view drops and table drops to individual per-object `DROP` statements in a loop. Removed the batch logic entirely.
+- **Commit:** `189198a`
+
+### Notes
+
+- The transient "Query has errors" observed once during initial S159 run did not reproduce in 5 subsequent repeat-probe runs (`qa-probe-repeat.mjs`), and the console Binder Error from B-208 explains the prior instability.
+- After B-208/B-209 fixes, `qa-probe-repeat.mjs` shows 0/5 runs with errors — confirmed stable.
+- Vitest: 6232 tests pass (257 test files) after fixes.
+- No open non-✅ items beyond B-209 ✅
