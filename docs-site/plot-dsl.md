@@ -632,6 +632,8 @@ Supports two-variable `BRUSH $rowVar $colVar` to write `$rowVar.selection` = row
 
 ---
 
+### TABLE
+
 Sortable, filterable table with CSV export — the default when no other plot is specified. Timestamps, durations, and numbers are auto-formatted.
 
 **Example 1 — Default table (auto-detected columns)**

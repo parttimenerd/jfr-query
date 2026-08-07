@@ -8011,3 +8011,44 @@ None.
 - Schema explorer shows 68 list items after demo JFR load.
 - All console errors are expected `/api/query` HTTP 500s (no JFR file upload in headless mode).
 - No open non-✅ items beyond B-211 ✅
+
+---
+
+## QA Session S167 — 2026-08-07
+
+**Focus:** Full QA pass. Templates: GC Deep Dive, ZGC Analysis. Interactive: variables+popup, LINK_X zoom, Collapse/Expand All, command palette, SQL autocomplete, schema explorer, help modal.
+
+**Scripts:** `core/frontend/e2e/qa-s167.mjs`
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Vitest 6232/6232 | ✅ |
+| Demo: charts rendered, DOM clean | ✅ |
+| Variables: tokens visible + editor opens | ✅ |
+| LINK_X zoom: reset button appeared | ✅ |
+| Collapse All / Expand All | ✅ |
+| Command palette (Cmd+K) | ✅ |
+| SQL autocomplete (Ctrl+Space) | ✅ |
+| Schema explorer: items visible | ✅ |
+| Help modal opens + shortcut content | ✅ |
+| GC Deep Dive: cells rendered, DOM clean (7 charts, LINK_X ✅) | ✅ |
+| ZGC Analysis: cells rendered, DOM clean (0 charts — no ZGC events in demo JFR) | ✅ |
+| Console errors (excl. /api/query 500s) | ✅ 0 |
+
+**Result: 18/18 checks pass** ✅
+
+### Bugs found
+
+None.
+
+### Docs fix
+
+- `docs-site/plot-dsl.md` line 635: Missing `### TABLE` section heading — TABLE section was the only plot type without its own `###` heading, making the docs inconsistently structured. Added the heading.
+
+### Notes
+
+- GC Deep Dive renders 7 charts with demo JFR data; LINK_X zoom works on its time-series charts.
+- ZGC Analysis renders cells but 0 charts (expected: demo JFR uses G1 GC, not ZGC).
+- No open non-✅ items beyond B-211 ✅
