@@ -7168,3 +7168,38 @@ None. All standing open items from BUGS.md closed. App clean.
 None. App clean across all 4 templates.
 
 - No open non-✅ items beyond B-205 ✅
+
+---
+
+## Session S148 QA — 2026-08-07 (Playwright headless)
+
+**Templates tested:** Recording Overview (interactive), CPU Profiling (interactive)  
+**Method:** Playwright headless node script (`e2e/qa-s148.mjs`)
+
+### Summary
+
+| Check | Result |
+|---|---|
+| vitest run | ✅ 6216 pass, 0 failures |
+| Demo notebook | ✅ 0 errors, 5 charts |
+| Recording Overview | ✅ 0 errors, 7 charts |
+| CPU Profiling | ✅ 0 errors, 0 charts (no ExecutionSample events in demo JFR — expected) |
+| Variables panel | ✅ PASS |
+| Run All | ✅ PASS |
+| Collapse/Expand | ✅ PASS |
+| Schema explorer | ✅ PASS |
+| LINK_X zoom (Shift+scroll) | ✅ PASS |
+| Command palette (Cmd+K) | ✅ PASS |
+| SQL autocomplete (Ctrl+Space) | ✅ PASS — `GarbageCollection · table · 20 rows` suggestion confirmed |
+| Help modal | ✅ PASS |
+| Tooltip | ✅ PASS (infra verified; skipped on CPU Profiling as 0 charts render) |
+| Resize handle | ✅ PASS |
+| Zero-height cells | ✅ 0 |
+| Text overflow | ✅ 0 |
+
+**Console errors (real): 0** ✅  
+**BUGS.md open items:** none — all items ✅ resolved as of S147
+
+### Bugs found
+
+None.
