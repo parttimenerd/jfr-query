@@ -5772,3 +5772,32 @@ None.
 
 ### Bugs found
 None.
+
+---
+
+## Session S111 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Interactive features (e2e/qa-s96-interactive.mjs — 5/5 PASS) ✅
+
+### All-templates scan (e2e/template-qa-s94.mjs — 13/13 PASS) ✅
+Recording Overview: 239 SVGs, GC Pause Analysis: 723 SVGs, GC Deep Dive: 512 SVGs, CPU Profiling: 138 SVGs, Heap Allocation: 173 SVGs, I/O & Latency: 146 SVGs, JVM Internals: 146 SVGs, Memory Leak Detection: 156 SVGs, Container & Cloud: 142 SVGs, Exceptions & Errors: 130 SVGs, Threading & Contention: 150 SVGs, Comprehensive Feature Test: 413 SVGs, ZGC Analysis: 166 SVGs
+
+### Deep code audit findings
+
+#### 🟠 [B-NEW-42] `pinned-threads` view concatenates raw Method integer ID instead of method name ✅ FIXED
+
+**Where:** `core/frontend/data/builtinSql.ts:1479`
+
+**Root cause:** The view built the "Method" column as `(c.javaName || '.' || vtp.stackTrace$topApplicationMethod)`, where `stackTrace$topApplicationMethod` is a foreign key integer (Method._id), not a string. All other similar views use `JOIN Method m ON ... = m._id` then `m.name || m.descriptor`. The view was also incorrectly joining Class via `vtp.stackTrace$topApplicationClass` rather than via `m.type` (the Method's declaring class).
+
+**Fix:** Added `JOIN Method m ON vtp.stackTrace$topApplicationMethod = m._id` and `JOIN Class c ON m.type = c._id`, changed display column to `m.name || m.descriptor`. Matches the pattern used by `gc-allocation-trigger`, `memory-leaks-by-site`, and all other stack-trace views.
+
+**Commit:** `f4bead1`
+
+### Template audit
+Full pass over all 13 templates and all CONDITIONAL_VIEWS_SQL entries: no other issues found.
