@@ -6375,6 +6375,43 @@ None. 18/18 checks passed.
 ### Bugs found
 None. 20/20 checks passed.
 
+## Session S129 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- DOM scan: 0 errors ✅
+- 0 cells, 209 SVGs ✅
+- Scroll scan: 0 errors ✅
+
+### Interactive features
+- Variables: opened, value changed ✅
+- Collapse All / Expand All: clicked ✅
+- Run All: 0 DOM errors ✅
+- Schema explorer: preview appeared ✅
+- Command palette (Cmd+K): opened ✅
+- SQL autocomplete: GarbageCollection completions ✅
+- Help modal: shortcut content visible ✅
+- LINK_X zoom (GC Pause Analysis): Reset button appeared ✅
+
+### Template rotation
+- CPU Profiling: 138 SVGs, 0 errors ✅
+- Heap Allocation: 130 SVGs, 0 errors ✅
+
+### Console
+- 0 real errors ✅
+
+### Open BUGS.md items
+- No open non-✅ items beyond B-205 ✅
+
+### Docs check
+- `views-macros.md`: all 6 new GC deep-dive views listed correctly ✅
+- `plot-dsl.md`: BRUSH, LINK_X, all chart types documented ✅
+- `notebook-format.md`: requires= documented ✅
+
+---
+
 ## Session S128 — 2026-08-07
 
 ### Vitest
