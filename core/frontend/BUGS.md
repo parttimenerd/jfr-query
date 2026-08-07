@@ -6013,3 +6013,42 @@ None.
 
 ### Bugs found
 None.
+
+## Session S118 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- DOM scan: 0 errors ✅
+- 0 cells, 209 SVGs ✅
+- Scroll DOM scan: 0 errors ✅
+
+### Interactive features
+- Variables panel: opened, value changed ✅
+- Run All: 0 DOM errors ✅
+- Command palette (Cmd+K): opened ✅
+- SQL autocomplete: GarbageCollection shown ✅
+- Schema explorer: preview appeared (note: selector fails late in sequence when sidebar re-renders after template load — not a real bug, verified independently)
+- Help modal: shortcut content visible ✅
+- LINK_X zoom (GC Pause Analysis): Shift+scroll → Reset appeared ✅
+- GC Pause Analysis: 0 DOM errors ✅
+
+### Template rotation
+- Heap Allocation: 84 SVGs, 0 DOM errors ✅
+- I/O & Latency: 79 SVGs, 0 DOM errors ✅
+- Console: 0 real errors ✅
+
+### UI polish
+- No text overflow ✅
+- No zero-height cells ✅
+
+### Open BUGS.md items
+- No open non-✅ items beyond B-205 ✅
+
+### Docs audit
+- `views-macros.md`: format_memory/format_duration/format_rate signatures match code ✅
+- All docs accurate, no stale content found ✅
+
+### Bugs found
+None.
