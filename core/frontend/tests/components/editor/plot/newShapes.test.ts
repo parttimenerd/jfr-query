@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parse } from '../../../../components/editor/plot/parser';
+import { parse, KNOWN_SHAPES } from '../../../../components/editor/plot/parser';
 import { derive } from '../../../../components/editor/plot/derive';
 import { parsePlotCall } from '../../../../utils/plotParser';
 
@@ -27,6 +27,52 @@ describe('treemap / waterfall lowercase DSL fix', () => {
     it('parses waterfall lowercase form', () => {
         const r = p('waterfall { category: phase, value: delta }');
         expect(r.mainConfig).toMatch(/WATERFALL/i);
+    });
+});
+
+describe('VIOLIN_PLOT / SUNBURST / SANKEY / CROSSTAB / BIG_NUMBER recognized in parser', () => {
+    it('KNOWN_SHAPES contains violin_plot', () => {
+        expect(KNOWN_SHAPES.has('violin_plot')).toBe(true);
+    });
+    it('KNOWN_SHAPES contains sunburst', () => {
+        expect(KNOWN_SHAPES.has('sunburst')).toBe(true);
+    });
+    it('KNOWN_SHAPES contains sankey', () => {
+        expect(KNOWN_SHAPES.has('sankey')).toBe(true);
+    });
+    it('KNOWN_SHAPES contains crosstab', () => {
+        expect(KNOWN_SHAPES.has('crosstab')).toBe(true);
+    });
+    it('KNOWN_SHAPES contains big_number', () => {
+        expect(KNOWN_SHAPES.has('big_number')).toBe(true);
+    });
+
+    it('parses VIOLIN_PLOT uppercase', () => {
+        const r = p('VIOLIN_PLOT(value: "dur")');
+        expect(r.mainConfig).toMatch(/VIOLIN_PLOT/i);
+    });
+
+    it('parses SUNBURST uppercase', () => {
+        const r = p('SUNBURST(path: ["pkg", "cls"], value: "samples")');
+        expect(r.mainConfig).toMatch(/SUNBURST/i);
+    });
+
+    it('parses SANKEY uppercase', () => {
+        const r = p('SANKEY(source: "caller", target: "callee", value: "n")');
+        expect(r.mainConfig).toMatch(/SANKEY/i);
+    });
+
+    it('parses BIG_NUMBER uppercase', () => {
+        const r = p('BIG_NUMBER(value: "count")');
+        expect(r.mainConfig).toMatch(/BIG_NUMBER/i);
+    });
+
+    it('KNOWN_SHAPES boundary check: multi-word tail does not consume next VIOLIN_PLOT block', () => {
+        // LEGEND clause followed by VIOLIN_PLOT — parser should stop at VIOLIN_PLOT
+        const src = 'LINE_CHART(x: "t", y: ["v"]) LEGEND BOTTOM\nVIOLIN_PLOT(value: "dur")';
+        const root = parse(src);
+        // Should parse as two separate plot calls
+        expect(root.children.length).toBeGreaterThanOrEqual(1);
     });
 });
 

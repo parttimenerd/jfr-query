@@ -27,6 +27,11 @@ const SHAPE_NORMALIZE: Record<string, string> = {
     range_chart: 'range',
     treemap: 'treemap',
     waterfall: 'waterfall',
+    violin_plot: 'violin_plot',
+    sunburst: 'sunburst',
+    sankey: 'sankey',
+    crosstab: 'crosstab',
+    big_number: 'big_number',
 };
 
 // Anything in this set, when seen as the *first* token (case-insensitive), is
@@ -935,7 +940,7 @@ class PlotParser {
                 // Stop at the next uppercase tail keyword
                 if (pk.kind === 'ident' && UPPERCASE_TAIL_KEYWORDS.has(pk.text.toUpperCase())) break;
                 // Stop at a plot-shape keyword (start of next block)
-                if (pk.kind === 'ident' && KNOWN_SHAPES.has(pk.text.toUpperCase())) break;
+                if (pk.kind === 'ident' && KNOWN_SHAPES.has(pk.text.toLowerCase())) break;
                 this.consume();
                 last = pk.to;
             }
