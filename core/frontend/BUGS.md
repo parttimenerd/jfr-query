@@ -6141,3 +6141,42 @@ None. 39/39 checks passed across all 13 templates.
 
 ### Bugs found
 None. 17/17 checks passed.
+
+## Session S121 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Demo notebook
+- DOM scan: 0 errors ✅
+- 0 cells, 209 SVGs ✅
+- Scroll DOM scan: 0 errors ✅
+
+### Interactive features
+- Variables: opened, value changed ✅
+- Collapse All / Expand All: clicked ✅
+- Run All: 0 DOM errors ✅
+- Schema explorer: GarbageCollection preview appeared ✅
+- Command palette (Cmd+K): opened ✅
+- SQL autocomplete: GarbageCollection completions ✅
+- Help modal: shortcut content visible ✅
+- LINK_X zoom (GC Pause Analysis): Reset button appeared ✅
+
+### Template rotation
+- CPU Profiling: 138 SVGs, 0 errors ✅
+- JVM Internals: 146 SVGs, 0 errors ✅
+- Console: 0 real errors ✅
+
+### UI polish
+- No zero-height cells ✅
+- No horizontal overflow ✅
+
+### Open BUGS.md items
+- No open non-✅ items beyond B-205 ✅
+
+### Docs audit
+- `plot-dsl.md`: BRUSH, LINK_SCROLL, SORT accurate ✅
+- All docs accurate ✅
+
+### Bugs found
+None. 20/20 checks passed.
