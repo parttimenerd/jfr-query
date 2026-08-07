@@ -2104,11 +2104,10 @@ SELECT
     a.startTime                                                       AS "Time",
     a.gcId                                                            AS "GC ID",
     round(a.threshold / 1048576.0, 1)                                 AS "IHOP Threshold MB",
-    round(a.occupancy / 1048576.0, 1)                                 AS "Heap Occupancy MB",
-    round(a.initiatingOccupancy * 100.0, 1)                           AS "IHOP %",
-    round(a.mutatorAllocationSpeed / 1048576.0, 3)                    AS "Alloc Speed MB/s",
-    round(a.concurrentGCGrowth / 1048576.0, 3)                        AS "Concurrent Growth MB/s",
-    round(a.lastMarkingLength * 1000.0, 1)                            AS "Last Mark Duration ms"
+    round(a.currentOccupancy / 1048576.0, 1)                          AS "Heap Occupancy MB",
+    round(a.thresholdPercentage * 100.0, 1)                           AS "IHOP %",
+    round(a.predictedAllocationRate / 1048576.0, 3)                   AS "Alloc Speed MB/s",
+    round(a.predictedMarkingDuration * 1000.0, 1)                     AS "Predicted Mark Duration ms"
 FROM G1AdaptiveIHOP a
 ORDER BY a.startTime`,
   },
@@ -2179,20 +2178,20 @@ ORDER BY e.startTime`,
     buildSql: (tables) => {
       const branches: string[] = [
         `SELECT startTime AS "Time", gcId AS "GC ID", 'Promotion Failed' AS "Failure Type",
-         promotionSize AS "Size Bytes", NULL::BIGINT AS "Failures"
+         "promotionFailed$totalSize" AS "Size Bytes", "promotionFailed$objectCount" AS "Objects"
          FROM PromotionFailed`,
       ];
       if (tables.has('EvacuationFailed')) {
         branches.push(
           `SELECT startTime AS "Time", gcId AS "GC ID", 'Evacuation Failed' AS "Failure Type",
-           NULL::BIGINT AS "Size Bytes", failures AS "Failures"
+           "evacuationFailed$totalSize" AS "Size Bytes", "evacuationFailed$objectCount" AS "Objects"
            FROM EvacuationFailed`,
         );
       }
       if (tables.has('ConcurrentModeFailure')) {
         branches.push(
           `SELECT startTime AS "Time", gcId AS "GC ID", 'Concurrent Mode Failure' AS "Failure Type",
-           NULL::BIGINT AS "Size Bytes", NULL::BIGINT AS "Failures"
+           NULL::BIGINT AS "Size Bytes", NULL::BIGINT AS "Objects"
            FROM ConcurrentModeFailure`,
         );
       }

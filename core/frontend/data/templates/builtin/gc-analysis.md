@@ -803,8 +803,8 @@ TABLE() ON tuning_advice TITLE "GC Tuning Recommendations"
 G1's internal model for when to start concurrent marking. The **IHOP %** is the heap occupancy threshold at which G1 initiates a concurrent marking cycle.
 
 - Rising **IHOP %** means G1 is trying to start marking earlier because allocation is fast.
-- Rising **Last Mark Duration ms** means the concurrent cycle is taking longer — risk of not finishing before the heap fills (→ Concurrent Mode Failure).
-- **Alloc Speed** vs **Concurrent Growth** gap: if allocation speed persistently exceeds concurrent growth, G1 cannot keep up.
+- Rising **Predicted Mark Duration ms** means the concurrent cycle is expected to take longer — risk of not finishing before the heap fills (→ Concurrent Mode Failure).
+- **Alloc Speed MB/s** tracks the JVM's predicted allocation rate used to tune the IHOP threshold.
 
 *Requires `G1AdaptiveIHOP` events (G1 only, gc.jfc or gc-details.jfc).*
 
@@ -818,11 +818,11 @@ LINE_CHART(x: "Time", y: ["IHOP %"]) ON ihop_stats TITLE "G1 IHOP Threshold % Ov
 ```
 
 ```plot
-LINE_CHART(x: "Time", y: ["Alloc Speed MB/s", "Concurrent Growth MB/s"]) ON ihop_stats TITLE "Allocation Speed vs Concurrent GC Growth (MB/s)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB/s"
+LINE_CHART(x: "Time", y: ["Alloc Speed MB/s"]) ON ihop_stats TITLE "Predicted Allocation Speed (MB/s)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB/s"
 ```
 
 ```plot
-LINE_CHART(x: "Time", y: ["Last Mark Duration ms"]) ON ihop_stats TITLE "Concurrent Mark Duration Over Time (ms)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "ms"
+LINE_CHART(x: "Time", y: ["Predicted Mark Duration ms"]) ON ihop_stats TITLE "Predicted Concurrent Mark Duration (ms)" LINK_X($start, $end) ZOOM AXIS_Y LABEL "ms"
 ```
 
 ---
