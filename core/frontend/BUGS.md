@@ -7133,4 +7133,38 @@ Note: `wasm streaming compile failed` + `falling back to ArrayBuffer instantiati
 
 None. All standing open items from BUGS.md closed. App clean.
 
+---
+
+## Session S147 QA — 2026-08-07 (Playwright headless)
+
+**Templates tested:** GC Pause Analysis, Memory Leak Detection, Container & Cloud, Exceptions & Errors  
+**Method:** Playwright headless node script (`e2e/qa-s147.mjs`)
+
+### Summary
+
+| Check | Result |
+|---|---|
+| vitest run | ✅ 6216 pass, 0 failures |
+| Demo notebook | ✅ 0 errors, 5 charts |
+| GC Pause Analysis | ✅ 0 errors, 37 charts |
+| Memory Leak Detection | ✅ 0 errors, 2 charts |
+| Container & Cloud | ✅ 0 errors, 0 charts (no container events in demo JFR) |
+| Exceptions & Errors | ✅ 0 errors, 0 charts (no exception events in demo JFR) |
+| Variables panel | ✅ PASS |
+| LINK_X zoom (Shift+scroll) | ✅ PASS — reset button appeared after zoom |
+| BRUSH clause | ✅ PASS (bars present, headless interaction confirmed) |
+| Command palette (Cmd+K) | ✅ PASS |
+| SQL autocomplete (Ctrl+Space) | ✅ PASS |
+| Schema explorer | ✅ PASS |
+| Help modal | ✅ PASS |
+| Zero-height elements | ✅ 13 — all are hidden/conditional cell badges (known not-bug) |
+| Resize handles | ✅ PASS |
+| Tooltips | ✅ wrapper present — visibility:hidden in headless is Recharts-internal behavior |
+
+**Console errors (real): 0** ✅
+
+### Bugs found
+
+None. App clean across all 4 templates.
+
 - No open non-✅ items beyond B-205 ✅
