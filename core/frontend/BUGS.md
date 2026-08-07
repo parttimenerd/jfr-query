@@ -6955,3 +6955,45 @@ None. 40/40 checks passed across all 13 templates.
 
 ### Bugs found
 None. All new GC deep-dive cells work correctly on real JFR files. ✅
+
+---
+
+## Session S143 — 2026-08-07
+
+### S143 Full QA Pass
+
+**Templates tested:** Heap Allocation, JVM Internals (full rotation continues)
+
+**QA script:** `e2e/qa-s143.mjs`
+
+**Results — Demo notebook:**
+- 0 DOM errors, 209 SVGs, 5 cells ✅
+
+**Results — Heap Allocation template:**
+- 0 DOM errors, 4 charts, 0 errors after Run All ✅
+
+**Results — JVM Internals template:**
+- 0 DOM errors, 0 charts (expected — no JVM internal events in demo JFR) ✅
+
+**Interactive features (on GC Pause Analysis template):**
+- Variables panel ($session_start datetime-local input): ✅
+- LINK_X zoom (Shift+scroll): ✅
+- BRUSH bar click: ✅
+- Command palette (Cmd+K): ✅
+- Schema explorer + CM6 preview pane: ✅
+- SQL autocomplete (CM6 extension present): ✅
+- Help modal with shortcuts: ✅
+- Run All: 0 errors, 37 charts ✅
+- Chart tooltip (recharts-tooltip-wrapper): ✅
+- Resize handles: 25 ✅
+- Collapse/Expand All: ✅
+
+**Console errors (real): 0** ✅  
+**Zero-height cells: 0** ✅
+
+### Bugs found
+None. All features working correctly. ✅
+
+### Test script artifacts identified and fixed
+- SQL autocomplete test previously typed into the last `.cm-editor` (a notebook cell), contaminating it and causing "Invalid plot configuration" errors on Run All. Fixed by using `!ed.closest('[data-cell-id]')` to find the sidebar preview pane editor, then using a read-only CM6 content check to avoid modifying any editor state.
+- LINK_X zoom test required `scrollIntoViewIfNeeded()` before Shift+scroll — charts are rendered at y=2000+ inside an `overflow-auto` container, outside the 900px viewport. Fixed in the test script.
