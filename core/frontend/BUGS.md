@@ -5852,3 +5852,29 @@ Full pass over all 13 templates and all CONDITIONAL_VIEWS_SQL entries: no other 
 
 ### Docs check
 - All docs-site/*.md re-audited by subagent: all accurate, no stale content found
+
+---
+
+## Session S113 — 2026-08-07
+
+### Vitest
+6206 passed | 7 skipped (6213 tests) ✅
+
+### Automated full QA (e2e/qa-s95.mjs — 24 checks, 0 failures) ✅
+
+### Interactive features (e2e/qa-s96-interactive.mjs — 5/5 PASS) ✅
+
+### Template rotation (e2e/qa-s113-rotation.mjs — 3/3 PASS)
+- CPU Profiling: 138 SVGs, 0 DOM errors ✅
+- Threading & Contention: 150 SVGs, 0 DOM errors ✅
+- Console: 0 real errors ✅
+
+### BUGS.md open items
+- All items B-NEW-41 through B-NEW-45 confirmed ✅ fixed
+
+### Docs check
+- `views-macros.md`: all 6 new gc views listed correctly (g1-ihop-stats, g1-region-types, gc-rss-vs-heap, gc-memory-pools, gc-evacuation-efficiency, gc-failure-events) ✅
+- `browser-architecture.md`, `index.md`: confirmed accurate ✅
+
+### Bugs found
+None.
