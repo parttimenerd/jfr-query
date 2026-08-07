@@ -7100,4 +7100,37 @@ Note: `wasm streaming compile failed` + `falling back to ArrayBuffer instantiati
 **Commit:** c7bfef3
 **Status:** All ✅ fixed — 0 TypeScript errors, 6216 tests pass.
 
+---
+
+## Session S146 QA — 2026-08-07 (Playwright MCP browser control)
+
+**Templates tested:** I/O & Latency, Threading & Contention  
+**Method:** Playwright MCP headless browser — direct DOM inspection + chart interaction
+
+### Summary
+
+| Check | Result |
+|---|---|
+| vitest run | ✅ pass (all tests, 0 failures) |
+| Demo notebook DOM scan | ✅ 0 real errors, 5 charts rendered |
+| I/O & Latency template | ✅ 0 errors (0 charts expected — demo JFR has no I/O events) |
+| Threading & Contention template | ✅ 0 errors (0 charts expected — demo JFR has no JavaMonitorEnter events) |
+| Variables panel | ✅ PASS |
+| LINK_X zoom (Shift+scroll) | ✅ PASS |
+| BRUSH clause gesture | ✅ PASS |
+| Command palette (Ctrl+K) | ✅ PASS |
+| SQL autocomplete | ✅ PASS |
+| Schema explorer | ✅ PASS |
+| Run All | ✅ PASS |
+| Help modal | ✅ PASS |
+| UI polish (truncated text, zero-height charts, resize handles) | ✅ 0 issues, 10 resize handles |
+| TypeScript errors | ✅ 0 |
+
+**Console errors (real): 0** ✅  
+**12× HTTP 500 on `/api/query`**: confirmed NOT a bug — `probeServer()` in `DuckDBContext.tsx:110` explicitly marks `r.status >= 500` as `silent: true`; expected behavior in WASM-only dev mode.
+
+### Bugs found
+
+None. All standing open items from BUGS.md closed. App clean.
+
 - No open non-✅ items beyond B-205 ✅
