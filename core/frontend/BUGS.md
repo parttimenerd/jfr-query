@@ -7722,3 +7722,47 @@ None.
 - After B-208/B-209 fixes, `qa-probe-repeat.mjs` shows 0/5 runs with errors — confirmed stable.
 - Vitest: 6232 tests pass (257 test files) after fixes.
 - No open non-✅ items beyond B-209 ✅
+
+## QA Session S160 — 2026-08-07
+
+**Focus:** Full interactive + template pass. Templates: I/O & Latency, JVM Internals. Interactive: variables, LINK_X, command palette (Cmd+K), SQL autocomplete (Ctrl+Space), schema explorer, Run All, help modal (Keyboard Shortcuts button). Docs-site audit.
+
+**Scripts:** `core/frontend/e2e/qa-s160.mjs`, `core/frontend/e2e/qa-probe-help.mjs`
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Vitest 6232/6232 | ✅ |
+| Demo Run All | ✅ charts rendered, 0 DOM errors |
+| Variables: $-prefixed tokens visible | ✅ |
+| LINK_X: recharts containers rendered | ✅ |
+| Command palette (Cmd+K) | ✅ |
+| SQL autocomplete (Ctrl+Space) | ✅ |
+| Schema explorer has items | ✅ |
+| Help modal (Keyboard Shortcuts button) | ✅ |
+| I/O & Latency template | ✅ cells rendered, 0 DOM errors |
+| JVM Internals template | ✅ cells rendered, 0 DOM errors |
+| Console errors (excluding /api/query 500s) | ✅ 0 |
+
+**Result: 13/13 checks pass** ✅
+
+### Bugs found and fixed
+
+**B-210 — Plot DSL short aliases (HEAT, HIST, BOX, FLAME, TREE, FALL) missing from SHAPE_NORMALIZE** ✅ FIXED
+- **Location:** `core/frontend/components/editor/plot/parser.ts:14` (`SHAPE_NORMALIZE`)
+- **Root cause:** `plot-dsl.md` documents short aliases `HEAT` (heatmap), `HIST` (histogram), `BOX` (box_plot), `FLAME` (flamegraph), `TREE` (treemap), `FALL` (waterfall) — but none of these were in `SHAPE_NORMALIZE`. Writing `HEAT(x: col1, y: col2)` would fail to parse as a heatmap.
+- **Fix:** Added all 6 missing aliases to `SHAPE_NORMALIZE`.
+- **Commit:** `850bf39`
+
+**B-211 — docs-site examples used localhost:3001 (dev port) instead of localhost:4244 (prod default)** ✅ FIXED
+- **Location:** `docs-site/web-ui.md:117`, `docs-site/variables.md:168`
+- **Root cause:** Examples copied from dev environment without correcting to production port.
+- **Fix:** Changed both URLs from `:3001` to `:4244` to match `getting-started.md` and the actual `ServeCommand` default.
+- **Commit:** `850bf39`
+
+### Notes
+
+- Help button uses `aria-label="Keyboard Shortcuts"` (not "help" or "?") — updated QA script selector accordingly.
+- HTTP 500 on `/api/query` confirmed NOT a bug — `probeServer()` in DuckDBContext explicitly ignores 500s (`silent: true`); expected in WASM-only dev mode.
+- No open non-✅ items beyond B-211 ✅
