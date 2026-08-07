@@ -155,6 +155,9 @@ row objects. Special handling:
   precision loss.
 - **Row limit** — WASM queries are capped at 50 000 rows by default to prevent OOM on large
   result sets. Append `-- no-limit` to the SQL to bypass this.
+- **Query result cache** — `SELECT` results are cached in memory (keyed on the SQL string) to
+  avoid re-running identical queries during re-render cycles. The cache is cleared whenever a
+  new JFR file is loaded. Append `-- no-cache` to force a fresh execution and bypass the cache.
 
 ## See also
 
