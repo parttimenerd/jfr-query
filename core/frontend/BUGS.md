@@ -7623,3 +7623,55 @@ None.
 - SQL autocomplete (Ctrl+Space) still skipped in headless — CM6's completion engine doesn't trigger in Playwright headless mode even after typing a SQL prefix. Not a bug.
 - Docs check (agent): All docs-site/*.md verified clean — AI model names, plot types, variable syntax, CONDITIONAL_VIEWS_SQL format, notebook cell directives all match source code.
 - Vitest: 6232 tests pass.
+
+---
+
+## QA Session S158 — 2026-08-07
+
+**Focus:** Full visual QA — all 13 templates + demo loaded, Run All, DOM error scan for Catalog Error / does not exist / Invalid plot / Query has errors / Binder Error / Parser Error. Demo interactive: variables, Run All, Collapse/Expand, Schema Explorer, Refresh Schema, Clear All.
+
+**Scripts:** `core/frontend/e2e/qa-s158-full.mjs`, `core/frontend/e2e/qa-s158-interactive.mjs`
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Vitest 6232/6232 | ✅ |
+| Demo | ✅ 5 cells, 2 charts, 0 DOM errors |
+| Recording Overview | ✅ 3 cells, 3 charts, 0 DOM errors |
+| GC Pause Analysis | ✅ 19 cells, 13 charts, 0 DOM errors |
+| GC Deep Dive | ✅ 13 cells, 7 charts, 0 DOM errors |
+| CPU Profiling | ✅ 1 cell, 0 charts, 0 DOM errors |
+| Heap Allocation | ✅ 2 cells, 2 charts, 0 DOM errors |
+| I/O & Latency | ✅ 1 cell, 0 charts, 0 DOM errors |
+| Threading & Contention | ✅ 1 cell, 0 charts, 0 DOM errors |
+| JVM Internals | ✅ 1 cell, 0 charts, 0 DOM errors |
+| Memory Leak Detection | ✅ 2 cells, 1 chart, 0 DOM errors |
+| Container & Cloud | ✅ 1 cell, 0 charts, 0 DOM errors |
+| Exceptions & Errors | ✅ 1 cell, 0 charts, 0 DOM errors |
+| ZGC Analysis | ✅ 2 cells, 0 charts, 0 DOM errors |
+| Comprehensive Feature Test | ✅ 11 cells, 6 charts, 0 DOM errors |
+| Demo: variable buttons (2) | ✅ |
+| Demo: variable popup opens | ✅ |
+| Demo: Run All charts 2→2 | ✅ |
+| Demo: Collapse All | ✅ |
+| Demo: Expand All | ✅ |
+| Demo: Schema Explorer sidebar visible (70 items) | ✅ |
+| Demo: Refresh Schema | ✅ |
+| Demo: Collapse sidebar | ✅ |
+| Demo: Clear All Results (charts 2→0) | ✅ |
+| Console errors | ✅ 0 |
+
+**Result: 14/14 templates clean, 11/11 interactive checks pass** ✅
+
+### Bugs found
+
+None.
+
+### Notes
+
+- All 13 templates + demo notebook: zero DOM error strings (Catalog Error, does not exist, Invalid plot, Query has errors, Binder Error, Parser Error) across all pages after Run All.
+- Schema Explorer is a persistent sidebar (always visible when JFR loaded), not a toggle panel. Shows 70 list items with demo JFR. Refresh Schema and Collapse sidebar both work.
+- Clear All Results correctly drops charts from 2 to 0.
+- Cells shown per template after Run All: GC Pause=19, GC Deep Dive=13, Comprehensive=11, Demo=5, Recording Overview=3, Heap Allocation=2, ZGC=2, Memory Leak=2. Templates requiring JFR events not in demo show 1 cell (the first prose block rendered before `requires=` hides others).
+- Vitest: 6232 tests pass (257 test files).
