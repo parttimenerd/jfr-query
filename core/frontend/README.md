@@ -51,7 +51,7 @@ An interactive notebook for analyzing Java Flight Recorder (JFR) files using Duc
 The app supports four AI backends. Select your provider and configure the API key in **Settings**:
 
 - **Google Gemini** — Uses `gemini-2.5-flash` by default
-- **OpenAI GPT** — Uses `gpt-4o` (advanced) and `gpt-3.5-turbo` (basic) by default
+- **OpenAI GPT** — Uses `gpt-4o` (advanced) and `gpt-4o-mini` (basic) by default
 - **Anthropic Claude** — Uses `claude-sonnet-4-6` by default
 - **Gardener Answering Machine** — SAP-internal multi-provider gateway (requires VPN); supports Claude, Gemini, and GPT models
 

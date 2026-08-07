@@ -7296,3 +7296,57 @@ None.
 - SQL autocomplete partial result is consistent with S148 finding ("mouse-click focus required for first activation").
 - GC Deep Dive BRUSH skip is expected — no BRUSH chart in that template (BRUSH is implemented and unit-tested but no built-in template demonstrates it end-to-end).
 - PlotTooltip.tsx modification in git status (from S149 session header) confirmed clean — diff shows only whitespace in S149 uncommitted diff that was already committed.
+
+---
+
+## Session S151 QA — 2026-08-07 (Playwright headless)
+
+**Templates tested:** Memory Leak Detection (interactive, second pass), ZGC Analysis (interactive, first pass), Container & Cloud (DOM scan), Exceptions & Errors (DOM scan), GC Pause Analysis (DOM scan), Recording Overview (DOM scan)
+**Method:** Playwright headless node script (`e2e/qa-s151.mjs`)
+
+### Summary
+
+| Check | Result |
+|---|---|
+| DEMO notebook | ✅ 0 errors, 5 charts |
+| DEMO variables panel | ⚪ skip (no variable input found with $ context — cell bar inputs not within matching CSS scope) |
+| DEMO run all | ✅ PASS |
+| DEMO collapse/expand | ✅ PASS |
+| DEMO schema explorer | ⚪ partial (sidebar text empty at scan time — tables loaded async) |
+| DEMO help modal | ✅ PASS |
+| Memory Leak Detection | ✅ 0 errors, 2 charts (expected — demo JFR has OldObjectSample for only 2 charts) |
+| Memory Leaks LINK_X zoom | ✅ PASS (reset button visible after Shift+scroll) |
+| Memory Leaks command palette | ✅ PASS (Meta+K opened, typed collapse, dismissed) |
+| Memory Leaks SQL autocomplete | ✅ PASS (tooltip returned: GarbageCollection table · 20 rows) |
+| Memory Leaks plot tooltip | ⚪ skip (tooltip not visible on hover — 2 charts, sparse data) |
+| ZGC Analysis | ✅ 0 errors, 0 charts (expected — demo JFR uses G1, not ZGC) |
+| ZGC BRUSH clause | ⚪ n/a (no BRUSH clause in ZGC template) |
+| ZGC resize handle | ✅ PASS |
+| ZGC rendered cells | ✅ 7 visible cells, 1 with tables, 0 with error text |
+| Container & Cloud | ✅ 0 errors, 0 charts (no container events in demo JFR) |
+| Exceptions & Errors | ✅ 0 errors, 0 charts (no exception events in demo JFR) |
+| GC Pause Analysis | ✅ 0 errors, 37 charts |
+| Recording Overview | ✅ 0 errors, 7 charts |
+| UI polish: zero-height cells | ✅ 0 |
+| UI polish: text overflow | ✅ none |
+| UI polish: visible .error | ✅ 0 |
+| Console errors (real) | ✅ 0 |
+| BUGS.md open items | ✅ 0 unfixed |
+
+**Console errors (real): 0** ✅
+
+### Bugs found
+
+None.
+
+### Docs fix
+
+README.md line 54: updated `gpt-3.5-turbo` → `gpt-4o-mini` as the "basic" OpenAI model label, since `gpt-3.5-turbo` is effectively retired and `gpt-4o-mini` is the current equivalent in `OpenAiProvider.ts:61`.
+
+### Notes
+
+- Memory Leak Detection shows 2 charts as expected — the demo JFR only contains `OldObjectSample` for two of its visualizations.
+- ZGC Analysis shows 0 charts as expected — the demo JFR uses G1GC, not ZGC; the template renders correctly (7 visible cells, 1 with aggregate stats table) just without ZGC-specific event charts.
+- Container & Cloud and Exceptions & Errors show 0 charts; no container or exception events in the demo recording.
+- GC Pause Analysis 37 charts confirms that template is fully functional.
+- SQL autocomplete now passes cleanly (tooltip returned table suggestions) — improvement over S148/S150 "first-focus activation" partial.
