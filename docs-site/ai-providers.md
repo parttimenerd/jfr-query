@@ -112,7 +112,7 @@ Then set **Base URL** to `http://localhost:6655/openai` and your API key in Sett
 git clone https://github.com/parttimenerd/jfr-query
 cd jfr-query/core/frontend
 LOCAL_AI_BASE_URL=http://localhost:6655/openai npm run dev
-# Open http://localhost:3000
+# Open http://localhost:3001
 ```
 
 This is also the best option for analysing real recordings — you get full JFR file access
