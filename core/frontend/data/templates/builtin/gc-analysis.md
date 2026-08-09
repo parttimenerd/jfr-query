@@ -1082,11 +1082,19 @@ TABLE() ON stalls TITLE "Allocation Stalls — threads that blocked waiting for 
 Min/median/P90/P99/max pause time broken down by GC phase name. A large gap between median and P99 for a specific phase indicates occasional outlier pauses — typically caused by fragmentation, metaspace pressure, or JNI.
 
 ```sql
+SELECT * FROM "gc-pauses"
+```
+
+```plot
+TABLE() TITLE "Overall GC Pause Percentiles (all phases combined)"
+```
+
+```sql
 SELECT * FROM "gc-pause-distribution"
 ```
 
 ```plot
-TABLE() TITLE "GC Phase Pause Percentiles"
+TABLE() TITLE "GC Phase Pause Percentiles (by phase)"
 ```
 
 ---
