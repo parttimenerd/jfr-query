@@ -118,7 +118,7 @@ SELECT * FROM "native-memory-committed" ORDER BY "Average" DESC
 ```
 
 ```plot
-BAR_CHART(x: "Memory Type", y: ["Maximum"], horizontal: true) TITLE "Peak Native Memory Committed by Type (bytes)"
+BAR_CHART(x: "Memory Type", y: ["Max Bytes"], horizontal: true) TITLE "Peak Native Memory Committed by Type (bytes)"
 ```
 
 ```plot

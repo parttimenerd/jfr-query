@@ -1431,6 +1431,7 @@ SELECT
     FIRST(committed) AS "First Observed",
     format_memory(AVG(committed)) AS "Average",
     LAST(committed) AS "Last Observed",
+    MAX(committed) AS "Max Bytes",
     format_memory(MAX(committed)) AS "Maximum"
 FROM NativeMemoryUsage
 GROUP BY type
@@ -1444,6 +1445,7 @@ SELECT
     FIRST(reserved) AS "First Observed",
     format_memory(AVG(reserved)) AS "Average",
     LAST(reserved) AS "Last Observed",
+    MAX(reserved) AS "Max Bytes",
     format_memory(MAX(reserved)) AS "Maximum"
 FROM NativeMemoryUsage
 GROUP BY type
