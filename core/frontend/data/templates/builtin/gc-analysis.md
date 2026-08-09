@@ -253,6 +253,14 @@ ORDER BY startTime
 GANTT(start: "Start", end: "End", lane: "Phase", task: "GC") TITLE "Concurrent GC Phase Timeline" LINK_X($start, $end)
 ```
 
+```sql
+SELECT * FROM "gc-concurrent-phases"
+```
+
+```plot
+TABLE() TITLE "Concurrent Phase Duration Summary (avg/P95/max)"
+```
+
 ---
 
 <!-- @cell name=gc-allocation-trigger requires="AllocationRequiringGC" -->

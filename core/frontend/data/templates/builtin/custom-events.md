@@ -355,6 +355,31 @@ TABLE() ON ihop_data TITLE "IHOP Trigger Events"
 
 ---
 
+<!-- @cell name=real-ergo-ihop-adaptive requires="GCErgonomicTrace" -->
+
+## Real Data — Adaptive IHOP Model
+
+Adaptive IHOP tracks G1's internal prediction model — allocation speed vs concurrent marking throughput. When **Alloc Speed MB/s** persistently exceeds **Concurrent Growth MB/s**, the concurrent cycle will fall behind, leading to concurrent mode failure.
+
+```sql
+-- alias ihop_adaptive
+SELECT * FROM "gc-ergo-ihop-adaptive"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Alloc Speed MB/s", "Concurrent Growth MB/s"]) ON ihop_adaptive TITLE "G1 Adaptive IHOP: Alloc Speed vs Concurrent Growth" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB/s"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Threshold %"]) ON ihop_adaptive TITLE "G1 IHOP Threshold %" LINK_X($start, $end) ZOOM AXIS_Y DOMAIN [0, 100] LABEL "%" FORMAT ".1f"
+```
+
+```plot
+TABLE() ON ihop_adaptive TITLE "Adaptive IHOP Detail"
+```
+
+---
+
 <!-- @cell name=real-ergo-cset requires="GCErgonomicTrace" -->
 
 ## Real Data — CSet Selection
