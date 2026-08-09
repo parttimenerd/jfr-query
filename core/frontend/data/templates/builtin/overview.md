@@ -30,6 +30,48 @@ TABLE()
 
 ---
 
+<!-- @cell name=jvm-info requires="JVMInformation" -->
+
+## JVM Information
+
+```sql
+SELECT * FROM "jvm-information"
+```
+
+```plot
+TABLE() TITLE "JVM Details"
+```
+
+---
+
+<!-- @cell name=system-info requires="OSInformation" -->
+
+## System Information
+
+```sql
+SELECT * FROM "system-information"
+```
+
+```plot
+TABLE() TITLE "Host System"
+```
+
+---
+
+<!-- @cell name=recording-info requires="RecordingInfo" -->
+
+## Recording Metadata
+
+```sql
+SELECT * FROM "recording"
+```
+
+```plot
+TABLE() TITLE "Recording Metadata"
+```
+
+---
+
 <!-- @cell name=gc-section requires="GarbageCollection" -->
 
 ## GC Summary

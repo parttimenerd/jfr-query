@@ -1064,3 +1064,58 @@ SCATTER_PLOT(x: "Time", y: "Stall ms") ON stalls TITLE "Allocation Stall Duratio
 ```plot
 TABLE() ON stalls TITLE "Allocation Stalls — threads that blocked waiting for GC"
 ```
+
+---
+
+<!-- @cell name=gc-pause-distribution requires="GCPhasePause" -->
+
+## GC Phase Pause Distribution
+
+Min/median/P90/P99/max pause time broken down by GC phase name. A large gap between median and P99 for a specific phase indicates occasional outlier pauses — typically caused by fragmentation, metaspace pressure, or JNI.
+
+```sql
+SELECT * FROM "gc-pause-distribution"
+```
+
+```plot
+TABLE() TITLE "GC Phase Pause Percentiles"
+```
+
+---
+
+<!-- @cell name=gc-humongous requires="GarbageCollection" -->
+
+## Humongous Allocation GC Events
+
+GC events triggered by humongous object allocations (objects > 50% of one G1 region). Frequent humongous-triggered GC means the application is allocating many large objects that bypass the normal young-gen fast path.
+
+- Consider increasing the G1 region size (`-XX:G1HeapRegionSize`) to raise the humongous threshold.
+- Or refactor to avoid large short-lived allocations (e.g. large byte arrays).
+
+*Shows only GC events whose `cause` contains "Humongous". Requires `GarbageCollection` events (G1 only).*
+
+```sql
+SELECT * FROM "gc-humongous"
+```
+
+```plot
+TABLE() TITLE "Humongous Allocation GC Events"
+```
+
+---
+
+<!-- @cell name=gc-system-gc requires="SystemGC" -->
+
+## System.gc() Calls
+
+Explicit GC invocations triggered by `System.gc()` or `Runtime.getRuntime().gc()`. These are stop-the-world Full GCs triggered from application code. If these are unexpected, use `-XX:+DisableExplicitGC` to suppress them (note: this may affect RMI or DirectBuffer cleanup).
+
+*Requires `SystemGC` events (default.jfc).*
+
+```sql
+SELECT * FROM "blocked-by-system-gc" ORDER BY "Time"
+```
+
+```plot
+TABLE() TITLE "System.gc() Invocations (blocking only)"
+```

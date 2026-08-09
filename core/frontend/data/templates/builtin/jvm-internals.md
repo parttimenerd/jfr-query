@@ -328,3 +328,75 @@ SELECT * FROM "modules"
 ```plot
 TABLE() TITLE "Java Modules"
 ```
+
+---
+
+<!-- @cell name=system-properties requires="InitialSystemProperty" -->
+
+## System Properties
+
+Java system properties set at JVM startup (`-D` flags and defaults). Useful for auditing configuration — look for unexpected values or missing expected properties.
+
+*Requires `InitialSystemProperty` events (default.jfc).*
+
+```sql
+SELECT * FROM "system-properties"
+```
+
+```plot
+TABLE() TITLE "JVM System Properties"
+```
+
+---
+
+<!-- @cell name=environment-variables requires="InitialEnvironmentVariable" -->
+
+## Environment Variables
+
+OS environment variables visible to the JVM process at startup. Useful for auditing container configuration, proxy settings, and classpath-related env vars.
+
+*Requires `InitialEnvironmentVariable` events (default.jfc).*
+
+```sql
+SELECT * FROM "environment-variables"
+```
+
+```plot
+TABLE() TITLE "Environment Variables"
+```
+
+---
+
+<!-- @cell name=native-libraries requires="NativeLibrary" -->
+
+## Native Libraries
+
+Native libraries loaded by the JVM process, with base and top addresses. Useful for identifying unexpected native dependencies or confirming that a specific native library version is loaded.
+
+*Requires `NativeLibrary` events (default.jfc).*
+
+```sql
+SELECT * FROM "native-libraries"
+```
+
+```plot
+TABLE() TITLE "Loaded Native Libraries"
+```
+
+---
+
+<!-- @cell name=active-settings requires="ActiveSetting" -->
+
+## JFR Event Settings
+
+JFR event configuration that was active during this recording — which events were enabled, what thresholds and stack trace settings were used.
+
+*Requires `ActiveSetting` events (always present in JFR recordings).*
+
+```sql
+SELECT * FROM "active-settings" WHERE "Enabled" = 'true'
+```
+
+```plot
+TABLE() TITLE "Active JFR Event Settings"
+```
