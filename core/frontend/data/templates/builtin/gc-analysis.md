@@ -827,6 +827,29 @@ LINE_CHART(x: "Time", y: ["Predicted Mark Duration ms"]) ON ihop_stats TITLE "Pr
 
 ---
 
+<!-- @cell name=gc-basic-ihop requires="G1BasicIHOP" -->
+
+## G1 Basic IHOP
+
+The fixed IHOP threshold — present when adaptive IHOP is disabled or for older JDK versions. Shows the static heap occupancy % at which G1 starts concurrent marking and whether the heap is consistently exceeding it.
+
+*Requires `G1BasicIHOP` events (G1 only; appears when `-XX:-G1UseAdaptiveIHOP` or JDK < 9).*
+
+```sql
+-- alias basic_ihop
+SELECT * FROM "g1-basic-ihop" ORDER BY "Time"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Heap Occupancy MB", "IHOP Threshold MB"]) ON basic_ihop TITLE "G1 IHOP: Heap Occupancy vs Fixed Threshold" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
+```
+
+```plot
+TABLE() ON basic_ihop TITLE "G1 Basic IHOP Snapshots"
+```
+
+---
+
 <!-- @cell name=gc-heap-regions requires="G1HeapRegionInformation" -->
 
 ## G1 Heap Region Map
@@ -851,6 +874,35 @@ AREA_CHART(x: "Time", y: ["Count"], color: "Region Type", layout: "stacked") ON 
 
 ```plot
 AREA_CHART(x: "Time", y: ["Used MB"], color: "Region Type", layout: "stacked") ON region_types TITLE "G1 Heap Region Used MB by Type" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
+```
+
+---
+
+<!-- @cell name=gc-string-dedup requires="StringDeduplicationStatistics" -->
+
+## G1 String Deduplication
+
+G1's string deduplication reduces heap usage by identifying `String` objects with equal content and having them share the same backing `char[]`. This cell shows the savings over time.
+
+- **Deduped Savings MB** — heap saved by deduplication so far.
+- **Hash Misses** — candidate strings that failed the hash check (no savings).
+- Rising savings = dedup is actively working; flat savings = no new duplicate strings.
+
+Enable with `-XX:+UseStringDeduplication` (requires G1GC).
+
+*Requires `StringDeduplicationStatistics` events (gc.jfc with G1 + string dedup enabled).*
+
+```sql
+-- alias dedup_stats
+SELECT * FROM "gc-string-dedup" ORDER BY "Time"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["Deduped Savings MB"]) ON dedup_stats TITLE "String Deduplication Savings MB" LINK_X($start, $end) ZOOM AXIS_Y LABEL "MB"
+```
+
+```plot
+TABLE() ON dedup_stats TITLE "String Deduplication Statistics"
 ```
 
 ---
@@ -984,4 +1036,31 @@ ORDER BY startTime
 
 ```plot
 TABLE() TITLE "Concurrent Mode Failure Events"
+```
+
+---
+
+<!-- @cell name=gc-allocation-stalls requires="AllocationStall" -->
+
+## Allocation Stalls
+
+Each event is a **thread that blocked** while waiting for GC to reclaim enough memory to satisfy an allocation request. These are direct evidence that the GC cannot keep up with the allocation rate.
+
+- A high count of stalls = allocation pressure exceeds GC throughput.
+- Long stall durations (> 10 ms) indicate Full GC is running while the application thread waits.
+- Correlate with the **Pause Timeline** and **Concurrent Mode Failure** cells: stalls typically cluster around the same GC cycles.
+
+*Requires `AllocationStall` events (gc.jfc, G1 and CMS collectors).*
+
+```sql
+-- alias stalls
+SELECT * FROM "gc-allocation-stalls" ORDER BY "Time"
+```
+
+```plot
+SCATTER_PLOT(x: "Time", y: "Stall ms") ON stalls TITLE "Allocation Stall Duration per Thread" LINK_X($start, $end) ZOOM AXIS_Y LABEL "ms"
+```
+
+```plot
+TABLE() ON stalls TITLE "Allocation Stalls — threads that blocked waiting for GC"
 ```

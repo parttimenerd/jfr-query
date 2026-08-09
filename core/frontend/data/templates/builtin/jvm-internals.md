@@ -182,3 +182,25 @@ LIMIT $limit
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=code-cache-full requires="CodeCacheFull" -->
+
+## Code Cache Full
+
+The JIT compiler stops compiling new methods when the code cache is exhausted. Compiled methods may be deoptimised to reclaim space, causing performance degradation.
+
+- Each event = the JIT was forced to flush or stop.
+- **Free MB** at event time shows how little headroom remained.
+- Remedy: increase `-XX:ReservedCodeCacheSize` (default 240 MB).
+
+*Requires `CodeCacheFull` events (gc.jfc or default.jfc).*
+
+```sql
+SELECT * FROM "gc-code-cache-full" ORDER BY "Time"
+```
+
+```plot
+TABLE() TITLE "Code Cache Full Events"
+```

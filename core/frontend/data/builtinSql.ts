@@ -2337,4 +2337,62 @@ FROM GCErgonomicTrace
 WHERE tag = 'gc+ergo+heap'
 ORDER BY startTime`,
   },
+
+  // AllocationStall: threads that blocked waiting for GC to free memory
+  {
+    requires: 'AllocationStall',
+    sql: `CREATE OR REPLACE VIEW "gc-allocation-stalls" AS
+SELECT
+    startTime                                        AS "Time",
+    format_duration(duration)                        AS "Stall Duration",
+    duration / 1e6                                   AS "Stall ms",
+    thread                                           AS "Thread",
+    gcId                                             AS "GC ID"
+FROM AllocationStall
+ORDER BY startTime`,
+  },
+
+  // G1BasicIHOP: simpler IHOP snapshot for recordings without adaptive IHOP
+  {
+    requires: 'G1BasicIHOP',
+    sql: `CREATE OR REPLACE VIEW "g1-basic-ihop" AS
+SELECT
+    startTime                                         AS "Time",
+    gcId                                              AS "GC ID",
+    round(threshold / 1048576.0, 1)                   AS "IHOP Threshold MB",
+    round(occupancy / 1048576.0, 1)                   AS "Heap Occupancy MB",
+    round(initiatingOccupancy * 100.0, 1)             AS "IHOP %"
+FROM G1BasicIHOP
+ORDER BY startTime`,
+  },
+
+  // CodeCacheFull: JIT compiler forced to stop when code cache is exhausted
+  {
+    requires: 'CodeCacheFull',
+    sql: `CREATE OR REPLACE VIEW "gc-code-cache-full" AS
+SELECT
+    startTime                                         AS "Time",
+    codeBlobType                                      AS "Code Blob Type",
+    startingFreeSpace                                 AS "Free Space Bytes",
+    round(startingFreeSpace / 1048576.0, 2)           AS "Free MB",
+    unallocatedCapacity                               AS "Unallocated Bytes"
+FROM CodeCacheFull
+ORDER BY startTime`,
+  },
+
+  // StringDeduplication: G1 string dedup statistics
+  {
+    requires: 'StringDeduplicationStatistics',
+    sql: `CREATE OR REPLACE VIEW "gc-string-dedup" AS
+SELECT
+    startTime                                                     AS "Time",
+    round(newDeduplicatedStrings / 1e6, 2)                        AS "Deduped Strings (M)",
+    round(newDeduplicationHashMisses / 1e6, 2)                    AS "Hash Misses (M)",
+    round(newDeduplicationRehash / 1e6, 2)                        AS "Rehash (M)",
+    round(totalDeduplicatedStrings / 1e6, 2)                      AS "Total Deduped (M)",
+    round(totalLastKnownAlive / 1048576.0, 1)                     AS "Live Strings MB",
+    round(totalDeduplicated / 1048576.0, 1)                       AS "Deduped Savings MB"
+FROM StringDeduplicationStatistics
+ORDER BY startTime`,
+  },
 ];
