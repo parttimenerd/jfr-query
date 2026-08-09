@@ -66,3 +66,57 @@ LIMIT $limit
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=exception-by-site requires="JavaExceptionThrow" -->
+
+## Exception Throw Sites
+
+Methods that throw the most exceptions. These are the call sites to investigate first — especially if the top site is a hot code path using exceptions for control flow.
+
+```sql
+SELECT * FROM "exception-by-site" LIMIT $limit
+```
+
+```plot
+BAR_CHART(x: "Method", y: ["Count"], horizontal: true) TITLE "Top Exception Throw Sites"
+```
+
+```plot
+TABLE() TITLE "Exception Throw Sites"
+```
+
+---
+
+<!-- @cell name=exception-by-message requires="JavaExceptionThrow" -->
+
+## Exception Messages
+
+Most common exception messages across all types. Recurring messages from the same root cause are easier to fix than a scatter of unique messages.
+
+```sql
+SELECT * FROM "exception-by-message" LIMIT $limit
+```
+
+```plot
+TABLE() TITLE "Most Common Exception Messages"
+```
+
+---
+
+<!-- @cell name=exception-flamegraph requires="JavaExceptionThrow" -->
+
+## Exception Flame Graph
+
+Call-stack breakdown of all exception throw sites. Wide frames = many exceptions thrown through that code path. Use this to identify which parts of the call tree are exception-heavy.
+
+*Requires stack trace capture in the recording (`stackDepth > 0`).*
+
+```sql
+SELECT * FROM "exception-flamegraph"
+```
+
+```plot
+FLAME_GRAPH() TITLE "Exception Throw Flame Graph"
+```

@@ -92,3 +92,21 @@ BAR_CHART(x: "Class", y: ["Count"], horizontal: true) TITLE "Live Object Count A
 ```plot
 TABLE() TITLE "Object Statistics After GC"
 ```
+
+---
+
+<!-- @cell name=alloc-flamegraph requires="ObjectAllocationSample" -->
+
+## Allocation Flame Graph
+
+Full call-stack breakdown of allocation samples, weighted by sampled MB. Wide frames = most allocation passes through that code path. Use this to find the deepest allocation root cause — not just the top class.
+
+*Requires `ObjectAllocationSample` events with stack traces (`stackDepth > 0`).*
+
+```sql
+SELECT * FROM "alloc-flamegraph"
+```
+
+```plot
+FLAME_GRAPH() TITLE "Allocation Flame Graph (sampled MB)"
+```

@@ -204,6 +204,24 @@ SCATTER(x: "Time", y: "Duration (ms)", color: "Carrier Thread") TITLE "Virtual T
 
 ---
 
+<!-- @cell name=lock-flamegraph requires="JavaMonitorEnter" -->
+
+## Lock Contention Flame Graph
+
+Call-stack breakdown of all monitor wait events, weighted by total wait time (seconds). Wide frames = most blocking time passes through that code path. Use this to find the deepest root cause of contention, not just the top-level lock class.
+
+*Requires `JavaMonitorEnter` events with stack traces enabled.*
+
+```sql
+SELECT * FROM "lock-flamegraph"
+```
+
+```plot
+FLAME_GRAPH() TITLE "Lock Contention Flame Graph (wait time)"
+```
+
+---
+
 <!-- @cell name=monitor-inflation requires="JavaMonitorInflate" -->
 
 ## Monitor Inflation

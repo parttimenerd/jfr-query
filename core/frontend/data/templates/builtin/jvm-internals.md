@@ -138,6 +138,22 @@ LINE_CHART(x: "Window", y: ["Deoptimizations"]) TITLE "Deoptimizations Over Time
 
 ---
 
+<!-- @cell name=deoptimizations-by-site requires="Deoptimization" -->
+
+## JIT Deoptimization Sites
+
+Specific methods and bytecode offsets that triggered deoptimizations. Methods appearing here are JIT hot spots that the compiler had to abandon — the most valuable ones to fix.
+
+```sql
+SELECT * FROM "deoptimizations-by-site" LIMIT $limit
+```
+
+```plot
+TABLE() TITLE "Top Deoptimization Sites by Method"
+```
+
+---
+
 <!-- @cell name=class-loading requires="ClassLoad" -->
 
 ## Slowest Class Loading Events
