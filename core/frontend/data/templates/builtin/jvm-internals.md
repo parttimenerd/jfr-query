@@ -201,6 +201,64 @@ TABLE()
 
 ---
 
+<!-- @cell name=compiler-statistics requires="CompilerStatistics" -->
+
+## JIT Compiler Statistics
+
+Summary of JIT compilation work over the recording: total methods compiled, time spent, bailouts, and code sizes.
+
+*Requires `CompilerStatistics` events (default.jfc).*
+
+```sql
+SELECT * FROM "compiler-statistics"
+```
+
+```plot
+TABLE() TITLE "JIT Compiler Summary"
+```
+
+---
+
+<!-- @cell name=longest-compilations requires="Compilation" -->
+
+## Longest JIT Compilations
+
+The 25 methods that took the most time to compile. Long compile times for hot methods can cause application pauses on first execution. Methods with `Succeeded = false` failed to compile and fell back to interpreted mode.
+
+*Requires `Compilation` events (default.jfc with `jdk.Compilation#enabled=true`).*
+
+```sql
+SELECT * FROM "longest-compilations"
+```
+
+```plot
+TABLE() TITLE "Longest JIT Compilation Events"
+```
+
+---
+
+<!-- @cell name=class-loaders requires="ClassLoaderStatistics" -->
+
+## Class Loader Statistics
+
+Number of classes loaded per class loader. A class loader accumulating an unusual count may indicate a classloader leak (each application reload creates a new loader but the old one is not collected because references remain).
+
+*Requires `ClassLoaderStatistics` events (default.jfc).*
+
+```sql
+SELECT * FROM "class-loaders"
+```
+
+```plot
+BAR_CHART(x: "Class Loader", y: ["Classes"], horizontal: true) TITLE "Classes per Class Loader"
+```
+
+```plot
+TABLE() TITLE "Class Loader Statistics"
+```
+
+---
+
 <!-- @cell name=code-cache-full requires="CodeCacheFull" -->
 
 ## Code Cache Full

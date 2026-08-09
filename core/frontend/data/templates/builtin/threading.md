@@ -184,6 +184,14 @@ Virtual threads are pinned when they block while holding a monitor or running in
 *Only present if the recording includes `VirtualThreadPinned` events (Java 21+).*
 
 ```sql
+SELECT * FROM "pinned-threads" LIMIT $limit
+```
+
+```plot
+BAR_CHART(x: "Method", y: ["Pinned Count"], horizontal: true) TITLE "Top Pinning Methods by Occurrence"
+```
+
+```sql
 SELECT
   startTime AS "Time",
   round(duration * 1000, 2) AS "Duration (ms)",
@@ -195,11 +203,25 @@ LIMIT $limit
 ```
 
 ```plot
-TABLE()
+SCATTER(x: "Time", y: "Duration (ms)", color: "Carrier Thread") TITLE "Virtual Thread Pinning Events" LINK_X($start, $end) ZOOM
+```
+
+---
+
+<!-- @cell name=thread-lifetimes requires="ThreadStart" -->
+
+## Thread Lifetimes
+
+Threads created during this recording, their start time, lifetime duration, and the method that spawned them. Threads with "infinity" duration are still alive at recording end. A large number of short-lived threads indicates thread creation overhead — consider thread pooling.
+
+*Requires `ThreadStart` events (default.jfc).*
+
+```sql
+SELECT * FROM "thread-start" LIMIT $limit
 ```
 
 ```plot
-SCATTER(x: "Time", y: "Duration (ms)", color: "Carrier Thread") TITLE "Virtual Thread Pinning Events" LINK_X($start, $end) ZOOM
+TABLE() TITLE "Thread Lifetimes"
 ```
 
 ---
