@@ -128,3 +128,39 @@ BAR_CHART(x: "Method", y: ["Samples"], horizontal: true) TITLE "Top Native Metho
 ```plot
 TABLE() TITLE "Native Method Hot Spots"
 ```
+
+---
+
+<!-- @cell name=method-timing requires="MethodTiming" -->
+
+## Method Timing
+
+Precise invocation counts and min/avg/max execution times for methods targeted with `@MethodTiming` annotations or custom JFC settings.
+
+*Requires `MethodTiming` events (custom JFC with `jdk.MethodTiming` enabled).*
+
+```sql
+SELECT * FROM "method-timing" ORDER BY "Invocations" DESC LIMIT $limit
+```
+
+```plot
+TABLE() TITLE "Method Timing Statistics"
+```
+
+---
+
+<!-- @cell name=method-calls requires="MethodTrace" -->
+
+## Method Call Trace
+
+All recorded invocations of methods configured for tracing, with their caller. Useful for understanding call frequency and which callers trigger a particular method.
+
+*Requires `MethodTrace` events (custom JFC with `jdk.MethodTrace` enabled).*
+
+```sql
+SELECT * FROM "method-calls" ORDER BY "Invocations" DESC LIMIT $limit
+```
+
+```plot
+TABLE() TITLE "Method Call Trace"
+```

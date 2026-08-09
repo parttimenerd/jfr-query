@@ -222,3 +222,93 @@ SELECT * FROM "deprecated-methods-for-removal" ORDER BY "Deprecated Method"
 ```plot
 TABLE() TITLE "Deprecated-For-Removal Methods Invoked"
 ```
+
+---
+
+<!-- @cell name=class-modifications requires="RedefineClasses" -->
+
+## Class Redefinitions
+
+Classes that were redefined or retransformed at runtime — typically by a Java agent (e.g. instrumentation, hot-reload, debugger). Frequent redefinitions can cause metaspace churn.
+
+*Requires `RedefineClasses` events (default.jfc).*
+
+```sql
+SELECT * FROM "class-modifications" ORDER BY "Time"
+```
+
+```plot
+TABLE() TITLE "Runtime Class Redefinitions"
+```
+
+---
+
+<!-- @cell name=jdk-agents requires="JavaAgent" -->
+
+## Java Agents
+
+Java agents loaded at JVM startup, with their initialisation duration. Slow agent initialisation delays application start.
+
+*Requires `JavaAgent` events (default.jfc).*
+
+```sql
+SELECT * FROM "jdk-agents" ORDER BY "Initialization"
+```
+
+```plot
+TABLE() TITLE "Java Agents"
+```
+
+---
+
+<!-- @cell name=jvm-flags requires="IntFlag" -->
+
+## JVM Flags
+
+All JVM flags active during this recording (boolean, integer, long, double, and string). The `IntFlagChanged` / `*FlagChanged` entries show flags that were modified at runtime (e.g. via `jcmd` or Management APIs).
+
+*Requires `IntFlag` events (default.jfc). Additional flag types shown if present.*
+
+```sql
+SELECT * FROM "jvm-flags" ORDER BY "Name"
+```
+
+```plot
+TABLE() TITLE "JVM Flag Values"
+```
+
+---
+
+<!-- @cell name=native-library-failures requires="NativeLibraryLoad" -->
+
+## Native Library Load Failures
+
+Native library load and unload events with any error messages. A failing `dlopen` at startup often causes subtle functionality gaps or crashes.
+
+*Requires `NativeLibraryLoad` events (default.jfc).*
+
+```sql
+SELECT * FROM "native-library-failures"
+```
+
+```plot
+TABLE() TITLE "Native Library Load/Unload Events"
+```
+
+---
+
+<!-- @cell name=jvm-modules requires="ModuleRequire" -->
+
+## Loaded Modules
+
+Module names from the Java Module System (`--module-path` / JPMS). Useful for auditing which modules are present on the module path.
+
+*Requires `ModuleRequire` events (default.jfc, JDK 9+).*
+
+```sql
+SELECT * FROM "modules"
+```
+
+```plot
+TABLE() TITLE "Java Modules"
+```
