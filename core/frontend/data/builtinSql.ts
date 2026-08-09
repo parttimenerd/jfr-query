@@ -682,8 +682,8 @@ ORDER BY startTime`,
 SELECT
     bucket_ms(startTime, 10000) AS "Window",
     SUM(sumOfPauses) * 1000 AS "GC Time (ms)",
-    10000 - (SUM(sumOfPauses) * 1000) AS "Mutator Time (ms)",
-    ROUND(100.0 - (SUM(sumOfPauses) * 1000 / 10000.0 * 100), 1) AS "Throughput %"
+    GREATEST(0, 10000 - (SUM(sumOfPauses) * 1000)) AS "Mutator Time (ms)",
+    ROUND(GREATEST(0.0, 100.0 - (SUM(sumOfPauses) * 1000 / 10000.0 * 100)), 1) AS "Throughput %"
 FROM GarbageCollection
 GROUP BY bucket_ms(startTime, 10000)
 ORDER BY 1`,
@@ -691,7 +691,7 @@ ORDER BY 1`,
   `CREATE OR REPLACE VIEW "gc-overhead" AS
 SELECT
     bucket_ms(startTime, 10000) AS "Window",
-    ROUND(SUM(sumOfPauses) * 1000 / 10000.0 * 100, 2) AS "GC Overhead %",
+    ROUND(LEAST(100.0, SUM(sumOfPauses) * 1000 / 10000.0 * 100), 2) AS "GC Overhead %",
     SUM(sumOfPauses) * 1000 AS "Pause ms",
     COUNT(*) AS "Collections"
 FROM GarbageCollection

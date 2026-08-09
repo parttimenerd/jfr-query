@@ -263,3 +263,24 @@ ORDER BY startTime
 ```plot
 LINE_CHART(x: "Time", y: ["Active", "Peak"]) TITLE "Thread Counts" LINK_X($start, $end) ZOOM
 ```
+
+---
+
+<!-- @cell name=alloc-stall-section requires="AllocationStall" -->
+
+## Allocation Stalls
+
+Threads blocked waiting for GC to free memory. Any event here means the GC could not keep up with the allocation rate at that moment.
+
+```sql
+SELECT
+  startTime AS "Time",
+  duration / 1e6 AS "Stall ms",
+  thread AS "Thread"
+FROM AllocationStall
+ORDER BY startTime
+```
+
+```plot
+SCATTER_PLOT(x: "Time", y: "Stall ms") TITLE "Allocation Stall Duration (ms)" LINK_X($start, $end) ZOOM
+```
