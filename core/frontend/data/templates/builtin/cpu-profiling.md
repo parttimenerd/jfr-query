@@ -129,6 +129,14 @@ BAR_CHART(x: "Method", y: ["Samples"], horizontal: true) TITLE "Top Native Metho
 TABLE() TITLE "Native Method Hot Spots"
 ```
 
+```sql
+SELECT * FROM "native-flamegraph"
+```
+
+```plot
+FLAME_GRAPH() TITLE "Native Method Flame Graph"
+```
+
 ---
 
 <!-- @cell name=method-timing requires="MethodTiming" -->

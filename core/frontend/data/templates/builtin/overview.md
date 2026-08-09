@@ -44,6 +44,26 @@ TABLE() TITLE "JVM Details"
 
 ---
 
+<!-- @cell name=event-counts -->
+
+## Events in This Recording
+
+All event types present in this recording, sorted by count. Useful for understanding what was recorded and identifying unexpectedly missing events.
+
+```sql
+SELECT * FROM "events-by-count"
+```
+
+```plot
+BAR_CHART(x: "Event Label", y: ["Count"], horizontal: true) TITLE "Event Count by Type" SORT DESC LIMIT 30
+```
+
+```plot
+TABLE() TITLE "All Event Types"
+```
+
+---
+
 <!-- @cell name=system-info requires="OSInformation" -->
 
 ## System Information
