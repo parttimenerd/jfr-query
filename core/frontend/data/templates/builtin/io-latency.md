@@ -155,3 +155,21 @@ ORDER BY 1
 ```plot
 LINE_CHART(x: "Second", y: ["Parks", "Sleeps"]) TITLE "Thread Blocking Events per Second" LINK_X($start, $end) ZOOM
 ```
+
+---
+
+<!-- @cell name=network-utilization requires="NetworkUtilization" -->
+
+## Network Utilization
+
+Read and write throughput per network interface. Spikes in write rate often accompany socket-write latency spikes.
+
+*Requires `NetworkUtilization` events (default.jfc).*
+
+```sql
+SELECT * FROM "network-utilization"
+```
+
+```plot
+TABLE() TITLE "Network Utilization by Interface"
+```

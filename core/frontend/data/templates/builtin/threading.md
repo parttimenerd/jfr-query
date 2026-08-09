@@ -201,3 +201,25 @@ TABLE()
 ```plot
 SCATTER(x: "Time", y: "Duration (ms)", color: "Carrier Thread") TITLE "Virtual Thread Pinning Events" LINK_X($start, $end) ZOOM
 ```
+
+---
+
+<!-- @cell name=monitor-inflation requires="JavaMonitorInflate" -->
+
+## Monitor Inflation
+
+Java object monitors start thin (optimistic) and inflate to a heavyweight OS mutex when there is contention. Frequent inflation events indicate lock contention that could be replaced with `java.util.concurrent` primitives or reduced synchronisation scope.
+
+*Requires `JavaMonitorInflate` events (default.jfc).*
+
+```sql
+SELECT * FROM "monitor-inflation" ORDER BY "Count" DESC LIMIT $limit
+```
+
+```plot
+BAR_CHART(x: "Monitor Class", y: ["Count"], horizontal: true) TITLE "Monitor Inflations by Class"
+```
+
+```plot
+TABLE() TITLE "Monitor Inflation — top inflated classes"
+```

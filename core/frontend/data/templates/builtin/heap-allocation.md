@@ -67,3 +67,28 @@ ORDER BY 1
 ```plot
 LINE_CHART(x: "Bucket", y: ["Sample MB/s"]) TITLE "Allocation Rate (MB/s)" LINK_X($start, $end) ZOOM
 ```
+
+---
+
+<!-- @cell name=object-histogram requires="ObjectCountAfterGC" -->
+
+## Object Count After GC
+
+Snapshot of live object counts and sizes immediately after a GC cycle. This is the ground truth of what is alive on the heap — unlike allocation samples, this counts actual retained objects.
+
+- High count or size for a class that also tops the allocation chart = it's both allocated and retained (leak candidate).
+- Large `byte[]` / `char[]` counts = string or buffer retention.
+
+*Requires `ObjectCountAfterGC` events (gc-details.jfc or custom JFC with `jdk.ObjectCountAfterGC` enabled).*
+
+```sql
+SELECT * FROM "object-statistics" LIMIT $limit
+```
+
+```plot
+BAR_CHART(x: "Class", y: ["Count"], horizontal: true) TITLE "Live Object Count After GC"
+```
+
+```plot
+TABLE() TITLE "Object Statistics After GC"
+```

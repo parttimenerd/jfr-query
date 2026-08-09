@@ -204,3 +204,21 @@ SELECT * FROM "gc-code-cache-full" ORDER BY "Time"
 ```plot
 TABLE() TITLE "Code Cache Full Events"
 ```
+
+---
+
+<!-- @cell name=deprecated-methods requires="DeprecatedInvocation" -->
+
+## Deprecated Method Invocations
+
+Methods marked `@Deprecated(forRemoval=true)` that were actually called during this recording. Each row is a method that will break when the deprecated API is removed.
+
+*Requires `DeprecatedInvocation` events (default.jfc, JDK 16+).*
+
+```sql
+SELECT * FROM "deprecated-methods-for-removal" ORDER BY "Deprecated Method"
+```
+
+```plot
+TABLE() TITLE "Deprecated-For-Removal Methods Invoked"
+```

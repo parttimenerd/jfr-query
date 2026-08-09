@@ -106,3 +106,25 @@ SELECT * FROM "cpu-flamegraph"
 ```plot
 FLAME_GRAPH() TITLE "CPU Flame Graph"
 ```
+
+---
+
+<!-- @cell name=native-methods requires="NativeMethodSample" -->
+
+## Native Method Hot Spots
+
+Execution samples collected while the JVM thread was in native (JNI) code. High native sample counts can indicate bottlenecks in native libraries, system calls, or JNI boundary overhead.
+
+*Requires `NativeMethodSample` events (profiling.jfc or custom JFC with native sampling enabled).*
+
+```sql
+SELECT * FROM "native-methods" ORDER BY "Samples" DESC LIMIT $limit
+```
+
+```plot
+BAR_CHART(x: "Method", y: ["Samples"], horizontal: true) TITLE "Top Native Method Samples"
+```
+
+```plot
+TABLE() TITLE "Native Method Hot Spots"
+```

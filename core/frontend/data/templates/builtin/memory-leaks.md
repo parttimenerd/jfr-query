@@ -95,3 +95,32 @@ ORDER BY g."startTime"
 ```plot
 LINE_CHART(x: "Time", y: ["Heap Used MB"]) TITLE "Heap Used After GC (MB)" LINK_X($start, $end) ZOOM
 ```
+
+---
+
+<!-- @cell name=native-memory requires="NativeMemoryUsage" -->
+
+## Native Memory Usage
+
+JVM Native Memory Tracking (NMT) data — committed and reserved memory broken down by type (Heap, Class, Thread, Code, GC, Internal, etc.).
+
+- **Committed** = memory currently backed by physical pages or swap.
+- **Reserved** = address space reserved but not yet backed.
+- Large **Thread** committed = many live threads (each Java thread's stack is committed native memory).
+- Large **Class** committed = heavy class loading or metaspace pressure.
+
+Enable NMT with `-XX:NativeMemoryTracking=summary` (adds ~5% overhead).
+
+*Requires `NativeMemoryUsage` events (default.jfc with NMT enabled).*
+
+```sql
+SELECT * FROM "native-memory-committed" ORDER BY "Average" DESC
+```
+
+```plot
+BAR_CHART(x: "Memory Type", y: ["Maximum"], horizontal: true) TITLE "Peak Native Memory Committed by Type (bytes)"
+```
+
+```plot
+TABLE() TITLE "Native Memory Committed — by type"
+```
