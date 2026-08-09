@@ -189,6 +189,54 @@ export const BUILTIN_MACROS_SQL: string[] = [
   epoch_ms(ts) - epoch_ms(prev_ts)
 )`,
 
+  // ── GCErgonomicTrace message parsers ──────────────────────────────────────
+  // GCErgonomicTrace messages embed structured data as free text.  Multiple
+  // key: value pairs can appear in a single message, e.g.:
+  //   "occupancy: 6291456B threshold: 5767168B source: end of GC"
+  //   "Pending cards: 489 target pause time: 200.00ms"
+  //   "recent mutator allocation speed: 4194304.00B/s concurrent mark cost: 1.23%"
+  // All macros return NULL when the pattern is absent — safe on any row.
+
+  // Generic: extract the raw token(s) after 'key:' up to the next comma, semicolon, or end.
+  // Returns a trimmed VARCHAR. Works with RE2 (no lookahead).
+  // Examples: ergo_kv(msg,'source') → 'end of GC'
+  //           ergo_kv(msg,'margin') → '0B'
+  `CREATE OR REPLACE MACRO ergo_kv(msg, key) AS (
+  trim(regexp_extract(msg, key || '[: =]+([^,;\n]+)', 1))
+)`,
+
+  // 'key: NNB' or 'key NNB' → bytes as BIGINT
+  // Works across multiple pairs: ergo_bytes(msg,'occupancy'), ergo_bytes(msg,'threshold')
+  `CREATE OR REPLACE MACRO ergo_bytes(msg, key) AS (
+  TRY_CAST(regexp_extract(msg, key || '[: ]+([0-9]+)B', 1) AS BIGINT)
+)`,
+
+  // 'key: N.NNms' → milliseconds as DOUBLE
+  `CREATE OR REPLACE MACRO ergo_ms(msg, key) AS (
+  TRY_CAST(regexp_extract(msg, key || '[: ]+([0-9]+(?:[.][0-9]*)?)ms', 1) AS DOUBLE)
+)`,
+
+  // 'key: N.NNB/s' → bytes-per-second as DOUBLE (allocation/GC rate fields)
+  `CREATE OR REPLACE MACRO ergo_rate(msg, key) AS (
+  TRY_CAST(regexp_extract(msg, key || '[: ]+([0-9]+(?:[.][0-9]*)?)B/s', 1) AS DOUBLE)
+)`,
+
+  // First 'N.NN%' in the message → percentage as DOUBLE.
+  // For messages with multiple % values, use ergo_pct_nth(msg, n) below.
+  `CREATE OR REPLACE MACRO ergo_pct(msg) AS (
+  TRY_CAST(regexp_extract(msg, '([0-9]+(?:[.][0-9]*)?)%', 1) AS DOUBLE)
+)`,
+
+  // 'key ... N.NN%' — percentage following a specific key name
+  `CREATE OR REPLACE MACRO ergo_pct_key(msg, key) AS (
+  TRY_CAST(regexp_extract(msg, key || '[^%]*?([0-9]+(?:[.][0-9]*)?)%', 1) AS DOUBLE)
+)`,
+
+  // 'key: N', 'key = N', or 'key NNN' → integer
+  `CREATE OR REPLACE MACRO ergo_int(msg, key) AS (
+  TRY_CAST(regexp_extract(msg, key || '[: =]+([0-9]+)', 1) AS INTEGER)
+)`,
+
   // JFR field accessors
   `CREATE OR REPLACE MACRO EVENT_TYPE_LABEL(et) AS (SELECT label FROM EventLabels WHERE name = et LIMIT 1)`,
   `CREATE OR REPLACE MACRO EVENT_NAME_FOR_ID(_id) AS (SELECT name FROM EventIDs event WHERE id = _id LIMIT 1)`,
@@ -2212,8 +2260,81 @@ SELECT
     gcId                                                             AS "GC ID",
     replace(tag, '+', ',')                                           AS "Tag",
     level                                                            AS "Level",
-    regexp_replace(message, '^GC\\(\\d+\\)\\s+', '')                 AS "Message"
+    regexp_replace(message, '^GC\\(\\d+\\)\\s+', '')                 AS "Message",
+    -- Structured fields — NULL when not applicable to this tag/message
+    round(ergo_bytes(message, 'occupancy')       / 1048576.0, 2)    AS "Occupancy MB",
+    round(ergo_bytes(message, 'threshold')       / 1048576.0, 2)    AS "Threshold MB",
+    ergo_pct_key(message, 'threshold')                               AS "Threshold %",
+    ergo_ms(message, 'target pause time')                            AS "Target Pause ms",
+    ergo_int(message, 'Pending cards')                               AS "Pending Cards",
+    ergo_int(message, 'Eden')                                        AS "Eden Regions",
+    ergo_int(message, 'Survivor')                                    AS "Survivor Regions",
+    ergo_pct(message)                                                AS "Ratio %",
+    round(ergo_rate(message, 'allocation speed') / 1048576.0, 3)    AS "Alloc Speed MB/s",
+    ergo_pct_key(message, 'concurrent mark GC cost')                 AS "Mark Cost %",
+    round(ergo_bytes(message, 'Expand by')       / 1048576.0, 2)    AS "Expand MB",
+    round(ergo_bytes(message, 'Shrink by')       / 1048576.0, 2)    AS "Shrink MB"
 FROM GCErgonomicTrace
+ORDER BY startTime`,
+  },
+  {
+    requires: 'GCErgonomicTrace',
+    sql: `CREATE OR REPLACE VIEW "gc-ergo-ihop" AS
+SELECT
+    startTime                                                        AS "Time",
+    gcId                                                             AS "GC ID",
+    regexp_replace(message, '^GC\\(\\d+\\)\\s+', '')                 AS "Message",
+    round(ergo_bytes(message, 'occupancy')       / 1048576.0, 2)    AS "Occupancy MB",
+    round(ergo_bytes(message, 'threshold')       / 1048576.0, 2)    AS "Threshold MB",
+    ergo_pct_key(message, 'threshold')                               AS "IHOP %",
+    ergo_kv(message, 'source')                                       AS "Source"
+FROM GCErgonomicTrace
+WHERE tag = 'gc+ergo+ihop'
+ORDER BY startTime`,
+  },
+  {
+    requires: 'GCErgonomicTrace',
+    sql: `CREATE OR REPLACE VIEW "gc-ergo-ihop-adaptive" AS
+SELECT
+    startTime                                                              AS "Time",
+    gcId                                                                   AS "GC ID",
+    round(ergo_bytes(message, 'threshold')            / 1048576.0, 2)     AS "Threshold MB",
+    ergo_pct_key(message, 'threshold')                                     AS "Threshold %",
+    round(ergo_bytes(message, 'internal target occupancy') / 1048576.0, 2) AS "Target Occupancy MB",
+    round(ergo_rate(message, 'allocation speed')      / 1048576.0, 3)     AS "Alloc Speed MB/s",
+    ergo_pct_key(message, 'concurrent mark GC cost')                       AS "Mark Cost %"
+FROM GCErgonomicTrace
+WHERE message LIKE '%Adaptive IHOP%'
+ORDER BY startTime`,
+  },
+  {
+    requires: 'GCErgonomicTrace',
+    sql: `CREATE OR REPLACE VIEW "gc-ergo-cset" AS
+SELECT
+    startTime                                                        AS "Time",
+    gcId                                                             AS "GC ID",
+    regexp_replace(message, '^GC\\(\\d+\\)\\s+', '')                 AS "Message",
+    ergo_ms(message, 'target pause time')                            AS "Target Pause ms",
+    ergo_int(message, 'Pending cards')                               AS "Pending Cards",
+    ergo_int(message, 'Eden')                                        AS "Eden Regions",
+    ergo_int(message, 'Survivor')                                    AS "Survivor Regions"
+FROM GCErgonomicTrace
+WHERE tag = 'gc+ergo+cset'
+ORDER BY startTime`,
+  },
+  {
+    requires: 'GCErgonomicTrace',
+    sql: `CREATE OR REPLACE VIEW "gc-ergo-heap" AS
+SELECT
+    startTime                                                        AS "Time",
+    gcId                                                             AS "GC ID",
+    CASE WHEN message LIKE '%expansion%' THEN 'Expand' ELSE 'Contract' END AS "Direction",
+    regexp_replace(message, '^GC\\(\\d+\\)\\s+', '')                 AS "Message",
+    ergo_pct(message)                                                AS "Pause Ratio %",
+    round(ergo_bytes(message, 'Expand by')       / 1048576.0, 2)    AS "Expand MB",
+    round(ergo_bytes(message, 'Shrink by')       / 1048576.0, 2)    AS "Shrink MB"
+FROM GCErgonomicTrace
+WHERE tag = 'gc+ergo+heap'
 ORDER BY startTime`,
   },
 ];
