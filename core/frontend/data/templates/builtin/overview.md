@@ -72,6 +72,22 @@ TABLE() TITLE "Recording Metadata"
 
 ---
 
+<!-- @cell name=active-recordings requires="ActiveRecording" -->
+
+## Active Recordings
+
+JFR recordings that were active when this file was captured. Multiple concurrent recordings can affect each other's event throughput; a short-duration recording may miss data captured by a longer-running one.
+
+```sql
+SELECT * FROM "active-recordings"
+```
+
+```plot
+TABLE() TITLE "Active JFR Recordings"
+```
+
+---
+
 <!-- @cell name=gc-section requires="GarbageCollection" -->
 
 ## GC Summary
@@ -325,4 +341,22 @@ ORDER BY startTime
 
 ```plot
 SCATTER_PLOT(x: "Time", y: "Stall ms") TITLE "Allocation Stall Duration (ms)" LINK_X($start, $end) ZOOM
+```
+
+---
+
+<!-- @cell name=system-processes requires="SystemProcess" -->
+
+## Running System Processes
+
+Other processes observed on the host during this recording. Unexpected high-CPU or high-memory processes running alongside the JVM can explain performance anomalies that don't show up in JFR data.
+
+*Requires `SystemProcess` events (default.jfc, Linux only).*
+
+```sql
+SELECT * FROM "system-processes"
+```
+
+```plot
+TABLE() TITLE "System Processes"
 ```

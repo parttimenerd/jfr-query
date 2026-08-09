@@ -164,3 +164,29 @@ SELECT * FROM "method-calls" ORDER BY "Invocations" DESC LIMIT $limit
 ```plot
 TABLE() TITLE "Method Call Trace"
 ```
+
+---
+
+<!-- @cell name=cpu-time-sampling requires="CPUTimeSample" -->
+
+## CPU Time Sampling (JDK 21+)
+
+CPU time samples collected via the wall-clock sampler — captures threads based on actual CPU time rather than wall time. Useful for finding CPU-burning threads that the execution sampler might miss due to threading.
+
+*Requires `CPUTimeSample` events (JDK 21+, `jdk.CPUTimeSample#enabled=true` in profile.jfc).*
+
+```sql
+SELECT * FROM "cpu-time-hot-methods"
+```
+
+```plot
+BAR_CHART(x: "Method", y: ["Samples"], horizontal: true) TITLE "Top CPU Time Methods"
+```
+
+```sql
+SELECT * FROM "cpu-time-statistics"
+```
+
+```plot
+TABLE() TITLE "CPU Time Sample Statistics"
+```
