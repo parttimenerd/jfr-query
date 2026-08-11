@@ -1330,12 +1330,17 @@ const App: React.FC = () => {
         const varsChanged = JSON.stringify(prevVars) !== JSON.stringify(newVars);
         const newNotebookMarkdown = reconstructNotebook({ metadata: newMetadata, content: cellsContent });
         setNotebookMarkdown(newNotebookMarkdown);
-        await refreshSchema();
+        // Only refresh the schema when something other than notebook variables changed
+        // (e.g. a new cell condition or template front-matter update). Variable changes
+        // never add or remove tables, so the schema refresh is wasted work on slider drags.
+        if (!varsChanged) {
+            await refreshSchema();
+        }
         // Re-run all cells when notebook-level variables change (e.g. slider drag).
-        // Debounced at 300 ms so rapid slider drags don't flood queries.
+        // Debounced at 150 ms so rapid slider drags don't flood queries.
         if (varsChanged) {
             if (varRunTimerRef.current) clearTimeout(varRunTimerRef.current);
-            varRunTimerRef.current = setTimeout(() => { void handleRunAllRef.current?.(); }, 300);
+            varRunTimerRef.current = setTimeout(() => { void handleRunAllRef.current?.(); }, 150);
         }
     }, [cellsContent, refreshSchema]);
 

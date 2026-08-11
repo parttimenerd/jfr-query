@@ -331,25 +331,32 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // clause identifier; litEsc uses single-quote doubling for the SELECT
       // string literal that carries the table name back to JS.
       // B-052: batch into chunks of 20 so the UNION ALL stays manageable.
+      // Run all chunks in parallel — each chunk is a single UNION ALL query so
+      // the chunks are independent and safe to issue concurrently.
       const CHUNK = 20;
       try {
-        const countsMap = new Map<string, number>();
-        for (let i = 0; i < tables.length; i += CHUNK) {
-            const chunk = tables.slice(i, i + CHUNK);
+        const chunks: TableSchema[][] = [];
+        for (let i = 0; i < tables.length; i += CHUNK) chunks.push(tables.slice(i, i + CHUNK));
+        const chunkResults = await Promise.all(
+          chunks.map(chunk => {
             const countsQuery = chunk.map(t => {
-                const identEsc = t.name.replace(/"/g, '""');
-                const litEsc   = t.name.replace(/'/g, "''");
-                return `SELECT '${litEsc}' as name, COUNT(*) as count FROM "${identEsc}"`;
+              const identEsc = t.name.replace(/"/g, '""');
+              const litEsc   = t.name.replace(/'/g, "''");
+              return `SELECT '${litEsc}' as name, COUNT(*) as count FROM "${identEsc}"`;
             }).join(' UNION ALL ');
-            const counts = await runQuery(countsQuery);
-            if (Array.isArray(counts)) {
-                counts.forEach((row: any) => {
-                    if (row && typeof row.name === 'string' && row.count !== null && row.count !== undefined) {
-                        const numCount = Number(row.count);
-                        if (!isNaN(numCount)) countsMap.set(row.name, numCount);
-                    }
-                });
-            }
+            return runQuery(countsQuery);
+          }),
+        );
+        const countsMap = new Map<string, number>();
+        for (const counts of chunkResults) {
+          if (Array.isArray(counts)) {
+            counts.forEach((row: any) => {
+              if (row && typeof row.name === 'string' && row.count !== null && row.count !== undefined) {
+                const numCount = Number(row.count);
+                if (!isNaN(numCount)) countsMap.set(row.name, numCount);
+              }
+            });
+          }
         }
         tables.forEach(t => { t.rowCount = countsMap.get(t.name); });
       } catch (e) {
@@ -522,14 +529,34 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .toArray()
           .map((r: any) => r.table_name as string),
       );
+      const condStmts: string[] = [];
       for (const { requires, sql, buildSql } of CONDITIONAL_VIEWS_SQL) {
         if (tableNames.has(requires)) {
           const stmt = sql ?? buildSql?.(tableNames);
-          if (!stmt) continue;
-          try { await conn.query(stmt); } catch (e: any) {
-            const msg = String(e?.message ?? e);
-            if (!msg.includes('Catalog Error')) console.warn('conditional view failed:', e);
-          }
+          if (stmt) condStmts.push(stmt);
+        }
+      }
+      if (condStmts.length > 0) {
+        const CV_PARALLEL = 4;
+        const cvConns: typeof conn[] = [];
+        try {
+          for (let i = 0; i < CV_PARALLEL - 1; i++) cvConns.push(await wasmDbRef.current!.connect());
+          const cvAll = [conn, ...cvConns];
+          const cvChunk = Math.ceil(condStmts.length / cvAll.length);
+          await Promise.allSettled(
+            cvAll.map((c, ci) => {
+              const slice = condStmts.slice(ci * cvChunk, (ci + 1) * cvChunk);
+              return slice.reduce(
+                (chain, s) => chain.then(() => c.query(s).catch((e: any) => {
+                  const msg = String(e?.message ?? e);
+                  if (!msg.includes('Catalog Error')) console.warn('conditional view failed:', e);
+                })),
+                Promise.resolve() as Promise<any>,
+              );
+            }),
+          );
+        } finally {
+          for (const c of cvConns) c.close().catch(() => {});
         }
       }
       setSourceType('jfr');

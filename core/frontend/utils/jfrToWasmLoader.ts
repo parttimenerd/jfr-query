@@ -974,10 +974,27 @@ export async function loadCjfrIntoWasm(
   );
   const hasSource = (name: string): boolean =>
     allViewNames.has(name) || allTableNames.some(t => t === name || t.endsWith(`_${name}`));
+  const conditionalStmts: string[] = [];
   for (const { requires, sql, buildSql } of CONDITIONAL_VIEWS_SQL) {
     if (hasSource(requires)) {
       const stmt = sql ?? buildSql?.(allTableNamesSet);
-      if (stmt) await runSql(conn, stmt);
+      if (stmt) conditionalStmts.push(stmt);
+    }
+  }
+  if (conditionalStmts.length > 0) {
+    const cvConns: typeof conn[] = [];
+    try {
+      for (let i = 0; i < PARALLELISM - 1; i++) cvConns.push(await db.connect());
+      const cvAll = [conn, ...cvConns];
+      const cvChunk = Math.ceil(conditionalStmts.length / cvAll.length);
+      await Promise.allSettled(
+        cvAll.map((c, ci) => {
+          const slice = conditionalStmts.slice(ci * cvChunk, (ci + 1) * cvChunk);
+          return slice.reduce((chain, s) => chain.then(() => runSql(c, s)), Promise.resolve());
+        }),
+      );
+    } finally {
+      for (const c of cvConns) c.close().catch(() => {});
     }
   }
 
@@ -1212,10 +1229,27 @@ export async function loadJfrIntoWasm(
   );
   const hasSource = (name: string): boolean =>
     allViewNames.has(name) || allTableNames.some(t => t === name || t.endsWith(`_${name}`));
+  const conditionalStmts: string[] = [];
   for (const { requires, sql, buildSql } of CONDITIONAL_VIEWS_SQL) {
     if (hasSource(requires)) {
       const stmt = sql ?? buildSql?.(allTableNamesSet);
-      if (stmt) await runSql(conn, stmt);
+      if (stmt) conditionalStmts.push(stmt);
+    }
+  }
+  if (conditionalStmts.length > 0) {
+    const cvConns: typeof conn[] = [];
+    try {
+      for (let i = 0; i < PARALLELISM - 1; i++) cvConns.push(await db.connect());
+      const cvAll = [conn, ...cvConns];
+      const cvChunk = Math.ceil(conditionalStmts.length / cvAll.length);
+      await Promise.allSettled(
+        cvAll.map((c, ci) => {
+          const slice = conditionalStmts.slice(ci * cvChunk, (ci + 1) * cvChunk);
+          return slice.reduce((chain, s) => chain.then(() => runSql(c, s)), Promise.resolve());
+        }),
+      );
+    } finally {
+      for (const c of cvConns) c.close().catch(() => {});
     }
   }
   const sqlMs = performance.now() - tSqlStart;

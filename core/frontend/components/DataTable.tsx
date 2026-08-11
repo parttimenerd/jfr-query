@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useContext, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { ChevronUpIcon } from './icons/ChevronUpIcon';
 import { SearchIcon } from './icons/SearchIcon';
@@ -99,6 +100,10 @@ interface DataTableProps {
     onSortChange?: (col: string, dir: 'asc' | 'desc') => void;
 }
 
+// Row height used by the virtualizer. A compact row is 24px; a normal row is 32px.
+const ROW_HEIGHT_NORMAL = 32;
+const ROW_HEIGHT_COMPACT = 24;
+
 const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers, columnWidths, csvFilename = 'data.csv', compact = false, onSortChange }) => {
   const displaySettings = useDisplaySettings();
   const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
@@ -111,6 +116,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
   const [widths, setWidths] = useState<(string | number | undefined)[]>([]);
   const resizingColumn = useRef<{index: number; startX: number; startWidth: number} | null>(null);
   const tableRef = useRef<HTMLTableElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const globalMoveListenerRef = useRef<((e: MouseEvent) => void) | null>(null);
   const globalUpListenerRef = useRef<(() => void) | null>(null);
 
@@ -150,7 +156,6 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
 
   const handleMouseDown = useCallback((index: number, e: React.MouseEvent) => {
     e.preventDefault();
-    // Remove any stale listeners from a previous drag that ended without mouseup
     if (globalMoveListenerRef.current) {
       window.removeEventListener('mousemove', globalMoveListenerRef.current);
       globalMoveListenerRef.current = null;
@@ -193,10 +198,8 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
     if (durationColumns.has(header)) {
         const secs = parseIntervalToSeconds(value);
         if (secs !== null) return formatDuration(secs);
-        // Numeric duration — infer unit from column name suffix.
         if (typeof value === 'number' || typeof value === 'bigint') {
             const lc = header.toLowerCase();
-            // Match trailing unit: bare suffix (_ms), parenthesised (ms), or bracketed [ms]
             const unitMatch = lc.match(/[\s_([](ns|µs|us|ms|sec(?:onds?)?|s)\s*[)\]]?\s*$/);
             const unit = unitMatch ? unitMatch[1] : '';
             let divisor: number;
@@ -205,9 +208,6 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
             else if (unit === 'ms') divisor = 1_000;
             else if (unit === 's' || unit === 'sec' || unit === 'secs' || unit === 'second' || unit === 'seconds') divisor = 1;
             else {
-                // No explicit unit suffix. Values < 1000 are almost certainly already in
-                // seconds (e.g. JFR stores duration/sumOfPauses/longestPause as seconds).
-                // Larger integers are assumed to be microseconds (profiler convention).
                 divisor = Number(value) < 1000 ? 1 : 1_000_000;
             }
             return formatDuration(Number(value) / divisor);
@@ -218,8 +218,6 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
     return String(value);
   }, [timestampColumns, durationColumns, byteColumns, numericColumns, displaySettings]);
 
-  // Pre-compute a single lowercase search string per row. Computed once per data
-  // change; filter memo below just does an indexOf per row instead of N string coercions.
   const searchStrings = useMemo(
     () => data.map(r => Object.values(r).join('\0').toLowerCase()),
     [data],
@@ -236,14 +234,28 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
     return filtered;
   }, [data, searchStrings, debouncedFilter, sortConfig]);
 
-  // B-051: cap rendered rows to avoid rendering 100k+ DOM nodes.
-  const DISPLAY_CAP = 2000;
-  const PAGE_SIZE = 5000;
-  const [displayLimit, setDisplayLimit] = useState(DISPLAY_CAP);
-  const displayData = processedData.slice(0, displayLimit);
-  const isCapped = displayLimit < processedData.length;
-  // Reset display limit when underlying data, filter, or sort changes.
-  useEffect(() => { setDisplayLimit(DISPLAY_CAP); }, [data, debouncedFilter, sortConfig]);
+  const rowHeight = compact ? ROW_HEIGHT_COMPACT : ROW_HEIGHT_NORMAL;
+
+  const rowVirtualizer = useVirtualizer({
+    count: processedData.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => rowHeight,
+    overscan: 10,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalVirtualHeight = rowVirtualizer.getTotalSize();
+  // Fall back to rendering all rows when the virtualizer hasn't measured the
+  // scroll container yet (SSR, tests, initial mount with 0-height container).
+  const useVirtual = virtualRows.length > 0 || processedData.length === 0;
+  const renderedRows = useVirtual
+    ? virtualRows.map(vr => ({ index: vr.index, start: vr.start, end: vr.end }))
+    : processedData.map((_, i) => ({ index: i, start: i * rowHeight, end: (i + 1) * rowHeight }));
+  // Spacer rows to preserve scroll height above and below rendered rows.
+  const paddingTop = useVirtual && virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingBottom = useVirtual && virtualRows.length > 0
+    ? totalVirtualHeight - virtualRows[virtualRows.length - 1].end
+    : 0;
 
   if (!data || data.length === 0) return <div className="text-center text-gray-500 p-8">No data to display.</div>;
 
@@ -252,7 +264,6 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
   const rowCountLabel = debouncedFilter && shownRows !== totalRows
     ? `${shownRows.toLocaleString()} of ${totalRows.toLocaleString()} rows`
     : `${totalRows.toLocaleString()} ${totalRows === 1 ? 'row' : 'rows'}`;
-  // Hint when the result looks like it was auto-truncated at the safety cap.
   const looksAutoTruncated = totalRows === 50_000;
 
   return (
@@ -279,7 +290,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
           </button>
         </div>
       )}
-      <div className="overflow-auto flex-grow">
+      <div ref={scrollContainerRef} className="overflow-auto flex-grow">
         <table ref={tableRef} className={`w-full ${compact ? 'text-xs' : 'text-sm'}`} style={{tableLayout:widths.length>0?'fixed':'auto'}}>
           <thead className="sticky top-0 bg-gray-700 z-10">
             <tr>
@@ -302,40 +313,22 @@ const DataTable: React.FC<DataTableProps> = ({ data, showSearch = true, headers,
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700">
-            {displayData.map((row,i) => {
-              const key = finalHeaders.length > 0 ? `${i}-${String(row[finalHeaders[0]])}` : i;
+            {paddingTop > 0 && <tr><td colSpan={finalHeaders.length} style={{height: paddingTop, padding: 0, border: 0}}/></tr>}
+            {renderedRows.map(virtualRow => {
+              const row = processedData[virtualRow.index];
+              const key = finalHeaders.length > 0 ? `${virtualRow.index}-${String(row[finalHeaders[0]])}` : virtualRow.index;
               return (
-              <tr key={key} className="hover:bg-gray-700/50">
-                {finalHeaders.map((h,j) => (
-                  <td key={h} className={`p-2 font-mono whitespace-nowrap overflow-hidden text-ellipsis ${numericColumns.has(h)?'text-right':'text-left'}`} style={{width: widths[j]}} title={formatCell(row[h],h)}>{formatCell(row[h],h)}</td>
-                ))}
-              </tr>
+                <tr key={key} style={{height: rowHeight}} className="hover:bg-gray-700/50">
+                  {finalHeaders.map((h,j) => (
+                    <td key={h} className={`p-2 font-mono whitespace-nowrap overflow-hidden text-ellipsis ${numericColumns.has(h)?'text-right':'text-left'}`} style={{width: widths[j]}} title={formatCell(row[h],h)}>{formatCell(row[h],h)}</td>
+                  ))}
+                </tr>
               );
             })}
+            {paddingBottom > 0 && <tr><td colSpan={finalHeaders.length} style={{height: paddingBottom, padding: 0, border: 0}}/></tr>}
           </tbody>
         </table>
       </div>
-      {isCapped && (
-        <div className="flex-shrink-0 px-4 py-2 border-t border-gray-700 flex items-center justify-between text-xs text-gray-400">
-          <span>Showing {displayLimit.toLocaleString()} of {processedData.length.toLocaleString()} rows</span>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setDisplayLimit(l => Math.min(l + PAGE_SIZE, processedData.length))}
-              className="text-cyan-400 hover:text-cyan-300 underline"
-            >
-              Show {Math.min(PAGE_SIZE, processedData.length - displayLimit).toLocaleString()} more
-            </button>
-            {processedData.length - displayLimit > PAGE_SIZE && (
-              <button
-                onClick={() => setDisplayLimit(processedData.length)}
-                className="text-gray-500 hover:text-gray-300 underline"
-              >
-                Show all {processedData.length.toLocaleString()}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

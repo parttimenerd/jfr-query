@@ -290,7 +290,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     const onUpdateCellRef = useRef(onUpdateCell); onUpdateCellRef.current = onUpdateCell;
     const cellIdRef = useRef(cell.id); cellIdRef.current = cell.id;
 
-    const debouncedOnUpdate = useCallback(debounce((newSegments: CellSegment[]) => { onUpdateCellRef.current(cellIdRef.current, reconstructCellContent(newSegments)); }, 800), []);
+    const debouncedOnUpdate = useCallback(debounce((newSegments: CellSegment[]) => { onUpdateCellRef.current(cellIdRef.current, reconstructCellContent(newSegments)); }, 200), []);
 
     const handleSegmentsUpdate = useCallback((newSegments: CellSegment[]) => { setSegments(newSegments); debouncedOnUpdate(newSegments); }, [debouncedOnUpdate]);
 
