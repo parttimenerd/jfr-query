@@ -147,4 +147,4 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
     );
 };
 
-export default NotebookTabs;
+export default React.memo(NotebookTabs);

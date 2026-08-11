@@ -14,7 +14,7 @@ function extractTitle(cell: NotebookCellData): string {
     return m ? m[1].trim() : '';
 }
 
-export const NotebookTOC: React.FC<Props> = ({ cells, onClose }) => {
+export const NotebookTOC = React.memo<Props>(({ cells, onClose }) => {
     const entries = cells
         .map(c => ({ cell: c, title: extractTitle(c) }))
         .filter(e => e.title !== '');
@@ -44,4 +44,4 @@ export const NotebookTOC: React.FC<Props> = ({ cells, onClose }) => {
             </div>
         </div>
     );
-};
+});

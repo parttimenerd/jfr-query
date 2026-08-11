@@ -54,6 +54,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
 
     const settingsPanelRef = useRef<{ focusVariable: (name: string) => void }>(null);
     const [tocOpen, setTocOpen] = useState(false);
+    const handleCloseTOC = useCallback(() => setTocOpen(false), []);
 
     // Ctrl+Shift+T toggles TOC
     useEffect(() => {
@@ -309,7 +310,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
             {/* TOC panel */}
             {tocOpen && !presenterMode && (
                 <div className="fixed top-20 right-4 z-40">
-                    <NotebookTOC cells={cells} onClose={() => setTocOpen(false)} />
+                    <NotebookTOC cells={cells} onClose={handleCloseTOC} />
                 </div>
             )}
             {metadata.title && (
