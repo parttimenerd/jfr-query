@@ -991,15 +991,13 @@ export async function loadCjfrIntoWasm(
     }
   }
 
-  const allTableNames = (await conn.query(`SELECT table_name FROM duckdb_tables()`).catch(() => ({ toArray: () => [] })))
-    .toArray()
-    .map((r: any) => r.table_name as string);
+  const [tablesRaw, viewsRaw] = await Promise.all([
+    conn.query(`SELECT table_name FROM duckdb_tables()`).catch(() => ({ toArray: () => [] })),
+    conn.query(`SELECT view_name FROM duckdb_views()`).catch(() => ({ toArray: () => [] })),
+  ]);
+  const allTableNames = tablesRaw.toArray().map((r: any) => r.table_name as string);
   const allTableNamesSet = new Set<string>(allTableNames);
-  const allViewNames = new Set<string>(
-    (await conn.query(`SELECT view_name FROM duckdb_views()`).catch(() => ({ toArray: () => [] })))
-      .toArray()
-      .map((r: any) => r.view_name as string),
-  );
+  const allViewNames = new Set<string>(viewsRaw.toArray().map((r: any) => r.view_name as string));
   const hasSource = (name: string): boolean =>
     allViewNames.has(name) || allTableNames.some(t => t === name || t.endsWith(`_${name}`));
   const conditionalStmts: string[] = [];
@@ -1252,15 +1250,13 @@ export async function loadJfrIntoWasm(
   // JFR event tables are stored as chunkN_EventName tables and then unioned into
   // a view named EventName — so we check both the view catalog and the table catalog
   // (looking for any table whose name ends with _EventName).
-  const allTableNames = (await conn.query(`SELECT table_name FROM duckdb_tables()`).catch(() => ({ toArray: () => [] })))
-    .toArray()
-    .map((r: any) => r.table_name as string);
+  const [tablesRaw, viewsRaw] = await Promise.all([
+    conn.query(`SELECT table_name FROM duckdb_tables()`).catch(() => ({ toArray: () => [] })),
+    conn.query(`SELECT view_name FROM duckdb_views()`).catch(() => ({ toArray: () => [] })),
+  ]);
+  const allTableNames = tablesRaw.toArray().map((r: any) => r.table_name as string);
   const allTableNamesSet = new Set<string>(allTableNames);
-  const allViewNames = new Set<string>(
-    (await conn.query(`SELECT view_name FROM duckdb_views()`).catch(() => ({ toArray: () => [] })))
-      .toArray()
-      .map((r: any) => r.view_name as string),
-  );
+  const allViewNames = new Set<string>(viewsRaw.toArray().map((r: any) => r.view_name as string));
   const hasSource = (name: string): boolean =>
     allViewNames.has(name) || allTableNames.some(t => t === name || t.endsWith(`_${name}`));
   const conditionalStmts: string[] = [];

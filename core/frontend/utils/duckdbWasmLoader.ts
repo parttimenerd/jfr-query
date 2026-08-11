@@ -13,19 +13,24 @@ export async function loadDuckDbFileIntoWasm(
   await conn.query("ATTACH 'input.db' AS src (READ_ONLY)");
   const t2 = performance.now();
   try {
-    // duckdb_tables() is a global function — filter by database_name to get
-    // only the attached db's tables, not the in-memory default catalog.
-    const tables = await conn.query(
-      "SELECT table_name FROM duckdb_tables() WHERE database_name='src' AND schema_name='main'"
-    );
-    for (const row of tables.toArray()) {
-      const t = (row as any).table_name;
-      const safe = String(t).replace(/"/g, '""');
-      await conn.query(`CREATE TABLE IF NOT EXISTS "${safe}" AS SELECT * FROM src.main."${safe}"`);
+    // Fetch table and view lists in parallel — two independent catalog reads.
+    const [tables, views] = await Promise.all([
+      conn.query("SELECT table_name FROM duckdb_tables() WHERE database_name='src' AND schema_name='main'"),
+      conn.query("SELECT view_name, sql FROM duckdb_views() WHERE database_name='src' AND NOT internal AND schema_name='main'"),
+    ]);
+    // Batch all CREATE TABLE statements into one multi-statement call to avoid N serial round-trips.
+    const tableRows = tables.toArray();
+    if (tableRows.length > 0) {
+      const createStmts = tableRows.map((row: any) => {
+        const safe = String(row.table_name).replace(/"/g, '""');
+        return `CREATE TABLE IF NOT EXISTS "${safe}" AS SELECT * FROM src.main."${safe}"`;
+      });
+      await conn.query(createStmts.join(';\n')).catch(async () => {
+        for (const sql of createStmts) {
+          await conn.query(sql).catch(() => {});
+        }
+      });
     }
-    const views = await conn.query(
-      "SELECT view_name, sql FROM duckdb_views() WHERE database_name='src' AND NOT internal AND schema_name='main'"
-    );
     for (const row of views.toArray()) {
       const r = row as any;
       try { await conn.query(r.sql); } catch { /* skip views that can't be recreated */ }
