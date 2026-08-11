@@ -829,40 +829,32 @@ export async function resetWasmDatabase(conn: AsyncDuckDBConnection): Promise<vo
   }
   workerPool.length = 0;
 
-  // Drop all user views first (views may reference tables).
-  const viewsResult = await conn.query(
-    `SELECT table_name FROM information_schema.views WHERE table_schema='main'`
-  ).catch(() => null);
-  if (viewsResult) {
-    const viewNames = viewsResult.toArray().map((r: any) => `"${String(r.table_name).replace(/"/g, '""')}"`);
-    // DuckDB WASM only supports dropping one object at a time.
-    for (const name of viewNames) {
-      await conn.query(`DROP VIEW IF EXISTS ${name}`).catch(() => {});
-    }
-  }
+  // Collect all views, tables, and macros to drop.
+  const [viewsResult, tablesResult, macrosResult] = await Promise.all([
+    conn.query(`SELECT table_name FROM information_schema.views WHERE table_schema='main'`).catch(() => null),
+    conn.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='main' AND table_type='BASE TABLE'`).catch(() => null),
+    conn.query(`SELECT function_name FROM duckdb_functions() WHERE function_type='macro' AND database_name='memory'`).catch(() => null),
+  ]);
 
-  // Drop all user tables.
-  const tablesResult = await conn.query(
-    `SELECT table_name FROM information_schema.tables WHERE table_schema='main' AND table_type='BASE TABLE'`
-  ).catch(() => null);
-  if (tablesResult) {
-    const tableNames = tablesResult.toArray().map((r: any) => `"${String(r.table_name).replace(/"/g, '""')}"`);
-    // DuckDB WASM only supports dropping one object at a time.
-    for (const name of tableNames) {
-      await conn.query(`DROP TABLE IF EXISTS ${name}`).catch(() => {});
-    }
-  }
+  const viewStmts = (viewsResult?.toArray() ?? []).map((r: any) =>
+    `DROP VIEW IF EXISTS "${String(r.table_name).replace(/"/g, '""')}"`,
+  );
+  const tableStmts = (tablesResult?.toArray() ?? []).map((r: any) =>
+    `DROP TABLE IF EXISTS "${String(r.table_name).replace(/"/g, '""')}"`,
+  );
+  const macroNames = (macrosResult?.toArray() ?? []).map((r: any) => String(r.function_name));
+  const macroStmts = macroNames.flatMap(name => [
+    `DROP MACRO IF EXISTS "${name.replace(/"/g, '""')}"`,
+    `DROP MACRO TABLE IF EXISTS "${name.replace(/"/g, '""')}"`,
+  ]);
 
-  // Drop all user macros.
-  const macrosResult = await conn.query(
-    `SELECT function_name FROM duckdb_functions() WHERE function_type='macro' AND database_name='memory'`
-  ).catch(() => null);
-  if (macrosResult) {
-    const macroNames = macrosResult.toArray().map((r: any) => String(r.function_name));
-    for (const name of macroNames) {
-      await conn.query(`DROP MACRO IF EXISTS "${name.replace(/"/g, '""')}"`).catch(() => {});
-      await conn.query(`DROP MACRO TABLE IF EXISTS "${name.replace(/"/g, '""')}"`).catch(() => {});
-    }
+  // Execute all drops in a single multi-statement call (views first, then tables, then macros).
+  // Falls back to one-at-a-time on error.
+  const allStmts = [...viewStmts, ...tableStmts, ...macroStmts];
+  if (allStmts.length > 0) {
+    await conn.query(allStmts.join(';\n')).catch(async () => {
+      for (const sql of allStmts) await conn.query(sql).catch(() => {});
+    });
   }
 }
 
