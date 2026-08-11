@@ -105,8 +105,14 @@ function usePersistentState<T>(key: string, defaultValue: T): [T, React.Dispatch
 }
 
 
-const App: React.FC = () => {
-    const {
+const STACKTRACE_DEPTH_OPTIONS = [
+    { value: 50, label: '50 frames', description: 'Full depth — slowest' },
+    { value: 10, label: '10 frames', description: 'Default' },
+    { value: 5,  label: '5 frames',  description: 'Faster' },
+    { value: 0,  label: 'Skip',      description: 'No call stack — fastest' },
+];
+
+const App: React.FC = () => {    const {
         dbState, mode, sourceType, errorMessage, serverProbeError, query, refreshSchema, loadFile, loadDemo,
         recordingStart, recordingEnd, schema, importProgress, importPhase, wasmInitializing,
     } = useContext(DataContext);
@@ -1336,7 +1342,9 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [setNotebookMarkdown, addCellFromTool, addCellsBatchFromTool, updateCell, deleteCell, handleRunAll, loadFile]);
 
-    const cmdActions: CommandAction[] = useMemo(() => [
+    // Split into stable groups so a canUndo/isAiEnabled change doesn't invalidate
+    // the whole action list — only the sub-memo that contains those deps.
+    const cmdActionsCore = useMemo(() => [
         { id: 'format-all', label: 'Format all cells', hint: '⇧⇧ then "format"', keywords: 'beautify pretty indent', run: () => formatAllCells() },
         { id: 'run-all', label: 'Run all queries', hint: 'run every SQL block', keywords: 'execute', run: () => { void handleRunAll(); } },
         { id: 'add-cell', label: 'Add new cell', keywords: 'new insert create', run: () => addCell() },
@@ -1345,13 +1353,21 @@ const App: React.FC = () => {
         { id: 'clear-results', label: 'Clear all results', keywords: 'reset', run: () => handleClearResults() },
         { id: 'save', label: 'Save notebook', keywords: 'download export', run: () => handleSaveNotebook() },
         { id: 'templates', label: 'Open template gallery', keywords: 'new template load', run: () => setIsTemplateGalleryOpen(true) },
-        { id: 'undo', label: 'Undo', keywords: 'revert back', hint: canUndo ? '⌘Z' : '(nothing to undo)', run: () => { if (canUndo) undo(); } },
-        { id: 'redo', label: 'Redo', keywords: 'forward', hint: canRedo ? '⇧⌘Z' : '(nothing to redo)', run: () => { if (canRedo) redo(); } },
         { id: 'settings', label: 'Open settings', keywords: 'preferences config api key', run: () => setIsSettingsModalOpen(true) },
+    ], [formatAllCells, handleRunAll, addCell, handleClearResults, handleSaveNotebook, setCollapseTrigger, setAllCollapsed, setIsTemplateGalleryOpen]);
+    const cmdActionsToggle = useMemo(() => [
         { id: 'toggle-ai', label: `${isAiEnabled ? 'Disable' : 'Enable'} AI features`, keywords: 'llm assistant', run: () => setIsAiEnabled(!isAiEnabled) },
         { id: 'toggle-autorun', label: `${isAutoRunEnabled ? 'Disable' : 'Enable'} auto-run on load`, keywords: 'autorun', run: () => setIsAutoRunEnabled(!isAutoRunEnabled) },
         { id: 'toggle-md', label: `${isMarkdownMode ? 'Exit' : 'Enter'} raw markdown view`, keywords: 'markdown raw', run: () => setIsMarkdownMode(!isMarkdownMode) },
-    ], [formatAllCells, handleRunAll, addCell, isAiEnabled, setIsAiEnabled, isAutoRunEnabled, setIsAutoRunEnabled, isMarkdownMode, setIsMarkdownMode, handleClearResults, handleSaveNotebook, canUndo, canRedo, undo, redo, setCollapseTrigger, setAllCollapsed, setIsTemplateGalleryOpen]);
+    ], [isAiEnabled, setIsAiEnabled, isAutoRunEnabled, setIsAutoRunEnabled, isMarkdownMode, setIsMarkdownMode]);
+    const cmdActionsHistory = useMemo(() => [
+        { id: 'undo', label: 'Undo', keywords: 'revert back', hint: canUndo ? '⌘Z' : '(nothing to undo)', run: () => { if (canUndo) undo(); } },
+        { id: 'redo', label: 'Redo', keywords: 'forward', hint: canRedo ? '⇧⌘Z' : '(nothing to redo)', run: () => { if (canRedo) redo(); } },
+    ], [canUndo, canRedo, undo, redo]);
+    const cmdActions: CommandAction[] = useMemo(
+        () => [...cmdActionsCore, ...cmdActionsToggle, ...cmdActionsHistory],
+        [cmdActionsCore, cmdActionsToggle, cmdActionsHistory],
+    );
 
     const cmdCells: CellEntry[] = useMemo(() =>
         cells.map((c, i) => {
@@ -1551,7 +1567,7 @@ const App: React.FC = () => {
                         </p>
                         <p className="text-gray-300 text-xs font-medium mb-2">Stack trace depth</p>
                         <div className="flex flex-col gap-2">
-                            {[{value:50,label:'50 frames',description:'Full depth — slowest'},{value:10,label:'10 frames',description:'Default'},{value:5,label:'5 frames',description:'Faster'},{value:0,label:'Skip',description:'No call stack — fastest'}].map(opt => (
+                            {STACKTRACE_DEPTH_OPTIONS.map(opt => (
                                 <label key={opt.value} className={`flex items-center gap-3 p-2.5 rounded border cursor-pointer transition-colors ${pendingJfrDepth===opt.value?'border-cyan-500 bg-cyan-900/20 text-white':'border-gray-600 bg-gray-700/30 text-gray-400 hover:border-gray-500'}`}>
                                     <input type="radio" name="app-depth" value={opt.value} checked={pendingJfrDepth===opt.value} onChange={() => setPendingJfrDepth(opt.value)} className="accent-cyan-400"/>
                                     <span className="text-sm font-medium w-20">{opt.label}</span>

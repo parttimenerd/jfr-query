@@ -56,6 +56,8 @@ import { ResizablePlotContainer } from './ResizablePlotContainer';
 interface NotebookCellProps {
     cell: NotebookCellData;
     allCells: NotebookCellData[];
+    /** Index of this cell in allCells — passed from parent to avoid O(n) findIndex per cell. */
+    cellIndex: number;
     metadata: NotebookMetadata;
     results: (any[] | null)[];
     /** Parallel timing array — queryTimings[i] = elapsed ms for results[i], or null if not yet run / errored. */
@@ -111,6 +113,15 @@ function debounce<T extends (...args: any[]) => any>(func: T, delay: number): (.
   };
 }
 
+// Stable singleton — defined outside MarkdownSectionEditor so it's never recreated.
+const _markdownCodeComponents = { code: ({ node, className, children, ...props }: any) => {
+    const m = /language-(\w+)/.exec(className || '');
+    const isBlock = !!className;
+    return isBlock && (m?.[1] === 'sql' || m?.[1] === 'plot')
+        ? <div className="my-2 border border-gray-700 rounded-md overflow-hidden bg-[#263238]"><StaticCodeHighlighter code={String(children).trim()} language={m[1]}/></div>
+        : <code className="bg-gray-700 text-cyan-300 p-1 rounded-md" {...props}>{children}</code>;
+}};
+
 const MarkdownSectionEditor = React.memo<{ section: MarkdownSection | null; defaultTitle: string; onUpdate: (s: MarkdownSection | null) => void; onAdd: () => void; isEditing: boolean; onSetEditing: (isEditing: boolean) => void; variables?: Record<string, string>; formatSettings?: { timeFormat?: string; decimalPlaces?: number }; presenterMode?: boolean; allCells?: NotebookCellData[]; }>(({ section, defaultTitle, onUpdate, onAdd, isEditing, onSetEditing, variables, formatSettings, presenterMode, allCells }) => {
     const [content, setContent] = useState(section?.content || '');
     useEffect(() => { setContent(section?.content || ''); }, [section]);
@@ -125,7 +136,7 @@ const MarkdownSectionEditor = React.memo<{ section: MarkdownSection | null; defa
         }
     };
 
-    const components = useMemo(() => ({ code: ({ node, className, children, ...props }: any) => { const m = /language-(\w+)/.exec(className||''); const isBlock = !!className; return isBlock&&(m?.[1]==='sql'||m?.[1]==='plot')?<div className="my-2 border border-gray-700 rounded-md overflow-hidden bg-[#263238]"><StaticCodeHighlighter code={String(children).trim()} language={m[1]}/></div>:<code className="bg-gray-700 text-cyan-300 p-1 rounded-md" {...props}>{children}</code>; } }), []);
+    const components = _markdownCodeComponents;
 
     // Tokenize the section content so inline `${…}` and `{if …}` regions
     // evaluate at render time. Plain markdown is preserved 1:1 by the tokenizer.
@@ -169,7 +180,7 @@ const VariableEditor: React.FC<{ varKey: string; varValue: string; usedIn?: stri
 };
 
 
-const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, results, queryTimings, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, initialCellCollapsed, isConditionallyHidden, onCellCollapseChange, clearResultsTrigger, onRunQuery, onUpdateCell, onAddCellFromTool, onDeleteCell, onDuplicateCell, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false, onPopChatToSidebar, onNavigateRef }) => {
+const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, cellIndex, metadata, results, queryTimings, crossCellQueryRefs, isAutoRunEnabled, collapseTrigger, allCollapsed, isAiFeatureActive, initialCellCollapsed, isConditionallyHidden, onCellCollapseChange, clearResultsTrigger, onRunQuery, onUpdateCell, onAddCellFromTool, onDeleteCell, onDuplicateCell, onDeleteQueryBlock, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange, onGlobalVariableClick, presenterMode = false, onPopChatToSidebar, onNavigateRef }) => {
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [editingTitleValue, setEditingTitleValue] = useState('');
     const [isRawEditing, setIsRawEditing] = useState(false);
@@ -720,7 +731,6 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, metadata, r
     // Phase 5 — DATASET clause results, keyed by `<plotIndex>:<datasetName>`.
     const [datasetResults, setDatasetResults] = useState<Record<string, any[]>>({});
     const { awaitUpstream } = useExecutor();
-    const cellIndex = useMemo(() => allCells.findIndex(c => c.id === cell.id), [allCells, cell.id]);
     const handleStr = useMemo(() => computeCellHandle(cell, Math.max(0, cellIndex)), [cell, cellIndex]);
 
     // Phase 5 — fetch data for plots that declare a `DATASET <name>` clause.

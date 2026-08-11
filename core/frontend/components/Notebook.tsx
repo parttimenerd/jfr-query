@@ -249,6 +249,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                                 <NotebookCell
                                     key={cell.id}
                                     cell={cell}
+                                    cellIndex={idx}
                                     allCells={cells}
                                     metadata={metadata}
                                     results={results[cell.id] ?? emptyResults}
@@ -351,6 +352,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     <NotebookCell
                         key={cell.id}
                         cell={cell}
+                        cellIndex={idx}
                         allCells={cells}
                         metadata={metadata}
                         results={results[cell.id] ?? emptyResults}
@@ -360,7 +362,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                         collapseTrigger={collapseTrigger}
                         allCollapsed={allCollapsed}
                         isAiFeatureActive={isAiFeatureActive}
-                        initialCellCollapsed={cellCollapseStateRef.current.get(cell.id) ?? parseCellDirective(cell.content)?.collapsed}
+                        initialCellCollapsed={cellCollapseStateRef.current.get(cell.id) ?? cellDirectives.get(cell.id)?.collapsed}
                         isConditionallyHidden={isConditionallyHidden}
                         onCellCollapseChange={handleCellCollapseChange}
                         clearResultsTrigger={clearResultsTrigger}
