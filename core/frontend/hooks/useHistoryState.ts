@@ -87,7 +87,7 @@ export const useHistoryState = <T,>(
             const newHistory = prevState.history.slice(0, prevState.currentIndex + 1);
 
             // Don't add a new history state if the value is the same as the last one.
-            if (newHistory.length > 0 && JSON.stringify(newHistory[newHistory.length - 1]) === JSON.stringify(value)) {
+            if (newHistory.length > 0 && newHistory[newHistory.length - 1] === value) {
                 didChange = false;
                 return prevState;
             }
