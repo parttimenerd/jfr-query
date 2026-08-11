@@ -272,6 +272,32 @@ async function mergeChunkTables(
   db: AsyncDuckDB,
   numChunks: number,
 ): Promise<void> {
+  // Fast path: single-chunk recording — no ID collisions possible.
+  // RENAME is a metadata-only operation in DuckDB (~1ms per table vs ~50ms for full dedup).
+  if (numChunks === 1) {
+    const chunk0Tables = await conn.query(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema='main' AND regexp_matches(table_name, '^chunk0_')`
+    ).catch(() => null);
+    if (chunk0Tables) {
+      const names = chunk0Tables.toArray().map((r: any) => String(r.table_name));
+      // Batch all renames into one multi-statement query call to reduce round-trips.
+      const renames = names.map(t => {
+        const base = t.replace(/^chunk\d+_/, '');
+        const safe = base.replace(/"/g, '""');
+        const safeSrc = t.replace(/"/g, '""');
+        return `ALTER TABLE "${safeSrc}" RENAME TO "${safe}"`;
+      });
+      if (renames.length > 0) {
+        await conn.query(renames.join(';\n')).catch(async (e) => {
+          console.warn('bulk rename failed, falling back one-by-one:', e);
+          for (const sql of renames) await conn.query(sql).catch(() => {});
+        });
+      }
+    }
+    return;
+  }
+
   // 1. Collect all base table names across ALL chunks (not just chunk0)
   const allTablesResult = await conn.query(
     `SELECT DISTINCT regexp_replace(table_name, '^chunk\\d+_', '') AS base_name
@@ -969,9 +995,9 @@ export async function loadCjfrIntoWasm(
     await Promise.allSettled(
       conns.map((c, ci) => {
         const slice = BUILTIN_VIEWS_SQL.slice(ci * chunkSize, (ci + 1) * chunkSize);
-        return slice.reduce(
-          (chain, sql) => chain.then(() => runSql(c, sql)),
-          Promise.resolve(),
+        if (slice.length === 0) return Promise.resolve();
+        return c.query(slice.join(';\n')).catch(() =>
+          slice.reduce((chain, sql) => chain.then(() => runSql(c, sql)), Promise.resolve()),
         );
       }),
     );
@@ -1008,7 +1034,10 @@ export async function loadCjfrIntoWasm(
       await Promise.allSettled(
         cvAll.map((c, ci) => {
           const slice = conditionalStmts.slice(ci * cvChunk, (ci + 1) * cvChunk);
-          return slice.reduce((chain, s) => chain.then(() => runSql(c, s)), Promise.resolve());
+          if (slice.length === 0) return Promise.resolve();
+          return c.query(slice.join(';\n')).catch(() =>
+            slice.reduce((chain, s) => chain.then(() => runSql(c, s)), Promise.resolve()),
+          );
         }),
       );
     } finally {
@@ -1215,7 +1244,9 @@ export async function loadJfrIntoWasm(
       Promise.resolve() as Promise<any>,
     );
   });
-  // Phase 2: views — parallel across extra connections (macros are now committed)
+  // Phase 2: views — batch per connection (multi-statement) across PARALLELISM connections.
+  // Each connection gets one big JOIN of all its view statements, avoiding N round-trips.
+  // Falls back to sequential per-view on error (Binder errors from missing referenced tables).
   const extraConns: typeof conn[] = [];
   try {
     for (let i = 0; i < PARALLELISM - 1; i++) {
@@ -1226,9 +1257,9 @@ export async function loadJfrIntoWasm(
     await Promise.allSettled(
       conns.map((c, ci) => {
         const slice = BUILTIN_VIEWS_SQL.slice(ci * chunkSize, (ci + 1) * chunkSize);
-        return slice.reduce(
-          (chain, sql) => chain.then(() => runSql(c, sql)),
-          Promise.resolve(),
+        if (slice.length === 0) return Promise.resolve();
+        return c.query(slice.join(';\n')).catch(() =>
+          slice.reduce((chain, sql) => chain.then(() => runSql(c, sql)), Promise.resolve()),
         );
       }),
     );
@@ -1268,7 +1299,10 @@ export async function loadJfrIntoWasm(
       await Promise.allSettled(
         cvAll.map((c, ci) => {
           const slice = conditionalStmts.slice(ci * cvChunk, (ci + 1) * cvChunk);
-          return slice.reduce((chain, s) => chain.then(() => runSql(c, s)), Promise.resolve());
+          if (slice.length === 0) return Promise.resolve();
+          return c.query(slice.join(';\n')).catch(() =>
+            slice.reduce((chain, s) => chain.then(() => runSql(c, s)), Promise.resolve()),
+          );
         }),
       );
     } finally {

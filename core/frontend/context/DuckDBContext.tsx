@@ -534,12 +534,15 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           await Promise.allSettled(
             bvAll.map((c, ci) => {
               const slice = BUILTIN_VIEWS_SQL.slice(ci * bvChunk, (ci + 1) * bvChunk);
-              return slice.reduce(
-                (chain, sql) => chain.then(() => c.query(sql).catch((e: any) => {
-                  const msg = String(e?.message ?? e);
-                  if (!msg.includes('Catalog Error')) console.warn('builtin view failed:', e);
-                })),
-                Promise.resolve() as Promise<any>,
+              if (slice.length === 0) return Promise.resolve();
+              return c.query(slice.join(';\n')).catch(() =>
+                slice.reduce(
+                  (chain, sql) => chain.then(() => c.query(sql).catch((e: any) => {
+                    const msg = String(e?.message ?? e);
+                    if (!msg.includes('Catalog Error')) console.warn('builtin view failed:', e);
+                  })),
+                  Promise.resolve() as Promise<any>,
+                ),
               );
             }),
           );
@@ -570,12 +573,15 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           await Promise.allSettled(
             cvAll.map((c, ci) => {
               const slice = condStmts.slice(ci * cvChunk, (ci + 1) * cvChunk);
-              return slice.reduce(
-                (chain, s) => chain.then(() => c.query(s).catch((e: any) => {
-                  const msg = String(e?.message ?? e);
-                  if (!msg.includes('Catalog Error')) console.warn('conditional view failed:', e);
-                })),
-                Promise.resolve() as Promise<any>,
+              if (slice.length === 0) return Promise.resolve();
+              return c.query(slice.join(';\n')).catch(() =>
+                slice.reduce(
+                  (chain, s) => chain.then(() => c.query(s).catch((e: any) => {
+                    const msg = String(e?.message ?? e);
+                    if (!msg.includes('Catalog Error')) console.warn('conditional view failed:', e);
+                  })),
+                  Promise.resolve() as Promise<any>,
+                ),
               );
             }),
           );
