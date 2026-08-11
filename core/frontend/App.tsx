@@ -1375,9 +1375,12 @@ const App: React.FC = () => {
     }, [addCellFromTool]);
 
     const handleMetadataChange = useCallback(async (newMetadata: NotebookMetadata) => {
-        const prevVars = metadataRef.current.variables;
-        const newVars = newMetadata.variables;
-        const varsChanged = JSON.stringify(prevVars) !== JSON.stringify(newVars);
+        const prevVars = metadataRef.current.variables ?? {};
+        const newVars = newMetadata.variables ?? {};
+        const prevKeys = Object.keys(prevVars);
+        const newKeys = Object.keys(newVars);
+        const varsChanged = prevKeys.length !== newKeys.length ||
+            prevKeys.some(k => prevVars[k] !== newVars[k]);
         const newNotebookMarkdown = reconstructNotebook({ metadata: newMetadata, content: cellsContent });
         setNotebookMarkdown(newNotebookMarkdown);
         // Only refresh the schema when something other than notebook variables changed

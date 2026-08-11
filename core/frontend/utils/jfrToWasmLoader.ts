@@ -299,22 +299,24 @@ async function mergeChunkTables(
   }
 
   // 1. Collect all base table names across ALL chunks (not just chunk0)
-  const allTablesResult = await conn.query(
-    `SELECT DISTINCT regexp_replace(table_name, '^chunk\\d+_', '') AS base_name
-     FROM information_schema.tables
-     WHERE table_schema='main' AND regexp_matches(table_name, '^chunk\\d+_')
-     ORDER BY base_name`
-  );
+  const [allTablesResult, allChunkTablesResult] = await Promise.all([
+    conn.query(
+      `SELECT DISTINCT regexp_replace(table_name, '^chunk\\d+_', '') AS base_name
+       FROM information_schema.tables
+       WHERE table_schema='main' AND regexp_matches(table_name, '^chunk\\d+_')
+       ORDER BY base_name`
+    ),
+    conn.query(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema='main' AND regexp_matches(table_name, '^chunk\\d+_')`
+    ),
+  ]);
   const allBaseNames = allTablesResult.toArray().map((r: any) => String(r.base_name));
 
   if (allBaseNames.length === 0) return;
 
   // Build a map: baseName → array of worker indices that have it.
   // Single query fetches all chunk-prefixed table names at once — avoids N×M round-trips.
-  const allChunkTablesResult = await conn.query(
-    `SELECT table_name FROM information_schema.tables
-     WHERE table_schema='main' AND regexp_matches(table_name, '^chunk\\d+_')`
-  );
   const chunkTableSet = new Set(
     allChunkTablesResult.toArray().map((r: any) => String(r.table_name))
   );
@@ -550,25 +552,24 @@ async function mergeChunkTables(
     });
 
     const commentMap = new Map<string, string>();
+    const colsMap = new Map<string, string[]>();
     if (eventReprTables.length > 0) {
       const commentPattern = eventReprTables.map(({ reprTable: t }) => `table_name='${t.replace(/'/g, "''")}'`).join(' OR ');
-      const commentResult = await conn.query(
-        `SELECT table_name, comment FROM duckdb_tables() WHERE ${commentPattern}`
-      ).catch(() => null);
+      const colsPattern = commentPattern;
+      const [commentResult, colsResult] = await Promise.all([
+        conn.query(
+          `SELECT table_name, comment FROM duckdb_tables() WHERE ${commentPattern}`
+        ).catch(() => null),
+        conn.query(
+          `SELECT table_name, column_name FROM information_schema.columns
+           WHERE table_schema='main' AND (${colsPattern}) ORDER BY table_name, ordinal_position`
+        ).catch(() => null),
+      ]);
       if (commentResult) {
         for (const row of commentResult.toArray()) {
           commentMap.set(String((row as any).table_name), String((row as any).comment ?? ''));
         }
       }
-    }
-
-    const colsMap = new Map<string, string[]>();
-    if (eventReprTables.length > 0) {
-      const colsPattern = eventReprTables.map(({ reprTable: t }) => `table_name='${t.replace(/'/g, "''")}'`).join(' OR ');
-      const colsResult = await conn.query(
-        `SELECT table_name, column_name FROM information_schema.columns
-         WHERE table_schema='main' AND (${colsPattern}) ORDER BY table_name, ordinal_position`
-      ).catch(() => null);
       if (colsResult) {
         for (const row of colsResult.toArray()) {
           const tname = String((row as any).table_name);
