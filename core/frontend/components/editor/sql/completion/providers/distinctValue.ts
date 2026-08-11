@@ -10,6 +10,9 @@ import {
     requestDistinctValues,
 } from '../../../distinctValues';
 
+// Hoisted from detectStringValueColumn to avoid per-call regex allocation.
+const _DETECT_COL_RE = /(\w+|"[^"]+")(?:\.(\w+|"[^"]+"))?\s*(?:=|<>|!=|LIKE|ILIKE|IN\s*\(\s*(?:'[^']*'\s*,\s*)*)\s*$/i;
+
 // Detect `… col = '` or `… tbl.col = '` (and IN / LIKE / ILIKE / != / <>)
 // immediately before the opening quote. Returns null if the cursor isn't
 // inside an open string literal whose left side identifies a column.
@@ -26,10 +29,8 @@ function detectStringValueColumn(stmt: string): { column: string; table: string 
         }
     }
     if (count % 2 === 0) return null;
-    const head = stmt.slice(0, lastQuote).replace(/\s+$/, '');
-    const m = head.match(
-        /(\w+|"[^"]+")(?:\.(\w+|"[^"]+"))?\s*(?:=|<>|!=|LIKE|ILIKE|IN\s*\(\s*(?:'[^']*'\s*,\s*)*)\s*$/i,
-    );
+    const head = stmt.slice(0, lastQuote).trimEnd();
+    const m = head.match(_DETECT_COL_RE);
     if (!m) return null;
     const left = unquote(m[1]);
     const right = m[2] ? unquote(m[2]) : null;
@@ -37,7 +38,7 @@ function detectStringValueColumn(stmt: string): { column: string; table: string 
 }
 
 function unquote(s: string): string {
-    return s.startsWith('"') && s.endsWith('"') ? s.slice(1, -1) : s;
+    return s.charCodeAt(0) === 34 && s.charCodeAt(s.length - 1) === 34 ? s.slice(1, -1) : s;
 }
 
 // Set of all table/cte names visible at the cursor — passed to the runner so
@@ -46,12 +47,24 @@ function visibleTableNames(ctx: ProviderContext): Set<string> {
     const out = new Set<string>();
     if (ctx.scope) {
         for (const t of ctx.scope.listTables()) {
-            out.add(t.target.toLowerCase());
-            if (t.alias) out.add(t.alias.toLowerCase());
+            out.add(t.targetLc ?? t.target.toLowerCase());
+            if (t.alias) out.add(t.aliasLc ?? t.alias.toLowerCase());
         }
-        for (const c of ctx.scope.listCtes()) out.add(c.name.toLowerCase());
+        for (const c of ctx.scope.listCtes()) out.add(c.nameLc ?? c.name.toLowerCase());
     }
     return out;
+}
+
+// Single-entry cache to avoid calling detectStringValueColumn twice per
+// completion event (once in matches, once in provide). Keyed on upTo identity.
+let _lastUpTo: string | undefined;
+let _lastDetect: ReturnType<typeof detectStringValueColumn> | undefined;
+
+function cachedDetect(upTo: string): ReturnType<typeof detectStringValueColumn> {
+    if (_lastUpTo === upTo) return _lastDetect!;
+    _lastUpTo = upTo;
+    _lastDetect = detectStringValueColumn(upTo);
+    return _lastDetect!;
 }
 
 export const distinctValueProvider: CompletionProvider = {
@@ -59,12 +72,11 @@ export const distinctValueProvider: CompletionProvider = {
     priority: 90,
 
     matches(_node, ctx) {
-        const det = detectStringValueColumn(ctx.upTo);
-        return det != null;
+        return cachedDetect(ctx.upTo) != null;
     },
 
     provide(_node, ctx): ProviderResult {
-        const det = detectStringValueColumn(ctx.upTo);
+        const det = cachedDetect(ctx.upTo);
         if (!det) return { items: [] };
         const referenced = visibleTableNames(ctx);
         if (ctx.runner) {
@@ -75,16 +87,12 @@ export const distinctValueProvider: CompletionProvider = {
         const stringStart = lastQuote + 1;
         const partial = ctx.upTo.slice(stringStart).toLowerCase();
         if (!values || values.length === 0) return { items: [] };
-        const items: Completion[] = values
-            .filter(v => v.toLowerCase().startsWith(partial))
-            .slice(0, 50)
-            .map(v => ({
-                label: v,
-                detail: 'value',
-                type: 'text',
-                apply: v + "'",
-                boost: 10,
-            }));
+        const items: Completion[] = [];
+        for (const v of values) {
+            if (partial && !v.toLowerCase().startsWith(partial)) continue;
+            items.push({ label: v, detail: 'value', type: 'text', apply: v + "'", boost: 10 });
+            if (items.length >= 50) break;
+        }
         return {
             items,
             from: stringStart,

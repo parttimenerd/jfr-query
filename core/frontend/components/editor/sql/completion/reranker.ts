@@ -16,6 +16,11 @@ import type { ProviderContext } from './types';
 import type { Node } from '../ast';
 import type { TableBinding } from '../scope';
 
+// Cache embeddingOrder → embRank Map keyed by the array reference itself.
+// The embedding order changes only when the async ranker fires (rare);
+// between keystrokes the same array is reused, so we avoid rebuilding the map.
+const _embRankCache = new WeakMap<string[], Map<string, number>>();
+
 const COLUMN_CONTEXT_CLAUSES = new Set([
     'select', 'where', 'having', 'groupBy', 'orderBy', 'on', 'qualify',
 ]);
@@ -57,32 +62,51 @@ export interface RerankInput {
     fnArg?: { fnName: string } | null;
     // Normalised embedding rank in [0,1]. Undefined when no cache hit.
     embedRankPct?: number;
+    // Pre-computed value-position flag (cursor after = / LIKE / BETWEEN / IS).
+    // Hoisted from per-item to per-batch to avoid repeated regex + slice.
+    inValuePos?: boolean;
+    // Pre-computed token prefix (ctx.token stripped of leading "$"/"" and lowercased).
+    tokenLc?: string;
+    // Pre-computed item.label.toLowerCase() — avoids N string allocations per batch.
+    labelLc?: string;
 }
 
 // Walk up from cursor node looking for an enclosing function-call slot.
 // Stop at query/script boundaries; bail (return null) if we cross an
 // `overClause` or `windowDef` first — those aren't real fn-arg slots.
+let _lastFnArgNode: Node | null = null;
+let _lastFnArgResult: { fnName: string } | null = null;
 export function inFunctionArg(cursorNode: Node): { fnName: string } | null {
+    if (cursorNode === _lastFnArgNode) return _lastFnArgResult;
     let n: Node | undefined = cursorNode;
+    let result: { fnName: string } | null = null;
     while (n) {
-        if (n.kind === 'overClause' || n.kind === 'windowDef') return null;
+        if (n.kind === 'overClause' || n.kind === 'windowDef') { result = null; break; }
         if (n.kind === 'functionCall') {
-            const idents = n.children.filter(c => c.kind === 'identifier');
-            return { fnName: idents[0]?.text.toUpperCase() ?? '' };
+            let firstIdent: Node | undefined;
+            for (const c of n.children) { if (c.kind === 'identifier') { firstIdent = c; break; } }
+            result = { fnName: firstIdent?.text.toUpperCase() ?? '' };
+            break;
         }
-        if (n.kind === 'query' || n.kind === 'script') return null;
+        if (n.kind === 'query' || n.kind === 'script') { result = null; break; }
         n = n.parent;
     }
-    return null;
+    _lastFnArgNode = cursorNode;
+    _lastFnArgResult = result;
+    return result;
 }
 
 // Build a per-call Map<labelLc, type> from the cursor scope's bound tables.
 // Falls back to scanning every scope when the cursor's own scope has no
 // tables — happens for the outer set-op wrapper query that owns the ORDER BY
 // clause but whose FROM lives in the inner SELECT.
+let _lastCtypeScope: object | null = null;
+let _lastCtypeMap: Map<string, string> | null = null;
 export function buildColumnTypeMap(ctx: ProviderContext): Map<string, string> {
+    const scopeKey = ctx.scope ?? ctx.scopes;
+    if (scopeKey === _lastCtypeScope && _lastCtypeMap) return _lastCtypeMap;
     const m = new Map<string, string>();
-    let tables: TableBinding[] = ctx.scope ? ctx.scope.listTables() : [];
+    let tables: readonly TableBinding[] = ctx.scope ? ctx.scope.listTables() : [];
     if (tables.length === 0) {
         for (const s of ctx.scopes.values()) {
             const t = s.listTables();
@@ -91,23 +115,26 @@ export function buildColumnTypeMap(ctx: ProviderContext): Map<string, string> {
     }
     for (const t of tables) {
         for (const c of t.columns) {
-            const key = c.name.toLowerCase();
+            const key = c.nameLc ?? c.name.toLowerCase();
             if (!m.has(key)) m.set(key, (c.type || '').toUpperCase());
         }
     }
+    _lastCtypeScope = scopeKey;
+    _lastCtypeMap = m;
     return m;
 }
-
-// Compute the integer boost-delta for a single (item, ctx). Pure; no I/O.
 export function structuralBoostDelta(input: RerankInput): number {
     const { item, ctx } = input;
     const type = item.type ?? '';
     const clause = ctx.enclosingClause;
+    const labelLc = input.labelLc !== undefined ? input.labelLc : item.label.toLowerCase();
     let d = 0;
 
     // In WHERE/HAVING, detect value position (cursor after = / LIKE / BETWEEN / IS).
     // When in value pos, suppress ALL column boosts — the user expects a literal.
-    const inValuePos = (clause === 'where' || clause === 'having') && AFTER_EQ_RE.test(ctx.upTo.slice(-80));
+    const inValuePos = input.inValuePos !== undefined
+        ? input.inValuePos
+        : (clause === 'where' || clause === 'having') && AFTER_EQ_RE.test(ctx.upTo.slice(-80));
 
     // Clause-shape match.
     if (clause && COLUMN_CONTEXT_CLAUSES.has(clause)) {
@@ -129,15 +156,13 @@ export function structuralBoostDelta(input: RerankInput): number {
 
     // Column-in-scope: skip when in value position (no column expected there).
     if (type === 'column' && !inValuePos) {
-        const labelLc = item.label.toLowerCase();
         if (typeMap && typeMap.has(labelLc)) {
             d += 4;
         } else if (!typeMap && ctx.scope) {
             // No precomputed map — scan listTables() directly.
-            for (const t of ctx.scope.listTables()) {
-                if (t.columns.some(c => c.name.toLowerCase() === labelLc)) {
-                    d += 4;
-                    break;
+            outer: for (const t of ctx.scope.listTables()) {
+                for (const c of t.columns) {
+                    if ((c.nameLc ?? c.name.toLowerCase()) === labelLc) { d += 4; break outer; }
                 }
             }
         }
@@ -146,13 +171,7 @@ export function structuralBoostDelta(input: RerankInput): number {
     // CTE-in-scope: both in FROM/JOIN AND inside column-ctx clauses
     // (qualified `cteName.col` resolution wins a small bonus).
     if (ctx.scope) {
-        const labelLc = item.label.toLowerCase();
-        for (const c of ctx.scope.listCtes()) {
-            if (c.name.toLowerCase() === labelLc) {
-                d += 3;
-                break;
-            }
-        }
+        if (ctx.scope.findCte(labelLc)) d += 3;
     }
 
     // Function-arg slot bonuses/penalties.
@@ -164,7 +183,7 @@ export function structuralBoostDelta(input: RerankInput): number {
 
     // Type-affinity bonuses (only when columnTypeMap is provided).
     if (type === 'column' && typeMap) {
-        const colType = typeMap.get(item.label.toLowerCase());
+        const colType = typeMap.get(labelLc);
         if (colType) {
             if (clause === 'orderBy' && TEMPORAL_TYPES.has(colType)) d += 2;
             if (fnArg && AGGREGATE_FNS.has(fnArg.fnName) && NUMERIC_TYPES.has(colType)) d += 2;
@@ -173,11 +192,9 @@ export function structuralBoostDelta(input: RerankInput): number {
     }
 
     // Prefix bonus (strip leading `$` / `"`).
-    if (ctx.token) {
-        const tk = ctx.token.replace(/^["$]+/, '').toLowerCase();
-        if (tk && item.label.toLowerCase().startsWith(tk)) {
-            d += 1;
-        }
+    const tokenLc = input.tokenLc !== undefined ? input.tokenLc : ctx.tokenLc.replace(/^\$+/, '');
+    if (tokenLc && labelLc.startsWith(tokenLc)) {
+        d += 1;
     }
 
     // Embedding nudge.
@@ -200,21 +217,40 @@ export function applyRerankBoosts(
     ctx: ProviderContext,
     embeddingOrder: string[] | null,
 ): Completion[] {
+    if (items.length === 0) return items;
     const columnTypeMap = buildColumnTypeMap(ctx);
     const fnArg = inFunctionArg(ctx.cursorNode);
-    const embRank = new Map<string, number>();
+    const clause = ctx.enclosingClause;
+    const inValuePos = (clause === 'where' || clause === 'having') &&
+        AFTER_EQ_RE.test(ctx.upTo.length > 80 ? ctx.upTo.slice(ctx.upTo.length - 80) : ctx.upTo);
+    const _rawTlc = ctx.tokenLc;
+    let _tlcStart = 0;
+    while (_tlcStart < _rawTlc.length && _rawTlc.charCodeAt(_tlcStart) === 36) _tlcStart++;
+    const tokenLc = _tlcStart === 0 ? _rawTlc : _rawTlc.slice(_tlcStart);
     const N = embeddingOrder ? Math.max(embeddingOrder.length - 1, 1) : 1;
+    let embRank: Map<string, number> | null = null;
     if (embeddingOrder) {
-        embeddingOrder.forEach((label, i) => embRank.set(label, i));
+        embRank = _embRankCache.get(embeddingOrder) ?? null;
+        if (!embRank) {
+            embRank = new Map<string, number>();
+            for (let i = 0; i < embeddingOrder.length; i++) embRank.set(embeddingOrder[i], i);
+            _embRankCache.set(embeddingOrder, embRank);
+        }
     }
 
-    return items.map(item => {
-        const r = embeddingOrder ? embRank.get(item.label) : undefined;
-        const embedRankPct = r === undefined ? undefined : r / N;
-        const delta = structuralBoostDelta({ item, ctx, columnTypeMap, fnArg, embedRankPct });
+    const out = new Array<Completion>(items.length);
+    const rinput: RerankInput = { item: items[0]!, ctx, columnTypeMap, fnArg, embedRankPct: undefined, inValuePos, tokenLc };
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i]!;
+        rinput.item = item;
+        rinput.labelLc = item.label.toLowerCase();
+        const r = embRank ? embRank.get(item.label) : undefined;
+        rinput.embedRankPct = r === undefined ? undefined : r / N;
+        const delta = structuralBoostDelta(rinput);
         const baseBoost = item.boost ?? 0;
-        return { ...item, boost: baseBoost + delta };
-    });
+        out[i] = { ...item, boost: baseBoost + delta };
+    }
+    return out;
 }
 
 // Devtools helper: returns a breakdown of each item's score components in
@@ -258,7 +294,7 @@ export function compareRanking(
     const embRank = new Map<string, number>();
     const N = embeddingOrder ? Math.max(embeddingOrder.length - 1, 1) : 1;
     if (embeddingOrder) {
-        embeddingOrder.forEach((label, i) => embRank.set(label, i));
+        for (let i = 0; i < embeddingOrder.length; i++) embRank.set(embeddingOrder[i], i);
     }
     const rows = items.map(item => {
         const r = embeddingOrder ? embRank.get(item.label) : undefined;

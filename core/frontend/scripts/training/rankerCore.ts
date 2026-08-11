@@ -31,6 +31,7 @@ const KEYWORDS = new Set([
     'WITH', 'AS', 'LIMIT', 'AND', 'OR', 'NOT', 'IN', 'EXISTS', 'CASE', 'WHEN',
     'THEN', 'ELSE', 'END', 'NULL', 'IS', 'LIKE', 'BETWEEN',
 ]);
+const KEYWORDS_LC = new Set([...KEYWORDS].map(k => k.toLowerCase()));
 
 // JFR domain: column name patterns that match known JFR columns.
 // Using regex over a pattern set is cheaper than a full Set<string> of 200+ names.
@@ -63,6 +64,7 @@ const PLOT_CLAUSES = new Set([
     'DOMAIN', 'LABEL', 'TYPE', 'FORMAT', 'NAME', 'DATASET', 'TOOLTIP', 'DISABLED',
     'MASTER', 'CLAMP', 'LET', 'SORT', 'LIMIT', 'HORIZONTAL',
 ]);
+const PLOT_CLAUSES_LC = new Set([...PLOT_CLAUSES].map(k => k.toLowerCase()));
 
 // Aggregate function names — if context has SUM/AVG/COUNT etc. the cursor is
 // likely in a numeric column slot.
@@ -71,32 +73,69 @@ const AGG_FN_RE = /\b(?:SUM|AVG|COUNT|MIN|MAX|MEDIAN|STDDEV|QUANTILE|VAR_POP|VAR
 // Value-position detection: cursor is after a comparison operator or keyword,
 // so we expect a literal/value, not a column name.
 const AFTER_EQ_RE = /[=<>!]\s*$|(?:LIKE|IN|BETWEEN|IS)\s*$/i;
+const _BARE_IDENT_RE = /^[a-z_][a-zA-Z0-9_]*$/;
+
+// Reusable feature buffer — avoids one heap allocation per candidate in scoreAll.
+// Single-threaded JS makes this safe; callers must score immediately after writing.
+const _featureBuf: RankerFeatures = {
+    prefixMatch: 0, substringMatch: 0, scenarioBoost: 0, lengthPenalty: 0,
+    isKeyword: 0, isColumn: 0, isFunction: 0, prefixDepth: 0, jfrHint: 0,
+    exactMatch: 0, isTable: 0, aggContext: 0, inValuePos: 0, isViewName: 0, plotClause: 0,
+};
 
 export function extractCursorWord(context: string, cursorPos: number): string {
     let i = cursorPos - 1;
-    while (i >= 0 && /[A-Za-z0-9_$]/.test(context[i]!)) i--;
+    while (i >= 0) {
+        const c = context.charCodeAt(i);
+        if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c === 95 || c === 36)) break;
+        i--;
+    }
     return context.slice(i + 1, cursorPos);
 }
 
-export function featurize(
-    context: string,
-    cursorPos: number,
+// Context-level features that are invariant across all candidates for a given
+// (context, cursorPos) pair. Pre-compute once and pass to featurizeCandidate.
+export interface ContextFeatures {
+    word: string;
+    inValuePos: boolean;
+    aggContext: boolean;
+}
+
+// Reusable ContextFeatures buffer for scoreAll path. Callers must not retain the reference.
+const _ctxBuf: ContextFeatures = { word: '', inValuePos: false, aggContext: false };
+
+export function extractContextFeatures(context: string, cursorPos: number): ContextFeatures {
+    const word = extractCursorWord(context, cursorPos).toLowerCase();
+    const contextBefore = context.slice(Math.max(0, cursorPos - 80), cursorPos);
+    return {
+        word,
+        inValuePos: AFTER_EQ_RE.test(contextBefore),
+        aggContext: AGG_FN_RE.test(contextBefore),
+    };
+}
+
+/** Like extractContextFeatures but writes into _ctxBuf — avoids allocation in scoreAll path. */
+export function extractContextFeaturesInto(context: string, cursorPos: number): ContextFeatures {
+    _ctxBuf.word = extractCursorWord(context, cursorPos).toLowerCase();
+    const start = Math.max(0, cursorPos - 80);
+    // Test regexes directly on a slice — one allocation vs two (contextBefore + object).
+    const slice = context.slice(start, cursorPos);
+    _ctxBuf.inValuePos = AFTER_EQ_RE.test(slice);
+    _ctxBuf.aggContext = AGG_FN_RE.test(slice);
+    return _ctxBuf;
+}
+
+export function featurizeCandidate(
+    cf: ContextFeatures,
     candidate: string,
     scenario: string,
 ): RankerFeatures {
-    const word = extractCursorWord(context, cursorPos).toLowerCase();
+    const { word, inValuePos, aggContext } = cf;
     const cand = candidate.toLowerCase();
-    const isKw = KEYWORDS.has(candidate.toUpperCase());
+    const isKw = KEYWORDS_LC.has(cand);
     const isFn = candidate.endsWith('(');
-    const isCol = !isKw && !isFn && /^[a-z_][a-zA-Z0-9_]*$/.test(candidate) &&
+    const isCol = !isKw && !isFn && _BARE_IDENT_RE.test(candidate) &&
         !JFR_TABLE_RE.test(candidate);
-
-    // Context before cursor (up to 80 chars) for aggregate/context detection.
-    const contextBefore = context.slice(Math.max(0, cursorPos - 80), cursorPos);
-
-    // Value-position: cursor appears after a comparison operator or keyword,
-    // meaning the user expects a literal/value, not a column name.
-    const inValuePos = AFTER_EQ_RE.test(contextBefore);
 
     let scenarioBoost = 0;
     if (scenario === 'where' && isCol && !inValuePos) scenarioBoost = 1;
@@ -105,10 +144,8 @@ export function featurize(
     else if (scenario === 'join' && isCol) scenarioBoost = 0.8;
     else if (scenario === 'cte' && isKw) scenarioBoost = 0.4;
     else if (scenario === 'dollar' && candidate.startsWith('$')) scenarioBoost = 1;
-    else if (scenario === 'plot' && PLOT_CLAUSES.has(candidate.toUpperCase())) scenarioBoost = 1.2;
+    else if (scenario === 'plot' && PLOT_CLAUSES_LC.has(cand)) scenarioBoost = 1.2;
 
-    // Prefix depth: how many chars of the cursor word match the candidate prefix.
-    // Normalized to [0,1] by dividing by 4 (≥4 chars = maximum signal).
     const matchLen = word
         ? (() => { let k = 0; while (k < word.length && k < cand.length && word[k] === cand[k]) k++; return k; })()
         : 0;
@@ -126,11 +163,62 @@ export function featurize(
         jfrHint: JFR_COLUMN_RE.test(candidate) ? 1 : 0,
         exactMatch: word && word === cand ? 1 : 0,
         isTable: JFR_TABLE_RE.test(candidate) ? 1 : 0,
-        aggContext: AGG_FN_RE.test(contextBefore) ? 1 : 0,
+        aggContext: aggContext ? 1 : 0,
         inValuePos: inValuePos ? 1 : 0,
         isViewName: VIEW_NAMES.has(candidate) ? 1 : 0,
-        plotClause: PLOT_CLAUSES.has(candidate.toUpperCase()) ? 1 : 0,
+        plotClause: PLOT_CLAUSES_LC.has(cand) ? 1 : 0,
     };
+}
+
+/** Write features into `_featureBuf` and return it. Call `score()` immediately; do not retain the reference. */
+export function featurizeCandidateInto(
+    cf: ContextFeatures,
+    candidate: string,
+    scenario: string,
+): RankerFeatures {
+    const { word, inValuePos, aggContext } = cf;
+    const cand = candidate.toLowerCase();
+    const isKw = KEYWORDS_LC.has(cand);
+    const isFn = candidate.endsWith('(');
+    const isCol = !isKw && !isFn && _BARE_IDENT_RE.test(candidate) && !JFR_TABLE_RE.test(candidate);
+
+    let scenarioBoost = 0;
+    if (scenario === 'where' && isCol && !inValuePos) scenarioBoost = 1;
+    else if (scenario === 'select' && isCol) scenarioBoost = 1;
+    else if (scenario === 'function-arg' && isCol) scenarioBoost = 0.5;
+    else if (scenario === 'join' && isCol) scenarioBoost = 0.8;
+    else if (scenario === 'cte' && isKw) scenarioBoost = 0.4;
+    else if (scenario === 'dollar' && candidate.startsWith('$')) scenarioBoost = 1;
+    else if (scenario === 'plot' && PLOT_CLAUSES_LC.has(cand)) scenarioBoost = 1.2;
+
+    let matchLen = 0;
+    if (word) { let k = 0; while (k < word.length && k < cand.length && word[k] === cand[k]) k++; matchLen = k; }
+
+    _featureBuf.prefixMatch = word && cand.startsWith(word) ? 1 : 0;
+    _featureBuf.substringMatch = word && cand.includes(word) ? 1 : 0;
+    _featureBuf.scenarioBoost = scenarioBoost;
+    _featureBuf.lengthPenalty = 1 / (1 + candidate.length / 20);
+    _featureBuf.isKeyword = isKw ? 1 : 0;
+    _featureBuf.isColumn = isCol ? 1 : 0;
+    _featureBuf.isFunction = isFn ? 1 : 0;
+    _featureBuf.prefixDepth = Math.min(matchLen / 4, 1);
+    _featureBuf.jfrHint = JFR_COLUMN_RE.test(candidate) ? 1 : 0;
+    _featureBuf.exactMatch = word && word === cand ? 1 : 0;
+    _featureBuf.isTable = JFR_TABLE_RE.test(candidate) ? 1 : 0;
+    _featureBuf.aggContext = aggContext ? 1 : 0;
+    _featureBuf.inValuePos = inValuePos ? 1 : 0;
+    _featureBuf.isViewName = VIEW_NAMES.has(candidate) ? 1 : 0;
+    _featureBuf.plotClause = PLOT_CLAUSES_LC.has(cand) ? 1 : 0;
+    return _featureBuf;
+}
+
+export function featurize(
+    context: string,
+    cursorPos: number,
+    candidate: string,
+    scenario: string,
+): RankerFeatures {
+    return featurizeCandidate(extractContextFeatures(context, cursorPos), candidate, scenario);
 }
 
 export function score(features: RankerFeatures, w: Weights): number {

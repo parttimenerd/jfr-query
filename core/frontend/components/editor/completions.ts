@@ -26,8 +26,21 @@ export interface SchemaForCompletion {
   tables: TableSchema[];
   views: ViewSchema[];
   macros: MacroSchema[];
-  tableMap: Map<string, TableSchema>;
-  viewMap: Map<string, ViewSchema>;
+  tableMap: ReadonlyMap<string, TableSchema>;
+  viewMap: ReadonlyMap<string, ViewSchema>;
+  macroMap?: ReadonlyMap<string, MacroSchema>;
+  /** Pre-lowercased table names (parallel to `tables`). Avoids per-keystroke toLowerCase calls. */
+  tablesLc?: string[];
+  /** Pre-lowercased view names (parallel to `views`). Avoids per-keystroke toLowerCase calls. */
+  viewsLc?: string[];
+  /** Pre-lowercased macro names (parallel to `macros`). Avoids per-keystroke toLowerCase calls. */
+  macrosLc?: string[];
+  /** Pre-built detail strings for table completions (parallel to `tables`). Avoids per-keystroke toLocaleString calls. */
+  tablesDetail?: string[];
+  /** Pre-built detail strings for macro completions (parallel to `macros`). Avoids per-keystroke join calls. */
+  macrosDetail?: string[];
+  /** Pre-built apply strings for macro completions (parallel to `macros`). Avoids per-keystroke template-literal allocation. */
+  macrosApply?: string[];
 }
 
 export interface SqlCompletionDeps {
@@ -52,8 +65,53 @@ export interface SqlCompletionDeps {
   onRankerUpdated?: () => void;
 }
 
-const rankCache = new Map<string, string[]>();
+const rankCache = new Map<string, Map<string, number>>();
 const RANK_CACHE_LIMIT = 80;
+
+// Reusable sets for completeClauseKey — avoids 3× new Set<string> per plot keystroke.
+const _usedSet = new Set<string>();
+const _requiredSet = new Set<string>();
+const _columnSet = new Set<string>();
+// Reusable seen-dedup set for builder helpers (buildVariableOptions, completeTailKey, buildQueryRefOptions).
+const _seenStr = new Set<string>();
+
+// Pre-built once from the static plotRegistry — avoids new Map+Array on every
+// top-level plot completion invocation (fires on every keystroke inside a plot block).
+const PLOT_TOP_LEVEL_OPTIONS: Completion[] = Object.values(plotRegistry).map(p => ({
+    label: p.name,
+    detail: p.description,
+    type: 'plotFn',
+    apply: p.template,
+    boost: 5,
+}));
+// Pre-built once — used for typo-recovery (Levenshtein closest match).
+const PLOT_NAMES: string[] = PLOT_TOP_LEVEL_OPTIONS.map(o => o.label);
+const PLOT_TOP_LEVEL_LABELS_LC: string[] = PLOT_TOP_LEVEL_OPTIONS.map(o => o.label.toLowerCase());
+// Pre-lowercased function names for fast startsWith filtering in hot completion path.
+const SQL_FUNCTIONS_LC: string[] = SQL_FUNCTIONS.map(f => f.name.toLowerCase());
+const SQL_KEYWORDS_TYPES_LC: string[] = SQL_KEYWORDS_TYPES.map(t => t.toLowerCase());
+const SQL_KEYWORDS_WINDOW_LC: string[] = SQL_KEYWORDS_WINDOW.map(k => k.toLowerCase());
+const SQL_KEYWORDS_AFTER_FROM_LC: string[] = SQL_KEYWORDS_AFTER_FROM.map(k => k.toLowerCase());
+const SQL_KEYWORDS_AFTER_GROUP_BY_LC: string[] = SQL_KEYWORDS_AFTER_GROUP_BY.map(k => k.toLowerCase());
+const SQL_KEYWORDS_AFTER_JOIN_ON_LC: string[] = SQL_KEYWORDS_AFTER_JOIN_ON.map(k => k.toLowerCase());
+const SQL_KEYWORDS_AFTER_ORDER_BY_LC: string[] = SQL_KEYWORDS_AFTER_ORDER_BY.map(k => k.toLowerCase());
+const SQL_KEYWORDS_AFTER_SELECT_LC: string[] = SQL_KEYWORDS_AFTER_SELECT.map(k => k.toLowerCase());
+const SQL_KEYWORDS_AFTER_WHERE_LC: string[] = SQL_KEYWORDS_AFTER_WHERE.map(k => k.toLowerCase());
+const SQL_KEYWORDS_AT_TOP_LC: string[] = SQL_KEYWORDS_AT_TOP.map(k => k.toLowerCase());
+
+// Cache clauseDef Maps per shape name — built lazily on first use, never rebuilt
+// since the shape registry is module-level and stable.
+const _clauseDefMapCache = new Map<string, Map<string, any>>();
+
+function getClauseDefMap(shape: string): Map<string, any> {
+  let m = _clauseDefMapCache.get(shape);
+  if (!m) {
+    const shapeDefs = getPlotRegistryAsShapes()[shape]?.clauseDefs ?? [];
+    m = new Map(shapeDefs.map((d: any) => [d.key, d]));
+    _clauseDefMapCache.set(shape, m);
+  }
+  return m;
+}
 
 // Cache the flattened all-columns fallback list keyed by schema object identity.
 // Avoids O(tables*cols) flatMap on every keystroke when no FROM clause is present.
@@ -63,17 +121,16 @@ let _fallbackCols: Array<{ name: string; type: string; sourceName: string }> = [
 function getFallbackCols(schema: SchemaForCompletion) {
   if (schema === _fallbackColsSchema) return _fallbackCols;
   _fallbackColsSchema = schema;
-  _fallbackCols = [
-    ...schema.tables.flatMap(t => t.columns.map(c => ({ name: c.name, type: c.type, sourceName: t.name }))),
-    ...schema.views.flatMap(v => v.columns.map(c => ({ name: c.name, type: c.type, sourceName: v.name }))),
-  ];
+  const cols: Array<{ name: string; type: string; sourceName: string }> = [];
+  for (const t of schema.tables) for (const c of t.columns) cols.push({ name: c.name, type: c.type, sourceName: t.name });
+  for (const v of schema.views) for (const c of v.columns) cols.push({ name: c.name, type: c.type, sourceName: v.name });
+  _fallbackCols = cols;
   return _fallbackCols;
 }
 
 function rerank(options: Completion[], context: string): Completion[] {
-  const cached = rankCache.get(context);
-  if (!cached) return options;
-  const order = new Map(cached.map((label, i) => [label, i]));
+  const order = rankCache.get(context);
+  if (!order) return options;
   return [...options].sort((a, b) => {
     const ra = order.get(a.label) ?? 999;
     const rb = order.get(b.label) ?? 999;
@@ -92,7 +149,7 @@ function kickRank(
   if (options.length < 3) return;
   const labels = options.map(o => o.label);
   deps.rankCandidates(contextKey, labels).then(ranked => {
-    rankCache.set(contextKey, ranked);
+    rankCache.set(contextKey, new Map(ranked.map((label, i) => [label, i])));
     while (rankCache.size > RANK_CACHE_LIMIT) {
       const first = rankCache.keys().next().value;
       if (first === undefined) break;
@@ -103,7 +160,14 @@ function kickRank(
 
 const wrap = (s: string, force: boolean): string => {
   if (force) return `"${s}"`;
-  return /^[a-zA-Z_]\w*$/.test(s) ? s : `"${s}"`;
+  if (!s) return `"${s}"`;
+  let c = s.charCodeAt(0);
+  if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95)) return `"${s}"`;
+  for (let i = 1; i < s.length; i++) {
+    c = s.charCodeAt(i);
+    if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c === 95)) return `"${s}"`;
+  }
+  return s;
 };
 
 function truncate(s: string, max: number): string {
@@ -137,7 +201,9 @@ function collectColumns(
   for (const alias of ctx.aliases.values()) addFromName(alias.target);
   // Bare references not yet aliased.
   for (const ref of ctx.referenced) {
-    if (![...ctx.aliases.values()].some(a => a.target.toLowerCase() === ref)) addFromName(ref);
+    let refIsAliased = false;
+    for (const a of ctx.aliases.values()) { if (a.target.toLowerCase() === ref) { refIsAliased = true; break; } }
+    if (!refIsAliased) addFromName(ref);
   }
   return out;
 }
@@ -153,7 +219,8 @@ function collectColumnsForQualifier(
   const out: Array<{ name: string; type: string; sourceName: string }> = [];
   const seen = new Set<string>();
   const push = (c: { name: string; type: string; sourceName: string }) => {
-    if (!seen.has(c.name.toLowerCase())) { seen.add(c.name.toLowerCase()); out.push(c); }
+    const low = c.name.toLowerCase();
+    if (!seen.has(low)) { seen.add(low); out.push(c); }
   };
   const tbl = schema.tableMap.get(targetName);
   if (tbl) tbl.columns.forEach(c => push({ name: c.name, type: c.type, sourceName: tbl.name }));
@@ -176,6 +243,21 @@ function keywordsForClause(clause: SqlClause): string[] {
     case 'group_by': return SQL_KEYWORDS_AFTER_GROUP_BY;
     case 'order_by': return SQL_KEYWORDS_AFTER_ORDER_BY;
     case null: return SQL_KEYWORDS_AT_TOP;
+    default: return [];
+  }
+}
+
+function keywordsForClauseLc(clause: SqlClause): string[] {
+  switch (clause) {
+    case 'select': return SQL_KEYWORDS_AFTER_SELECT_LC;
+    case 'from': return SQL_KEYWORDS_AFTER_FROM_LC;
+    case 'join': return SQL_KEYWORDS_AFTER_FROM_LC;
+    case 'where': return SQL_KEYWORDS_AFTER_WHERE_LC;
+    case 'having': return SQL_KEYWORDS_AFTER_WHERE_LC;
+    case 'on': return SQL_KEYWORDS_AFTER_JOIN_ON_LC;
+    case 'group_by': return SQL_KEYWORDS_AFTER_GROUP_BY_LC;
+    case 'order_by': return SQL_KEYWORDS_AFTER_ORDER_BY_LC;
+    case null: return SQL_KEYWORDS_AT_TOP_LC;
     default: return [];
   }
 }
@@ -265,15 +347,17 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
       const lc = (rest || '').toLowerCase().replace(/^"/, '');
       const isQuoted = (rest || '').startsWith('"');
       const cols = collectColumnsForQualifier(schema, sqlCtx, qual.toLowerCase());
-      const opts: Completion[] = cols
-        .filter(c => c.name.toLowerCase().startsWith(lc))
-        .map(c => ({
+      const opts: Completion[] = [];
+      for (const c of cols) {
+        if (lc && !c.name.toLowerCase().startsWith(lc)) continue;
+        opts.push({
           label: c.name,
           detail: c.type,
           type: 'column',
           apply: wrap(c.name, isQuoted),
           boost: 10,
-        }));
+        });
+      }
       if (opts.length === 0) return null;
       const dotIndex = (tokenMatch?.from ?? cx.pos) + qual.length + 1;
       return { from: dotIndex, options: opts, validFor: /^"?\w*$/ };
@@ -332,7 +416,8 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
     // --- Aliases as completions (e.g. typing `t` after `FROM RecordingInfo t, ...`) ---
     if (inColumnCtx || sqlCtx.clause === 'on') {
       for (const alias of sqlCtx.aliases.values()) {
-        if (!alias.alias.toLowerCase().startsWith(lc)) continue;
+        const alc = alias.alias.toLowerCase();
+        if (!alc.startsWith(lc)) continue;
         options.push({
           label: alias.alias,
           detail: `alias of ${alias.target}`,
@@ -348,9 +433,10 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
     const inTableCtx = sqlCtx.clause === 'from' || sqlCtx.clause === 'join' || sqlCtx.clause === null || sqlCtx.clause === 'with';
     if (inTableCtx || !inColumnCtx) {
       for (const t of schema.tables) {
-        if (!t.name.toLowerCase().startsWith(lc)) continue;
-        if (seenObjects.has(t.name.toLowerCase())) continue;
-        seenObjects.add(t.name.toLowerCase());
+        const tlc = t.name.toLowerCase();
+        if (!tlc.startsWith(lc)) continue;
+        if (seenObjects.has(tlc)) continue;
+        seenObjects.add(tlc);
         options.push({
           label: t.name,
           detail: t.rowCount != null ? `table · ${t.rowCount.toLocaleString()} rows` : 'table',
@@ -360,9 +446,10 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
         });
       }
       for (const v of schema.views) {
-        if (!v.name.toLowerCase().startsWith(lc)) continue;
-        if (seenObjects.has(v.name.toLowerCase())) continue;
-        seenObjects.add(v.name.toLowerCase());
+        const vlc = v.name.toLowerCase();
+        if (!vlc.startsWith(lc)) continue;
+        if (seenObjects.has(vlc)) continue;
+        seenObjects.add(vlc);
         options.push({
           label: v.name,
           detail: 'view',
@@ -373,9 +460,10 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
       }
       // CTEs in this statement.
       for (const cte of sqlCtx.ctes.values()) {
-        if (!cte.name.toLowerCase().startsWith(lc)) continue;
-        if (seenObjects.has(cte.name.toLowerCase())) continue;
-        seenObjects.add(cte.name.toLowerCase());
+        const clc = cte.name.toLowerCase();
+        if (!clc.startsWith(lc)) continue;
+        if (seenObjects.has(clc)) continue;
+        seenObjects.add(clc);
         options.push({
           label: cte.name,
           detail: 'CTE (this query)',
@@ -388,7 +476,8 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
 
     // Macros (always — they're functions, valid in expressions).
     for (const m of schema.macros) {
-      if (!m.name.toLowerCase().startsWith(lc)) continue;
+      const mlc = m.name.toLowerCase();
+      if (!mlc.startsWith(lc)) continue;
       const sig = m.parameters.length > 0 ? `(${m.parameters.join(', ')})` : '()';
       options.push({
         label: m.name,
@@ -401,8 +490,9 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
 
     // --- Builtin SQL functions in expression contexts ---
     if (inColumnCtx) {
-      for (const fn of SQL_FUNCTIONS) {
-        if (!fn.name.toLowerCase().startsWith(lc)) continue;
+      for (let i = 0; i < SQL_FUNCTIONS.length; i++) {
+        const fn = SQL_FUNCTIONS[i];
+        if (!SQL_FUNCTIONS_LC[i].startsWith(lc)) continue;
         options.push({
           label: fn.name,
           detail: fn.detail,
@@ -416,30 +506,32 @@ export function sqlCompletionSource(deps: SqlCompletionDeps) {
 
     // --- CAST AS type completions: suggest data types after CAST(x AS or ::  ---
     if (/\bCAST\s*\([^)]*\bAS\s+$/i.test(upTo) || /\b::\s*$/.test(upTo)) {
-      for (const t of SQL_KEYWORDS_TYPES) {
-        if (lc && !t.toLowerCase().startsWith(lc)) continue;
-        options.push({ label: t, detail: 'type', type: 'keyword', boost: 1 });
+      for (let i = 0; i < SQL_KEYWORDS_TYPES.length; i++) {
+        if (lc && !SQL_KEYWORDS_TYPES_LC[i].startsWith(lc)) continue;
+        options.push({ label: SQL_KEYWORDS_TYPES[i], detail: 'type', type: 'keyword', boost: 1 });
       }
     }
 
     // --- OVER/PARTITION BY/WINDOW keywords after aggregate or ranking functions ---
     if (/\b(OVER|PARTITION)\s*$/i.test(upTo) || /\)\s+OVER\s*$/i.test(upTo)) {
-      for (const kw of SQL_KEYWORDS_WINDOW) {
-        if (lc && !kw.toLowerCase().startsWith(lc)) continue;
-        options.push({ label: kw, detail: 'window keyword', type: 'keyword', apply: kw + ' ', boost: 1 });
+      for (let i = 0; i < SQL_KEYWORDS_WINDOW.length; i++) {
+        if (lc && !SQL_KEYWORDS_WINDOW_LC[i].startsWith(lc)) continue;
+        options.push({ label: SQL_KEYWORDS_WINDOW[i], detail: 'window keyword', type: 'keyword', apply: SQL_KEYWORDS_WINDOW[i] + ' ', boost: 1 });
       }
     }
 
     // --- Keywords for the current clause ---
     const kws = keywordsForClause(sqlCtx.clause);
-    for (const kw of kws) {
-      const tag = kw.split(/\s+/)[0].toLowerCase();
-      if (lc && !tag.startsWith(lc) && !kw.toLowerCase().startsWith(lc)) continue;
+    const kwsLc = keywordsForClauseLc(sqlCtx.clause);
+    for (let i = 0; i < kws.length; i++) {
+      const kwLc = kwsLc[i];
+      const tagLc = kwLc.indexOf(' ') === -1 ? kwLc : kwLc.slice(0, kwLc.indexOf(' '));
+      if (lc && !tagLc.startsWith(lc) && !kwLc.startsWith(lc)) continue;
       options.push({
-        label: kw,
+        label: kws[i],
         detail: 'keyword',
         type: 'keyword',
-        apply: kw + ' ',
+        apply: kws[i] + ' ',
         boost: 0,
       });
     }
@@ -654,15 +746,18 @@ function buildConstOptions(
 ): Completion[] {
   const defined = expandPlotConstants(fullValue).constants;
   const lc = partial.toLowerCase();
-  return defined
-    .filter(c => c.name.toLowerCase().startsWith(lc))
-    .map<Completion>(c => ({
+  const out: Completion[] = [];
+  for (const c of defined) {
+    if (!c.name.toLowerCase().startsWith(lc)) continue;
+    out.push({
       label: `@${c.name}`,
       detail: `= ${truncate(c.value, 30)}`,
       type: 'variable',
       apply: `@${c.name}`,
       boost: 2,
-    }));
+    });
+  }
+  return out;
 }
 
 // ─── Per-hint dispatchers ────────────────────────────────────────────────────
@@ -694,15 +789,7 @@ function completeTopLevel(
   cursorPos: number,
 ): CompletionResult {
   const to = skipTrailingParens(doc, cursorPos);
-  const options: Completion[] = Array.from(
-    new Map(Object.values(plotRegistry).map(p => [p.name, p])).values()
-  ).map(p => ({
-    label: p.name,
-    detail: p.description,
-    type: 'plotFn',
-    apply: p.template,
-    boost: 5,
-  }));
+  const options: Completion[] = [...PLOT_TOP_LEVEL_OPTIONS];
   options.push({
     label: 'row',
     detail: 'horizontal composite of plots',
@@ -733,22 +820,24 @@ function completeClauseKey(
   partial: string,
 ): CompletionResult | null {
   const options: Completion[] = [];
-  const used = new Set(hint.usedKeys.map(k => k.toLowerCase()));
-  const required = new Set(hint.requiredMissing.map(k => k.toLowerCase()));
-  const columnSet = new Set(hint.columnKeys.map(k => k.toLowerCase()));
+  // All keys from the registry/parser are already lowercased — no need to call .toLowerCase().
+  _usedSet.clear(); for (const k of hint.usedKeys) _usedSet.add(k);
+  _requiredSet.clear(); for (const k of hint.requiredMissing) _requiredSet.add(k);
+  _columnSet.clear(); for (const k of hint.columnKeys) _columnSet.add(k);
+  const used = _usedSet;
+  const required = _requiredSet;
+  const columnSet = _columnSet;
   const lc = partial.toLowerCase();
 
   // Grab clauseDefs for this shape so we can surface description + type in info.
-  const shapeDefs = getPlotRegistryAsShapes()[hint.shape]?.clauseDefs ?? [];
-  const defByKey = new Map(shapeDefs.map(d => [d.key.toLowerCase(), d]));
+  const defByKey = getClauseDefMap(hint.shape);
 
   for (const key of hint.availableKeys) {
-    const lck = key.toLowerCase();
-    if (used.has(lck)) continue;
-    if (lc && !lck.startsWith(lc)) continue;
-    const isRequired = required.has(lck);
-    const isColumn = columnSet.has(lck);
-    const def = defByKey.get(lck);
+    if (used.has(key)) continue;
+    if (lc && !key.startsWith(lc)) continue;
+    const isRequired = required.has(key);
+    const isColumn = columnSet.has(key);
+    const def = defByKey.get(key);
     const typeHint = def?.paramType ? ` · ${def.paramType}` : '';
     const infoText = def?.description ?? null;
     options.push({
@@ -765,19 +854,18 @@ function completeClauseKey(
   // Typo-recovery: when the user typed 3+ chars that don't prefix any clause,
   // surface the closest match via Levenshtein (≤2 edits).
   if (options.length === 0 && lc.length >= 3) {
-    const allKeys = hint.availableKeys.filter(k => !used.has(k.toLowerCase()));
-    const m = closestMatch(lc, allKeys.map(k => k.toLowerCase()));
+    const allKeys = hint.availableKeys.filter(k => !used.has(k));
+    const m = closestMatch(lc, allKeys);
     if (m) {
-      const original = hint.availableKeys.find(k => k.toLowerCase() === m) ?? m;
       const isRequired = required.has(m);
       const isColumn = columnSet.has(m);
       const def = defByKey.get(m);
       options.push({
-        label: original,
+        label: m,
         detail: `did you mean? · ${isColumn ? 'column' : 'clause'}${isRequired ? ' · required' : ''}`,
         info: def?.description ?? undefined,
         type: 'plotParam',
-        apply: `${original}: `,
+        apply: `${m}: `,
         boost: 4,
       });
     }
@@ -801,8 +889,7 @@ function completeClauseValue(
   const stripQuote = lc.replace(/^"/, '');
 
   // Pull the clause description for use in `info` on column completions.
-  const shapeDefs = getPlotRegistryAsShapes()[hint.shape]?.clauseDefs ?? [];
-  const clauseInfo = shapeDefs.find(d => d.key.toLowerCase() === hint.clauseKey.toLowerCase())?.description;
+  const clauseInfo = getClauseDefMap(hint.shape).get(hint.clauseKey)?.description;
 
   // 1. Column completions when the slot is column-typed (or the registry
   //    couldn't tell — we still offer columns since most clause values accept
@@ -810,17 +897,30 @@ function completeClauseValue(
   const wantsColumns = hint.columnTyped || hint.paramType === 'column' ||
     hint.paramType === 'column[]' || hint.paramType.includes('column');
   if (wantsColumns) {
-    const cols = cachedColumns?.map(c => c.name) ?? dataKeys;
-    for (const name of cols) {
-      if (stripQuote && !name.toLowerCase().startsWith(stripQuote)) continue;
-      options.push({
-        label: name,
-        detail: detailForColumn(name, cachedColumns),
-        info: clauseInfo ?? undefined,
-        type: 'column',
-        apply: `"${name}"`,
-        boost: 5,
-      });
+    if (cachedColumns) {
+      for (const col of cachedColumns) {
+        if (stripQuote && !col.name.toLowerCase().startsWith(stripQuote)) continue;
+        options.push({
+          label: col.name,
+          detail: col.dataType ? `column · ${col.dataType}` : 'column',
+          info: clauseInfo ?? undefined,
+          type: 'column',
+          apply: `"${col.name}"`,
+          boost: 5,
+        });
+      }
+    } else {
+      for (const name of dataKeys) {
+        if (stripQuote && !name.toLowerCase().startsWith(stripQuote)) continue;
+        options.push({
+          label: name,
+          detail: 'column',
+          info: clauseInfo ?? undefined,
+          type: 'column',
+          apply: `"${name}"`,
+          boost: 5,
+        });
+      }
     }
   }
 
@@ -855,16 +955,17 @@ function completeTailKey(
 ): CompletionResult | null {
   // Merge parser-known tails with the full completion set so that tails parsed
   // as generic values (BRUSH, AXIS-X, PALETTE, etc.) still appear as suggestions.
-  const parserKnown = new Set(hint.allowedTails.map(t => t.toUpperCase()));
-  const merged = [
-    ...hint.allowedTails,
-    ...UPPERCASE_TAILS_DEFAULT.filter(t => !parserKnown.has(t.toUpperCase())),
-  ];
+  const parserKnown = _seenStr;
+  parserKnown.clear();
+  for (const t of hint.allowedTails) parserKnown.add(t.toUpperCase());
+  const merged: string[] = [...hint.allowedTails];
+  for (const t of UPPERCASE_TAILS_DEFAULT) { if (!parserKnown.has(t.toUpperCase())) merged.push(t); }
   const allowed = merged.length > 0 ? merged : [...UPPERCASE_TAILS_DEFAULT];
   const lc = partial.toLowerCase();
   const options: Completion[] = [];
   for (const kw of allowed) {
-    if (lc && !kw.toLowerCase().startsWith(lc)) continue;
+    const kwLc = kw.toLowerCase();
+    if (lc && !kwLc.startsWith(lc)) continue;
     const doc = plotClauseDocs[kw.toUpperCase()];
     options.push({
       label: kw,
@@ -1026,7 +1127,8 @@ function completeLinkArgs(
       // For LINK-Y / LINK-XY, offer the bare brush variable names declared via
       // BRUSH "$var" on other plots — not the .brush.lo/.hi accessor paths.
       const lc = partial.toLowerCase().replace(/^\$+/, '');
-      const seen = new Set<string>();
+      const seen = _seenStr;
+      seen.clear();
       for (const p of scope.namedPlots) {
         if (!p.brushVarName) continue;
         const varName = p.brushVarName;
@@ -1113,12 +1215,13 @@ function buildVariableOptions(
 ): Completion[] {
   const options: Completion[] = [];
   const lc = partial.toLowerCase().replace(/^\$+/, '');
-  const seen = new Set<string>();
+  const seen = _seenStr;
+  seen.clear();
   // Scope variables (carries typed metadata).
   if (scope) {
     for (const [name, v] of scope.variables) {
-      if (lc && !name.toLowerCase().startsWith(lc)) continue;
       const key = name.toLowerCase();
+      if (lc && !key.startsWith(lc)) continue;
       if (seen.has(key)) continue;
       seen.add(key);
       const prefix = v.scope === 'workspace' ? '$$' : '$';
@@ -1135,9 +1238,10 @@ function buildVariableOptions(
   const vars = deps.getVariables?.() ?? {};
   for (const [name, value] of Object.entries(vars)) {
     const bare = name.startsWith('$') ? name.replace(/^\$+/, '') : name;
-    if (lc && !bare.toLowerCase().startsWith(lc)) continue;
-    if (seen.has(bare.toLowerCase())) continue;
-    seen.add(bare.toLowerCase());
+    const bareLc = bare.toLowerCase();
+    if (lc && !bareLc.startsWith(lc)) continue;
+    if (seen.has(bareLc)) continue;
+    seen.add(bareLc);
     const prefix = name.startsWith('$$') ? '$$' : '$';
     options.push({
       label: `${prefix}${bare}`,
@@ -1177,11 +1281,12 @@ function buildVariableOptionsExcludingBrushPaths(
 ): Completion[] {
   const options: Completion[] = [];
   const lc = partial.toLowerCase().replace(/^\$+/, '');
-  const seen = new Set<string>();
+  const seen = _seenStr;
+  seen.clear();
   if (scope) {
     for (const [name, v] of scope.variables) {
-      if (lc && !name.toLowerCase().startsWith(lc)) continue;
       const key = name.toLowerCase();
+      if (lc && !key.startsWith(lc)) continue;
       if (seen.has(key)) continue;
       seen.add(key);
       const prefix = v.scope === 'workspace' ? '$$' : '$';
@@ -1197,9 +1302,10 @@ function buildVariableOptionsExcludingBrushPaths(
   const vars = deps.getVariables?.() ?? {};
   for (const [name, value] of Object.entries(vars)) {
     const bare = name.startsWith('$') ? name.replace(/^\$+/, '') : name;
-    if (lc && !bare.toLowerCase().startsWith(lc)) continue;
-    if (seen.has(bare.toLowerCase())) continue;
-    seen.add(bare.toLowerCase());
+    const bareLc = bare.toLowerCase();
+    if (lc && !bareLc.startsWith(lc)) continue;
+    if (seen.has(bareLc)) continue;
+    seen.add(bareLc);
     const prefix = name.startsWith('$$') ? '$$' : '$';
     options.push({
       label: `${prefix}${bare}`,
@@ -1240,7 +1346,8 @@ function buildQueryRefOptions(
 ): Completion[] {
   const options: Completion[] = [];
   const lc = partial.toLowerCase().replace(/^#/, '');
-  const seen = new Set<string>();
+  const seen = _seenStr;
+  seen.clear();
   if (scope) {
     for (const q of scope.queryRefs) {
       const idxLabel = `#${q.index}`;
@@ -1416,18 +1523,9 @@ export function plotCompletionSource(deps: PlotCompletionDeps) {
       if (atTopLevelPos) {
         const lcShape = partial.text.toLowerCase();
         const options: Completion[] = [];
-        const seen = new Set<string>();
-        for (const p of Object.values(plotRegistry)) {
-          if (seen.has(p.name)) continue;
-          seen.add(p.name);
-          if (lcShape && !p.name.toLowerCase().startsWith(lcShape)) continue;
-          options.push({
-            label: p.name,
-            detail: p.description,
-            type: 'plotFn',
-            apply: p.template,
-            boost: 5,
-          });
+        for (let i = 0; i < PLOT_TOP_LEVEL_OPTIONS.length; i++) {
+          if (lcShape && !PLOT_TOP_LEVEL_LABELS_LC[i].startsWith(lcShape)) continue;
+          options.push(PLOT_TOP_LEVEL_OPTIONS[i]);
         }
         if (!lcShape || 'row'.startsWith(lcShape)) {
           options.push({ label: 'row', detail: 'horizontal composite of plots', type: 'keyword', apply: 'row { ', boost: 3 });
@@ -1443,8 +1541,7 @@ export function plotCompletionSource(deps: PlotCompletionDeps) {
         // ≤2). Require the first two chars to coincide to avoid wildly wrong
         // suggestions like "XXXX" → "BAR_CHART".
         if (options.length === 0 && lcShape.length >= 3) {
-          const names = Object.values(plotRegistry).map(p => p.name);
-          const m = closestMatch(lcShape, names);
+          const m = closestMatch(lcShape, PLOT_NAMES);
           if (m && m.slice(0, 2).toLowerCase() === lcShape.slice(0, 2).toLowerCase()) {
             const p = plotRegistry[m as keyof typeof plotRegistry];
             options.push({
@@ -1461,18 +1558,19 @@ export function plotCompletionSource(deps: PlotCompletionDeps) {
 
       if (partial.text === '') return null;
       // Generic column suggestions on a bare identifier (best-effort).
-      const cols = cachedColumns?.map(c => c.name) ?? dataKeys;
       const lc = partial.text.toLowerCase().replace(/^"/, '');
       const options: Completion[] = [];
-      for (const c of cols) {
-        if (!c.toLowerCase().startsWith(lc)) continue;
-        options.push({
-          label: c,
-          detail: detailForColumn(c, cachedColumns),
-          type: 'column',
-          apply: `"${c}"`,
-          boost: 1,
-        });
+      if (cachedColumns) {
+        for (const col of cachedColumns) {
+          const cLc = col.name.toLowerCase();
+          if (lc && !cLc.startsWith(lc)) continue;
+          options.push({ label: col.name, detail: col.dataType ?? 'column', type: 'column', apply: `"${col.name}"`, boost: 1 });
+        }
+      } else {
+        for (const c of dataKeys) {
+          if (lc && !c.toLowerCase().startsWith(lc)) continue;
+          options.push({ label: c, detail: 'column', type: 'column', apply: `"${c}"`, boost: 1 });
+        }
       }
       return options.length > 0 ? { from: partial.from, options } : null;
     }
@@ -1534,15 +1632,15 @@ function getPlotRegistryAsShapes(): import('./plot/annotators/shapeAnnotator').S
   for (const [upperName, def] of Object.entries(plotRegistry)) {
     const lower = SHAPE_MAP[upperName] ?? upperName.toLowerCase();
     const params = (def as any).params ?? [];
-    const validClauses = params.map((p: any) => p.name);
+    const validClauses = params.map((p: any) => p.name.toLowerCase());
     const columnClauses = params
       .filter((p: any) => typeof p.type === 'string' && p.type.includes('column'))
-      .map((p: any) => p.name);
+      .map((p: any) => p.name.toLowerCase());
     const requiredClauses = params
       .filter((p: any) => p.required)
-      .map((p: any) => p.name);
+      .map((p: any) => p.name.toLowerCase());
     const clauseDefs = params.map((p: any) => ({
-      key: p.name,
+      key: p.name.toLowerCase(),
       paramType: p.type,
       required: !!p.required,
       options: p.options,

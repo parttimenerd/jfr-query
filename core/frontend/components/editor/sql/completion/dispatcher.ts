@@ -49,11 +49,42 @@ const PROVIDERS: CompletionProvider[] = [
     overKeywordProvider,
     keywordProvider,
 ];
+// Pre-sort by priority descending so the per-keystroke dispatch loop
+// doesn't allocate a new sorted copy on every completion request.
+const PROVIDERS_BY_PRIORITY = PROVIDERS.slice().sort((a, b) => b.priority - a.priority);
 
 // Cache of MiniLM-ranked label orderings, keyed on the last 200 chars of
 // up-to-cursor text. Shared across all `sqlCompletionSource` instances.
 const rankCache = new Map<string, string[]>();
+// Reusable Map for deduplication in dispatchCompletion — cleared between calls
+// to avoid allocating a new Map<> on every keystroke.
+const _seenLabel = new Map<string, number>();
+
+// Pre-lowercased fallback keywords for fast prefix filtering.
+const _FALLBACK_KWS = [
+    'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'INNER JOIN',
+    'GROUP BY', 'ORDER BY', 'LIMIT', 'HAVING', 'WITH', 'UNION',
+    'INSERT INTO', 'UPDATE', 'DELETE FROM', 'CREATE TABLE', 'CREATE VIEW',
+];
+const _FALLBACK_KWS_LC = _FALLBACK_KWS.map(kw => kw.toLowerCase());
 const RANK_CACHE_LIMIT = 80;
+
+// Single-entry parse+annotate cache. When the completion source fires twice
+// for the same document (e.g., on embedding-rank update without typing), we
+// avoid re-parsing and re-annotating the identical source string.
+let _lastParseSource: string | null = null;
+let _lastParseSchema: SchemaForCompletion | null = null;
+let _lastParseResult: ReturnType<typeof parse> | null = null;
+let _lastAnnotateResult: ReturnType<typeof annotate> | null = null;
+// Single-entry cache for the contextKey slice — avoids repeated .slice+.toLowerCase()
+// when the embedding-rank update re-fires dispatchCompletion without a cursor move.
+let _lastUpTo: string | null = null;
+let _lastContextKey: string | null = null;
+// Single-entry cache for markCursorPath — avoids the full AST walk on re-queries
+// (e.g. embedding rank update) when root and cursor position are unchanged.
+let _lastCursorRoot: ReturnType<typeof parse>['root'] | null = null;
+let _lastCursorOffset: number = -1;
+let _lastCursorNode: ReturnType<typeof markCursorPath> | null = null;
 
 function rerank(options: Completion[], context: string, ctx: ProviderContext): Completion[] {
     // Write structural + embedding signals into each item's `boost` field.
@@ -96,7 +127,7 @@ export function dispatchCompletion(
     // The token regex doesn't match inside an open string literal (the quote
     // isn't a word char). Detect this case explicitly so the distinct-value
     // provider still fires.
-    const upToInit = cx.state.doc.toString().slice(0, cx.pos);
+    const upToInit = cx.state.doc.sliceString(0, cx.pos);
     const insideOpenString = countUnescapedQuotes(upToInit) % 2 === 1;
     if (!tokenMatch && !cx.explicit && !insideOpenString) return null;
     const token = tokenMatch ? tokenMatch.text : '';
@@ -106,14 +137,9 @@ export function dispatchCompletion(
     // When schema is absent and this is not a $variable token, fall back to a
     // minimal set of top-level SQL keywords so the editor is still helpful.
     if (!schema && !token.startsWith('$')) {
-        const fallbackKws = [
-            'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'INNER JOIN',
-            'GROUP BY', 'ORDER BY', 'LIMIT', 'HAVING', 'WITH', 'UNION',
-            'INSERT INTO', 'UPDATE', 'DELETE FROM', 'CREATE TABLE', 'CREATE VIEW',
-        ];
         const lc = token.toLowerCase();
-        const options = fallbackKws
-            .filter(kw => !lc || kw.toLowerCase().startsWith(lc))
+        const options = _FALLBACK_KWS
+            .filter((_, i) => !lc || _FALLBACK_KWS_LC[i].startsWith(lc))
             .map(kw => ({ label: kw, detail: 'keyword', type: 'keyword' as const, apply: kw + ' ', boost: 0 }));
         if (options.length === 0 && !cx.explicit) return null;
         return {
@@ -124,7 +150,7 @@ export function dispatchCompletion(
     }
 
     const source = cx.state.doc.toString();
-    const upTo = source.slice(0, cx.pos);
+    const upTo = upToInit; // reuse: upToInit === source.slice(0, cx.pos)
     const variables = deps.getVariables() || {};
     const runner = deps.getQueryRunner?.() ?? null;
 
@@ -135,15 +161,27 @@ export function dispatchCompletion(
             ? performance.now()
             : -1;
 
-    // Parse + annotate.
+    // Parse + annotate. Cache by source string — avoids re-parsing when
+    // the popup re-fires for the same document (e.g., embedding rank update).
     let parseResult;
     let annotateResult;
     try {
-        parseResult = parse(source);
-        annotateResult = annotate(parseResult.root, {
-            tables: schema?.tables ?? [],
-            views: schema?.views ?? [],
-        });
+        if (source === _lastParseSource && schema === _lastParseSchema && _lastParseResult && _lastAnnotateResult) {
+            parseResult = _lastParseResult;
+            annotateResult = _lastAnnotateResult;
+        } else {
+            parseResult = parse(source);
+            annotateResult = annotate(parseResult.root, {
+                tables: schema?.tables ?? [],
+                views: schema?.views ?? [],
+                tableMap: schema?.tableMap,
+                viewMap: schema?.viewMap,
+            });
+            _lastParseSource = source;
+            _lastParseSchema = schema;
+            _lastParseResult = parseResult;
+            _lastAnnotateResult = annotateResult;
+        }
     } catch {
         // Parser/annotator should never throw, but guard so we don't kill the
         // completion popup if they do.
@@ -151,7 +189,15 @@ export function dispatchCompletion(
     }
 
     const root = parseResult.root;
-    const cursor = markCursorPath(root, cx.pos);
+    let cursor: ReturnType<typeof markCursorPath>;
+    if (root === _lastCursorRoot && cx.pos === _lastCursorOffset && _lastCursorNode) {
+        cursor = _lastCursorNode;
+    } else {
+        cursor = markCursorPath(root, cx.pos);
+        _lastCursorRoot = root;
+        _lastCursorOffset = cx.pos;
+        _lastCursorNode = cursor;
+    }
 
     // Find enclosing query scope.
     let scope = null;
@@ -177,6 +223,7 @@ export function dispatchCompletion(
         scope,
         token,
         tokenFrom,
+        tokenLc: token.charCodeAt(0) === 34 ? token.slice(1).toLowerCase() : token.toLowerCase(),
         explicit: cx.explicit,
         enclosingClause: clauseAtOffset(root, cursor, cx.pos),
         onDistinctValuesReady: deps.onDistinctValuesReady,
@@ -214,9 +261,13 @@ export function dispatchCompletion(
     let bestFrom = tokenFrom;
     let bestPriority = -1;
     let bestValidFor: RegExp | undefined;
-    const seenLabel = new Map<string, Completion>();
+    // Map label → index in merged[] so duplicate resolution is O(1) per item
+    // instead of indexOf's O(n) linear scan. Reuse module-level Map to avoid
+    // per-keystroke allocation; clear before use.
+    const seenLabel = _seenLabel;
+    seenLabel.clear();
 
-    for (const p of PROVIDERS.slice().sort((a, b) => b.priority - a.priority)) {
+    for (const p of PROVIDERS_BY_PRIORITY) {
         let matches = false;
         try { matches = p.matches(cursor, ctx); } catch { matches = false; }
         if (!matches) continue;
@@ -231,18 +282,16 @@ export function dispatchCompletion(
         }
 
         for (const item of result.items) {
-            const existing = seenLabel.get(item.label);
-            if (!existing) {
-                seenLabel.set(item.label, item);
+            const existingIdx = seenLabel.get(item.label);
+            if (existingIdx === undefined) {
+                seenLabel.set(item.label, merged.length);
                 merged.push(item);
             } else {
                 // Keep the higher-boost duplicate.
-                const eb = existing.boost ?? 0;
+                const eb = merged[existingIdx].boost ?? 0;
                 const nb = item.boost ?? 0;
                 if (nb > eb) {
-                    const idx = merged.indexOf(existing);
-                    if (idx >= 0) merged[idx] = item;
-                    seenLabel.set(item.label, item);
+                    merged[existingIdx] = item;
                 }
             }
         }
@@ -253,7 +302,14 @@ export function dispatchCompletion(
     // Distinct-value and qualified-column providers may want a different
     // `from`. If the winning provider was one of those, `bestFrom` is already
     // set to its preferred position.
-    const contextKey = upTo.slice(Math.max(0, upTo.length - 200)).toLowerCase();
+    let contextKey: string;
+    if (upTo === _lastUpTo && _lastContextKey !== null) {
+        contextKey = _lastContextKey;
+    } else {
+        contextKey = upTo.slice(Math.max(0, upTo.length - 200)).toLowerCase();
+        _lastUpTo = upTo;
+        _lastContextKey = contextKey;
+    }
     kickRank(deps, contextKey, merged);
     const ordered = rerank(merged, contextKey, ctx);
 
@@ -294,6 +350,16 @@ export function dispatchCompletion(
 // Exposed for tests so they can flush rerank state between cases.
 export function _clearRankCacheForTests(): void {
     rankCache.clear();
+    _seenLabel.clear();
+    _lastParseSource = null;
+    _lastParseSchema = null;
+    _lastParseResult = null;
+    _lastAnnotateResult = null;
+    _lastUpTo = null;
+    _lastContextKey = null;
+    _lastCursorRoot = null;
+    _lastCursorOffset = -1;
+    _lastCursorNode = null;
 }
 
 /**
@@ -309,29 +375,19 @@ function applyAutocompleteRankerBoosts(
     cursorPos: number,
     scenario: string,
 ): Completion[] {
-    if (!AutocompleteRanker.isAvailable() || items.length <= 1) return items;
-    const scores = items.map(item =>
-        AutocompleteRanker.score(context, cursorPos, item.label, scenario),
-    );
-    const min = Math.min(...scores);
-    const max = Math.max(...scores);
-    const range = max - min;
-    if (range === 0) return items;
-    return items.map((item, i) => {
-        const normalized = (scores[i]! - min) / range;
-        const delta = Math.round(-2 + 4 * normalized);
-        return { ...item, boost: (item.boost ?? 0) + delta };
-    });
+    AutocompleteRanker.boostItemsInPlace(items, context, cursorPos, scenario);
+    return items;
 }
 
 function countUnescapedQuotes(s: string): number {
     // DuckDB uses '' (doubled single quote) to escape a literal quote inside a string.
     // Backslash is NOT a quote escape in DuckDB SQL — treat every ' as significant,
     // but skip '' pairs so they don't flip the odd/even parity.
+    // Use charCodeAt (39 = "'") to avoid per-character string boxing.
     let n = 0;
     for (let i = 0; i < s.length; i++) {
-        if (s[i] === "'") {
-            if (s[i + 1] === "'") { i++; continue; }
+        if (s.charCodeAt(i) === 39) {
+            if (s.charCodeAt(i + 1) === 39) { i++; continue; }
             n++;
         }
     }

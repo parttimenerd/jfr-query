@@ -2,10 +2,16 @@
 
 import type { Completion } from '@codemirror/autocomplete';
 import type { CompletionProvider, ProviderContext } from '../types';
-import type { Node, NodeKind } from '../../ast';
-import { findEnclosing, findEnclosingAny, walk } from '../../ast';
+import type { Node } from '../../ast';
+import { findEnclosing } from '../../ast';
 import { Scope, type TableBinding } from '../../scope';
-import { wrap, truncate, clauseAtCursor, VALID_FOR_IDENT, VALID_FOR_DOLLAR } from '../helpers';
+import { wrap, truncate, VALID_FOR_IDENT, VALID_FOR_DOLLAR } from '../helpers';
+
+const SCAN_ALIAS_RE = /\b(?:FROM|JOIN)\s+([A-Za-z_]\w*|"[^"]+")(?:\s+(?:AS\s+)?([A-Za-z_]\w*))?/gi;
+
+// Reusable sets for deduplication — cleared before each use. Single-threaded
+// JS makes this safe since all providers run synchronously within one dispatch.
+const _seenStr = new Set<string>();
 
 // Column-context clauses: places where columns are legitimate completions.
 function isColumnContext(ctx: ProviderContext): boolean {
@@ -36,7 +42,8 @@ export const variableProvider: CompletionProvider = {
         const isDoubleDollar = tk.startsWith('$$');
 
         const items: Completion[] = [];
-        const seen = new Set<string>();
+        const seen = _seenStr;
+        seen.clear();
         for (const [rawName, value] of Object.entries(ctx.variables)) {
             // Two storage conventions are in the wild:
             //   1) keys without `$`  (workspace `metadata.variables`, tests)
@@ -47,7 +54,7 @@ export const variableProvider: CompletionProvider = {
                 ? rawName.slice(2)
                 : rawName.startsWith('$') ? rawName.slice(1) : rawName;
             const candidate = isDoubleDollar ? `$$${name}` : `$${name}`;
-            if (!candidate.toLowerCase().startsWith(lc)) continue;
+            if (lc && !candidate.toLowerCase().startsWith(lc)) continue;
             if (seen.has(candidate)) continue;
             seen.add(candidate);
             items.push({
@@ -96,17 +103,33 @@ export const qualifiedColumnProvider: CompletionProvider = {
             dotIndex = ctx.tokenFrom + q.length + 1;
         } else if (node.kind === 'qualifiedIdent') {
             // qualifiedIdent has children: [identifier, ., identifier?]
-            const idents = node.children.filter(c => c.kind === 'identifier');
-            if (idents.length >= 1) qualifier = idents[0].text;
-            if (idents.length >= 2) partial = idents[idents.length - 1].text;
-            // Position from = right side start if present, else after the dot.
-            const rightIdent = idents[1];
-            dotIndex = rightIdent ? rightIdent.from : ctx.pos;
+            let firstIdent: Node | undefined;
+            let lastIdent: Node | undefined;
+            let identCount = 0;
+            for (const c of node.children) {
+                if (c.kind === 'identifier') {
+                    if (!firstIdent) firstIdent = c;
+                    lastIdent = c;
+                    identCount++;
+                }
+            }
+            if (identCount >= 1) qualifier = firstIdent!.text;
+            if (identCount >= 2) partial = lastIdent!.text;
+            dotIndex = identCount >= 2 ? lastIdent!.from : ctx.pos;
         } else if (node.parent?.kind === 'qualifiedIdent') {
             const parent = node.parent;
-            const idents = parent.children.filter(c => c.kind === 'identifier');
-            if (idents.length >= 1) qualifier = idents[0].text;
-            if (idents.length === 2 && idents[1] === node) {
+            let firstIdent: Node | undefined;
+            let identCount = 0;
+            let secondIdent: Node | undefined;
+            for (const c of parent.children) {
+                if (c.kind === 'identifier') {
+                    if (!firstIdent) firstIdent = c;
+                    else if (!secondIdent) secondIdent = c;
+                    identCount++;
+                }
+            }
+            if (identCount >= 1) qualifier = firstIdent!.text;
+            if (identCount === 2 && secondIdent === node) {
                 partial = node.text;
                 dotIndex = node.from;
             }
@@ -115,16 +138,13 @@ export const qualifiedColumnProvider: CompletionProvider = {
         if (!qualifier) return { items: [] };
 
         const cols = collectColumnsForQualifier(ctx, qualifier);
-        const lcPartial = partial.toLowerCase().replace(/^"/, '');
-        const items: Completion[] = cols
-            .filter(c => c.name.toLowerCase().startsWith(lcPartial))
-            .map(c => ({
-                label: c.name,
-                detail: c.type,
-                type: 'column',
-                apply: wrap(c.name, isQuoted),
-                boost: 10,
-            }));
+        // Strip leading `"` if partial is a quoted ident, then lowercase.
+        const lcPartial = partial.charCodeAt(0) === 34 ? partial.slice(1).toLowerCase() : partial.toLowerCase();
+        const items: Completion[] = [];
+        for (const c of cols) {
+            if (lcPartial && !(c.nameLc ?? c.name.toLowerCase()).startsWith(lcPartial)) continue;
+            items.push({ label: c.name, detail: c.type, type: 'column', apply: wrap(c.name, isQuoted), boost: 10 });
+        }
         return {
             items,
             from: dotIndex,
@@ -136,14 +156,14 @@ export const qualifiedColumnProvider: CompletionProvider = {
 function collectColumnsForQualifier(
     ctx: ProviderContext,
     qualifier: string,
-): Array<{ name: string; type: string; sourceName: string }> {
-    const out: Array<{ name: string; type: string; sourceName: string }> = [];
+): Array<{ name: string; type: string; sourceName: string; nameLc?: string }> {
+    const out: Array<{ name: string; type: string; sourceName: string; nameLc?: string }> = [];
     const qkey = qualifier.toLowerCase();
     if (ctx.scope) {
         for (const t of ctx.scope.listTables()) {
-            if (t.alias.toLowerCase() === qkey || t.target.toLowerCase() === qkey) {
+            if ((t.aliasLc ?? t.alias.toLowerCase()) === qkey || (t.targetLc ?? t.target.toLowerCase()) === qkey) {
                 for (const c of t.columns) {
-                    out.push({ name: c.name, type: c.type, sourceName: t.alias });
+                    out.push({ name: c.name, type: c.type, sourceName: t.alias, nameLc: c.nameLc });
                 }
                 if (out.length > 0) return out;
             }
@@ -154,9 +174,9 @@ function collectColumnsForQualifier(
     // FROM lives in a sibling. Try every scope in the map.
     for (const s of ctx.scopes.values()) {
         for (const t of s.listTables()) {
-            if (t.alias.toLowerCase() === qkey || t.target.toLowerCase() === qkey) {
+            if ((t.aliasLc ?? t.alias.toLowerCase()) === qkey || (t.targetLc ?? t.target.toLowerCase()) === qkey) {
                 for (const c of t.columns) {
-                    out.push({ name: c.name, type: c.type, sourceName: t.alias });
+                    out.push({ name: c.name, type: c.type, sourceName: t.alias, nameLc: c.nameLc });
                 }
                 if (out.length > 0) return out;
             }
@@ -168,9 +188,9 @@ function collectColumnsForQualifier(
     // table yet.
     for (const s of ctx.scopes.values()) {
         for (const c of s.listCtes()) {
-            if (c.name.toLowerCase() === qkey) {
+            if ((c.nameLc ?? c.name.toLowerCase()) === qkey) {
                 for (const col of c.columns) {
-                    out.push({ name: col.name, type: col.type, sourceName: c.name });
+                    out.push({ name: col.name, type: col.type, sourceName: c.name, nameLc: col.nameLc });
                 }
                 if (out.length > 0) return out;
             }
@@ -184,14 +204,14 @@ function collectColumnsForQualifier(
         const tbl = ctx.schema.tableMap.get(aliasTarget.toLowerCase());
         if (tbl) {
             for (const c of tbl.columns) {
-                out.push({ name: c.name, type: c.type, sourceName: tbl.name });
+                out.push({ name: c.name, type: c.type, sourceName: tbl.name, nameLc: c.nameLc });
             }
             if (out.length > 0) return out;
         }
         const vw = ctx.schema.viewMap.get(aliasTarget.toLowerCase());
         if (vw) {
             for (const c of vw.columns) {
-                out.push({ name: c.name, type: c.type, sourceName: vw.name });
+                out.push({ name: c.name, type: c.type, sourceName: vw.name, nameLc: c.nameLc });
             }
             if (out.length > 0) return out;
         }
@@ -199,12 +219,12 @@ function collectColumnsForQualifier(
     // Fallback: schema by direct name (unaliased table).
     const tbl = ctx.schema.tableMap.get(qkey);
     if (tbl) {
-        for (const c of tbl.columns) out.push({ name: c.name, type: c.type, sourceName: tbl.name });
+        for (const c of tbl.columns) out.push({ name: c.name, type: c.type, sourceName: tbl.name, nameLc: c.nameLc });
         return out;
     }
     const vw = ctx.schema.viewMap.get(qkey);
     if (vw) {
-        for (const c of vw.columns) out.push({ name: c.name, type: c.type, sourceName: vw.name });
+        for (const c of vw.columns) out.push({ name: c.name, type: c.type, sourceName: vw.name, nameLc: c.nameLc });
     }
     return out;
 }
@@ -213,7 +233,8 @@ function collectColumnsForQualifier(
 // the qualifier and return the underlying table/view name. Used only as a
 // fallback when the AST parser couldn't recover the alias chain.
 function scanAliasFromSource(src: string, qualifier: string): string | null {
-    const re = /\b(?:FROM|JOIN)\s+([A-Za-z_]\w*|"[^"]+")(?:\s+(?:AS\s+)?([A-Za-z_]\w*))?/gi;
+    const re = SCAN_ALIAS_RE;
+    re.lastIndex = 0;
     let m: RegExpExecArray | null;
     const qkey = qualifier.toLowerCase();
     while ((m = re.exec(src)) !== null) {
@@ -244,73 +265,58 @@ export const columnInScopeProvider: CompletionProvider = {
 
     provide(node, ctx) {
         const isQuoted = ctx.token.startsWith('"');
-        const lc = ctx.token.toLowerCase().replace(/^"/, '');
-        const cols = collectVisibleColumns(ctx);
-        const seen = new Set<string>();
+        const lc = ctx.tokenLc;
         const items: Completion[] = [];
-        for (const c of cols) {
-            const key = c.name.toLowerCase();
-            if (seen.has(key)) continue;
-            if (lc && !key.startsWith(lc)) continue;
-            seen.add(key);
-            items.push({
-                label: c.name,
-                detail: `${c.type} · ${c.sourceName}`,
-                type: 'column',
-                apply: wrap(c.name, isQuoted),
-                boost: 5,
-            });
+
+        // Resolve visible tables (same logic as the former collectVisibleColumns, but
+        // iterate directly to skip the intermediate col-object array allocation).
+        let tables: readonly TableBinding[] = ctx.scope ? ctx.scope.ownTables() : [];
+        if (tables.length === 0 && ctx.scope) tables = ctx.scope.listTables();
+        if (tables.length === 0) {
+            for (const s of ctx.scopes.values()) {
+                const t = s.listTables();
+                if (t.length > 0) { tables = t; break; }
+            }
         }
-        return {
-            items,
-            from: ctx.tokenFrom,
-            validFor: VALID_FOR_IDENT,
-        };
+
+        if (tables.length === 1) {
+            // Fast path: single table — no dedup needed.
+            const t = tables[0];
+            for (const c of t.columns) {
+                const key = c.nameLc ?? c.name.toLowerCase();
+                if (lc && !key.startsWith(lc)) continue;
+                items.push({ label: c.name, detail: c.type + ' · ' + t.alias, type: 'column', apply: wrap(c.name, isQuoted), boost: 5 });
+            }
+        } else if (tables.length > 1) {
+            const seen = _seenStr;
+            seen.clear();
+            for (const t of tables) {
+                for (const c of t.columns) {
+                    const key = c.nameLc ?? c.name.toLowerCase();
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    if (lc && !key.startsWith(lc)) continue;
+                    items.push({ label: c.name, detail: c.type + ' · ' + t.alias, type: 'column', apply: wrap(c.name, isQuoted), boost: 5 });
+                }
+            }
+        } else {
+            // Empty-FROM fallback: offer every column from every table/view.
+            const seen = _seenStr;
+            seen.clear();
+            const addFallback = (srcName: string, c: { name: string; type: string; nameLc?: string }) => {
+                const key = c.nameLc ?? c.name.toLowerCase();
+                if (seen.has(key)) return;
+                seen.add(key);
+                if (lc && !key.startsWith(lc)) return;
+                items.push({ label: c.name, detail: c.type + ' · ' + srcName, type: 'column', apply: wrap(c.name, isQuoted), boost: 5 });
+            };
+            for (const t of ctx.schema.tables) for (const c of t.columns) addFallback(t.name, c);
+            for (const v of ctx.schema.views) for (const c of v.columns) addFallback(v.name, c);
+        }
+
+        return { items, from: ctx.tokenFrom, validFor: VALID_FOR_IDENT };
     },
 };
-
-function collectVisibleColumns(
-    ctx: ProviderContext,
-): Array<{ name: string; type: string; sourceName: string }> {
-    const out: Array<{ name: string; type: string; sourceName: string }> = [];
-    const seen = new Set<string>();
-    const add = (sourceName: string, name: string, type: string) => {
-        const key = name.toLowerCase();
-        if (seen.has(key)) return;
-        seen.add(key);
-        out.push({ name, type, sourceName });
-    };
-
-    // Prefer own-scope tables so derived-table subqueries don't leak the outer
-    // FROM's columns into the inner SELECT-list. Fall back to the ancestor
-    // chain (correlated subqueries) only when the own scope has no FROM yet.
-    let tables: TableBinding[] = ctx.scope ? ctx.scope.ownTables() : [];
-    if (tables.length === 0 && ctx.scope) {
-        tables = ctx.scope.listTables();
-    }
-    // Cross-scope fallback when the cursor's own scope has no tables.
-    if (tables.length === 0) {
-        for (const s of ctx.scopes.values()) {
-            const t = s.listTables();
-            if (t.length > 0) { tables = t; break; }
-        }
-    }
-    for (const t of tables) {
-        for (const c of t.columns) add(t.alias, c.name, c.type);
-    }
-
-    // Empty-FROM fallback (preserves old behavior): when no tables are in
-    // scope yet, offer every column from every table/view in the schema.
-    if (tables.length === 0) {
-        for (const t of ctx.schema.tables) {
-            for (const c of t.columns) add(t.name, c.name, c.type);
-        }
-        for (const v of ctx.schema.views) {
-            for (const c of v.columns) add(v.name, c.name, c.type);
-        }
-    }
-    return out;
-}
 
 // True if `node` is a definition site (CTE name, alias identifier, etc.) and
 // should not trigger column completion.
@@ -320,13 +326,14 @@ function isDefinitionSite(node: Node): boolean {
     if (!p) return false;
     if (p.kind === 'cte') {
         // First identifier child of a `cte` node is the CTE name.
-        const firstIdent = p.children.find(c => c.kind === 'identifier');
-        if (firstIdent === node) return true;
+        for (const c of p.children) { if (c.kind === 'identifier') return c === node; }
     }
     if (p.kind === 'tableRef') {
-        // Alias slot: second identifier child of a tableRef.
-        const idents = p.children.filter(c => c.kind === 'identifier');
-        if (idents.length >= 2 && idents[idents.length - 1] === node) return true;
+        // Alias slot: last identifier child of a tableRef when count >= 2.
+        let lastIdent: Node | undefined;
+        let identCount = 0;
+        for (const c of p.children) { if (c.kind === 'identifier') { lastIdent = c; identCount++; } }
+        if (identCount >= 2 && lastIdent === node) return true;
     }
     return false;
 }
@@ -346,20 +353,32 @@ export const aliasProvider: CompletionProvider = {
 
     provide(node, ctx) {
         if (!ctx.scope) return { items: [] };
-        const lc = ctx.token.toLowerCase().replace(/^"/, '');
+        const lc = ctx.tokenLc;
         const items: Completion[] = [];
-        const seen = new Set<string>();
         // Own-scope aliases first; ancestor aliases only when own scope is empty
         // (mirrors the column candidate logic so derived-table subqueries don't
         // see the outer FROM's aliases).
-        const aliasSource = ctx.scope.ownTables().length > 0
-            ? ctx.scope.ownTables()
-            : ctx.scope.listTables();
+        const ownT = ctx.scope.ownTables();
+        const aliasSource = ownT.length > 0 ? ownT : ctx.scope.listTables();
+
+        // Fast path: single table — no duplicate aliases possible, skip Set.
+        if (aliasSource.length <= 1) {
+            for (const t of aliasSource) {
+                if ((t.aliasLc ?? t.alias.toLowerCase()) === (t.targetLc ?? t.target.toLowerCase())) continue;
+                const key = t.aliasLc ?? t.alias.toLowerCase();
+                if (lc && !key.startsWith(lc)) continue;
+                items.push({ label: t.alias, detail: `alias of ${t.target}`, type: 'variable', apply: t.alias, boost: 4 });
+            }
+            return { items, from: ctx.tokenFrom, validFor: VALID_FOR_IDENT };
+        }
+
+        const seen = _seenStr;
+        seen.clear();
         for (const t of aliasSource) {
             // Only surface aliases that differ from the underlying target —
             // bare table references are already produced by the table provider.
-            if (t.alias.toLowerCase() === t.target.toLowerCase()) continue;
-            const key = t.alias.toLowerCase();
+            if ((t.aliasLc ?? t.alias.toLowerCase()) === (t.targetLc ?? t.target.toLowerCase())) continue;
+            const key = t.aliasLc ?? t.alias.toLowerCase();
             if (seen.has(key)) continue;
             if (lc && !key.startsWith(lc)) continue;
             seen.add(key);
@@ -400,16 +419,27 @@ export const selectAliasProvider: CompletionProvider = {
         if (!query) return { items: [] };
         // Some parses nest queries (e.g. ORDER BY hangs off an outer query
         // whose only meaningful child is an inner query holding the SELECT).
-        // Find the nearest selectClause descendant.
+        // Find the nearest selectClause descendant — check direct children first,
+        // then fall back to a shallow search through inner queries.
         let sel: Node | null = null;
-        walk(query, (n) => {
-            if (sel) return false;
-            if (n.kind === 'selectClause') { sel = n; return false; }
-        });
+        for (const c of query.children) {
+            if (c.kind === 'selectClause') { sel = c; break; }
+        }
+        if (!sel) {
+            // Try one level deeper (inner query child).
+            for (const c of query.children) {
+                if (c.kind !== 'query') continue;
+                for (const cc of c.children) {
+                    if (cc.kind === 'selectClause') { sel = cc; break; }
+                }
+                if (sel) break;
+            }
+        }
         if (!sel) return { items: [] };
-        const lc = ctx.token.toLowerCase().replace(/^"/, '');
+        const lc = ctx.tokenLc;
         const items: Completion[] = [];
-        const seen = new Set<string>();
+        const seen = _seenStr;
+        seen.clear();
         for (const proj of (sel as Node).children) {
             if (proj.kind !== 'projection') continue;
             // The parser places the alias as the LAST identifier child after
@@ -422,7 +452,11 @@ export const selectAliasProvider: CompletionProvider = {
             if (proj.children.length < 2) continue;
             const last = proj.children[proj.children.length - 1];
             if (last.kind !== 'identifier') continue;
-            const name = last.text.replace(/^"|"$/g, '');
+            // Strip surrounding double-quotes without a regex allocation.
+            const raw = last.text;
+            const name = raw.length >= 2 && raw.charCodeAt(0) === 34 && raw.charCodeAt(raw.length - 1) === 34
+                ? raw.slice(1, -1)
+                : raw;
             if (!name) continue;
             const key = name.toLowerCase();
             if (seen.has(key)) continue;
