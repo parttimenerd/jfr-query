@@ -358,8 +358,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, cellIndex, 
     // before this position changed.
     const precedingCellsRef = useRef<ReadonlyArray<NotebookCellData>>([]);
     const precedingCells = useMemo(() => {
-        const idx = allCells.findIndex(c => c.id === cell.id);
-        const slice = idx >= 0 ? allCells.slice(0, idx + 1) : allCells;
+        const slice = cellIndex >= 0 ? allCells.slice(0, cellIndex + 1) : allCells;
         const prev = precedingCellsRef.current;
         if (prev.length === slice.length) {
             let same = true;
@@ -370,7 +369,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, cellIndex, 
         }
         precedingCellsRef.current = slice;
         return slice;
-    }, [allCells, cell.id]);
+    }, [allCells, cellIndex]);
 
     const precedingCellVariablesRef = useRef<Record<string, string>>({});
     const precedingCellVariables = useMemo(() => {
@@ -617,11 +616,13 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, cellIndex, 
         const usage: Record<string, string[]> = {};
         for (const varKey of Object.keys(parsedVariables)) {
             const refs: string[] = [];
-            const pattern = new RegExp(`\\${varKey.replace(/\$/g, '\\$')}\\b`);
-            parsedSqlBlocks.forEach((sql, i) => { if (pattern.test(sql)) refs.push(`Query ${i + 1}`); });
-            // Use plotBlocksWithSqlIndex (dense, sequential) rather than plotBlocks
-            // (sparse, SQL-indexed) so "Plot N" labels match what the user sees (B-100).
-            parsedPlotBlocksWithSqlIndex.forEach((pb, i) => { if (pattern.test(pb.config)) refs.push(`Plot ${i + 1}`); });
+            // Variable names are $[A-Za-z_]\w* — no regex meta chars beyond $ (already literal).
+            // Use a simple word-boundary check: match varKey followed by a non-word char or end.
+            const needle = varKey; // e.g. "$threshold"
+            const followsWord = (s: string, pos: number) => { const c = s.charCodeAt(pos); return (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95; };
+            const hasMatch = (text: string) => { let i = 0; while ((i = text.indexOf(needle, i)) !== -1) { if (!followsWord(text, i + needle.length)) return true; i += needle.length; } return false; };
+            parsedSqlBlocks.forEach((sql, i) => { if (hasMatch(sql)) refs.push(`Query ${i + 1}`); });
+            parsedPlotBlocksWithSqlIndex.forEach((pb, i) => { if (hasMatch(pb.config)) refs.push(`Plot ${i + 1}`); });
             usage[varKey] = refs;
         }
         return usage;
@@ -1054,16 +1055,15 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, cellIndex, 
         setCtxMenu({ x: e.clientX, y: e.clientY });
     };
     const ctxMenuItems = useMemo<ContextMenuItem[]>(() => {
-        const cellIdx = allCells.findIndex(c => c.id === cell.id);
         return [
             { label: 'Duplicate cell', onClick: () => onDuplicateCell?.(cell.id), disabled: !onDuplicateCell },
             { isSeparator: true, label: '', onClick: () => {} },
-            { label: 'Move up', onClick: () => { if (cellIdx > 0) onMoveCell(cell.id, allCells[cellIdx - 1].id, 'before'); }, disabled: cellIdx <= 0 },
-            { label: 'Move down', onClick: () => { if (cellIdx < allCells.length - 1) onMoveCell(cell.id, allCells[cellIdx + 1].id, 'after'); }, disabled: cellIdx >= allCells.length - 1 },
+            { label: 'Move up', onClick: () => { if (cellIndex > 0) onMoveCell(cell.id, allCells[cellIndex - 1].id, 'before'); }, disabled: cellIndex <= 0 },
+            { label: 'Move down', onClick: () => { if (cellIndex < allCells.length - 1) onMoveCell(cell.id, allCells[cellIndex + 1].id, 'after'); }, disabled: cellIndex >= allCells.length - 1 },
             { isSeparator: true, label: '', onClick: () => {} },
             { label: 'Delete cell', onClick: () => onDeleteCell(cell.id) },
         ];
-    }, [cell.id, allCells, onDuplicateCell, onMoveCell, onDeleteCell]);
+    }, [cell.id, cellIndex, allCells, onDuplicateCell, onMoveCell, onDeleteCell]);
     // B-055: Alt+Up / Alt+Down on the drag handle (or the cell wrapper) moves
     // the cell one position up or down without requiring mouse drag.
     const handleCellKeyDown = (e: React.KeyboardEvent) => {
@@ -1072,7 +1072,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, cellIndex, 
         const target = e.target as HTMLElement;
         if (target.closest('input, textarea, [contenteditable="true"], .cm-editor')) return;
         e.preventDefault();
-        const idx = allCells.findIndex(c => c.id === cell.id);
+        const idx = cellIndex;
         if (e.key === 'ArrowUp' && idx > 0) {
             onMoveCell(cell.id, allCells[idx - 1].id, 'before');
         } else if (e.key === 'ArrowDown' && idx < allCells.length - 1) {
@@ -1135,10 +1135,9 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, cellIndex, 
         if (varName in parsedVariables) { focusLocalVar(); } else { handleCellVariableChange({...parsedVariables, [varName]: ''}); setTimeout(focusLocalVar, 100); }
     }, [onGlobalVariableClick, isVariablesCollapsed, parsedVariables, handleCellVariableChange]);
     
-    const cellIdx = allCells.findIndex(c => c.id === cell.id);
-    const cellAlias = computeCellHandle(cell, cellIdx);
+    const cellAlias = computeCellHandle(cell, cellIndex);
 
-    const currentRequires = parseCellDirective(cell.content)?.rest?.requires ?? '';
+    const currentRequires = cellDirective?.rest?.requires ?? '';
 
     const handleRequiresSave = useCallback((value: string) => {
         const trimmed = value.trim();
@@ -1320,7 +1319,7 @@ const NotebookCell: React.FC<NotebookCellProps> = ({ cell, allCells, cellIndex, 
                 />
 
                 {(() => {
-                    const d = parseCellDirective(cell.content);
+                    const d = cellDirective;
                     const inputType = d?.rest?.input as 'slider' | 'dropdown' | 'datetime' | 'text' | 'button' | undefined;
                     const varName = d?.rest?.var as string | undefined;
                     if (!inputType || !varName) return null;
