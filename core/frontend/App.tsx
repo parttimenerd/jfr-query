@@ -729,9 +729,20 @@ const App: React.FC = () => {
     // Register front-matter views and macros into DuckDB whenever they (or
     // notebook-scope variables) change. Variables are substituted into the SQL
     // before registration so that custom views/macros can reference them.
-    const customViewsKey = useMemo(() => JSON.stringify(metadata.views || []), [metadata.views]);
-    const customMacrosKey = useMemo(() => JSON.stringify(metadata.macros || []), [metadata.macros]);
-    const customVarsKey = useMemo(() => JSON.stringify(metadata.variables || {}), [metadata.variables]);
+    // Lightweight structural keys — compare names+sql without serializing the whole array.
+    // Views/macros are keyed by "name\0sql" pairs joined; variables by "k=v" pairs sorted.
+    const customViewsKey = useMemo(
+        () => (metadata.views || []).map(v => `${v.name}\0${v.sql}`).join('\x01'),
+        [metadata.views],
+    );
+    const customMacrosKey = useMemo(
+        () => (metadata.macros || []).map(m => `${m.name}\0${m.sql}`).join('\x01'),
+        [metadata.macros],
+    );
+    const customVarsKey = useMemo(
+        () => Object.entries(metadata.variables || {}).sort((a, b) => a[0] < b[0] ? -1 : 1).map(([k, v]) => `${k}=${v}`).join('\x01'),
+        [metadata.variables],
+    );
     const prevViewNamesRef = useRef<Set<string>>(new Set());
     const prevMacroNamesRef = useRef<Set<string>>(new Set());
     useEffect(() => {
@@ -745,43 +756,40 @@ const App: React.FC = () => {
             const currentViewNames = new Set((metadata.views || []).map(v => v.name).filter(Boolean));
             const currentMacroNames = new Set((metadata.macros || []).map(m => m.name).filter(Boolean));
 
-            // Drop views that were removed from metadata.
-            for (const name of prevViewNamesRef.current) {
-                if (!currentViewNames.has(name)) {
-                    try { await query(`DROP VIEW IF EXISTS "${name.replace(/"/g, '""')}"`); changed = true; } catch {}
-                }
-            }
-            // Drop macros that were removed from metadata.
-            for (const name of prevMacroNamesRef.current) {
-                if (!currentMacroNames.has(name)) {
-                    try { await query(`DROP MACRO IF EXISTS "${name.replace(/"/g, '""')}"`); changed = true; } catch {}
-                }
+            // Batch-drop views and macros removed from metadata.
+            const dropViewStmts = [...prevViewNamesRef.current]
+                .filter(n => !currentViewNames.has(n))
+                .map(n => `DROP VIEW IF EXISTS "${n.replace(/"/g, '""')}"`);
+            const dropMacroStmts = [...prevMacroNamesRef.current]
+                .filter(n => !currentMacroNames.has(n))
+                .map(n => `DROP MACRO IF EXISTS "${n.replace(/"/g, '""')}"`);
+            if (dropViewStmts.length + dropMacroStmts.length > 0) {
+                try { await query([...dropViewStmts, ...dropMacroStmts].join('; ')); changed = true; } catch {}
             }
 
             prevViewNamesRef.current = currentViewNames;
             prevMacroNamesRef.current = currentMacroNames;
 
-            // Topo-sort views by includes dependencies (simple DFS).
+            // Build all CREATE VIEW/MACRO statements in topo order and issue as one batch.
             const viewsInOrder = topoSort(metadata.views || [], 'views');
+            const createViewStmts: string[] = [];
             for (const v of viewsInOrder) {
                 if (!v.name || !v.sql) continue;
                 const sql = substituteVariables(v.sql, sqlVars);
-                try {
-                    let stmt: string;
-                    if (v.params && v.params.length > 0) {
-                        const paramList = v.params.map(p => `${p.name} ${p.type}${p.default !== undefined ? ` DEFAULT ${p.default}` : ''}`).join(', ');
-                        stmt = `CREATE OR REPLACE MACRO "${v.name.replace(/"/g, '""')}"(${paramList}) AS TABLE (${sql})`;
-                    } else {
-                        stmt = `CREATE OR REPLACE VIEW "${v.name.replace(/"/g, '""')}" AS ${sql}`;
-                    }
-                    await query(stmt);
-                    changed = true;
-                } catch (e) {
-                    console.warn(`Failed to register custom view "${v.name}":`, e);
+                if (v.params && v.params.length > 0) {
+                    const paramList = v.params.map(p => `${p.name} ${p.type}${p.default !== undefined ? ` DEFAULT ${p.default}` : ''}`).join(', ');
+                    createViewStmts.push(`CREATE OR REPLACE MACRO "${v.name.replace(/"/g, '""')}"(${paramList}) AS TABLE (${sql})`);
+                } else {
+                    createViewStmts.push(`CREATE OR REPLACE VIEW "${v.name.replace(/"/g, '""')}" AS ${sql}`);
                 }
+            }
+            if (createViewStmts.length > 0) {
+                try { await query(createViewStmts.join('; ')); changed = true; }
+                catch (e) { console.warn('Failed to register custom views:', e); }
             }
 
             const macrosInOrder = topoSort(metadata.macros || [], 'macros');
+            const createMacroStmts: string[] = [];
             for (const m of macrosInOrder) {
                 if (!m.name || !m.sql) continue;
                 const body = substituteVariables(m.sql, sqlVars);
@@ -790,13 +798,11 @@ const App: React.FC = () => {
                 // free identifiers to, so DuckDB will reject it. Skip silently to
                 // tolerate legacy notebook fixtures.
                 if (!/^\s*\(/.test(body)) continue;
-                const stmt = `CREATE OR REPLACE MACRO "${m.name.replace(/"/g, '""')}"${body}`;
-                try {
-                    await query(stmt);
-                    changed = true;
-                } catch (e) {
-                    console.warn(`Failed to register custom macro "${m.name}":`, e);
-                }
+                createMacroStmts.push(`CREATE OR REPLACE MACRO "${m.name.replace(/"/g, '""')}"${body}`);
+            }
+            if (createMacroStmts.length > 0) {
+                try { await query(createMacroStmts.join('; ')); changed = true; }
+                catch (e) { console.warn('Failed to register custom macros:', e); }
             }
 
             if (!cancelled && changed) {

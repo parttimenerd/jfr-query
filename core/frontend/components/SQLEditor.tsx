@@ -221,11 +221,11 @@ const SQLEditor: React.FC<EditorProps> = ({
 
   // Stable keys so combinedSchema only rebuilds on real changes.
   const metaViewsKey = useMemo(
-    () => JSON.stringify(metadata?.views?.map(v => [v.name, v.sql])),
+    () => metadata?.views?.map(v => `${v.name}\0${v.sql}`).join('\x01') ?? '',
     [metadata?.views],
   );
   const metaMacrosKey = useMemo(
-    () => JSON.stringify(metadata?.macros?.map(m => [m.name, m.sql])),
+    () => metadata?.macros?.map(m => `${m.name}\0${m.sql}`).join('\x01') ?? '',
     [metadata?.macros],
   );
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 
 interface VarbarProps {
     variables: Record<string, unknown>;
@@ -168,8 +168,10 @@ const VarPillPopover: React.FC<{
 // ---------------------------------------------------------------------------
 const Varbar: React.FC<VarbarProps> = ({ variables, onVariableChange, paused, onTogglePause }) => {
     const allKeys = Object.keys(variables);
-    const visibleEntries = Object.entries(variables).filter(
-        ([k, v]) => isVisible(v) && !isSubKey(k, allKeys)
+    const visibleEntries = useMemo(
+        () => Object.entries(variables).filter(([k, v]) => isVisible(v) && !isSubKey(k, allKeys)),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [variables],
     );
 
     const [activePopover, setActivePopover] = useState<{ name: string; anchor: HTMLElement } | null>(null);

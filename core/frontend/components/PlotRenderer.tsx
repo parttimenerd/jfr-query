@@ -1338,7 +1338,7 @@ const PlotRenderer: React.FC<PlotRendererProps> = ({ config, data, dataByQueryRe
 
                     } catch (e: any) {
                         const handleFix = (fixedCode: string) => {
-                            const newRows = JSON.parse(JSON.stringify(rows));
+                            const newRows = structuredClone(rows);
                             newRows[rowIndex][colIndex] = fixedCode + outerClauses;
                             stableOnApplyFix(newRows.map(row => row.join('; ')).join('\n\n\n'));
                         };

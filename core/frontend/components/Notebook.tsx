@@ -80,6 +80,14 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     // cellConditions: evaluate each cell's SQL predicate to decide visibility.
     const [cellVisibility, setCellVisibility] = useState<Record<string, boolean | null | undefined>>({});
 
+    // Cache parsed directives by cell content so parseCellDirective isn't called
+    // repeatedly in the render loop and effect loops on unrelated state changes.
+    const cellDirectives = useMemo(() => {
+        const map = new Map<string, ReturnType<typeof parseCellDirective>>();
+        for (const c of cells) map.set(c.id, parseCellDirective(c.content));
+        return map;
+    }, [cells]);
+
     // Names of cells that have a `requires` attribute. Used in render to treat
     // cells not yet in cellVisibility as null (pending) instead of undefined
     // (visible), preventing a one-render window where auto-run fires before the
@@ -89,11 +97,11 @@ const Notebook: React.FC<NotebookProps> = (props) => {
         for (let idx = 0; idx < cells.length; idx++) {
             const c = cells[idx];
             const name = cellHandle(c, idx);
-            const directive = parseCellDirective(c.content);
+            const directive = cellDirectives.get(c.id);
             if (directive?.rest?.requires?.trim()) set.add(name);
         }
         return set;
-    }, [cells]);
+    }, [cells, cellDirectives]);
 
     // Ref-stabilise onRunPreviewQuery so the visibility effect doesn't re-run
     // every time the underlying DuckDB query function gets a new reference
@@ -109,7 +117,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
             const c = cells[idx];
             const name = cellHandle(c, idx);
             if (effective[name]) continue; // notebook-level condition takes precedence
-            const directive = parseCellDirective(c.content);
+            const directive = cellDirectives.get(c.id);
             const reqAttr = directive?.rest?.requires;
             if (reqAttr?.trim()) {
                 effective[name] = requiresAttrToConditionSql(reqAttr);
@@ -250,7 +258,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                                     collapseTrigger={collapseTrigger}
                                     allCollapsed={allCollapsed}
                                     isAiFeatureActive={isAiFeatureActive}
-                                    initialCellCollapsed={cellCollapseStateRef.current.get(cell.id) ?? parseCellDirective(cell.content)?.collapsed}
+                                    initialCellCollapsed={cellCollapseStateRef.current.get(cell.id) ?? cellDirectives.get(cell.id)?.collapsed}
                                     isConditionallyHidden={isConditionallyHidden}
                                     onCellCollapseChange={handleCellCollapseChange}
                                     clearResultsTrigger={clearResultsTrigger}
