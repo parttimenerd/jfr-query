@@ -447,8 +447,11 @@ async function mergeChunkTables(
       structDescColsMap.set(base, descCols);
     }
 
-    // 3d. Topological sort so referenced structs are processed before referencing ones.
+    // 3d. Topological sort + connected-component decomposition.
+    // Structs within the same component must run serially (FK deps).
+    // Independent components (no FK edges between them) can run in parallel.
     const structOrder: string[] = [];
+    const componentId = new Map<string, number>();
     {
       const visited = new Set<string>();
       const visit = (base: string) => {
@@ -459,91 +462,116 @@ async function mergeChunkTables(
         structOrder.push(base);
       };
       for (const base of structTables) visit(base);
+
+      // Assign component IDs: two structs are in the same component if one FK-references the other
+      // (directly or transitively). We use union-find via a simple label-propagation pass.
+      let nextComp = 0;
+      const label = new Map<string, number>();
+      for (const base of structOrder) label.set(base, nextComp++);
+      // Merge labels for FK-connected pairs (bubble up to smaller label = root).
+      const getRoot = (b: string): number => label.get(b)!;
+      const unionLabels = (a: string, b: string) => {
+        const la = getRoot(a), lb = getRoot(b);
+        if (la === lb) return;
+        const minL = Math.min(la, lb);
+        // Rewrite all labels equal to the larger one to the smaller one.
+        for (const [k, v] of label) { if (v === la || v === lb) label.set(k, minL); }
+      };
+      for (const base of structOrder) {
+        const fks = structFkMap.get(base) ?? new Map();
+        for (const refBase of fks.values()) unionLabels(base, refBase);
+      }
+      for (const [base, lbl] of label) componentId.set(base, lbl);
     }
 
-    // 3e. Process struct tables sequentially in dependency order.
-    // (Cannot parallelise: later tables depend on _idmap of earlier tables.)
+    // Group structOrder (already topologically sorted) by component.
+    const componentGroups = new Map<number, string[]>();
     for (const base of structOrder) {
-      const workers = baseToWorkers.get(base)!;
-      const firstWorker = workers[0];
-      const reprTable = `chunk${firstWorker}_${base}`;
-      const naturalCols = structNaturalColsMap.get(reprTable) ?? [];
-      const fks = structFkMap.get(base) ?? new Map();
-      const descCols = structDescColsMap.get(base) ?? new Set<string>();
+      const cid = componentId.get(base)!;
+      if (!componentGroups.has(cid)) componentGroups.set(cid, []);
+      componentGroups.get(cid)!.push(base);
+    }
+    // Components with multiple structs need their own connection to avoid DuckDB serial lock.
+    const componentList = Array.from(componentGroups.values());
+    const extraStructConns = componentList.length > 1
+      ? await Promise.all(Array.from({ length: componentList.length - 1 }, () => db.connect()))
+      : [];
 
-      // Union only chunks that have this table.
-      const unionParts = workers.map((i) =>
-        `SELECT ${i} AS _worker, * FROM "chunk${i}_${base}"`
-      ).join(' UNION ALL ');
+    // 3e. Process each component's structs sequentially within the component, but
+    // run independent components in parallel — they share no FK dependencies.
+    try {
+      await Promise.all(componentList.map(async (bases, ci) => {
+        const c = ci === 0 ? conn : extraStructConns[ci - 1];
+        for (const base of bases) {
+          const workers = baseToWorkers.get(base)!;
+          const firstWorker = workers[0];
+          const reprTable = `chunk${firstWorker}_${base}`;
+          const naturalCols = structNaturalColsMap.get(reprTable) ?? [];
+          const fks = structFkMap.get(base) ?? new Map();
+          const descCols = structDescColsMap.get(base) ?? new Set<string>();
 
-      // Build the ORDER BY expression for DENSE_RANK.
-      // FK columns must use the already-remapped new_id from the referenced struct's idmap
-      // so that the same logical row gets the same rank regardless of chunk-local ID values.
-      // DESCRIPTION columns (volatile metadata like modifiers) are excluded from the rank key
-      // so that the same logical entity gets the same new_id even when metadata varies between chunks.
-      let rankFrom = `"_stage_${base}" s`;
-      const rankOrderCols: string[] = [];
-      for (const col of naturalCols) {
-        const bareCol = col.replace(/^"|"$/g, '');
-        // Skip DESCRIPTION columns — they are volatile and should not affect identity
-        if (descCols.has(bareCol)) continue;
-        const refBase = fks.get(bareCol);
-        if (refBase) {
-          const alias = `_idmap_ref_${bareCol}`;
-          rankFrom += ` LEFT JOIN "_idmap_${refBase}" ${alias} ON ${alias}._worker = s._worker AND ${alias}.old_id = s."${bareCol}"`;
-          rankOrderCols.push(`coalesce(${alias}.new_id, 0)`);
-        } else {
-          rankOrderCols.push(col);
+          const unionParts = workers.map((i) =>
+            `SELECT ${i} AS _worker, * FROM "chunk${i}_${base}"`
+          ).join(' UNION ALL ');
+
+          let rankFrom = `"_stage_${base}" s`;
+          const rankOrderCols: string[] = [];
+          for (const col of naturalCols) {
+            const bareCol = col.replace(/^"|"$/g, '');
+            if (descCols.has(bareCol)) continue;
+            const refBase = fks.get(bareCol);
+            if (refBase) {
+              const alias = `_idmap_ref_${bareCol}`;
+              rankFrom += ` LEFT JOIN "_idmap_${refBase}" ${alias} ON ${alias}._worker = s._worker AND ${alias}.old_id = s."${bareCol}"`;
+              rankOrderCols.push(`coalesce(${alias}.new_id, 0)`);
+            } else {
+              rankOrderCols.push(col);
+            }
+          }
+          const rankOrderBy = rankOrderCols.length > 0 ? rankOrderCols.join(', ') : 'NULL';
+
+          const selectCols = naturalCols.map(col => {
+            const bareCol = col.replace(/^"|"$/g, '');
+            const refBase = fks.get(bareCol);
+            if (refBase) return `coalesce(ANY_VALUE(_idmap_fk_${bareCol}.new_id), 0) AS "${bareCol}"`;
+            if (descCols.has(bareCol)) return `ANY_VALUE(s."${bareCol}") AS "${bareCol}"`;
+            return `ANY_VALUE(${col}) AS "${bareCol}"`;
+          }).join(', ');
+          let finalFrom = `"_stage_${base}" s JOIN "_idmap_${base}" m ON s._worker = m._worker AND s._id = m.old_id`;
+          for (const [col, refBase] of fks) {
+            finalFrom += ` LEFT JOIN "_idmap_${refBase}" _idmap_fk_${col} ON _idmap_fk_${col}._worker = s._worker AND _idmap_fk_${col}.old_id = s."${col}"`;
+          }
+
+          const stageSql = `CREATE TABLE "_stage_${base}" AS ${unionParts}`;
+          const idmapSql = `CREATE TABLE "_idmap_${base}" AS
+             SELECT s._worker, s._id AS old_id,
+               CASE WHEN s._id = 0 THEN 0
+                    ELSE DENSE_RANK() OVER (
+                      PARTITION BY (s._id = 0)::INT
+                      ORDER BY ${rankOrderBy}
+                    ) END AS new_id
+             FROM ${rankFrom}`;
+          const finalSql = `CREATE TABLE "${base}" AS
+             SELECT m.new_id AS _id, ${selectCols}
+             FROM ${finalFrom}
+             WHERE m.new_id != 0
+             GROUP BY m.new_id
+             ORDER BY _id`;
+
+          await c.query([stageSql, idmapSql, finalSql].join(';\n')).catch(async (e) => {
+            console.warn(`merge batch failed for ${base}, retrying sequentially:`, e);
+            await c.query(stageSql).catch((e2) => console.warn(`merge stage failed for ${base}:`, e2));
+            await c.query(idmapSql).catch((e2) => console.warn(`merge idmap failed for ${base}:`, e2));
+            await c.query(finalSql).catch((e2) => console.warn(`merge create ${base} failed:`, e2));
+          });
+          // Early-drop source tables — frees DuckDB heap incrementally.
+          // _idmap_ must stay alive for event-table FK remapping in step 4.
+          const srcDropParts = workers.map(wi => `"chunk${wi}_${base}"`).join(', ');
+          await c.query(`DROP TABLE IF EXISTS ${srcDropParts}, "_stage_${base}"`).catch(() => {});
         }
-      }
-      const rankOrderBy = rankOrderCols.length > 0 ? rankOrderCols.join(', ') : 'NULL';
-
-      const selectCols = naturalCols.map(col => {
-        const bareCol = col.replace(/^"|"$/g, '');
-        const refBase = fks.get(bareCol);
-        if (refBase) {
-          return `coalesce(ANY_VALUE(_idmap_fk_${bareCol}.new_id), 0) AS "${bareCol}"`;
-        }
-        if (descCols.has(bareCol)) {
-          return `ANY_VALUE(s."${bareCol}") AS "${bareCol}"`;
-        }
-        return `ANY_VALUE(${col}) AS "${bareCol}"`;
-      }).join(', ');
-      let finalFrom = `"_stage_${base}" s JOIN "_idmap_${base}" m ON s._worker = m._worker AND s._id = m.old_id`;
-      for (const [col, refBase] of fks) {
-        finalFrom += ` LEFT JOIN "_idmap_${refBase}" _idmap_fk_${col} ON _idmap_fk_${col}._worker = s._worker AND _idmap_fk_${col}.old_id = s."${col}"`;
-      }
-
-      // Batch all three CREATE TABLE statements for this struct into one round-trip.
-      // DuckDB executes multi-statement SQL in order, so _idmap_ can reference _stage_
-      // and the final table can reference both. Falls back to sequential on error.
-      const stageSql = `CREATE TABLE "_stage_${base}" AS ${unionParts}`;
-      const idmapSql = `CREATE TABLE "_idmap_${base}" AS
-         SELECT s._worker, s._id AS old_id,
-           CASE WHEN s._id = 0 THEN 0
-                ELSE DENSE_RANK() OVER (
-                  PARTITION BY (s._id = 0)::INT
-                  ORDER BY ${rankOrderBy}
-                ) END AS new_id
-         FROM ${rankFrom}`;
-      const finalSql = `CREATE TABLE "${base}" AS
-         SELECT m.new_id AS _id, ${selectCols}
-         FROM ${finalFrom}
-         WHERE m.new_id != 0
-         GROUP BY m.new_id
-         ORDER BY _id`;
-
-      await conn.query([stageSql, idmapSql, finalSql].join(';\n')).catch(async (e) => {
-        console.warn(`merge batch failed for ${base}, retrying sequentially:`, e);
-        await conn.query(stageSql).catch((e2) => console.warn(`merge stage failed for ${base}:`, e2));
-        await conn.query(idmapSql).catch((e2) => console.warn(`merge idmap failed for ${base}:`, e2));
-        await conn.query(finalSql).catch((e2) => console.warn(`merge create ${base} failed:`, e2));
-      });
-      // Early-drop source tables once this struct is fully merged — frees DuckDB heap
-      // incrementally during the serial struct pass instead of waiting for the final cleanup.
-      // _idmap_ must stay alive for event-table FK remapping in step 4.
-      const srcDropParts = workers.map(wi => `"chunk${wi}_${base}"`).join(', ');
-      await conn.query(`DROP TABLE IF EXISTS ${srcDropParts}, "_stage_${base}"`).catch(() => {});
+      }));
+    } finally {
+      for (const c of extraStructConns) c.close().catch(() => {});
     }
 
     // 4. Event tables in parallel — runs only after all struct tables are done
@@ -1119,6 +1147,7 @@ export async function loadJfrIntoWasm(
 
   onProgress?.(0.01);
   onPhase?.('Warming up engine…');
+  const tJava0 = performance.now();
   const [wasmModule, importerSrc] = await Promise.all([getPrecompiledModule(), getImporterSrc()]);
   const tWasmCompile = performance.now();
   console.log(`[jfr-perf] WASM compile: ${(tWasmCompile - tJava0).toFixed(0)}ms`);
