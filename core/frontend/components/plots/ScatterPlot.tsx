@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React, { useContext, useMemo } from 'react';
 import { ComposedChart, ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList, Line } from 'recharts';
 import { PlotRegistration, PlotParameter, withCommonParams } from './plotTypes';
 import { SettingsContext } from '../../context/SettingsContext';
@@ -34,6 +34,15 @@ const params: PlotParameter[] = [
 const parseConfig = createConfigParser<ScatterPlotConfig>(buildParserSpec(params));
 
 const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], domainX?: [any, any], domainY?: [number, number], isAnimationActive?: boolean, animationDuration?: number, clauses?: ParsedPlotCall }> = ({ config, data, domainX, domainY, isAnimationActive, animationDuration, clauses }) => {
+  const SCATTER_SOFT_CAP = 5000;
+  // Deterministic uniform-stride sample when data exceeds the render cap.
+  const cappedData = useMemo(() => {
+    if (data.length <= SCATTER_SOFT_CAP) return data;
+    const step = data.length / SCATTER_SOFT_CAP;
+    const out: any[] = [];
+    for (let i = 0; i < SCATTER_SOFT_CAP; i++) out.push(data[Math.floor(i * step)]);
+    return out;
+  }, [data]);
   const { settings } = useContext(SettingsContext);
   const numberFormatter = (val: any) => formatNumber(val, settings.decimalPlaces);
   const yIsDuration = isDurationColumnName(config.y ?? '') && sampleLooksLikeNanoseconds(data, [config.y]);
@@ -48,17 +57,17 @@ const ScatterPlotComponent: React.FC<{ config: ScatterPlotConfig; data: any[], d
   const yLabelFromClause = clauses?.axisY?.label;
 
   // Detect whether the X column contains timestamp values.
-  const allCols = data.length > 0 ? Object.keys(data[0]) : [];
+  const allCols = cappedData.length > 0 ? Object.keys(cappedData[0]) : [];
   let resolvedXCol: string;
   try { resolvedXCol = findColumn(config.x, allCols); } catch { resolvedXCol = config.x; }
-  const firstXVal = data.find(d => d[resolvedXCol] != null)?.[resolvedXCol];
+  const firstXVal = cappedData.find(d => d[resolvedXCol] != null)?.[resolvedXCol];
   const isTimeX = !isNaN(getTimeValue(firstXVal));
 
   const transformedData = React.useMemo(() =>
     isTimeX
-      ? data.map(row => { const r = {...row}; r[resolvedXCol] = getTimeValue(r[resolvedXCol]); return r; })
-      : data,
-  [data, isTimeX, resolvedXCol]);
+      ? cappedData.map(row => { const r = {...row}; r[resolvedXCol] = getTimeValue(r[resolvedXCol]); return r; })
+      : cappedData,
+  [cappedData, isTimeX, resolvedXCol]);
 
   const series = React.useMemo(() => {
     const groupCol = config.color;
