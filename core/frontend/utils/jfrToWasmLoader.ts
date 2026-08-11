@@ -472,11 +472,6 @@ async function mergeChunkTables(
         `SELECT ${i} AS _worker, * FROM "chunk${i}_${base}"`
       ).join(' UNION ALL ');
 
-      // NOTE: DuckDB WASM does not reliably support TEMP tables across connections.
-      await conn.query(
-        `CREATE TABLE "_stage_${base}" AS ${unionParts}`
-      ).catch((e) => console.warn(`merge stage failed for ${base}:`, e));
-
       // Build the ORDER BY expression for DENSE_RANK.
       // FK columns must use the already-remapped new_id from the referenced struct's idmap
       // so that the same logical row gets the same rank regardless of chunk-local ID values.
@@ -499,19 +494,6 @@ async function mergeChunkTables(
       }
       const rankOrderBy = rankOrderCols.length > 0 ? rankOrderCols.join(', ') : 'NULL';
 
-      await conn.query(
-        `CREATE TABLE "_idmap_${base}" AS
-         SELECT s._worker, s._id AS old_id,
-           CASE WHEN s._id = 0 THEN 0
-                ELSE DENSE_RANK() OVER (
-                  PARTITION BY (s._id = 0)::INT
-                  ORDER BY ${rankOrderBy}
-                ) END AS new_id
-         FROM ${rankFrom}`
-      ).catch((e) => console.warn(`merge idmap failed for ${base}:`, e));
-
-      // Build the final table. FK columns are stored as remapped new IDs.
-      // DESCRIPTION columns use ANY_VALUE to pick one value when multiple rows share the same new_id.
       const selectCols = naturalCols.map(col => {
         const bareCol = col.replace(/^"|"$/g, '');
         const refBase = fks.get(bareCol);
@@ -519,7 +501,6 @@ async function mergeChunkTables(
           return `coalesce(ANY_VALUE(_idmap_fk_${bareCol}.new_id), 0) AS "${bareCol}"`;
         }
         if (descCols.has(bareCol)) {
-          // Use ANY_VALUE for description columns — they may vary between chunks for the same entity
           return `ANY_VALUE(s."${bareCol}") AS "${bareCol}"`;
         }
         return `ANY_VALUE(${col}) AS "${bareCol}"`;
@@ -528,14 +509,32 @@ async function mergeChunkTables(
       for (const [col, refBase] of fks) {
         finalFrom += ` LEFT JOIN "_idmap_${refBase}" _idmap_fk_${col} ON _idmap_fk_${col}._worker = s._worker AND _idmap_fk_${col}.old_id = s."${col}"`;
       }
-      await conn.query(
-        `CREATE TABLE "${base}" AS
+
+      // Batch all three CREATE TABLE statements for this struct into one round-trip.
+      // DuckDB executes multi-statement SQL in order, so _idmap_ can reference _stage_
+      // and the final table can reference both. Falls back to sequential on error.
+      const stageSql = `CREATE TABLE "_stage_${base}" AS ${unionParts}`;
+      const idmapSql = `CREATE TABLE "_idmap_${base}" AS
+         SELECT s._worker, s._id AS old_id,
+           CASE WHEN s._id = 0 THEN 0
+                ELSE DENSE_RANK() OVER (
+                  PARTITION BY (s._id = 0)::INT
+                  ORDER BY ${rankOrderBy}
+                ) END AS new_id
+         FROM ${rankFrom}`;
+      const finalSql = `CREATE TABLE "${base}" AS
          SELECT m.new_id AS _id, ${selectCols}
          FROM ${finalFrom}
          WHERE m.new_id != 0
          GROUP BY m.new_id
-         ORDER BY _id`
-      ).catch((e) => console.warn(`merge create ${base} failed:`, e));
+         ORDER BY _id`;
+
+      await conn.query([stageSql, idmapSql, finalSql].join(';\n')).catch(async (e) => {
+        console.warn(`merge batch failed for ${base}, retrying sequentially:`, e);
+        await conn.query(stageSql).catch((e2) => console.warn(`merge stage failed for ${base}:`, e2));
+        await conn.query(idmapSql).catch((e2) => console.warn(`merge idmap failed for ${base}:`, e2));
+        await conn.query(finalSql).catch((e2) => console.warn(`merge create ${base} failed:`, e2));
+      });
     }
 
     // 4. Event tables in parallel — runs only after all struct tables are done
