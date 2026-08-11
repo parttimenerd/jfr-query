@@ -287,9 +287,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   ) => {
       if (isInitial) {
           try {
-            const exists = await runQuery(`SELECT 1 FROM duckdb_tables() WHERE table_name='RecordingInfo' LIMIT 1`);
-            if (exists.length > 0) {
-              const info = await runQuery(`SELECT "firstEvent", "lastEvent" FROM "RecordingInfo" LIMIT 1;`);
+            // Fetch RecordingInfo in a single round-trip: return (firstEvent, lastEvent) if the
+            // table exists, or an empty result if it doesn't — avoids two serial queries.
+            const info = await runQuery(`SELECT "firstEvent", "lastEvent" FROM "RecordingInfo" LIMIT 1`).catch(() => []);
+            if (info.length > 0) {
               // B-194: new Date(null).getTime() === 0 which passes !isNaN(), causing epoch-1970
               // to be applied as recording bounds. Guard against null/falsy values explicitly.
               if (info[0]?.firstEvent != null && info[0]?.lastEvent != null) {

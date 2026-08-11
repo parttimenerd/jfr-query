@@ -1403,7 +1403,7 @@ const App: React.FC = () => {
         // Only persist to markdown when non-variable fields change (title, cell conditions,
         // template front-matter, etc.) so saves/exports capture the latest state.
         if (!varsChanged) {
-            const newNotebookMarkdown = reconstructNotebook({ metadata: newMetadata, content: cellsContent });
+            const newNotebookMarkdown = reconstructNotebook({ metadata: newMetadata, content: cellsContentRef.current });
             setNotebookMarkdown(newNotebookMarkdown);
             await refreshSchema();
         } else {
@@ -1424,7 +1424,7 @@ const App: React.FC = () => {
             if (varRunTimerRef.current) clearTimeout(varRunTimerRef.current);
             varRunTimerRef.current = setTimeout(() => { void handleRunAllRef.current?.(); }, 150);
         }
-    }, [cellsContent, refreshSchema]);
+    }, [refreshSchema]);
 
     const handleNavigateRef = useCallback((ref: string) => {
         const idxMatch = /^(?:cell-|plot-)?(\d+)$/.exec(ref);
