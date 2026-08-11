@@ -110,3 +110,51 @@ SELECT * FROM "alloc-flamegraph"
 ```plot
 FLAME_GRAPH() TITLE "Allocation Flame Graph (sampled MB)"
 ```
+
+---
+
+<!-- @cell name=allocation-by-class-detail requires="ObjectAllocationSample" -->
+
+## Allocation by Object Class — Detail
+
+Sampled allocation broken down by object class: sample count, sampled bytes, and average sample weight. More detailed than the pressure view — useful for identifying which specific classes dominate allocation.
+
+```sql
+SELECT * FROM "allocation-by-class-detail"
+```
+
+```plot
+TABLE() TITLE "Allocation by Object Class — sampled bytes"
+```
+
+---
+
+<!-- @cell name=allocation-by-class-pressure requires="ObjectAllocationSample" -->
+
+## Allocation Pressure by Object Class
+
+Top 25 object classes by allocation pressure (fraction of total sampled weight). A single class > 30% of pressure indicates a hot allocation site worth profiling further.
+
+```sql
+SELECT * FROM "allocation-by-class"
+```
+
+```plot
+TABLE() TITLE "Allocation Pressure by Class"
+```
+
+---
+
+<!-- @cell name=allocation-by-thread-pressure requires="ObjectAllocationSample" -->
+
+## Allocation Pressure by Thread
+
+Which threads are responsible for the most sampled allocation. Complements the flame graph: identifies the allocating thread before drilling into its stack.
+
+```sql
+SELECT * FROM "allocation-by-thread"
+```
+
+```plot
+TABLE() TITLE "Allocation Pressure by Thread"
+```

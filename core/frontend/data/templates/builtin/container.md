@@ -117,3 +117,83 @@ ORDER BY startTime
 ```plot
 LINE_CHART(x: "Time", y: ["Read MB", "Written MB"]) TITLE "Container I/O (MB)" LINK_X($start, $end) ZOOM
 ```
+
+---
+
+<!-- @cell name=container-config-cell requires="ContainerConfiguration" -->
+
+## Container Configuration
+
+CPU quota, shares, effective CPU count, and memory limits reported by the JVM at startup. Compare `Effective CPU Count` against the host CPU count to verify the container is not over-provisioned and the JVM's thread pool sizing is accurate.
+
+```sql
+SELECT * FROM "container-configuration"
+```
+
+```plot
+TABLE() TITLE "Container Configuration"
+```
+
+---
+
+<!-- @cell name=container-cpu-usage-cell requires="ContainerCPUUsage" -->
+
+## Container CPU Usage
+
+Cumulative CPU time consumed by the container (user + system). Compare against the CPU quota to determine how often the container is throttled.
+
+```sql
+SELECT * FROM "container-cpu-usage"
+```
+
+```plot
+TABLE() TITLE "Container CPU Time (cumulative)"
+```
+
+---
+
+<!-- @cell name=container-cpu-throttling-cell requires="ContainerCPUThrottling" -->
+
+## Container CPU Throttling
+
+Count of CPU slices throttled vs total elapsed slices. High `CPU Throttled Slices / CPU Elapsed Slices` ratio means the container is being CPU-throttled frequently — a sign that the CPU quota is too low for the workload.
+
+```sql
+SELECT * FROM "container-cpu-throttling"
+```
+
+```plot
+TABLE() TITLE "Container CPU Throttling"
+```
+
+---
+
+<!-- @cell name=container-memory-usage-cell requires="ContainerMemoryUsage" -->
+
+## Container Memory Usage
+
+Memory and swap usage within the container. Non-zero `Memory Fail Count` means the container hit its memory limit and the OOM killer or memory quota was invoked.
+
+```sql
+SELECT * FROM "container-memory-usage"
+```
+
+```plot
+TABLE() TITLE "Container Memory Usage"
+```
+
+---
+
+<!-- @cell name=container-io-usage-cell requires="ContainerIOUsage" -->
+
+## Container I/O Usage Summary
+
+Cumulative service requests and total data transferred within the container. Complements the per-sample I/O time-series above with a headline total.
+
+```sql
+SELECT * FROM "container-io-usage"
+```
+
+```plot
+TABLE() TITLE "Container I/O Usage (cumulative)"
+```

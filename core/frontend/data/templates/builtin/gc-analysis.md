@@ -1221,3 +1221,19 @@ SELECT * FROM "safepoint-overhead" LIMIT 200
 ```plot
 TABLE() TITLE "Safepoint State Synchronisation"
 ```
+
+---
+
+<!-- @cell name=gc-heap-summary-over-time requires="GCHeapSummary" -->
+
+## Heap Used per GC — Over Time
+
+Heap used before and after each GC cycle, in text table form. Complements the committed-vs-used chart: shows the raw before/after values for every individual collection.
+
+```sql
+SELECT * FROM "heap-summary-over-time"
+```
+
+```plot
+TABLE() TITLE "Heap Used Before/After Each GC"
+```

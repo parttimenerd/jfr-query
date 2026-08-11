@@ -458,3 +458,115 @@ SELECT * FROM "active-settings" WHERE "Enabled" = 'true'
 ```plot
 TABLE() TITLE "Active JFR Event Settings"
 ```
+
+---
+
+<!-- @cell name=compiler-config requires="CompilerConfiguration" -->
+
+## JIT Compiler Configuration
+
+Static compiler configuration: number of compiler threads and whether tiered compilation is enabled. A single compiler thread on a multi-core machine is a GraalVM or custom JVM flag worth checking.
+
+```sql
+SELECT * FROM "compiler-configuration"
+```
+
+```plot
+TABLE() TITLE "JIT Compiler Configuration"
+```
+
+---
+
+<!-- @cell name=compiler-phases-summary requires="CompilerPhase" -->
+
+## JIT Compiler Phase Breakdown
+
+Average, P95, and longest time per compiler phase. High time in later optimization phases (e.g., `registerAllocator`, `emitCode`) can indicate very large methods being compiled — consider `-XX:+PrintCompilation` or splitting large methods.
+
+```sql
+SELECT * FROM "compiler-phases"
+```
+
+```plot
+TABLE() TITLE "JIT Compiler Phases — avg / P95 / max"
+```
+
+---
+
+<!-- @cell name=deoptimizations-by-reason-summary requires="Deoptimization" -->
+
+## Deoptimizations by Reason
+
+How many deoptimizations occurred and why. Frequent deoptimizations (especially `null_check`, `class_check`, or `unstable_if`) indicate the JIT made speculative optimizations that were invalidated at runtime — a sign of polymorphic call sites or late type loading.
+
+```sql
+SELECT * FROM "deoptimizations-by-reason"
+```
+
+```plot
+TABLE() TITLE "Deoptimizations by Reason"
+```
+
+---
+
+<!-- @cell name=vm-operations-summary requires="ExecuteVMOperation" -->
+
+## VM Operations
+
+Stop-the-world VM operations sorted by total duration. High total time in `RevokeBias` indicates BiasedLocking is active and contested; `G1Concurrent*` operations should be near-zero pause; `CGC_Operation` in large counts indicates CMS or G1 concurrent phases.
+
+```sql
+SELECT * FROM "vm-operations"
+```
+
+```plot
+TABLE() TITLE "VM Operations — avg / max / count / total"
+```
+
+---
+
+<!-- @cell name=cpu-information-cell -->
+
+## CPU Information
+
+CPU model, socket count, core count, and hardware thread count. Useful baseline when correlating CPU load percentages with absolute throughput figures.
+
+```sql
+SELECT * FROM "cpu-information"
+```
+
+```plot
+TABLE() TITLE "CPU Information"
+```
+
+---
+
+<!-- @cell name=cpu-tsc-cell -->
+
+## CPU Time Stamp Counter
+
+Whether the JVM is using the TSC (Time Stamp Counter) for fast time measurement. If `Fast Time Enabled` is false, all timestamp calls use a system clock (`clock_gettime`) which is significantly slower under high call rates.
+
+```sql
+SELECT * FROM "cpu-tsc"
+```
+
+```plot
+TABLE() TITLE "CPU TSC Fast Time Settings"
+```
+
+---
+
+<!-- @cell name=longest-class-loading-cell requires="ClassLoad" -->
+
+## Longest Class Loading Events
+
+The 25 slowest individual class-load events. Slow class loads during the critical path delay application startup; classes loaded repeatedly (count > 1 for the same name) can indicate classloader leaks.
+
+```sql
+SELECT * FROM "longest-class-loading"
+```
+
+```plot
+TABLE() TITLE "Longest Class Loading Events"
+```

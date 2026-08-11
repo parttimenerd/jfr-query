@@ -263,3 +263,131 @@ BAR_CHART(x: "Monitor Class", y: ["Count"], horizontal: true) TITLE "Monitor Inf
 ```plot
 TABLE() TITLE "Monitor Inflation — top inflated classes"
 ```
+
+---
+
+<!-- @cell name=thread-contention-by-class requires="JavaMonitorEnter" -->
+
+## Monitor Contention by Lock Class
+
+Lock contention grouped by the class of the monitored object. High contention on a single class points to a hotspot lock that could be replaced with a concurrent collection or lock striping.
+
+```sql
+SELECT * FROM "contention-by-class"
+```
+
+```plot
+TABLE() TITLE "Monitor Contention by Lock Class"
+```
+
+---
+
+<!-- @cell name=thread-contention-by-address requires="JavaMonitorEnter" -->
+
+## Monitor Contention by Monitor Address
+
+Contention grouped by the individual monitor object (address + class). Identifies the single most-contested object in the heap — useful when multiple instances of the same class exist but only one is a hotspot.
+
+```sql
+SELECT * FROM "contention-by-address"
+```
+
+```plot
+TABLE() TITLE "Monitor Contention by Monitor Address"
+```
+
+---
+
+<!-- @cell name=thread-contention-by-site requires="JavaMonitorEnter" -->
+
+## Monitor Contention by Call Site
+
+Which call sites (method + line) are waiting most on monitors. Complements the lock-class and thread views by showing the code path entering the contended lock.
+
+```sql
+SELECT * FROM "contention-by-site"
+```
+
+```plot
+TABLE() TITLE "Monitor Contention by Call Site"
+```
+
+---
+
+<!-- @cell name=thread-contention-by-thread requires="JavaMonitorEnter" -->
+
+## Monitor Contention by Thread
+
+Per-thread view of how long each thread waited on monitors. A single thread dominating the max column indicates it holds a heavily contested lock.
+
+```sql
+SELECT * FROM "contention-by-thread"
+```
+
+```plot
+TABLE() TITLE "Monitor Contention by Thread"
+```
+
+---
+
+<!-- @cell name=thread-count-over-time requires="JavaThreadStatistics" -->
+
+## Thread Count Over Time
+
+Active and daemon thread counts sampled over the recording. Rising thread counts that don't fall back indicate thread pool leaks or unbounded executor queues.
+
+```sql
+SELECT * FROM "thread-count"
+```
+
+```plot
+LINE_CHART(x: "Start Time", y: ["Active Threads", "Daemon Threads", "Peak Threads"]) TITLE "Thread Count Over Time" LINK_X($start, $end) ZOOM AXIS_Y LABEL "threads"
+```
+
+---
+
+<!-- @cell name=thread-allocation-summary requires="ThreadAllocationStatistics" -->
+
+## Thread Allocation by Thread
+
+Cumulative allocation pressure per thread — which threads are allocating the most. Complements the allocation flame graph: identifies the thread rather than the stack frame.
+
+```sql
+SELECT * FROM "thread-allocation"
+```
+
+```plot
+TABLE() TITLE "Thread Allocation Pressure — cumulative bytes per thread"
+```
+
+---
+
+<!-- @cell name=thread-cpu-load-summary requires="ThreadCPULoad" -->
+
+## CPU Load by Thread
+
+Last-sample user and system CPU time per thread. High user % = compute-bound; high system % = I/O or syscall-heavy.
+
+```sql
+SELECT * FROM "thread-cpu-load"
+```
+
+```plot
+TABLE() TITLE "CPU Load by Thread"
+```
+
+---
+
+<!-- @cell name=tlab-stats requires="ObjectAllocationInNewTLAB" -->
+
+## TLAB Allocation Statistics
+
+Thread-Local Allocation Buffer (TLAB) summary. Inside allocations are fast (bump-pointer within a TLAB). Outside allocations require the slow-path through the JVM. High outside totals indicate frequent large-object allocation bypassing TLABs.
+
+```sql
+SELECT * FROM "tlabs"
+```
+
+```plot
+TABLE() TITLE "TLAB Allocation — inside vs outside"
+```

@@ -380,3 +380,67 @@ SELECT * FROM "system-processes"
 ```plot
 TABLE() TITLE "System Processes"
 ```
+
+---
+
+<!-- @cell name=events-by-name-cell -->
+
+## All Event Types (Alphabetical)
+
+Every JFR event type present in the recording, sorted alphabetically. Useful for an exhaustive inventory of what was recorded before diving into specific analyses.
+
+```sql
+SELECT * FROM "events-by-name"
+```
+
+```plot
+TABLE() TITLE "All Event Types — sorted by name"
+```
+
+---
+
+<!-- @cell name=cpu-load-summary -->
+
+## CPU Load Summary
+
+Minimum, average, and maximum JVM user/system CPU and total machine CPU across the recording. A summary complement to the per-second time-series chart.
+
+```sql
+SELECT * FROM "cpu-load"
+```
+
+```plot
+TABLE() TITLE "CPU Load Summary — min / avg / max"
+```
+
+---
+
+<!-- @cell name=cpu-load-samples-cell -->
+
+## CPU Load Over Time (Sampled)
+
+Per-sample CPU load: JVM user, JVM system, and total machine load. The time-series view — drag the brush on any linked chart to zoom into a specific window.
+
+```sql
+SELECT * FROM "cpu-load-samples"
+```
+
+```plot
+LINE_CHART(x: "Time", y: ["JVM User", "JVM System", "Machine Total"]) TITLE "CPU Load Over Time" LINK_X($start, $end) ZOOM AXIS_Y LABEL "%"
+```
+
+---
+
+<!-- @cell name=hot-methods-cell requires="ExecutionSample" -->
+
+## Hot Methods (Wall-Clock Sampling)
+
+Top 25 methods by wall-clock execution sample count. Complements the CPU flame graph: a quick ranked list of the most frequently observed top-of-stack frames.
+
+```sql
+SELECT * FROM "hot-methods"
+```
+
+```plot
+TABLE() TITLE "Hot Methods — top 25 by sample count"
+```

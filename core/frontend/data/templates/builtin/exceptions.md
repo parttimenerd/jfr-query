@@ -120,3 +120,35 @@ SELECT * FROM "exception-flamegraph"
 ```plot
 FLAME_GRAPH() TITLE "Exception Throw Flame Graph"
 ```
+
+---
+
+<!-- @cell name=exception-count-cell -->
+
+## Total Exceptions Thrown
+
+Net throwable count across the recording (last minus first `ExceptionStatistics` sample). Useful as a headline metric — cross-reference with the by-type breakdown below.
+
+```sql
+SELECT * FROM "exception-count"
+```
+
+```plot
+TABLE() TITLE "Total Exceptions Thrown"
+```
+
+---
+
+<!-- @cell name=exception-by-type-cell -->
+
+## Exceptions by Type
+
+Count of thrown exceptions (errors + exceptions) grouped by class. Frequent `NullPointerException` or `IllegalArgumentException` often indicate unchecked inputs; frequent `IOException` may indicate network instability or file permission issues.
+
+```sql
+SELECT * FROM "exception-by-type"
+```
+
+```plot
+TABLE() TITLE "Exceptions by Type"
+```

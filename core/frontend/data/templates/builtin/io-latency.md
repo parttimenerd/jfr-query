@@ -173,3 +173,67 @@ SELECT * FROM "network-utilization"
 ```plot
 TABLE() TITLE "Network Utilization by Interface"
 ```
+
+---
+
+<!-- @cell name=file-reads-by-path-cell requires="FileRead" -->
+
+## File Reads by Path
+
+Top files by total bytes read. Unexpected large reads from temp directories or repeated reads from config files are common candidates for buffering or caching improvements.
+
+```sql
+SELECT * FROM "file-reads-by-path"
+```
+
+```plot
+TABLE() TITLE "File Reads — total bytes by path"
+```
+
+---
+
+<!-- @cell name=file-writes-by-path-cell requires="FileWrite" -->
+
+## File Writes by Path
+
+Top files by total bytes written. Continuous writes to a single log file may indicate an opportunity for async logging or write buffering.
+
+```sql
+SELECT * FROM "file-writes-by-path"
+```
+
+```plot
+TABLE() TITLE "File Writes — total bytes by path"
+```
+
+---
+
+<!-- @cell name=socket-reads-by-host-cell requires="SocketRead" -->
+
+## Socket Reads by Host
+
+Inbound data volume grouped by remote host. Unexpected large reads from internal hosts may indicate a misconfigured keep-alive timeout triggering repeated reconnects.
+
+```sql
+SELECT * FROM "socket-reads-by-host"
+```
+
+```plot
+TABLE() TITLE "Socket Reads — total bytes by host"
+```
+
+---
+
+<!-- @cell name=socket-writes-by-host-cell requires="SocketWrite" -->
+
+## Socket Writes by Host
+
+Outbound data volume grouped by remote host. Large writes to a single host indicate a potential batching opportunity or a chatty protocol.
+
+```sql
+SELECT * FROM "socket-writes-by-host"
+```
+
+```plot
+TABLE() TITLE "Socket Writes — total bytes by host"
+```

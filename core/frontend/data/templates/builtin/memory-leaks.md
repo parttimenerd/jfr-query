@@ -124,3 +124,51 @@ BAR_CHART(x: "Memory Type", y: ["Max Bytes"], horizontal: true) TITLE "Peak Nati
 ```plot
 TABLE() TITLE "Native Memory Committed — by type"
 ```
+
+---
+
+<!-- @cell name=memory-leaks-by-class-cell requires="OldObjectSample" -->
+
+## Old Object Samples by Class
+
+Heap objects that survived long enough to be sampled by the Old Object profiler. Grouped by class — objects with increasing `Heap Usage` across the recording indicate a memory leak.
+
+```sql
+SELECT * FROM "memory-leaks-by-class"
+```
+
+```plot
+TABLE() TITLE "Old Object Samples by Class"
+```
+
+---
+
+<!-- @cell name=memory-leaks-by-site-cell requires="OldObjectSample" -->
+
+## Old Object Samples by Allocation Site
+
+Same old-object data grouped by the application method that allocated the object. Shows where in the code long-lived objects originate.
+
+```sql
+SELECT * FROM "memory-leaks-by-site"
+```
+
+```plot
+TABLE() TITLE "Old Object Samples by Allocation Site"
+```
+
+---
+
+<!-- @cell name=native-memory-reserved-cell requires="NativeMemoryUsage" -->
+
+## Native Memory Reserved by Type
+
+JVM native memory reservation by type (Java Heap, Code, Metaspace, Thread, GC, etc.). Growing `Reserved` for Metaspace or Code indicates classloader activity or JIT output expansion.
+
+```sql
+SELECT * FROM "native-memory-reserved"
+```
+
+```plot
+TABLE() TITLE "Native Memory Reserved — by type"
+```
