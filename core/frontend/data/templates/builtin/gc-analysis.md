@@ -1135,3 +1135,89 @@ SELECT * FROM "blocked-by-system-gc" ORDER BY "Time"
 ```plot
 TABLE() TITLE "System.gc() Invocations (blocking only)"
 ```
+
+---
+
+<!-- @cell name=gc-all-phases requires="GCPhasePause" -->
+
+## GC Pause Phases — All Events
+
+All GC phase pauses sorted by duration. This is the full event-level table: every phase name, its count, average, P95, longest, and total time across the recording.
+
+*Requires `GCPhasePause` events (gc.jfc or gc-details.jfc).*
+
+```sql
+SELECT * FROM "gc-pause-phases"
+```
+
+```plot
+TABLE() TITLE "GC Pause Phases — avg/P95/max/total by phase and event type"
+```
+
+---
+
+<!-- @cell name=gc-by-cause requires="GarbageCollection" -->
+
+## GC Collections by Cause
+
+Total pause time, collection count, average and maximum pause grouped by GC cause. Complement to the GC type breakdown — shows which trigger conditions dominate wall time.
+
+```sql
+SELECT * FROM "gc-young-vs-old"
+```
+
+```plot
+TABLE() TITLE "GC Collections by Cause — total/avg/max pause"
+```
+
+---
+
+<!-- @cell name=gc-heap-per-collection requires="GCHeapSummary" -->
+
+## Heap Used per GC Collection
+
+Heap used before and after each individual GC cycle. Useful for spotting a run of GC events that fail to free significant memory — a sign of live data growth or heap exhaustion.
+
+*Requires both `GarbageCollection` and `GCHeapSummary` events.*
+
+```sql
+SELECT * FROM "gc" LIMIT 200
+```
+
+```plot
+TABLE() TITLE "Heap Before/After per GC Cycle (first 200)"
+```
+
+---
+
+<!-- @cell name=gc-safepoints requires="SafepointBegin" -->
+
+## Safepoints
+
+Each JVM safepoint: time to reach the safepoint, cleanup time, and thread counts. Long state-synchronisation durations indicate threads took a long time to reach a safe point (e.g. JNI code, busy loops without safepoint polls).
+
+*Requires `SafepointBegin`, `SafepointStateSynchronization`, `SafepointCleanup`, and `SafepointEnd` events (default.jfc).*
+
+```sql
+SELECT * FROM "safepoints" LIMIT 200
+```
+
+```plot
+TABLE() TITLE "Safepoint Detail"
+```
+
+---
+
+<!-- @cell name=gc-safepoint-overhead requires="SafepointBegin" -->
+
+## Safepoint Synchronisation Overhead
+
+Per-safepoint state synchronisation: how long threads took to reach the safepoint after the JVM requested one. High sync durations coupled with high `Running Threads` counts indicate many threads in JNI or long loops before reaching a safe point.
+
+```sql
+SELECT * FROM "safepoint-overhead" LIMIT 200
+```
+
+```plot
+TABLE() TITLE "Safepoint State Synchronisation"
+```
