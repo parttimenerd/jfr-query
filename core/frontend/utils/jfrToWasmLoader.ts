@@ -797,9 +797,18 @@ async function mergeEventTablesForBatch(
       // correct _idmap entries — add an _orig_worker column if it doesn't already exist.
       const target = `"chunk${workers[0]}_${base}"`;
       await c.query(`ALTER TABLE ${target} ADD COLUMN IF NOT EXISTS _orig_worker INTEGER DEFAULT ${workers[0]}`).catch(() => {});
-      for (const wi of workers.slice(1)) {
-        await c.query(`INSERT INTO ${target} SELECT *, ${wi} AS _orig_worker FROM "chunk${wi}_${base}"`).catch(() => {});
-        await c.query(`DROP TABLE IF EXISTS "chunk${wi}_${base}"`).catch(() => {});
+      // Batch all INSERT + DROP statements for the remaining workers into one round-trip.
+      const batchStmts = workers.slice(1).flatMap(wi => [
+        `INSERT INTO ${target} SELECT *, ${wi} AS _orig_worker FROM "chunk${wi}_${base}"`,
+        `DROP TABLE IF EXISTS "chunk${wi}_${base}"`,
+      ]);
+      if (batchStmts.length > 0) {
+        await c.query(batchStmts.join(';\n')).catch(async () => {
+          for (const wi of workers.slice(1)) {
+            await c.query(`INSERT INTO ${target} SELECT *, ${wi} AS _orig_worker FROM "chunk${wi}_${base}"`).catch(() => {});
+            await c.query(`DROP TABLE IF EXISTS "chunk${wi}_${base}"`).catch(() => {});
+          }
+        });
       }
     }));
   } finally {
