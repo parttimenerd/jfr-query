@@ -58,21 +58,23 @@ const RangePlotComponent: React.FC<{
     if (!data || !data.length || !data[0] || !config.x) {
       return { chartData: [], isTime: false, finalXCol: config.x, lowKey: config.low, highKey: config.high, centerKey: config.center };
     }
+    const RANGE_CAP = 5000;
+    const capped = data.length > RANGE_CAP ? (() => {
+      const step = data.length / RANGE_CAP;
+      return Array.from({ length: RANGE_CAP }, (_, i) => data[Math.floor(i * step)]);
+    })() : data;
 
-    const allColumns = Object.keys(data[0]);
+    const allColumns = Object.keys(capped[0]);
     const xCol = findColumn(config.x, allColumns);
     const lCol = findColumn(config.low, allColumns);
     const hCol = findColumn(config.high, allColumns);
     const cCol = config.center ? findColumn(config.center, allColumns) : undefined;
 
-    const firstXValue = data.find(d => d[xCol] != null)?.[xCol];
+    const firstXValue = capped.find(d => d[xCol] != null)?.[xCol];
     const timeValue = getTimeValue(firstXValue);
     const isTimeAxis = !isNaN(timeValue);
 
-    // Recharts stacked Areas: the first Area fills 0→low (transparent baseline),
-    // the second Area fills low→high by storing the *band height* (high - low) as
-    // __rangeHeight. Both share stackId="range-band" so they stack correctly.
-    const transformedData = data.map(row => {
+    const transformedData = capped.map(row => {
       const newRow: any = { ...row };
       if (isTimeAxis) {
         newRow[xCol] = getTimeValue(newRow[xCol]);

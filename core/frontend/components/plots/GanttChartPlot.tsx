@@ -78,8 +78,10 @@ const GanttChartComponent: React.FC<{
     if (!data || !data.length || !data[0]) {
       return { chartData: [], isTime: false, startCol: config.start, endCol: config.end, rowCol: config.lane, colorCategories: [] };
     }
+    const GANTT_CAP = 2000;
+    const cappedData = data.length > GANTT_CAP ? data.slice(0, GANTT_CAP) : data;
 
-    const allColumns = Object.keys(data[0]);
+    const allColumns = Object.keys(cappedData[0]);
     const sCol = findColumn(config.start, allColumns);
     const eCol = findColumn(config.end, allColumns);
     const rCol = findColumn(config.lane, allColumns);
@@ -91,7 +93,7 @@ const GanttChartComponent: React.FC<{
       return { chartData: [], isTime: false, startCol: sCol, endCol: eCol, rowCol: rCol, colorCategories: [] };
     }
 
-    const firstStart = data.find(d => d[sCol] != null)?.[sCol];
+    const firstStart = cappedData.find(d => d[sCol] != null)?.[sCol];
     const timeVal = getTimeValue(firstStart);
     const isTimeAxis = !isNaN(timeVal);
 
@@ -99,12 +101,12 @@ const GanttChartComponent: React.FC<{
 
     // Collect distinct color categories for the legend
     const colorCats: string[] = colorCol
-      ? Array.from(new Set(data.map(r => String(r[colorCol] ?? ''))))
+      ? Array.from(new Set(cappedData.map(r => String(r[colorCol] ?? ''))))
       : [];
 
-    const laneCats: string[] = Array.from(new Set(data.map(r => String(r[rCol] ?? ''))));
+    const laneCats: string[] = Array.from(new Set(cappedData.map(r => String(r[rCol] ?? ''))));
 
-    const transformed = data.map((row, i) => {
+    const transformed = cappedData.map((row, i) => {
       const startVal = toNum(row[sCol]);
       const endVal = toNum(row[eCol]);
       const rawDuration = isNaN(startVal) || isNaN(endVal) ? 0 : endVal - startVal;

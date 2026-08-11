@@ -508,10 +508,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         wasmConnRef.current = await wasmDbRef.current.connect();
       }
       const conn = wasmConnRef.current!;
-      // Execute each statement in DEMO_SETUP_SQL individually
-      for (const stmt of DEMO_SETUP_SQL.split(/;\s*\n/).map(s => s.trim()).filter(Boolean)) {
-        await runWasmQuery(conn, stmt + ';');
-      }
+      // Execute DEMO_SETUP_SQL in one batched multi-statement call.
+      // Falls back to sequential if the batch fails.
+      const setupStmts = DEMO_SETUP_SQL.split(/;\s*\n/).map(s => s.trim()).filter(Boolean);
+      await conn.query(setupStmts.join(';\n')).catch(async () => {
+        for (const stmt of setupStmts) {
+          await conn.query(stmt + ';').catch((e: any) => console.warn('demo setup stmt failed:', e));
+        }
+      });
       // Register built-in macros so notebooks can use P90(), format_duration(), etc.
       // Batch all into one query() call — DuckDB supports multi-statement SQL.
       // Some macros reference JFR tables that may not exist — Catalog errors suppressed.
