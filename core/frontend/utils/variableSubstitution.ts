@@ -1,3 +1,29 @@
+// Cache compiled regex patterns keyed by the serialized variables map.
+// Variables maps rarely change between cells in a single Run All, so we save
+// N×(sort + regex compile) for the common steady-state notebook case.
+// Evict entries beyond MAX_PATTERN_CACHE to avoid unbounded growth.
+const MAX_PATTERN_CACHE = 32;
+const _patternCache = new Map<string, Array<{ re: RegExp; name: string }>>();
+
+function buildPatterns(variables: Record<string, string>): Array<{ re: RegExp; name: string }> {
+    // Cache key: sorted variable names only (not values). Patterns depend only on
+    // names, so a slider drag that changes a value reuses the compiled regexes.
+    const sortedNames = Object.keys(variables).sort((a, b) => b.length - a.length);
+    const key = sortedNames.join('\0');
+    const cached = _patternCache.get(key);
+    if (cached) return cached;
+    const patterns = sortedNames
+        .map(name => {
+            const refName = name.startsWith('$') ? name : `$${name}`;
+            const escapedName = refName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const leftBoundary = refName.startsWith('$$') ? '' : '(?<!\\$)';
+            return { re: new RegExp(`${leftBoundary}${escapedName}(?!\\w)`, 'g'), name };
+        });
+    if (_patternCache.size >= MAX_PATTERN_CACHE) _patternCache.delete(_patternCache.keys().next().value!);
+    _patternCache.set(key, patterns);
+    return patterns;
+}
+
 /**
  * Substitutes `$name` references in a SQL string with values from `variables`.
  *
@@ -21,28 +47,19 @@ export function substituteVariables(
 ): string {
     if (Object.keys(variables).length === 0) return sql;
 
-    // Process longer keys first so `$$foo` is consumed before `$foo` would
-    // match inside it (defense in depth alongside the `(?<!\$)` boundary).
-    const names = Object.keys(variables).sort((a, b) => b.length - a.length);
-
-    // Build regexes once.
+    // Compiled patterns are cached by the variables map's JSON key.
     // Keys may be stored with or without a leading `$`/`$$` prefix:
     //   - `$$threshold_ms`  → match `$$threshold_ms` literally
     //   - `$limit`          → match `$limit` literally
     //   - `session_start`   → match `$session_start` (app-injected variables
     //                         like session bounds are stored without the `$`
     //                         but referenced as `$name` in SQL / markdown)
-    const patterns: Array<{ re: RegExp; value: string }> = names
-        .filter(name => variables[name] != null)   // skip null/undefined values — don't substitute "null" into SQL
-        .map(name => {
-        const refName = name.startsWith('$') ? name : `$${name}`;
-        const escapedName = refName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const leftBoundary = refName.startsWith('$$') ? '' : '(?<!\\$)';
-        return {
-            re: new RegExp(`${leftBoundary}${escapedName}(?!\\w)`, 'g'),
-            value: variables[name],
-        };
-    });
+    const compiledPatterns = buildPatterns(variables);
+    // Bind current values to the cached pattern shapes. Values change on every
+    // slider drag but pattern shapes (names/regexes) are stable between runs.
+    const patterns = compiledPatterns
+        .filter(({ name }) => variables[name] != null)
+        .map(({ re, name }) => ({ re, value: variables[name] }));
 
     let out = sql;
     // Iterate to fixpoint: if a variable value itself contains $-references,
