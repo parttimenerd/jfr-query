@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, fireEvent, cleanup } from '@testing-library/react';
 import React from 'react';
 import DataTable from '../../components/DataTable';
+
+afterEach(cleanup);
 
 const sampleData = [
     { name: 'Alpha', value: 3 },
