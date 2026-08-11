@@ -1097,9 +1097,12 @@ export async function loadJfrIntoWasm(
   console.log(`[jfr-import] ${numChunks} chunk(s), using up to ${numWorkers} parallel worker(s)`);
 
   // Reset semaphore for this import session.
-  // Two slots: at most 2 Arrow IPC inserts in flight at once. Keeps peak memory
-  // (worker WASM linear mem + Arrow buffer + DuckDB) bounded on memory-constrained tabs.
-  insertSemaphore = new InsertSemaphore(2);
+  // Concurrency slots: DuckDB insertArrowFromIPCStream serializes internally,
+  // but we can have 3 buffers in flight on machines with enough cores to avoid
+  // stalling the GraalVM parse threads waiting for drain.
+  // Conservative: 2 slots on default, 3 on machines with ≥8 cores.
+  const cores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency ?? 1) : 1;
+  insertSemaphore = new InsertSemaphore(cores >= 8 ? 3 : 2);
 
   // Progress phases:
   //   0–5%:  initialization / pool warm

@@ -77,5 +77,17 @@ export async function initDuckDBWasm(): Promise<duckdb.AsyncDuckDB> {
     throw e;
   }
   URL.revokeObjectURL(workerUrl);
+  // Use multiple threads on multi-core machines — DuckDB WASM supports parallel
+  // query execution within a connection. Cap at 4 to avoid excessive thread overhead.
+  // navigator.hardwareConcurrency is available in all modern browsers.
+  const cores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency ?? 1) : 1;
+  if (cores > 1) {
+    const dbConn = await db.connect();
+    try {
+      await dbConn.query(`PRAGMA threads=${Math.min(cores, 4)}`).catch(() => {});
+    } finally {
+      await dbConn.close().catch(() => {});
+    }
+  }
   return db;
 }

@@ -1239,6 +1239,10 @@ const App: React.FC = () => {
             }
 
             // ── Execute cells ────────────────────────────────────────────────────
+            // Dispatch all cells' queries concurrently: they queue in the DuckDB lock
+            // and drain in order, eliminating React-render idle time between cells.
+            // Within each cell, SQL blocks run in index order (chained promises).
+            const cellPromises: Promise<void>[] = [];
             for (const cell of currentCells) {
                 const directive = parseCellDirective(cell.content);
                 const reqAttr = directive?.rest?.requires;
@@ -1246,11 +1250,19 @@ const App: React.FC = () => {
                     if (!requiresResults.get(cell.id)) continue;
                 }
                 const parsed = parseCellContent(tokenizeCellContent(cell.content));
+                if (parsed.sqlBlocks.length === 0) continue;
                 const allVariables = { ...metadataRef.current.variables, ...parsed.variables };
+                // Chain this cell's blocks so block[1] starts only after block[0] finishes,
+                // but the entire chain is launched concurrently with other cells' chains.
+                let chain = Promise.resolve();
                 for (let i = 0; i < parsed.sqlBlocks.length; i++) {
-                    await runQuery(cell.id, parsed.sqlBlocks[i], i, allVariables);
+                    const blockIdx = i;
+                    const blockSql = parsed.sqlBlocks[i];
+                    chain = chain.then(() => runQuery(cell.id, blockSql, blockIdx, allVariables));
                 }
+                cellPromises.push(chain);
             }
+            await Promise.all(cellPromises);
         } finally {
             isRunningAllRef.current = false;
             setIsRunningAll(false);
@@ -1260,6 +1272,10 @@ const App: React.FC = () => {
 
     // Debounce timer for variable-triggered re-runs (slider drag, button click, etc.)
     const varRunTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Deferred markdown sync for variable-only changes: we skip the synchronous
+    // reconstructNotebook call on every slider drag and instead flush it after 600ms
+    // of inactivity so saves/exports always capture the latest variable values.
+    const varMarkdownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const handleClearResults = useCallback(() => {
         setResults({});
@@ -1381,13 +1397,26 @@ const App: React.FC = () => {
         const newKeys = Object.keys(newVars);
         const varsChanged = prevKeys.length !== newKeys.length ||
             prevKeys.some(k => prevVars[k] !== newVars[k]);
-        const newNotebookMarkdown = reconstructNotebook({ metadata: newMetadata, content: cellsContent });
-        setNotebookMarkdown(newNotebookMarkdown);
-        // Only refresh the schema when something other than notebook variables changed
-        // (e.g. a new cell condition or template front-matter update). Variable changes
-        // never add or remove tables, so the schema refresh is wasted work on slider drags.
+        // Skip the expensive reconstructNotebook + history write for variable-only changes
+        // (slider drags, button clicks). Variables are held in metadataRef and read at
+        // query time, so the markdown doesn't need to be kept in sync on every drag event.
+        // Only persist to markdown when non-variable fields change (title, cell conditions,
+        // template front-matter, etc.) so saves/exports capture the latest state.
         if (!varsChanged) {
+            const newNotebookMarkdown = reconstructNotebook({ metadata: newMetadata, content: cellsContent });
+            setNotebookMarkdown(newNotebookMarkdown);
             await refreshSchema();
+        } else {
+            // Update metadataRef directly so runQuery picks up the new values without
+            // waiting for a React render cycle.
+            metadataRef.current = newMetadata;
+            // Flush the updated variables to notebookMarkdown after 600ms of inactivity
+            // so that Save/Export always captures the current variable state.
+            if (varMarkdownTimerRef.current) clearTimeout(varMarkdownTimerRef.current);
+            varMarkdownTimerRef.current = setTimeout(() => {
+                const flushed = reconstructNotebook({ metadata: newMetadata, content: cellsContentRef.current });
+                setNotebookMarkdown(flushed);
+            }, 600);
         }
         // Re-run all cells when notebook-level variables change (e.g. slider drag).
         // Debounced at 150 ms so rapid slider drags don't flood queries.
