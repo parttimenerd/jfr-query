@@ -526,9 +526,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Register built-in views in parallel across 4 connections.
       {
         const BV_PARALLEL = 4;
-        const bvConns: typeof conn[] = [];
+        const bvConns = await Promise.all(Array.from({ length: BV_PARALLEL - 1 }, () => wasmDbRef.current!.connect()));
         try {
-          for (let i = 0; i < BV_PARALLEL - 1; i++) bvConns.push(await wasmDbRef.current!.connect());
           const bvAll = [conn, ...bvConns];
           const bvChunk = Math.ceil(BUILTIN_VIEWS_SQL.length / bvAll.length);
           await Promise.allSettled(
@@ -565,9 +564,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       if (condStmts.length > 0) {
         const CV_PARALLEL = 4;
-        const cvConns: typeof conn[] = [];
+        const cvConns = await Promise.all(Array.from({ length: CV_PARALLEL - 1 }, () => wasmDbRef.current!.connect()));
         try {
-          for (let i = 0; i < CV_PARALLEL - 1; i++) cvConns.push(await wasmDbRef.current!.connect());
           const cvAll = [conn, ...cvConns];
           const cvChunk = Math.ceil(condStmts.length / cvAll.length);
           await Promise.allSettled(

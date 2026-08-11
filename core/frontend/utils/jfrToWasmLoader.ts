@@ -977,11 +977,8 @@ export async function loadCjfrIntoWasm(
     );
   });
 
-  const extraConns: typeof conn[] = [];
+  const extraConns = await Promise.all(Array.from({ length: PARALLELISM - 1 }, () => db.connect()));
   try {
-    for (let i = 0; i < PARALLELISM - 1; i++) {
-      extraConns.push(await db.connect());
-    }
     const conns = [conn, ...extraConns];
     const chunkSize = Math.ceil(BUILTIN_VIEWS_SQL.length / PARALLELISM);
     await Promise.allSettled(
@@ -1018,9 +1015,8 @@ export async function loadCjfrIntoWasm(
     }
   }
   if (conditionalStmts.length > 0) {
-    const cvConns: typeof conn[] = [];
+    const cvConns = await Promise.all(Array.from({ length: PARALLELISM - 1 }, () => db.connect()));
     try {
-      for (let i = 0; i < PARALLELISM - 1; i++) cvConns.push(await db.connect());
       const cvAll = [conn, ...cvConns];
       const cvChunk = Math.ceil(conditionalStmts.length / cvAll.length);
       await Promise.allSettled(
@@ -1239,11 +1235,8 @@ export async function loadJfrIntoWasm(
   // Phase 2: views — batch per connection (multi-statement) across PARALLELISM connections.
   // Each connection gets one big JOIN of all its view statements, avoiding N round-trips.
   // Falls back to sequential per-view on error (Binder errors from missing referenced tables).
-  const extraConns: typeof conn[] = [];
+  const extraConns = await Promise.all(Array.from({ length: PARALLELISM - 1 }, () => db.connect()));
   try {
-    for (let i = 0; i < PARALLELISM - 1; i++) {
-      extraConns.push(await db.connect());
-    }
     const conns = [conn, ...extraConns];
     const chunkSize = Math.ceil(BUILTIN_VIEWS_SQL.length / PARALLELISM);
     await Promise.allSettled(
@@ -1283,9 +1276,8 @@ export async function loadJfrIntoWasm(
     }
   }
   if (conditionalStmts.length > 0) {
-    const cvConns: typeof conn[] = [];
+    const cvConns = await Promise.all(Array.from({ length: PARALLELISM - 1 }, () => db.connect()));
     try {
-      for (let i = 0; i < PARALLELISM - 1; i++) cvConns.push(await db.connect());
       const cvAll = [conn, ...cvConns];
       const cvChunk = Math.ceil(conditionalStmts.length / cvAll.length);
       await Promise.allSettled(
