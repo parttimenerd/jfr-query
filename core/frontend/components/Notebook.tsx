@@ -173,6 +173,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
         return out;
     }, [cells]);
 
+    const prevCrossRef = useRef<Record<string, any[]>>({});
     const crossCellQueryRefs = useMemo((): Record<string, any[]> => {
         const out: Record<string, any[]> = {};
         for (const cell of cells) {
@@ -185,6 +186,16 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                 }
             });
         }
+        // Return the previous object if the alias→data mapping is identical (same references).
+        // This keeps prop references stable for cells that use crossCellQueryRefs,
+        // so arePropsEqual short-circuits without needing to run areCrossCellRefsEqual.
+        const prev = prevCrossRef.current;
+        const outKeys = Object.keys(out);
+        const prevKeys = Object.keys(prev);
+        if (outKeys.length === prevKeys.length && outKeys.every(k => prev[k] === out[k])) {
+            return prev;
+        }
+        prevCrossRef.current = out;
         return out;
     // Recompute when cell aliases or any result changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
