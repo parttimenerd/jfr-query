@@ -365,11 +365,8 @@ async function mergeChunkTables(
   // Open MERGE_PARALLELISM-1 extra connections for parallel merge queries.
   // All extra connections are closed in the finally block regardless of errors.
   const MERGE_PARALLELISM = 4;
-  const extraConns: AsyncDuckDBConnection[] = [];
+  const extraConns = await Promise.all(Array.from({ length: MERGE_PARALLELISM - 1 }, () => db.connect()));
   try {
-    for (let i = 0; i < MERGE_PARALLELISM - 1; i++) {
-      extraConns.push(await db.connect());
-    }
     const allConns = [conn, ...extraConns];
     const getConn = (i: number) => allConns[i % allConns.length];
 
@@ -780,11 +777,8 @@ async function mergeEventTablesForBatch(
   // so mergeChunkTables sees one row source per base instead of N.
 
   const MERGE_PARALLELISM = 4;
-  const extraConns: AsyncDuckDBConnection[] = [];
+  const extraConns = await Promise.all(Array.from({ length: MERGE_PARALLELISM - 1 }, () => db.connect()));
   try {
-    for (let i = 0; i < MERGE_PARALLELISM - 1; i++) {
-      extraConns.push(await db.connect());
-    }
     const allConns = [conn, ...extraConns];
 
     // Group by base table name.
