@@ -303,11 +303,18 @@ async function mergeChunkTables(
   }
 
   // 1. Collect all base table names across ALL chunks (not just chunk0)
+  //    Also grab the first column of one representative table per base so we can
+  //    classify struct vs event tables without a separate round-trip.
   const [allTablesResult, allChunkTablesResult] = await Promise.all([
     conn.query(
-      `SELECT DISTINCT regexp_replace(table_name, '^chunk\\d+_', '') AS base_name
-       FROM information_schema.tables
-       WHERE table_schema='main' AND regexp_matches(table_name, '^chunk\\d+_')
+      `SELECT base_name, any_value(first_col) AS first_col FROM (
+         SELECT regexp_replace(t.table_name, '^chunk\\d+_', '') AS base_name, c.column_name AS first_col
+         FROM information_schema.tables t
+         JOIN information_schema.columns c
+           ON c.table_schema=t.table_schema AND c.table_name=t.table_name AND c.ordinal_position=1
+         WHERE t.table_schema='main' AND regexp_matches(t.table_name, '^chunk\\d+_')
+       )
+       GROUP BY base_name
        ORDER BY base_name`
     ),
     conn.query(
@@ -315,7 +322,14 @@ async function mergeChunkTables(
        WHERE table_schema='main' AND regexp_matches(table_name, '^chunk\\d+_')`
     ),
   ]);
-  const allBaseNames = allTablesResult.toArray().map((r: any) => String(r.base_name));
+  // allTablesResult now carries both base_name and first_col for classification.
+  const allBaseNames: string[] = [];
+  const baseFirstColMap = new Map<string, string>();
+  for (const r of allTablesResult.toArray()) {
+    const base = String((r as any).base_name);
+    allBaseNames.push(base);
+    baseFirstColMap.set(base, String((r as any).first_col ?? ''));
+  }
 
   if (allBaseNames.length === 0) return;
 
@@ -334,37 +348,14 @@ async function mergeChunkTables(
   }
 
   // 2. Classify tables: struct (has _id as first column) vs event.
-  // Single query fetches first-column info for every representative chunk table at once.
+  // baseFirstColMap was populated in the initial discovery query — no extra round-trip needed.
   const structTables: string[] = [];
   const eventTables: string[] = [];
-
-  {
-    // Build a list of representative tables (one per base — pick the lowest worker index).
-    const reprTables = allBaseNames.map(base => {
-      const firstWorker = baseToWorkers.get(base)![0];
-      return `chunk${firstWorker}_${base}`;
-    });
-    const reprPattern = reprTables.map(t => `table_name = '${t.replace(/'/g, "''")}'`).join(' OR ');
-    const firstColsResult = await conn.query(
-      `SELECT table_name, column_name FROM information_schema.columns
-       WHERE table_schema='main' AND ordinal_position = 1 AND (${reprPattern})`
-    ).catch(() => null);
-
-    const firstColByTable = new Map<string, string>();
-    if (firstColsResult) {
-      for (const row of firstColsResult.toArray()) {
-        firstColByTable.set(String((row as any).table_name), String((row as any).column_name));
-      }
-    }
-
-    for (const base of allBaseNames) {
-      const firstWorker = baseToWorkers.get(base)![0];
-      const reprTable = `chunk${firstWorker}_${base}`;
-      if (firstColByTable.get(reprTable) === '_id') {
-        structTables.push(base);
-      } else {
-        eventTables.push(base);
-      }
+  for (const base of allBaseNames) {
+    if (baseFirstColMap.get(base) === '_id') {
+      structTables.push(base);
+    } else {
+      eventTables.push(base);
     }
   }
 
@@ -762,41 +753,33 @@ async function mergeEventTablesForBatch(
 ): Promise<void> {
   if (workerIndices.length <= 1) return; // nothing to collapse for a single-worker batch
 
-  // Discover all table names for this batch's workers.
+  // Discover all table names for this batch's workers and their first column in one query.
+  // Joining tables + columns catalog on ordinal_position=1 gives us struct vs event classification
+  // without a second round-trip.
   const chunkNames = workerIndices.map(i => `chunk${i}_`);
-  const likePattern = chunkNames.map(p => `table_name LIKE '${p}%'`).join(' OR ');
-  const tablesResult = await conn.query(
-    `SELECT table_name FROM information_schema.tables WHERE table_schema='main' AND (${likePattern})`
+  const likePattern = chunkNames.map(p => `t.table_name LIKE '${p}%'`).join(' OR ');
+  const firstColsResult = await conn.query(
+    `SELECT t.table_name, c.column_name FROM information_schema.tables t
+     JOIN information_schema.columns c ON c.table_schema=t.table_schema AND c.table_name=t.table_name AND c.ordinal_position=1
+     WHERE t.table_schema='main' AND (${likePattern})`
   ).catch(() => null);
-  if (!tablesResult) return;
+  if (!firstColsResult) return;
 
-  const allTableNames = tablesResult.toArray().map((r: any) => String(r.table_name));
+  const firstColByTable = new Map<string, string>();
+  for (const row of firstColsResult.toArray()) {
+    firstColByTable.set(String((row as any).table_name), String((row as any).column_name));
+  }
+  const allTableNames = Array.from(firstColByTable.keys());
   if (allTableNames.length === 0) return;
 
   // Classify event vs struct tables by checking if _id is the first column.
-  // Single batch query instead of N sequential round-trips.
   const eventTables: Array<{ base: string; workerIdx: number }> = [];
-  {
-    const tablePattern = allTableNames.map(t => `table_name = '${t.replace(/'/g, "''")}'`).join(' OR ');
-    const firstColsResult = await conn.query(
-      `SELECT table_name, column_name FROM information_schema.columns
-       WHERE table_schema='main' AND ordinal_position = 1 AND (${tablePattern})`
-    ).catch(() => null);
-
-    const firstColByTable = new Map<string, string>();
-    if (firstColsResult) {
-      for (const row of firstColsResult.toArray()) {
-        firstColByTable.set(String((row as any).table_name), String((row as any).column_name));
-      }
-    }
-
-    for (const tableName of allTableNames) {
-      const workerIdx = workerIndices.find(i => tableName.startsWith(`chunk${i}_`));
-      if (workerIdx === undefined) continue;
-      const base = tableName.slice(`chunk${workerIdx}_`.length);
-      if (firstColByTable.get(tableName) !== '_id') {
-        eventTables.push({ base, workerIdx });
-      }
+  for (const tableName of allTableNames) {
+    const workerIdx = workerIndices.find(i => tableName.startsWith(`chunk${i}_`));
+    if (workerIdx === undefined) continue;
+    const base = tableName.slice(`chunk${workerIdx}_`.length);
+    if (firstColByTable.get(tableName) !== '_id') {
+      eventTables.push({ base, workerIdx });
     }
   }
 
