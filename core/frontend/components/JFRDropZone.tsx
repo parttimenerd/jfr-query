@@ -42,6 +42,8 @@ interface PendingFile {
 const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, importPhase, importProgress, errorMessage, onLoadDemo, onLoadGcNotebook, onOpenTemplates, wasmInitializing }) => {
     const [fileName, setFileName] = useState<string | null>(null);
     const [fileBytes, setFileBytes] = useState<number | null>(null);
+    const [fileMb, setFileMb] = useState<number | null>(null);
+    const [isCjfrFile, setIsCjfrFile] = useState(false);
     const [pending, setPending] = useState<PendingFile | null>(null);
     const [selectedDepth, setSelectedDepth] = useState(10);
 
@@ -61,9 +63,13 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
         const isJfr = file.name.toLowerCase().endsWith('.jfr');
         const isCjfr = file.name.toLowerCase().endsWith('.cjfr');
         const sizeMb = file.size / (1024 * 1024);
+        setFileMb(sizeMb);
+        setIsCjfrFile(isCjfr);
 
         // Show depth selector only for large .jfr files — CJFR has no stack depth option.
         if (isJfr && sizeMb > LARGE_FILE_THRESHOLD_MB) {
+            // Default to Skip (depth=0) for very large files to minimize import time.
+            setSelectedDepth(sizeMb > 100 ? 0 : 10);
             setPending({ file, name: file.name, sizeMb });
         } else {
             onFileSelected(file, file.name, 10);
@@ -99,6 +105,12 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                             {pending.sizeMb.toFixed(0)} MB. In-browser import can be slow for large files.
                             Choose how many stack frames to store per event — fewer frames import faster.
                         </p>
+                        {pending.sizeMb > 100 && (
+                            <p className="text-amber-400/80 text-xs mb-3 flex items-start gap-1.5">
+                                <span className="mt-0.5 shrink-0">⚠</span>
+                                <span>For files this size, <strong>Skip</strong> is strongly recommended — stack resolution doubles import time.</span>
+                            </p>
+                        )}
                         <p className="text-gray-300 text-xs font-medium mb-2">Stack trace depth</p>
                         <div className="flex flex-col gap-2">
                             {DEPTH_OPTIONS.map(opt => (
@@ -175,6 +187,11 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                             </div>
                             {estimatedSeconds != null && estimatedSeconds > 2 && (importProgress ?? 0) < 0.8 && (
                                 <p className="text-xs text-gray-500">~{estimatedSeconds}s estimated</p>
+                            )}
+                            {isCjfrFile && (fileMb ?? 0) > 50 && (importProgress ?? 0) < 0.7 && (
+                                <p className="text-xs text-amber-400/70 max-w-xs">
+                                    CJFR import is single-threaded — for files this large, the jfr-query CLI server is 5–10× faster.
+                                </p>
                             )}
                             {((importProgress ?? 0) < 0.05) && (
                                 <p className="text-xs text-gray-500">Runs entirely locally — nothing leaves your machine.</p>

@@ -53,6 +53,7 @@ interface DataContextType {
   recordingStart: number | null;
   recordingEnd: number | null;
   importProgress: number | null;
+  importPhase: string | null;
   wasmInitializing: boolean;
   query: (sql: string) => Promise<any[]>;
   refreshSchema: () => Promise<void>;
@@ -72,6 +73,7 @@ export const DataContext = createContext<DataContextType>({
   recordingStart: null,
   recordingEnd: null,
   importProgress: null,
+  importPhase: null,
   wasmInitializing: false,
   query: async () => { throw new Error('DataContext not initialized'); },
   refreshSchema: async () => { throw new Error('DataContext not initialized'); },
@@ -248,6 +250,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [recordingStart, setRecordingStart] = useState<number | null>(null);
   const [recordingEnd, setRecordingEnd] = useState<number | null>(null);
   const [importProgress, setImportProgress] = useState<number | null>(null);
+  const [importPhase, setImportPhase] = useState<string | null>(null);
   const [wasmInitializing, setWasmInitializing] = useState(false);
 
   const wasmDbRef = useRef<AsyncDuckDB | null>(null);
@@ -460,9 +463,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const isJfr = fileName.toLowerCase().endsWith('.jfr');
       const isCjfr = fileName.toLowerCase().endsWith('.cjfr');
       if (isJfr) {
-        await loadJfrIntoWasm(source, conn, wasmDbRef.current!, stacktraceDepth, setImportProgress);
+        await loadJfrIntoWasm(source, conn, wasmDbRef.current!, stacktraceDepth, setImportProgress, setImportPhase);
       } else if (isCjfr) {
-        await loadCjfrIntoWasm(source, conn, wasmDbRef.current!, setImportProgress);
+        await loadCjfrIntoWasm(source, conn, wasmDbRef.current!, setImportProgress, setImportPhase);
       } else {
         const bytes = source instanceof File ? new Uint8Array(await source.arrayBuffer()) : source;
         await loadDuckDbFileIntoWasm(wasmDbRef.current!, conn, bytes);
@@ -473,11 +476,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setImportProgress(0.97);
       await fetchSchemaFor((sql) => runWasmQuery(conn, sql), true);
       setImportProgress(null);
+      setImportPhase(null);
       setDbState(DBState.READY);
     } catch (err: any) {
       console.error('File import failed', err);
       setErrorMessage(err.message || String(err));
       setImportProgress(null);
+      setImportPhase(null);
       setDbState(DBState.ERROR);
     }
   }, [fetchSchemaFor]);
@@ -689,9 +694,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const contextValue = useMemo(() => ({
     dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
-    recordingStart, recordingEnd, importProgress, wasmInitializing, refreshSchema, loadFile, loadServerFile, loadDemo,
+    recordingStart, recordingEnd, importProgress, importPhase, wasmInitializing, refreshSchema, loadFile, loadServerFile, loadDemo,
   }), [dbState, mode, sourceType, schema, query, errorMessage, serverProbeError, serverCurrentFile,
-    recordingStart, recordingEnd, importProgress, wasmInitializing, refreshSchema, loadFile, loadServerFile, loadDemo]);
+    recordingStart, recordingEnd, importProgress, importPhase, wasmInitializing, refreshSchema, loadFile, loadServerFile, loadDemo]);
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;
 };

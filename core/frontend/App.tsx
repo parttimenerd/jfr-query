@@ -108,7 +108,7 @@ function usePersistentState<T>(key: string, defaultValue: T): [T, React.Dispatch
 const App: React.FC = () => {
     const {
         dbState, mode, sourceType, errorMessage, serverProbeError, query, refreshSchema, loadFile, loadDemo,
-        recordingStart, recordingEnd, schema, importProgress, wasmInitializing,
+        recordingStart, recordingEnd, schema, importProgress, importPhase, wasmInitializing,
     } = useContext(DataContext);
     
     const { settings } = useContext(SettingsContext);
@@ -1464,12 +1464,7 @@ const App: React.FC = () => {
                 <JFRDropZone
                     onFileSelected={(bytes, fileName, stacktraceDepth) => { void loadFile(bytes, fileName, stacktraceDepth); }}
                     isImporting={dbState === DBState.IMPORTING || (mode === 'wasm' && dbState === DBState.SCHEMA_LOADING)}
-                    importPhase={dbState === DBState.SCHEMA_LOADING && mode === 'wasm' ? 'Building schema…' :
-                        (importProgress ?? 0) < 0.05 ? 'Warming up…' :
-                        (importProgress ?? 0) < 0.70 ? `Parsing chunks… ${Math.round((importProgress ?? 0) * 100)}%` :
-                        (importProgress ?? 0) < 0.85 ? 'Flushing inserts…' :
-                        (importProgress ?? 0) < 0.95 ? 'Merging tables…' :
-                        'Registering views…'}
+                    importPhase={dbState === DBState.SCHEMA_LOADING && mode === 'wasm' ? 'Building schema…' : (importPhase ?? undefined)}
                     importProgress={importProgress}
                     errorMessage={dbState === DBState.ERROR ? errorMessage : null}
                     onLoadDemo={() => {

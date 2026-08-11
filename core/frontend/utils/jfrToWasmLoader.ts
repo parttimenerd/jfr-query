@@ -7,16 +7,19 @@ const PERF_KEY = 'jfr_import_ms_per_byte';
 // Each worker allocates a GraalVM WebAssembly linear memory that grows with
 // chunk size — typically 300–600 MB per worker for real JFR files.
 // Browser renderer processes are capped at ~1–2 GB total (OS sandbox), so
-// running more than 2 workers risks OOM on larger files. Default is 1 worker;
-// 2 workers on devices with ≥8 GB RAM. Override via URL: ?maxWorkers=N
+// running more than 2 workers risks OOM on constrained devices. Default is 1;
+// 2 workers on ≥8 GB RAM machines; 3 workers on ≥16 GB RAM machines.
+// Override via URL: ?maxWorkers=N
 function getMaxWorkers(): number {
   const override = new URLSearchParams(location.search).get('maxWorkers');
   const n = parseInt(override, 10);
   if (override && !isNaN(n)) return Math.max(1, Math.min(4, n));
-  // Use 2 workers on devices with ≥8 GB RAM (~600 MB per worker fits within typical
-  // browser renderer memory budgets on those machines). Fall back to 1 worker otherwise.
   const mem = (navigator as any).deviceMemory;
-  return typeof mem === 'number' && mem >= 8 ? 2 : 1;
+  if (typeof mem === 'number') {
+    if (mem >= 16) return 3; // 3 × ~400 MB = 1.2 GB — safe on 16 GB machines
+    if (mem >= 8) return 2;  // 2 × ~400 MB = 800 MB — safe on 8 GB machines
+  }
+  return 1;
 }
 
 // ── WASM worker pool ──────────────────────────────────────────────────────────
@@ -271,6 +274,7 @@ async function mergeChunkTables(
   conn: AsyncDuckDBConnection,
   db: AsyncDuckDB,
   numChunks: number,
+  onPhase?: (text: string) => void,
 ): Promise<void> {
   // Fast path: single-chunk recording — no ID collisions possible.
   // RENAME is a metadata-only operation in DuckDB (~1ms per table vs ~50ms for full dedup).
@@ -535,10 +539,16 @@ async function mergeChunkTables(
         await conn.query(idmapSql).catch((e2) => console.warn(`merge idmap failed for ${base}:`, e2));
         await conn.query(finalSql).catch((e2) => console.warn(`merge create ${base} failed:`, e2));
       });
+      // Early-drop source tables once this struct is fully merged — frees DuckDB heap
+      // incrementally during the serial struct pass instead of waiting for the final cleanup.
+      // _idmap_ must stay alive for event-table FK remapping in step 4.
+      const srcDropParts = workers.map(wi => `"chunk${wi}_${base}"`).join(', ');
+      await conn.query(`DROP TABLE IF EXISTS ${srcDropParts}, "_stage_${base}"`).catch(() => {});
     }
 
     // 4. Event tables in parallel — runs only after all struct tables are done
     // (event tables reference _idmap tables produced in step 3).
+    onPhase?.('Merging event tables…');
     // DuckDB WASM doesn't support correlated subqueries in lambda/list_transform, so we
     // remap scalar FKs via a LEFT JOIN and array FKs via unnest+list_agg+JOIN.
     const refPattern = /Column "([^"]+)": (Array of references to|references) "([^"]+)"\(_id\)/g;
@@ -869,22 +879,23 @@ export async function resetWasmDatabase(conn: AsyncDuckDBConnection): Promise<vo
  * the SQL registration phase runs exactly as for JFR.
  *
  * @param onProgress Optional callback (0–1) called at key checkpoints.
+ * @param onPhase Optional callback called with a human-readable phase label at key transitions.
  */
 export async function loadCjfrIntoWasm(
   source: File | Uint8Array,
   conn: AsyncDuckDBConnection,
   db: AsyncDuckDB,
   onProgress?: (pct: number) => void,
+  onPhase?: (text: string) => void,
 ): Promise<void> {
   if (!(window as any).__arrow) {
     (window as any).__arrow = await import('apache-arrow');
   }
 
   onProgress?.(0.01);
+  onPhase?.('Warming up engine…');
 
-  // For File sources: pass the File object directly to the worker so it can call
-  // arrayBuffer() inside the worker thread — avoids a 200MB+ allocation on the
-  // main thread for large CJFR files. For Uint8Array sources: transfer the buffer.
+  // For Uint8Array sources: transfer the buffer.
   const fileSource = source instanceof File ? source : null;
   const bytesSource = source instanceof File ? null : source;
 
@@ -895,6 +906,7 @@ export async function loadCjfrIntoWasm(
 
   const pooled = await createPooledWorker(db, wasmModule, importerSrc);
   onProgress?.(0.05);
+  onPhase?.('Parsing events…');
 
   try {
     const insertPromises = await (async () => {
@@ -949,6 +961,7 @@ export async function loadCjfrIntoWasm(
     })();
 
     onProgress?.(0.70);
+    onPhase?.('Flushing inserts…');
     await Promise.all(insertPromises);
     onProgress?.(0.85);
   } finally {
@@ -959,6 +972,7 @@ export async function loadCjfrIntoWasm(
   // No merge pass needed — CJFR produces unprefixed tables directly.
   // Tables named without chunk prefix are already final.
   onProgress?.(0.90);
+  onPhase?.('Registering views…');
 
   // Register built-in macros and views (same as JFR path).
   const PARALLELISM = new URL(location.href).searchParams.has('sqlSerial') ? 1 : 4;
@@ -1054,6 +1068,7 @@ export async function loadJfrIntoWasm(
   db: AsyncDuckDB,
   stacktraceDepth = 10,
   onProgress?: (pct: number) => void,
+  onPhase?: (text: string) => void,
 ): Promise<void> {
   if (!(window as any).__arrow) {
     (window as any).__arrow = await import('apache-arrow');
@@ -1100,11 +1115,7 @@ export async function loadJfrIntoWasm(
   };
 
   onProgress?.(0.01);
-
-  const tJava0 = performance.now();
-
-  // Fetch WASM module and importer source in parallel — both are needed before
-  // workers can start, and both are cached module-level so subsequent imports are instant.
+  onPhase?.('Warming up engine…');
   const [wasmModule, importerSrc] = await Promise.all([getPrecompiledModule(), getImporterSrc()]);
   const tWasmCompile = performance.now();
   console.log(`[jfr-perf] WASM compile: ${(tWasmCompile - tJava0).toFixed(0)}ms`);
@@ -1127,6 +1138,7 @@ export async function loadJfrIntoWasm(
     for (let batchStart = 0; batchStart < chunks.length; batchStart += maxWorkers) {
       const batchChunks = chunks.slice(batchStart, batchStart + maxWorkers);
       const batchIdx = batchStart / maxWorkers;
+      onPhase?.(totalBatches === 1 ? 'Parsing events…' : `Parsing batch ${batchIdx + 1}/${totalBatches}…`);
 
       // Create workers for this batch only after the previous batch is fully complete.
       const batchWorkers = await Promise.all(
@@ -1175,6 +1187,7 @@ export async function loadJfrIntoWasm(
   const actualJavaMs = tJavaDone - tJava0;
 
   onProgress?.(0.70);
+  onPhase?.('Flushing inserts…');
 
   // Final drain: wait for any remaining inserts (drained per-batch — this is a safety net).
   const tDrainStart = performance.now();
@@ -1182,17 +1195,19 @@ export async function loadJfrIntoWasm(
   const tDrainDone = performance.now();
 
   onProgress?.(0.85);
+  onPhase?.('Merging struct tables…');
 
   // Merge all chunk-prefixed tables into final tables (handles both single and multi-chunk).
   let mergeMs = 0;
   {
     const tMergeStart = performance.now();
-    await mergeChunkTables(conn, db, numChunks);
+    await mergeChunkTables(conn, db, numChunks, onPhase);
     mergeMs = performance.now() - tMergeStart;
     console.log(`[jfr-perf] merge pass: ${mergeMs.toFixed(0)}ms`);
   }
 
   onProgress?.(0.95);
+  onPhase?.('Registering views…');
 
   console.log(`[jfr-perf] Java+drain: ${actualJavaMs.toFixed(0)}ms | drain: ${(tDrainDone - tDrainStart).toFixed(0)}ms | merge: ${mergeMs.toFixed(0)}ms`);
   (window as any).__lastJfrPerf = {
