@@ -2397,4 +2397,106 @@ SELECT
 FROM StringDeduplicationStatistics
 ORDER BY startTime`,
   },
+  // ── GC Deep-Dive: new event types ──────────────────────────────────────────
+  {
+    requires: 'G1AdaptiveIHOP',
+    sql: `CREATE OR REPLACE VIEW "g1-ihop-stats" AS
+SELECT
+    a.startTime                                                       AS "Time",
+    a.gcId                                                            AS "GC ID",
+    round(a.threshold / 1048576.0, 1)                                 AS "IHOP Threshold MB",
+    round(a.occupancy / 1048576.0, 1)                                 AS "Heap Occupancy MB",
+    round(a.initiatingOccupancy * 100.0, 1)                          AS "IHOP %",
+    round(a.mutatorAllocationSpeed / 1048576.0, 3)                    AS "Alloc Speed MB/s",
+    round(a.concurrentGCGrowth / 1048576.0, 3)                        AS "Concurrent Growth MB/s",
+    round(a.lastMarkingLength * 1000.0, 1)                            AS "Last Mark Duration ms"
+FROM G1AdaptiveIHOP a
+ORDER BY a.startTime`,
+  },
+  {
+    requires: 'G1HeapRegionInformation',
+    sql: `CREATE OR REPLACE VIEW "g1-region-types" AS
+SELECT
+    startTime                              AS "Time",
+    type                                   AS "Region Type",
+    COUNT(*)                               AS "Count",
+    round(SUM(used) / 1048576.0, 1)        AS "Used MB"
+FROM G1HeapRegionInformation
+GROUP BY startTime, type
+ORDER BY startTime, type`,
+  },
+  {
+    requires: 'ResidentSetSize',
+    buildSql: (tables) => {
+      const hasHeap = tables.has('GCHeapSummary');
+      const heapCols = hasHeap
+        ? `,\n    round(COALESCE(h.heapCommitted, 0) / 1048576.0, 1) AS "Committed MB",\n    round((r.size - COALESCE(h.heapCommitted, 0)) / 1048576.0, 1) AS "Off-Heap MB"`
+        : ``;
+      const heapJoin = hasHeap
+        ? `\nLEFT JOIN (\n  SELECT bucket_ms(startTime, 5000) AS b, MAX(COALESCE("heapSpace$committedSize", heapCommitted)) AS heapCommitted\n  FROM GCHeapSummary GROUP BY 1\n) h ON h.b = bucket_ms(r.startTime, 5000)`
+        : ``;
+      return `CREATE OR REPLACE VIEW "gc-rss-vs-heap" AS
+SELECT
+    r.startTime                            AS "Time",
+    round(r.size / 1048576.0, 1)           AS "RSS MB"${heapCols}
+FROM ResidentSetSize r${heapJoin}
+ORDER BY r.startTime`;
+    },
+  },
+  {
+    requires: 'GCHeapMemoryPoolUsage',
+    sql: `CREATE OR REPLACE VIEW "gc-memory-pools" AS
+SELECT
+    startTime                                      AS "Time",
+    name                                           AS "Pool",
+    round(used / 1048576.0, 1)                     AS "Used MB",
+    round(committed / 1048576.0, 1)                AS "Committed MB",
+    round(100.0 * used / NULLIF(committed, 0), 1)  AS "Used %"
+FROM GCHeapMemoryPoolUsage
+ORDER BY startTime, name`,
+  },
+  {
+    requires: 'EvacuationInformation',
+    sql: `CREATE OR REPLACE VIEW "gc-evacuation-efficiency" AS
+SELECT
+    e.startTime                                                             AS "Time",
+    e.gcId                                                                  AS "GC ID",
+    e.regionsEvacuated                                                      AS "Regions Evacuated",
+    round(e.bytesCopied / 1048576.0, 2)                                     AS "Bytes Copied MB",
+    round(e.bytesPromoted / 1048576.0, 2)                                   AS "Promoted MB",
+    CASE WHEN e.regionsEvacuated > 0
+         THEN round(e.bytesCopied / (e.regionsEvacuated * 1048576.0) * 100, 1)
+         ELSE NULL END                                                       AS "Fill % per Region"
+FROM EvacuationInformation e
+ORDER BY e.startTime`,
+  },
+  {
+    requires: 'PromotionFailed',
+    buildSql: (tables) => {
+      const branches: string[] = [
+        `SELECT startTime AS "Time", gcId AS "GC ID", 'Promotion Failed' AS "Failure Type",
+         promotionSize AS "Size Bytes", NULL::BIGINT AS "Failures"
+         FROM PromotionFailed`,
+      ];
+      if (tables.has('EvacuationFailed')) {
+        branches.push(
+          `SELECT startTime AS "Time", gcId AS "GC ID", 'Evacuation Failed' AS "Failure Type",
+           NULL::BIGINT AS "Size Bytes", failures AS "Failures"
+           FROM EvacuationFailed`,
+        );
+      }
+      if (tables.has('ConcurrentModeFailure')) {
+        branches.push(
+          `SELECT startTime AS "Time", gcId AS "GC ID", 'Concurrent Mode Failure' AS "Failure Type",
+           NULL::BIGINT AS "Size Bytes", NULL::BIGINT AS "Failures"
+           FROM ConcurrentModeFailure`,
+        );
+      }
+      return `CREATE OR REPLACE VIEW "gc-failure-events" AS
+SELECT * FROM (
+  ${branches.join('\n  UNION ALL\n  ')}
+)
+ORDER BY "Time"`;
+    },
+  },
 ];
