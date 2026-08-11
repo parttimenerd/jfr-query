@@ -255,6 +255,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // In-flight eager init promise — loadFile awaits this instead of re-initializing.
   const wasmInitPromiseRef = useRef<Promise<void> | null>(null);
   const queryCacheRef = useRef<Map<string, any[]>>(new Map());
+  const CACHE_MAX = 300; // evict oldest entries beyond this to prevent unbounded growth
 
   const executeQuery = useCallback(async (sql: string): Promise<any> => {
     if (mode === 'wasm') {
@@ -266,7 +267,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             const cached = queryCacheRef.current.get(sql);
             if (cached !== undefined) return cached;
             const result = await runWasmQuery(wasmConnRef.current, sql);
-            queryCacheRef.current.set(sql, result);
+            const cache = queryCacheRef.current;
+            // Evict oldest entry when over cap (Map iteration is insertion-order).
+            if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
+            cache.set(sql, result);
             return result;
         }
         return runWasmQuery(wasmConnRef.current, sql);
@@ -509,18 +513,38 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await runWasmQuery(conn, stmt + ';');
       }
       // Register built-in macros so notebooks can use P90(), format_duration(), etc.
-      // Some macros (GC_TYPE, recording_start, etc.) reference JFR tables that may not
-      // exist in every recording — those Catalog errors are expected and suppressed.
-      for (const sql of BUILTIN_MACROS_SQL) {
-        try { await conn.query(sql); } catch (e: any) {
-          if (!String(e?.message ?? e).includes('Catalog Error')) console.warn('builtin macro failed:', e);
+      // Batch all into one query() call — DuckDB supports multi-statement SQL.
+      // Some macros reference JFR tables that may not exist — Catalog errors suppressed.
+      await conn.query(BUILTIN_MACROS_SQL.join(';\n')).catch(async (e: any) => {
+        console.warn('macro batch failed, falling back to sequential:', e);
+        for (const sql of BUILTIN_MACROS_SQL) {
+          try { await conn.query(sql); } catch (e2: any) {
+            if (!String(e2?.message ?? e2).includes('Catalog Error')) console.warn('builtin macro failed:', e2);
+          }
         }
-      }
-      // Register built-in views (same as JFR import path).
-      for (const sql of BUILTIN_VIEWS_SQL) {
-        try { await conn.query(sql); } catch (e: any) {
-          const msg = String(e?.message ?? e);
-          if (!msg.includes('Catalog Error')) console.warn('builtin view failed:', e);
+      });
+      // Register built-in views in parallel across 4 connections.
+      {
+        const BV_PARALLEL = 4;
+        const bvConns: typeof conn[] = [];
+        try {
+          for (let i = 0; i < BV_PARALLEL - 1; i++) bvConns.push(await wasmDbRef.current!.connect());
+          const bvAll = [conn, ...bvConns];
+          const bvChunk = Math.ceil(BUILTIN_VIEWS_SQL.length / bvAll.length);
+          await Promise.allSettled(
+            bvAll.map((c, ci) => {
+              const slice = BUILTIN_VIEWS_SQL.slice(ci * bvChunk, (ci + 1) * bvChunk);
+              return slice.reduce(
+                (chain, sql) => chain.then(() => c.query(sql).catch((e: any) => {
+                  const msg = String(e?.message ?? e);
+                  if (!msg.includes('Catalog Error')) console.warn('builtin view failed:', e);
+                })),
+                Promise.resolve() as Promise<any>,
+              );
+            }),
+          );
+        } finally {
+          for (const c of bvConns) c.close().catch(() => {});
         }
       }
       // Register conditional views only when their required source table exists.

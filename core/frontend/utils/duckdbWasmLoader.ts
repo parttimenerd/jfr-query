@@ -36,9 +36,12 @@ export async function loadDuckDbFileIntoWasm(
   const t3 = performance.now();
   // Re-register builtin macros — DuckDB WASM doesn't support ATTACH for
   // function/macro objects, so they must be recreated in the in-memory catalog.
-  for (const sql of BUILTIN_MACROS_SQL) {
-    try { await conn.query(sql); } catch { /* skip macros that depend on missing tables */ }
-  }
+  // Batch all macros into a single query() call to save ~45 round-trips.
+  await conn.query(BUILTIN_MACROS_SQL.join(';\n')).catch(async () => {
+    for (const sql of BUILTIN_MACROS_SQL) {
+      try { await conn.query(sql); } catch { /* skip macros that depend on missing tables */ }
+    }
+  });
   const t4 = performance.now();
   console.log(`[duckdb-load] register: ${(t1-t0).toFixed(0)}ms attach+copy: ${(t3-t2).toFixed(0)}ms macros: ${(t4-t3).toFixed(0)}ms total: ${(t4-t0).toFixed(0)}ms`);
 }

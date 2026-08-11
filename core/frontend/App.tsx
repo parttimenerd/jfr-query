@@ -1181,19 +1181,69 @@ const App: React.FC = () => {
         isRunningAllRef.current = true;
         setIsRunningAll(true);
         try {
-            for (const cell of cellsRef.current) {
+            const currentCells = cellsRef.current;
+
+            // ── Pre-check all requires= guards in a single batch query ──────────
+            // Each requires= expression compiles to a boolean scalar against
+            // information_schema.tables. Gather them all and issue one UNION-free
+            // SELECT to evaluate every guard at once instead of N serial round-trips.
+            const requiresResults = new Map<string, boolean>(); // cellId → visible
+            const batchExprs: { cellId: string; expr: string }[] = [];
+            const rawSelectCells: { cellId: string; sql: string }[] = [];
+
+            for (const cell of currentCells) {
+                const directive = parseCellDirective(cell.content);
+                const reqAttr = directive?.rest?.requires;
+                if (!reqAttr) continue;
+                const condSql = requiresAttrToConditionSql(reqAttr);
+                if (/^select\s/i.test(condSql.trim())) {
+                    // Raw SELECT — can't batch; run individually later.
+                    rawSelectCells.push({ cellId: cell.id, sql: condSql });
+                } else {
+                    // Grammar-compiled expression: extract the boolean expr (strip the FROM clause wrapper).
+                    // requiresAttrToConditionSql returns "SELECT <expr> FROM information_schema.tables"
+                    const match = /^SELECT\s+([\s\S]+)\s+FROM\s+information_schema\.tables$/i.exec(condSql.trim());
+                    if (match) {
+                        batchExprs.push({ cellId: cell.id, expr: match[1] });
+                    } else {
+                        rawSelectCells.push({ cellId: cell.id, sql: condSql });
+                    }
+                }
+            }
+
+            // Run all grammar-compiled requires checks in one query.
+            if (batchExprs.length > 0) {
+                try {
+                    const selectList = batchExprs.map((e, i) => `(${e.expr}) AS "_req${i}"`).join(', ');
+                    const batchSql = `SELECT ${selectList} FROM information_schema.tables`;
+                    const rows = await query(batchSql);
+                    const row = rows?.[0] ?? {};
+                    batchExprs.forEach((e, i) => {
+                        requiresResults.set(e.cellId, Boolean(row[`_req${i}`]));
+                    });
+                } catch {
+                    // Batch check failed — default to showing all cells.
+                    batchExprs.forEach(e => requiresResults.set(e.cellId, true));
+                }
+            }
+
+            // Run raw SELECT requires checks individually.
+            for (const { cellId, sql } of rawSelectCells) {
+                try {
+                    const rows = await query(sql);
+                    const val = rows?.[0] ? Object.values(rows[0])[0] : false;
+                    requiresResults.set(cellId, Boolean(val));
+                } catch {
+                    requiresResults.set(cellId, false);
+                }
+            }
+
+            // ── Execute cells ────────────────────────────────────────────────────
+            for (const cell of currentCells) {
                 const directive = parseCellDirective(cell.content);
                 const reqAttr = directive?.rest?.requires;
                 if (reqAttr) {
-                    try {
-                        const condSql = requiresAttrToConditionSql(reqAttr);
-                        const rows = await query(condSql);
-                        const val = rows?.[0] ? Object.values(rows[0])[0] : false;
-                        if (!val) continue;
-                    } catch {
-                        // If check fails, skip cell to avoid spurious errors
-                        continue;
-                    }
+                    if (!requiresResults.get(cell.id)) continue;
                 }
                 const parsed = parseCellContent(tokenizeCellContent(cell.content));
                 const allVariables = { ...metadataRef.current.variables, ...parsed.variables };

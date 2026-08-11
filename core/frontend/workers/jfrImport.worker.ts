@@ -74,11 +74,21 @@ self.addEventListener('message', (e: MessageEvent) => {
 
   if (msg.type === 'import') {
     const isCjfr = !!(msg.isCjfr as boolean);
-    importQueue = importQueue.then(() =>
-      isCjfr
-        ? handleCjfrImport(msg.bytes as Uint8Array, (msg.tablePrefix as string) ?? '')
-        : handleImport(msg.bytes as Uint8Array, msg.stacktraceDepth as number, (msg.tablePrefix as string) ?? '')
-    ).catch(() => {});
+    importQueue = importQueue.then(async () => {
+      // For CJFR: accept either a pre-materialized Uint8Array (legacy) or a File
+      // object (new path). Resolving the File inside the worker keeps the main thread
+      // free of the 200MB+ arrayBuffer() allocation on large CJFR files.
+      if (isCjfr) {
+        let bytes: Uint8Array;
+        if (msg.file) {
+          bytes = new Uint8Array(await (msg.file as File).arrayBuffer());
+        } else {
+          bytes = msg.bytes as Uint8Array;
+        }
+        return handleCjfrImport(bytes, (msg.tablePrefix as string) ?? '');
+      }
+      return handleImport(msg.bytes as Uint8Array, msg.stacktraceDepth as number, (msg.tablePrefix as string) ?? '');
+    }).catch(() => {});
   }
 });
 
