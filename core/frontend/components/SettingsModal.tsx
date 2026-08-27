@@ -15,6 +15,10 @@ import * as PlotGenerationService from '../services/ml/PlotGenerationService';
 import * as SqlGenerationService from '../services/ml/SqlGenerationService';
 import { DataContext, DBState } from '../context/DuckDBContext';
 
+const AI_PROVIDER_KEYS = Object.keys(providerMetadataRegistry) as AiProviderType[];
+const BROWSER_CHAT_MODEL_VALUES = Object.values(BROWSER_CHAT_MODELS);
+const CANDIDATE_VALUES = Object.values(CANDIDATES);
+
 export const AiModeCards: React.FC<{ isAiActive: boolean }> = ({ isAiActive }) => (
     <div className={`grid grid-cols-1 sm:grid-cols-3 gap-2 ${isAiActive ? '' : 'opacity-50'}`}>
         {[
@@ -56,7 +60,206 @@ interface TestResult {
     message: string;
 }
 
+const LogPatternsTab: React.FC = () => {
+    const { mode } = React.useContext(DataContext);
+
+    const [rawLine, setRawLine] = React.useState('');
+    const [suggestion, setSuggestion] = React.useState<{
+        id: string;
+        pattern: string;
+        fields: { name: string; type: string }[];
+        table: string;
+        tags: string[];
+        level: string;
+    } | null>(null);
+    const [editableFields, setEditableFields] = React.useState<{ name: string; type: string }[]>([]);
+    const [patternId, setPatternId] = React.useState('');
+    const [table, setTable] = React.useState('');
+    const [saveError, setSaveError] = React.useState<string | null>(null);
+    const [saveSuccess, setSaveSuccess] = React.useState(false);
+    const [suggesting, setSuggesting] = React.useState(false);
+
+    const handleSuggest = async () => {
+        if (!rawLine.trim()) return;
+        setSuggesting(true);
+        setSaveError(null);
+        setSaveSuccess(false);
+        try {
+            const r = await fetch('/api/jvmlog/suggest-pattern', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ line: rawLine }),
+            });
+            const data = await r.json();
+            if (!r.ok) {
+                setSaveError(data.error ?? 'Failed to suggest pattern');
+                return;
+            }
+            setSuggestion(data);
+            setEditableFields(data.fields ?? []);
+            setPatternId(data.id ?? '');
+            setTable(data.table ?? '');
+        } finally {
+            setSuggesting(false);
+        }
+    };
+
+    const handleSave = async () => {
+        if (!suggestion || !patternId) return;
+        setSaveError(null);
+        setSaveSuccess(false);
+        const r = await fetch('/api/jvmlog/save-pattern', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: patternId,
+                tags: suggestion.tags,
+                level: suggestion.level,
+                pattern: suggestion.pattern,
+                fields: editableFields,
+                table,
+            }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+            setSaveError(data.error ?? 'Save failed');
+        } else {
+            setSaveSuccess(true);
+        }
+    };
+
+    if (mode !== 'server') {
+        return (
+            <div className="text-gray-400 text-sm p-4">
+                Log Patterns are only available in server mode (<code>jfr-query serve</code>).
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-4">
+            <p className="text-xs text-gray-400">
+                Paste an unmatched log line to generate a YAML pattern rule. The server must be started
+                with <code className="text-cyan-400">--jvmlog-patterns-dir</code> to save patterns.
+            </p>
+
+            <div>
+                <label className="block text-xs text-gray-400 mb-1">Log line</label>
+                <textarea
+                    className="w-full bg-gray-800 border border-gray-600 rounded p-2 text-sm text-gray-200 font-mono resize-y h-20 focus:outline-none focus:border-cyan-500"
+                    placeholder="[1.234s][info][gc] GC(42) Pause Young (Normal) 256M->128M(512M) 12.34ms"
+                    value={rawLine}
+                    onChange={e => setRawLine(e.target.value)}
+                />
+            </div>
+
+            <button
+                onClick={handleSuggest}
+                disabled={suggesting || !rawLine.trim()}
+                className="px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded text-sm"
+            >
+                {suggesting ? 'Analysing…' : 'Suggest Fields'}
+            </button>
+
+            {suggestion && (
+                <div className="space-y-3">
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1">Generated pattern</label>
+                        <pre className="bg-gray-800 border border-gray-700 rounded p-2 text-xs text-gray-300 font-mono overflow-x-auto whitespace-pre-wrap">
+                            {suggestion.pattern}
+                        </pre>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1">Fields</label>
+                        <table className="w-full text-xs text-gray-300">
+                            <thead>
+                                <tr className="text-gray-500 border-b border-gray-700">
+                                    <th className="text-left py-1 pr-3">Name</th>
+                                    <th className="text-left py-1">Type</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {editableFields.map((f, i) => (
+                                    <tr key={i} className="border-b border-gray-800">
+                                        <td className="py-1 pr-3">
+                                            <input
+                                                className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-gray-200 w-32"
+                                                value={f.name}
+                                                onChange={e => {
+                                                    const updated = [...editableFields];
+                                                    updated[i] = { ...f, name: e.target.value };
+                                                    setEditableFields(updated);
+                                                }}
+                                            />
+                                        </td>
+                                        <td>
+                                            <select
+                                                className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-gray-200"
+                                                value={f.type}
+                                                onChange={e => {
+                                                    const updated = [...editableFields];
+                                                    updated[i] = { ...f, type: e.target.value };
+                                                    setEditableFields(updated);
+                                                }}
+                                            >
+                                                {['int', 'long', 'double', 'string', 'bytes'].map(t => (
+                                                    <option key={t} value={t}>{t}</option>
+                                                ))}
+                                            </select>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="flex gap-3">
+                        <div className="flex-1">
+                            <label className="block text-xs text-gray-400 mb-1">Pattern ID</label>
+                            <input
+                                className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 font-mono"
+                                value={patternId}
+                                onChange={e => setPatternId(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex-1">
+                            <label className="block text-xs text-gray-400 mb-1">Target table</label>
+                            <input
+                                className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 font-mono"
+                                value={table}
+                                onChange={e => setTable(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleSave}
+                        className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-sm"
+                    >
+                        Save Pattern
+                    </button>
+                </div>
+            )}
+
+            {saveError && (
+                <div className="p-3 bg-red-900/40 border border-red-500/40 rounded text-red-300 text-xs">
+                    {saveError}
+                </div>
+            )}
+            {saveSuccess && (
+                <div className="p-3 bg-emerald-900/40 border border-emerald-500/40 rounded text-emerald-300 text-xs">
+                    Pattern saved. The server will hot-reload it within seconds.
+                </div>
+            )}
+        </div>
+    );
+};
+
+type SettingsTab = 'general' | 'log-patterns';
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const { settings, saveSettings } = useContext(SettingsContext);
   const { mode, sourceType, serverCurrentFile, loadServerFile, dbState } = useContext(DataContext);
   const [localSettings, setLocalSettings] = useState<Settings>(settings);
@@ -202,16 +405,36 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   return ReactDOM.createPortal(
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={handleBackdropClick}>
       <div role="dialog" aria-modal="true" aria-label="Settings" className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-4xl flex flex-col animate-fade-in max-h-[90vh]">
-        <header className="flex-shrink-0 p-4 border-b border-gray-700 flex justify-between items-center">
-          <h2 className="text-xl font-semibold text-gray-200">Settings</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-700 rounded-full" aria-label="Close">
-            <XMarkIcon className="w-6 h-6" />
-          </button>
+        <header className="flex-shrink-0 border-b border-gray-700">
+          <div className="p-4 flex justify-between items-center">
+            <h2 className="text-xl font-semibold text-gray-200">Settings</h2>
+            <button onClick={onClose} className="p-2 hover:bg-gray-700 rounded-full" aria-label="Close">
+              <XMarkIcon className="w-6 h-6" />
+            </button>
+          </div>
+          <div className="flex px-4 gap-1">
+            {([
+              { id: 'general' as SettingsTab, label: 'General / AI' },
+              { id: 'log-patterns' as SettingsTab, label: 'Log Patterns' },
+            ] as const).map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 transition-colors ${
+                  activeTab === id
+                    ? 'border-cyan-500 text-cyan-400'
+                    : 'border-transparent text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </header>
-        
+
         <div className="flex-grow overflow-y-auto p-6 space-y-8">
-            
-            {/* Provider Selection */}
+            {activeTab === 'general' && (<>
+
             <section>
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">AI Provider</h3>
                 {hasNoApiKeyConfigured && (
@@ -222,7 +445,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     </div>
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {(Object.keys(providerMetadataRegistry) as AiProviderType[]).map(key => {
+                    {AI_PROVIDER_KEYS.map(key => {
                         const meta = providerMetadataRegistry[key];
                         const isSelected = localSettings.aiProvider === key;
                         const Icon = meta.icon;
@@ -809,6 +1032,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     className="w-full bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-md px-3 py-2 resize-y placeholder-gray-600 focus:outline-none focus:border-cyan-500"
                 />
             </section>
+            </>)}
+            {activeTab === 'log-patterns' && <LogPatternsTab />}
         </div>
 
         <footer className="flex-shrink-0 p-4 border-t border-gray-700 flex justify-end items-center">
@@ -881,7 +1106,7 @@ const BrowserModelPicker: React.FC<{
                     onChange={e => onChatModelChange(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
                 >
-                    {Object.values(BROWSER_CHAT_MODELS).map(m => (
+                    {BROWSER_CHAT_MODEL_VALUES.map(m => (
                         <option key={m.id} value={m.id}>{m.label}</option>
                     ))}
                 </select>
@@ -894,7 +1119,7 @@ const BrowserModelPicker: React.FC<{
                     onChange={e => onChange(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
                 >
-                    {Object.values(CANDIDATES).map(c => (
+                    {CANDIDATE_VALUES.map(c => (
                         <option key={c.id} value={c.id}>{c.label}</option>
                     ))}
                 </select>
