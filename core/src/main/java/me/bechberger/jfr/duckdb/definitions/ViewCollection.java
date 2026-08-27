@@ -2965,12 +2965,12 @@ public class ViewCollection {
                         null,
                         """
                             CREATE VIEW "jvmlog-heap-timeline" AS
-                            SELECT h.gcId,
-                                   round(h.heapBefore / 1048576.0, 2) AS heapBeforeMB,
-                                   round(h.heapAfter / 1048576.0, 2) AS heapAfterMB,
-                                   round(h.heapCommittedBefore / 1048576.0, 2) AS committedBeforeMB,
-                                   round(h.heapCommittedAfter / 1048576.0, 2) AS committedAfterMB,
-                                   e.pauseMs
+                            SELECT h.gcId AS "gcId",
+                                   round(h.heapBefore / 1048576.0, 2) AS "Heap Before (MB)",
+                                   round(h.heapAfter / 1048576.0, 2) AS "Heap After (MB)",
+                                   round(h.heapCommittedBefore / 1048576.0, 2) AS "Committed Before (MB)",
+                                   round(h.heapCommittedAfter / 1048576.0, 2) AS "Committed After (MB)",
+                                   e.pauseMs AS "Pause (ms)"
                             FROM jvmlog_heap_snapshot h
                             LEFT JOIN jvmlog_gc_event e ON h.gcId = e.gcId
                             QUALIFY row_number() OVER (PARTITION BY h.gcId ORDER BY h.heapCommittedBefore DESC NULLS LAST) = 1
@@ -3004,24 +3004,20 @@ public class ViewCollection {
                         null,
                         """
                             CREATE VIEW "jvmlog-gc-init-summary" AS
-                            SELECT max(algorithm) AS algorithm,
-                                   max(jdkVersion) AS jdkVersion,
-                                   max(minHeap) / 1048576.0 AS minHeapMB,
-                                   max(initialHeap) / 1048576.0 AS initialHeapMB,
-                                   max(maxHeap) / 1048576.0 AS maxHeapMB,
-                                   max(softMaxCapacity) / 1048576.0 AS softMaxMB,
-                                   max(parallelWorkers) AS parallelWorkers,
-                                   max(concurrentWorkers) AS concurrentWorkers,
-                                   max(workersOldGen) AS workersOldGen,
-                                   max(workersYoungGen) AS workersYoungGen,
-                                   max(runtimeWorkers) AS runtimeWorkers,
-                                   max(refinementWorkers) AS refinementWorkers,
-                                   max(cpuTotal) AS cpuTotal,
-                                   max(physicalMemory) / 1073741824.0 AS physicalMemoryGB,
-                                   max(numaSupport) AS numaSupport,
-                                   max(heapRegionSize) AS heapRegionBytes,
-                                   max(periodicGc) AS periodicGc,
-                                   max(preTouch) AS preTouch
+                            SELECT max(algorithm) AS "Algorithm",
+                                   max(jdkVersion) AS "JDK Version",
+                                   round(max(minHeap) / 1048576.0, 0) AS "Min Heap (MB)",
+                                   round(max(initialHeap) / 1048576.0, 0) AS "Initial Heap (MB)",
+                                   round(max(maxHeap) / 1048576.0, 0) AS "Max Heap (MB)",
+                                   round(max(softMaxCapacity) / 1048576.0, 0) AS "Soft Max (MB)",
+                                   max(parallelWorkers) AS "Parallel Workers",
+                                   max(concurrentWorkers) AS "Concurrent Workers",
+                                   max(cpuTotal) AS "CPUs",
+                                   round(max(physicalMemory) / 1073741824.0, 1) AS "Physical Memory (GB)",
+                                   max(numaSupport) AS "NUMA",
+                                   max(heapRegionSize) AS "Region Bytes",
+                                   max(periodicGc) AS "Periodic GC",
+                                   max(preTouch) AS "PreTouch"
                             FROM jvmlog_gc_init
                             """,
                         "jvmlog_gc_init")
@@ -3466,6 +3462,103 @@ public class ViewCollection {
                             """,
                         "jvmlog_gc_event")
                     .description("Per-GC event with pause, heap before/after, and windowed overhead — all in one row."),
+                new View(
+                        "jvmlog-problematic-gcs",
+                        "jvmlog",
+                        "GC Log: Problematic GC Events",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-problematic-gcs" AS
+                            SELECT e.gcId AS "GC ID",
+                                   e.gcType AS "Type",
+                                   e.cause AS "Cause",
+                                   round(e.pauseMs, 2) AS "Pause (ms)",
+                                   e.uptimeSecs AS "Uptime (s)",
+                                   round(h.heapBefore / 1048576.0, 1) AS "Heap Before (MB)",
+                                   round(h.heapAfter / 1048576.0, 1) AS "Heap After (MB)",
+                                   round(100.0 * (h.heapBefore - h.heapAfter) / h.heapBefore, 1) AS "Reclaim %"
+                            FROM jvmlog_gc_event e
+                            JOIN (
+                                SELECT gcId,
+                                       heapBefore,
+                                       heapAfter
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                            ) h ON e.gcId = h.gcId
+                            WHERE e.pauseMs IS NOT NULL
+                              AND (
+                                e.pauseMs > (SELECT approx_quantile(pauseMs, 0.9) FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL)
+                                OR (100.0 * (h.heapBefore - h.heapAfter) / h.heapBefore) < 10
+                              )
+                            ORDER BY e.pauseMs DESC
+                            LIMIT 50
+                            """,
+                        "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("GC events in the top 10% of pause time or reclaiming less than 10% of heap — the most impactful events."),
+                new View(
+                        "jvmlog-g1-cycle-detail",
+                        "jvmlog",
+                        "GC Log: G1 Full Cycle Detail",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-g1-cycle-detail" AS
+                            SELECT e.gcId AS "GC ID",
+                                   e.gcType AS "Type",
+                                   e.cause AS "Cause",
+                                   round(e.pauseMs, 2) AS "Pause (ms)",
+                                   r.edenBefore AS "Eden Before",
+                                   r.edenAfter AS "Eden After",
+                                   r.oldBefore AS "Old Before",
+                                   r.oldAfter AS "Old After",
+                                   round(h.heapBefore / 1048576.0, 1) AS "Heap Before (MB)",
+                                   round(h.heapAfter / 1048576.0, 1) AS "Heap After (MB)"
+                            FROM jvmlog_gc_event e
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       max(edenBefore) AS edenBefore,
+                                       max(edenAfter) AS edenAfter,
+                                       max(oldBefore) AS oldBefore,
+                                       max(oldAfter) AS oldAfter
+                                FROM jvmlog_g1_regions
+                                GROUP BY gcId
+                            ) r ON e.gcId = r.gcId
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       heapBefore,
+                                       heapAfter
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                            ) h ON e.gcId = h.gcId
+                            WHERE e.pauseMs IS NOT NULL
+                            ORDER BY e.gcId
+                            """,
+                        "jvmlog_gc_event", "jvmlog_g1_regions", "jvmlog_heap_snapshot")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-g1-cycle-detail" AS
+                            SELECT e.gcId AS "GC ID",
+                                   e.gcType AS "Type",
+                                   e.cause AS "Cause",
+                                   round(e.pauseMs, 2) AS "Pause (ms)",
+                                   r.edenBefore AS "Eden Before",
+                                   r.edenAfter AS "Eden After",
+                                   r.oldBefore AS "Old Before",
+                                   r.oldAfter AS "Old After"
+                            FROM jvmlog_gc_event e
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       max(edenBefore) AS edenBefore,
+                                       max(edenAfter) AS edenAfter,
+                                       max(oldBefore) AS oldBefore,
+                                       max(oldAfter) AS oldAfter
+                                FROM jvmlog_g1_regions
+                                GROUP BY gcId
+                            ) r ON e.gcId = r.gcId
+                            WHERE e.pauseMs IS NOT NULL
+                            ORDER BY e.gcId
+                            """,
+                        "jvmlog_gc_event", "jvmlog_g1_regions")
+                    .description("G1 per-cycle: pause, region counts before/after, and heap before/after in one row."),
                 new View(
                         "jvmlog-unknown-summary",
                         "jvmlog",

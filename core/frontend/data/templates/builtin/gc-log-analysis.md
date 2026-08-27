@@ -28,7 +28,7 @@ cellConditions:
 
 A ready-to-run analysis of JVM garbage-collection logs captured with `-Xlog:gc*`.
 
-**What's here:** Pause summary and percentiles, heap + pause combined timeline, error events, phase breakdown, and collector-specific details (G1, ZGC, Parallel, CMS, Shenandoah). Load a `.log` file to begin.
+**What's here:** Pause summary and percentiles, heap + pause combined timeline, pause histogram, GC frequency, problematic GC events, error events, phase breakdown, and collector-specific details (G1, ZGC, Parallel, CMS, Shenandoah). Load a `.log` file to begin.
 
 ---
 
@@ -147,6 +147,22 @@ LINE(x="Uptime (s)", y="Heap Before (MB)")
 
 ---
 
+<!-- @cell name=problematic-gcs requires="has-combined-timeline" -->
+
+## Problematic GC Events
+
+GC events in the top 10% of pause time or reclaiming less than 10% of heap — the events most likely causing latency or memory pressure.
+
+```sql
+SELECT * FROM "jvmlog-problematic-gcs"
+```
+
+```plot
+BAR(x="GC ID", y="Pause (ms)")
+```
+
+---
+
 <!-- @cell name=gc-errors requires="has-gc-errors" -->
 
 ## GC Error Events
@@ -174,7 +190,7 @@ SELECT * FROM "jvmlog-heap-timeline"
 ```
 
 ```plot
-LINE(x="gcId", y="heapBeforeMB")
+LINE(x="gcId", y="Heap Before (MB)")
 ```
 
 ---
@@ -322,6 +338,22 @@ SELECT * FROM "jvmlog-g1-regions"
 
 ```plot
 LINE(x="GC ID", y="Eden Before")
+```
+
+---
+
+<!-- @cell name=g1-cycle-detail requires="has-g1-regions" -->
+
+## G1: Full Cycle Detail
+
+Per-GC event with region counts, heap before/after, and pause duration in one scrollable table — the combined view for G1 cycle analysis.
+
+```sql
+SELECT * FROM "jvmlog-g1-cycle-detail"
+```
+
+```plot
+SCATTER(x="GC ID", y="Pause (ms)", color="Type")
 ```
 
 ---

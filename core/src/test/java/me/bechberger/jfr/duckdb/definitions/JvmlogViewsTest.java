@@ -25,7 +25,8 @@ class JvmlogViewsTest {
             "jvmlog-longest-pauses",
             "jvmlog-g1-mixed-gc", "jvmlog-g1-mixed-gc-summary",
             "jvmlog-zgc-load",
-            "jvmlog-pause-histogram", "jvmlog-gc-frequency", "jvmlog-gc-pressure-timeline"
+            "jvmlog-pause-histogram", "jvmlog-gc-frequency", "jvmlog-gc-pressure-timeline",
+            "jvmlog-problematic-gcs", "jvmlog-g1-cycle-detail"
     );
 
     @Test
@@ -107,11 +108,11 @@ class JvmlogViewsTest {
         assertThat(query).isNotNull();
         try (Statement s = conn.createStatement()) {
             s.execute(query); // CREATE VIEW
-            var rs = s.executeQuery("SELECT algorithm, parallelWorkers, cpuTotal FROM \"jvmlog-gc-init-summary\"");
+            var rs = s.executeQuery("SELECT \"Algorithm\", \"Parallel Workers\", \"CPUs\" FROM \"jvmlog-gc-init-summary\"");
             assertThat(rs.next()).isTrue();
-            assertThat(rs.getString("algorithm")).isEqualTo("G1");
-            assertThat(rs.getInt("parallelWorkers")).isEqualTo(10);
-            assertThat(rs.getInt("cpuTotal")).isEqualTo(12);
+            assertThat(rs.getString("Algorithm")).isEqualTo("G1");
+            assertThat(rs.getInt("Parallel Workers")).isEqualTo(10);
+            assertThat(rs.getInt("CPUs")).isEqualTo(12);
         }
         conn.close();
     }
@@ -516,6 +517,58 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getInt("GC ID")).isEqualTo(0);
             assertThat(rs.getDouble("Heap Before (MB)")).isEqualTo(256.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void problematicGcsViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 5.0, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Full', 'System.gc()', 500.0, 5.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (0, 268435456, 255000000, 536870912, 536870912)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1, 268435456, 134217728, 536870912, 536870912)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-problematic-gcs".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-problematic-gcs not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-problematic-gcs\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isGreaterThanOrEqualTo(1);
+        }
+        conn.close();
+    }
+
+    @Test
+    void g1CycleDetailViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 3.5, 1.0)");
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, edenBefore INTEGER, edenAfter INTEGER, edenMax INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, survivorMax INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER, archiveBefore INTEGER, archiveAfter INTEGER)");
+            s.execute("INSERT INTO jvmlog_g1_regions VALUES (0, 10, 0, 20, 1, 2, 5, 5, 5, 0, 0, 0, 0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-cycle-detail".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-cycle-detail not found"));
+        Set<String> tables = Set.of("jvmlog_gc_event", "jvmlog_g1_regions");
+        // isValid checks primary definition only; getBestMatchingQuery also considers alternatives
+        String query = view.getBestMatchingQuery(tables);
+        assertThat(query).as("g1-cycle-detail should resolve with 2 tables via alternative").isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Eden Before\", \"Pause (ms)\" FROM \"jvmlog-g1-cycle-detail\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getInt("Eden Before")).isEqualTo(10);
+            assertThat(rs.getDouble("Pause (ms)")).isEqualTo(3.5);
         }
         conn.close();
     }
