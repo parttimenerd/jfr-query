@@ -15,6 +15,7 @@ import picocli.CommandLine;
             ViewsCommand.class,
             ContextCommand.class,
             ServeCommand.class,
+            JvmLogCommand.class,
             CommandLine.HelpCommand.class
         })
 public class Main implements Runnable {
