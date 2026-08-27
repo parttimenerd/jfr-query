@@ -3043,18 +3043,37 @@ public class ViewCollection {
                 new View(
                         "jvmlog-g1-heap-expansion",
                         "jvmlog",
-                        "GC Log: G1 Heap Expansion",
+                        "GC Log: G1 Heap Resize Events",
                         null,
                         """
                             CREATE VIEW "jvmlog-g1-heap-expansion" AS
-                            SELECT count(*) AS expansionCount,
-                                   sum(actualExpansionBytes) / 1048576.0 AS totalExpansionMB,
-                                   avg(actualExpansionBytes) / 1048576.0 AS avgExpansionMB
+                            SELECT decision AS "Decision",
+                                   round(requestedExpansionBytes / 1048576.0, 1) AS "Requested (MB)",
+                                   round(actualExpansionBytes / 1048576.0, 1) AS "Actual (MB)"
                             FROM jvmlog_g1_ergonomics
-                            WHERE decision = 'expand'
+                            ORDER BY rowid
                             """,
                         "jvmlog_g1_ergonomics")
-                    .description("G1 heap expansion decisions: count and total/average expansion in MB."),
+                    .description("G1 heap resize events: expand, shrink, and no-shrink decisions with sizes."),
+                new View(
+                        "jvmlog-heap-efficiency",
+                        "jvmlog",
+                        "GC Log: Heap Collection Efficiency",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-heap-efficiency" AS
+                            SELECT gcId AS "GC ID",
+                                   round(heapBefore / 1048576.0, 1) AS "Before (MB)",
+                                   round(heapAfter / 1048576.0, 1) AS "After (MB)",
+                                   round((heapBefore - heapAfter) / 1048576.0, 1) AS "Reclaimed (MB)",
+                                   round(100.0 * (heapBefore - heapAfter) / heapBefore, 1) AS "Reclaim %"
+                            FROM jvmlog_heap_snapshot
+                            WHERE heapBefore > 0
+                            QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_heap_snapshot")
+                    .description("Per-GC heap reclaim amount and percentage (before vs after collection)."),
                 new View(
                         "jvmlog-metaspace-timeline",
                         "jvmlog",

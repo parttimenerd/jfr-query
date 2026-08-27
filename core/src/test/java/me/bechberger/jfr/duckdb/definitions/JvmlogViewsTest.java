@@ -21,7 +21,7 @@ class JvmlogViewsTest {
             "jvmlog-parallel-sizing", "jvmlog-stringdedup-summary", "jvmlog-zgc-director-summary",
             "jvmlog-safepoint-summary", "jvmlog-safepoint-timeline", "jvmlog-alloc-stall-summary",
             "jvmlog-gc-errors", "jvmlog-gc-error-summary", "jvmlog-pause-percentiles-by-cause",
-            "jvmlog-combined-timeline", "jvmlog-alloc-stall-timeline"
+            "jvmlog-combined-timeline", "jvmlog-alloc-stall-timeline", "jvmlog-heap-efficiency"
     );
 
     @Test
@@ -326,6 +326,50 @@ class JvmlogViewsTest {
             assertThat(rs.getString("Cause")).isEqualTo("G1 Evacuation Pause");
             assertThat(rs.getLong("Count")).isEqualTo(10);
             assertThat(rs.getDouble("P95 (ms)")).isGreaterThan(8.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void heapEfficiencyViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (0, 268435456, 134217728, 268435456, 268435456)");  // 256MB -> 128MB
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1, 200000000, 100000000, 268435456, 268435456)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-efficiency".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-efficiency not found"));
+        assertThat(view.isValid(Set.of("jvmlog_heap_snapshot"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_heap_snapshot"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Reclaim %\" FROM \"jvmlog-heap-efficiency\" WHERE \"GC ID\" = 0");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Reclaim %")).isEqualTo(50.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void allocStallTimelineViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_alloc_stall (threadName VARCHAR, stallMs DOUBLE, gcId INTEGER)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES ('main', 10.0, 1)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES ('worker-1', 5.0, 2)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-alloc-stall-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-alloc-stall-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_alloc_stall"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_alloc_stall"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-alloc-stall-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(2);
         }
         conn.close();
     }
