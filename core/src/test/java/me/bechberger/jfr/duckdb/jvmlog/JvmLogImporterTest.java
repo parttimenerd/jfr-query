@@ -55,7 +55,7 @@ class JvmLogImporterTest {
             try (var st = conn.createStatement();
                  var rs = st.executeQuery("SELECT count(*) FROM jvmlog_unknown_lines")) {
                 assertThat(rs.next()).isTrue();
-                assertThat(rs.getLong(1)).isGreaterThanOrEqualTo(0);
+                assertThat(rs.getLong(1)).as("unknown_lines table exists and is queryable").isGreaterThanOrEqualTo(0);
             }
         }
     }
@@ -158,8 +158,9 @@ class JvmLogImporterTest {
                     GROUP BY gcType
                     ORDER BY totalPauseMs DESC
                     """);
-                var rs = st.executeQuery("SELECT count(*) FROM \"jvmlog-gc-summary\"");
-                assertThat(rs.next()).isTrue();
+                try (var rs = st.executeQuery("SELECT count(*) FROM \"jvmlog-gc-summary\"")) {
+                    assertThat(rs.next()).isTrue();
+                }
             }
         }
     }
@@ -228,94 +229,109 @@ class JvmLogImporterTest {
     @Test
     void parsesLogWithoutTimestamp() throws Exception {
         var tmp = Files.createTempFile("test", ".log");
-        Files.writeString(tmp, """
-                [0.001s][info][gc,init] Using G1
-                [0.002s][info][gc,init] Heap Min Capacity: 256M
-                [0.010s][info][gc     ] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 10M->5M(256M) 3.14ms
-                """);
-        try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
-            JvmLogImporter.importLog(tmp, sink);
-            try (var st = conn.createStatement();
-                 var rs = st.executeQuery(
-                         "SELECT algorithm FROM jvmlog_gc_init WHERE algorithm IS NOT NULL LIMIT 1")) {
-                assertThat(rs.next()).as("algorithm parsed without timestamp decorator").isTrue();
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [0.002s][info][gc,init] Heap Min Capacity: 256M
+                    [0.010s][info][gc     ] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 10M->5M(256M) 3.14ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery(
+                             "SELECT algorithm FROM jvmlog_gc_init WHERE algorithm IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("algorithm parsed without timestamp decorator").isTrue();
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery(
+                             "SELECT pauseMs FROM jvmlog_gc_event WHERE pauseMs > 0 LIMIT 1")) {
+                    assertThat(rs.next()).as("pause event parsed without timestamp decorator").isTrue();
+                }
             }
-            try (var st = conn.createStatement();
-                 var rs = st.executeQuery(
-                         "SELECT pauseMs FROM jvmlog_gc_event WHERE pauseMs > 0 LIMIT 1")) {
-                assertThat(rs.next()).as("pause event parsed without timestamp decorator").isTrue();
-            }
+        } finally {
+            Files.deleteIfExists(tmp);
         }
-        Files.deleteIfExists(tmp);
     }
 
     @Test
     void parsesLogWithOnlyLevelAndTags() throws Exception {
         var tmp = Files.createTempFile("test", ".log");
-        Files.writeString(tmp, """
-                [info][gc,init] Using G1
-                [info][gc,init] Heap Min Capacity: 128M
-                """);
-        try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
-            JvmLogImporter.importLog(tmp, sink);
-            try (var st = conn.createStatement();
-                 var rs = st.executeQuery(
-                         "SELECT algorithm FROM jvmlog_gc_init WHERE algorithm IS NOT NULL LIMIT 1")) {
-                assertThat(rs.next()).as("algorithm parsed with minimal decorators").isTrue();
+        try {
+            Files.writeString(tmp, """
+                    [info][gc,init] Using G1
+                    [info][gc,init] Heap Min Capacity: 128M
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery(
+                             "SELECT algorithm FROM jvmlog_gc_init WHERE algorithm IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("algorithm parsed with minimal decorators").isTrue();
+                }
             }
+        } finally {
+            Files.deleteIfExists(tmp);
         }
-        Files.deleteIfExists(tmp);
     }
 
     @Test
     void handlesUnknownLinesGracefully() throws Exception {
         var tmp = Files.createTempFile("test", ".log");
-        Files.writeString(tmp, """
-                [0.001s][info][gc] Using G1
-                This is not a log line at all
-                [0.005s][trace][os,cpu] CPU: total 12 (initial active 12) restrict 12
-                [0.010s][info][gc] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 10M->5M(256M) 3.14ms
-                """);
-        try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
-            JvmLogImporter.importLog(tmp, sink);
-            try (var st = conn.createStatement();
-                 var rs = st.executeQuery("SELECT count(*) FROM jvmlog_unknown_lines")) {
-                assertThat(rs.next()).isTrue();
-                assertThat(rs.getLong(1)).isGreaterThanOrEqualTo(0);
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc] Using G1
+                    This is not a log line at all
+                    [0.005s][trace][os,cpu] CPU: total 12 (initial active 12) restrict 12
+                    [0.010s][info][gc] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 10M->5M(256M) 3.14ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) FROM jvmlog_unknown_lines")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong(1)).isGreaterThanOrEqualTo(0);
+                }
             }
+        } finally {
+            Files.deleteIfExists(tmp);
         }
-        Files.deleteIfExists(tmp);
     }
 
     @Test
     void handlesEmptyFile() throws Exception {
         var tmp = Files.createTempFile("test", ".log");
-        try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
-            JvmLogImporter.importLog(tmp, sink);
-            try (var st = conn.createStatement();
-                 var rs = st.executeQuery("SELECT count(*) FROM jvmlog_unknown_lines")) {
-                assertThat(rs.next()).isTrue();
-                assertThat(rs.getLong(1)).isEqualTo(0);
+        try {
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) FROM jvmlog_unknown_lines")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong(1)).isEqualTo(0);
+                }
             }
+        } finally {
+            Files.deleteIfExists(tmp);
         }
-        Files.deleteIfExists(tmp);
     }
 
     @Test
     void handlesTruncatedGcEvent() throws Exception {
         var tmp = Files.createTempFile("test", ".log");
-        Files.writeString(tmp, """
-                [0.001s][info][gc,phases] GC(0) Phase 1: Mark live objects 1.23ms
-                [0.002s][info][gc,phases] GC(0) Phase 2: Prepare for relocation 0.45ms
-                """);
-        try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
-            JvmLogImporter.importLog(tmp, sink);
-            try (var st = conn.createStatement();
-                 var rs = st.executeQuery("SELECT count(*) FROM jvmlog_gc_phase")) {
-                assertThat(rs.next()).isTrue();
-                assertThat(rs.getLong(1)).isGreaterThanOrEqualTo(0);
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,phases] GC(0) Phase 1: Mark live objects 1.23ms
+                    [0.002s][info][gc,phases] GC(0) Phase 2: Prepare for relocation 0.45ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) FROM jvmlog_gc_phase")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong(1)).isGreaterThanOrEqualTo(0);
+                }
             }
+        } finally {
+            Files.deleteIfExists(tmp);
         }
-        Files.deleteIfExists(tmp);
     }
 }
