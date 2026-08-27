@@ -2869,17 +2869,18 @@ public class ViewCollection {
                             SELECT
                                 r.gcId AS "GC ID",
                                 e.cause AS "Cause",
-                                r.edenBefore AS "Eden Before",
-                                r.edenAfter AS "Eden After",
-                                r.edenMax AS "Eden Max",
-                                r.survivorBefore AS "Survivor Before",
-                                r.survivorAfter AS "Survivor After",
-                                r.oldBefore AS "Old Before",
-                                r.oldAfter AS "Old After",
-                                r.humongousBefore AS "Humongous Before",
-                                r.humongousAfter AS "Humongous After"
+                                max(r.edenBefore) AS "Eden Before",
+                                max(r.edenAfter) AS "Eden After",
+                                max(r.edenMax) AS "Eden Max",
+                                max(r.survivorBefore) AS "Survivor Before",
+                                max(r.survivorAfter) AS "Survivor After",
+                                max(r.oldBefore) AS "Old Before",
+                                max(r.oldAfter) AS "Old After",
+                                max(r.humongousBefore) AS "Humongous Before",
+                                max(r.humongousAfter) AS "Humongous After"
                             FROM jvmlog_g1_regions r
                             LEFT JOIN jvmlog_gc_event e ON r.gcId = e.gcId
+                            GROUP BY r.gcId, e.cause
                             ORDER BY r.gcId
                             """,
                         "jvmlog_g1_regions",
