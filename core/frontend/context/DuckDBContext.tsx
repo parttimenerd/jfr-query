@@ -8,6 +8,13 @@ import { BUILTIN_MACROS_SQL, BUILTIN_VIEWS_SQL, CONDITIONAL_VIEWS_SQL } from '..
 
 const QUERY_ENDPOINT = `/api/query`;
 
+const _SQL_COMMENT_LINE_RE = /--[^\n]*/g;
+const _SQL_COMMENT_BLOCK_RE = /\/\*[\s\S]*?\*\//g;
+const _SELECT_START_RE = /^select\b/i;
+const _NO_CACHE_RE = /--\s*no-cache/i;
+const _NO_LIMIT_RE = /--\s*no-limit/i;
+const _HAS_LIMIT_RE = /\blimit\b/i;
+
 class AsyncLock {
   private isLocked = false;
   private queue: (() => void)[] = [];
@@ -40,7 +47,25 @@ const dbLock = new AsyncLock();
 export type DBMode = 'server' | 'wasm';
 export type SourceType = 'jfr' | 'duckdb';
 export enum DBState { SCHEMA_LOADING, NEEDS_FILE, IMPORTING, READY, ERROR }
-interface Schema { tables: TableSchema[]; views: ViewSchema[]; macros: MacroSchema[]; }
+interface Schema {
+    tables: TableSchema[];
+    views: ViewSchema[];
+    macros: MacroSchema[];
+    /** Pre-built map for O(1) table lookups. Avoids per-render rebuild in SQLEditor. */
+    tableMap?: ReadonlyMap<string, TableSchema>;
+    /** Pre-lowercased table names, parallel to `tables`. */
+    tablesLc?: string[];
+    /** Pre-lowercased view names, parallel to `views`. */
+    viewsLc?: string[];
+    /** Pre-lowercased macro names, parallel to `macros`. */
+    macrosLc?: string[];
+    /** Pre-built detail strings for table completions ("table · N rows"), parallel to `tables`. */
+    tablesDetail?: string[];
+    /** Pre-built detail strings for macro completions, parallel to `macros`. */
+    macrosDetail?: string[];
+    /** Pre-built apply strings for macro completions ("name("), parallel to `macros`. */
+    macrosApply?: string[];
+}
 
 interface DataContextType {
   dbState: DBState;
@@ -58,7 +83,7 @@ interface DataContextType {
   query: (sql: string) => Promise<any[]>;
   refreshSchema: () => Promise<void>;
   loadFile: (source: File | Uint8Array, fileName: string, stacktraceDepth?: number) => Promise<void>;
-  loadServerFile: (path: string) => Promise<void>;
+  loadServerFile: (paths: string | string[]) => Promise<void>;
   loadDemo: () => Promise<void>;
 }
 
@@ -263,9 +288,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const executeQuery = useCallback(async (sql: string): Promise<any> => {
     if (mode === 'wasm') {
         if (!wasmConnRef.current) throw new Error('WASM DB not initialized');
-        const cleaned = sql.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
-        const isSelect = /^select\b/i.test(cleaned);
-        const noCache = /--\s*no-cache/i.test(sql);
+        const cleaned = sql.replace(_SQL_COMMENT_LINE_RE, '').replace(_SQL_COMMENT_BLOCK_RE, '').trim();
+        const isSelect = _SELECT_START_RE.test(cleaned);
+        const noCache = _NO_CACHE_RE.test(sql);
         if (isSelect && !noCache) {
             const cached = queryCacheRef.current.get(sql);
             if (cached !== undefined) return cached;
@@ -321,11 +346,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       ]);
 
       const tablesMap = new Map<string, TableSchema>();
-      tablesData.forEach((r: any) => { if(!tablesMap.has(r.table_name)) tablesMap.set(r.table_name, {name:r.table_name,columns:[]}); tablesMap.get(r.table_name)!.columns.push({name:r.column_name,type:r.data_type}); });
+      tablesData.forEach((r: any) => { if(!tablesMap.has(r.table_name)) tablesMap.set(r.table_name, {name:r.table_name,columns:[]}); tablesMap.get(r.table_name)!.columns.push({name:r.column_name,type:r.data_type,nameLc:r.column_name.toLowerCase()}); });
       const tables = Array.from(tablesMap.values()).sort((a,b)=>a.name.localeCompare(b.name));
 
       const viewsMap = new Map<string, ViewSchema>();
-      viewsData.forEach((r:any) => { if(!viewsMap.has(r.view_name)) viewsMap.set(r.view_name, {name:r.view_name,query:r.sql,columns:[],internal:r.internal}); viewsMap.get(r.view_name)!.columns.push({name:r.column_name,type:r.data_type}); });
+      viewsData.forEach((r:any) => { if(!viewsMap.has(r.view_name)) viewsMap.set(r.view_name, {name:r.view_name,query:r.sql,columns:[],internal:r.internal}); viewsMap.get(r.view_name)!.columns.push({name:r.column_name,type:r.data_type,nameLc:r.column_name.toLowerCase()}); });
 
       const macros: MacroSchema[] = macrosData.map((r:any)=>({
           name: r.function_name,
@@ -371,7 +396,27 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           console.warn('Could not fetch row counts', e);
       }
 
-      setSchema({ tables, views: Array.from(viewsMap.values()), macros });
+      const tableMapBuilt = new Map<string, TableSchema>();
+      const tablesLcBuilt: string[] = new Array(tables.length);
+      const tablesDetailBuilt: string[] = new Array(tables.length);
+      for (let i = 0; i < tables.length; i++) {
+          const t = tables[i];
+          const lc = t.name.toLowerCase();
+          tableMapBuilt.set(lc, t);
+          tablesLcBuilt[i] = lc;
+          tablesDetailBuilt[i] = t.rowCount != null
+              ? `table · ${t.rowCount.toLocaleString()} rows`
+              : 'table';
+      }
+      const viewsArr = Array.from(viewsMap.values());
+      const viewsLcBuilt: string[] = viewsArr.map(v => v.name.toLowerCase());
+      const macrosLcBuilt: string[] = macros.map(m => m.name.toLowerCase());
+      const macrosDetailBuilt: string[] = macros.map(m => {
+          const sig = m.parameters.length > 0 ? `(${m.parameters.join(', ')})` : '()';
+          return `macro${sig} → ${m.returnType}`;
+      });
+      const macrosApplyBuilt: string[] = macros.map(m => m.name + '(');
+      setSchema({ tables, views: viewsArr, macros, tableMap: tableMapBuilt, tablesLc: tablesLcBuilt, viewsLc: viewsLcBuilt, macrosLc: macrosLcBuilt, tablesDetail: tablesDetailBuilt, macrosDetail: macrosDetailBuilt, macrosApply: macrosApplyBuilt });
   }, []);
 
   useEffect(() => {
@@ -608,19 +653,34 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [fetchSchemaFor]);
 
-  const loadServerFile = useCallback(async (path: string) => {
+  const loadServerFile = useCallback(async (paths: string | string[]) => {
     setDbState(DBState.IMPORTING);
     setErrorMessage(null);
     queryCacheRef.current.clear();
     try {
+      let body: object;
+      if (Array.isArray(paths)) {
+        body = {
+          files: paths.map(p => ({
+            path: p,
+            type: p.toLowerCase().endsWith('.log') || p.toLowerCase().endsWith('.txt')
+                ? 'jvmlog'
+                : p.toLowerCase().endsWith('.jfr') || p.toLowerCase().endsWith('.cjfr')
+                ? 'jfr'
+                : 'duckdb',
+          })),
+        };
+      } else {
+        body = { path: paths };
+      }
       const r = await fetch('/api/load-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
+        body: JSON.stringify(body),
       });
-      const body = await r.json();
-      if (!r.ok || body.error) throw new Error(body.error || 'load failed');
-      setServerCurrentFile(path);
+      const responseBody = await r.json();
+      if (!r.ok || responseBody.error) throw new Error(responseBody.error || 'load failed');
+      setServerCurrentFile(Array.isArray(paths) ? paths.join(', ') : paths);
       setRecordingStart(null);
       setRecordingEnd(null);
       const type = await detectSourceType(executeRemoteQuery);
@@ -652,11 +712,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Users can add "-- no-limit" anywhere in their query to bypass this guard.
     let safeSql = trimmedSql;
     if (mode === 'wasm') {
-      const noLimitBypass = /--\s*no-limit/i.test(trimmedSql);
+      const noLimitBypass = _NO_LIMIT_RE.test(trimmedSql);
       if (!noLimitBypass) {
-        const cleaned = trimmedSql.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
-        const isSelect = /^select\b/i.test(cleaned);
-        const hasLimit = /\blimit\b/i.test(cleaned);
+        const cleaned = trimmedSql.replace(_SQL_COMMENT_LINE_RE, '').replace(_SQL_COMMENT_BLOCK_RE, '').trim();
+        const isSelect = _SELECT_START_RE.test(cleaned);
+        const hasLimit = _HAS_LIMIT_RE.test(cleaned);
         if (isSelect && !hasLimit) {
           safeSql = `SELECT * FROM (\n${trimmedSql}\n) __q LIMIT ${MAX_QUERY_ROWS}`;
         }
