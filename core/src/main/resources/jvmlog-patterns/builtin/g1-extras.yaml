@@ -42,3 +42,67 @@
     deduplicatedObjects: long
     durationMs: double
   table: jvmlog_stringdedup
+
+# G1 Concurrent Cycle total duration — tags [gc]
+# e.g.: GC(5) Concurrent Cycle 123.456ms
+- id: g1_concurrent_cycle
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Concurrent Cycle ([0-9.]+)ms'
+  fields:
+    gcId: int
+    durationMs: double
+  constants:
+    phaseName: Concurrent Cycle
+  table: jvmlog_gc_phase
+
+# G1 Concurrent Mark from Roots duration — tags [gc,phases]
+# e.g.: GC(5) Concurrent Mark from Roots 89.123ms
+- id: g1_concurrent_mark_from_roots
+  tags: [gc, phases]
+  level: info
+  pattern: 'GC\((\d+)\) Concurrent Mark from Roots ([0-9.]+)ms'
+  fields:
+    gcId: int
+    durationMs: double
+  constants:
+    phaseName: Concurrent Mark from Roots
+  table: jvmlog_gc_phase
+
+# G1 Concurrent Mark Abort — marks that marking was aborted before completion
+# e.g.: GC(5) Concurrent Mark Abort
+- id: g1_concurrent_mark_abort
+  tags: [gc, phases]
+  level: info
+  pattern: 'GC\((\d+)\) Concurrent Mark Abort'
+  fields:
+    gcId: int
+  constants:
+    phaseName: Concurrent Mark Abort
+  table: jvmlog_gc_phase
+
+# G1 Rebuild Remembered Sets (JDK 17+ mixed GC helper phase)
+# e.g.: GC(5) Concurrent Rebuild Remembered Sets and Scrub Regions 12.345ms
+- id: g1_concurrent_rebuild_remsets
+  tags: [gc, phases]
+  level: info
+  pattern: 'GC\((\d+)\) Concurrent Rebuild Remembered Sets(?:[^0-9]*)([0-9.]+)ms'
+  fields:
+    gcId: int
+    durationMs: double
+  constants:
+    phaseName: Concurrent Rebuild Remembered Sets
+  table: jvmlog_gc_phase
+
+# G1 Cleanup for Next Mark — tags [gc,phases]
+# e.g.: GC(5) Concurrent Cleanup for Next Mark 1.234ms
+- id: g1_concurrent_cleanup_next
+  tags: [gc, phases]
+  level: info
+  pattern: 'GC\((\d+)\) Concurrent Cleanup for Next Mark ([0-9.]+)ms'
+  fields:
+    gcId: int
+    durationMs: double
+  constants:
+    phaseName: Concurrent Cleanup for Next Mark
+  table: jvmlog_gc_phase

@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.sql.DriverManager;
 import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class JvmLogImporterTest {
@@ -1589,6 +1590,35 @@ class JvmLogImporterTest {
                      var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_shenandoah_free")) {
                     assertThat(rs.next()).isTrue();
                     assertThat(rs.getLong("cnt")).as("Shenandoah free region rows").isGreaterThanOrEqualTo(2);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void g1ConcurrentPhasesAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-g1-concurrent-phases", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [1.000s][info][gc]       GC(5) Concurrent Cycle 85.432ms
+                    [1.001s][info][gc,phases] GC(5) Concurrent Mark from Roots 72.100ms
+                    [1.002s][info][gc,phases] GC(5) Concurrent Rebuild Remembered Sets and Scrub Regions 10.234ms
+                    [1.003s][info][gc,phases] GC(5) Concurrent Cleanup for Next Mark 0.456ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT phaseName, durationMs FROM jvmlog_gc_phase WHERE phaseName = 'Concurrent Cycle' LIMIT 1")) {
+                    assertThat(rs.next()).as("Concurrent Cycle phase captured").isTrue();
+                    assertThat(rs.getDouble("durationMs")).isCloseTo(85.432, within(0.001));
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_gc_phase WHERE phaseName LIKE 'Concurrent%'")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("All G1 concurrent phases captured").isGreaterThanOrEqualTo(3);
                 }
             }
         } finally {
