@@ -36,66 +36,72 @@ public final class JvmLogImporter {
         var tableColumns = buildTableColumns(registry);
 
         var appenders = new HashMap<String, Appender>();
-        for (var tableName : schemas.keySet()) {
-            appenders.put(tableName, sink.createAppender(tableName));
-        }
-
-        var unknownLines = new LinkedHashMap<String, long[]>();
-        var accumulator = new GcEventAccumulator(result -> {
-            var appender = appenders.get(result.tableName());
-            if (appender == null) return;
-            List<FieldDef> allCols = tableColumns.getOrDefault(result.tableName(), List.of());
-            // Build a name->value map for the current match result
-            var valueMap = new HashMap<String, Object>();
-            for (int i = 0; i < result.fields().size(); i++) {
-                valueMap.put(result.fields().get(i).name(), result.values().get(i));
+        try {
+            for (var tableName : schemas.keySet()) {
+                appenders.put(tableName, sink.createAppender(tableName));
             }
-            try {
-                appender.beginRow();
-                for (FieldDef col : allCols) {
-                    Object val = valueMap.get(col.name());
-                    appendValue(appender, col.type(), val);
+
+            var unknownLines = new LinkedHashMap<String, long[]>();
+            var accumulator = new GcEventAccumulator(result -> {
+                var appender = appenders.get(result.tableName());
+                if (appender == null) return;
+                List<FieldDef> allCols = tableColumns.getOrDefault(result.tableName(), List.of());
+                var valueMap = new HashMap<String, Object>();
+                for (int i = 0; i < result.fields().size(); i++) {
+                    valueMap.put(result.fields().get(i).name(), result.values().get(i));
                 }
-                appender.endRow();
-            } catch (SQLException e) {
-                throw new RuntimeException(e);
-            }
-        });
-
-        try (var lines = Files.lines(logFile)) {
-            lines.forEach(rawLine -> {
-                var parsed = LogLineParser.parse(rawLine);
-                if (parsed.isEmpty()) return;
-                var line = parsed.get();
-                var match = registry.match(line);
-                if (match.isPresent()) {
-                    accumulator.accumulate(match.get());
-                } else {
-                    String prefix = normalizePrefix(line.message());
-                    String tagsStr = String.join(",", line.tags());
-                    String levelStr = line.level() != null ? line.level().name().toLowerCase() : "";
-                    String key = tagsStr + "|" + levelStr + "|" + prefix;
-                    unknownLines.computeIfAbsent(key, k -> new long[]{0})[0]++;
+                try {
+                    appender.beginRow();
+                    for (FieldDef col : allCols) {
+                        Object val = valueMap.get(col.name());
+                        appendValue(appender, col.type(), val);
+                    }
+                    appender.endRow();
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
                 }
             });
-        }
 
-        accumulator.flushAll();
-        for (var appender : appenders.values()) {
-            appender.close();
-        }
+            try (var lines = Files.lines(logFile)) {
+                lines.forEach(rawLine -> {
+                    var parsed = LogLineParser.parse(rawLine);
+                    if (parsed.isEmpty()) return;
+                    var line = parsed.get();
+                    var match = registry.match(line);
+                    if (match.isPresent()) {
+                        accumulator.accumulate(match.get());
+                    } else {
+                        String prefix = normalizePrefix(line.message());
+                        String tagsStr = String.join(",", line.tags());
+                        String levelStr = line.level() != null ? line.level().name().toLowerCase() : "";
+                        String key = tagsStr + "|" + levelStr + "|" + prefix;
+                        unknownLines.computeIfAbsent(key, k -> new long[]{0})[0]++;
+                    }
+                });
+            }
 
-        var unknownAppender = sink.createAppender("jvmlog_unknown_lines");
-        for (var entry : unknownLines.entrySet()) {
-            String[] parts = entry.getKey().split("\\|", 3);
-            unknownAppender.beginRow();
-            unknownAppender.append(parts.length > 0 ? parts[0] : "");
-            unknownAppender.append(parts.length > 1 ? parts[1] : "");
-            unknownAppender.append(parts.length > 2 ? parts[2] : "");
-            unknownAppender.append(entry.getValue()[0]);
-            unknownAppender.endRow();
+            accumulator.flushAll();
+            for (var appender : appenders.values()) {
+                appender.close();
+            }
+            appenders.clear();
+
+            try (var unknownAppender = sink.createAppender("jvmlog_unknown_lines")) {
+                for (var entry : unknownLines.entrySet()) {
+                    String[] parts = entry.getKey().split("\\|", 3);
+                    unknownAppender.beginRow();
+                    unknownAppender.append(parts.length > 0 ? parts[0] : "");
+                    unknownAppender.append(parts.length > 1 ? parts[1] : "");
+                    unknownAppender.append(parts.length > 2 ? parts[2] : "");
+                    unknownAppender.append(entry.getValue()[0]);
+                    unknownAppender.endRow();
+                }
+            }
+        } finally {
+            for (var appender : appenders.values()) {
+                try { appender.close(); } catch (SQLException ignored) {}
+            }
         }
-        unknownAppender.close();
     }
 
     private static void appendValue(Appender appender, FieldType type, Object val)
