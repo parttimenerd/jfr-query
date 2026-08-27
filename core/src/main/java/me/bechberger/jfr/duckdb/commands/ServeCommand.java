@@ -10,6 +10,7 @@ import me.bechberger.jfr.duckdb.RuntimeSQLException;
 import me.bechberger.jfr.duckdb.jvmlog.CorrelationFinalizer;
 import me.bechberger.jfr.duckdb.jvmlog.FileTypeRouter;
 import me.bechberger.jfr.duckdb.jvmlog.JvmLogImporter;
+import me.bechberger.jfr.duckdb.jvmlog.PatternSuggester;
 import me.bechberger.jfr.duckdb.templates.TemplateService;
 import me.bechberger.jfr.duckdb.util.JdbcDuckDBSink;
 import org.duckdb.DuckDBConnection;
@@ -311,6 +312,63 @@ public class ServeCommand implements Runnable {
             ctx.result(body.get());
         });
 
+        app.post("/api/jvmlog/suggest-pattern", ctx -> {
+            String line;
+            try {
+                Map<?, ?> req = MAPPER.readValue(ctx.body(), Map.class);
+                line = (String) req.get("line");
+            } catch (JsonProcessingException e) {
+                ctx.status(400).json(Map.of("error", "Invalid JSON: " + e.getMessage()));
+                return;
+            }
+            if (line == null || line.isBlank()) {
+                ctx.status(400).json(Map.of("error", "missing 'line' field"));
+                return;
+            }
+            PatternSuggester.SuggestedPattern s = PatternSuggester.suggest(line);
+            ctx.json(Map.of(
+                    "id", s.id(),
+                    "tags", s.tags(),
+                    "level", s.level(),
+                    "pattern", s.pattern(),
+                    "fields", s.fields().stream()
+                            .map(f -> Map.of("name", f.name(), "type", f.fieldType()))
+                            .toList(),
+                    "table", s.table()
+            ));
+        });
+
+        app.post("/api/jvmlog/save-pattern", ctx -> {
+            if (jvmlogPatternsDir.isEmpty()) {
+                ctx.status(400).json(Map.of("error",
+                        "Server was not started with --jvmlog-patterns-dir. " +
+                        "Restart with: --jvmlog-patterns-dir /path/to/patterns/"));
+                return;
+            }
+            Map<?, ?> req;
+            try {
+                req = MAPPER.readValue(ctx.body(), Map.class);
+            } catch (JsonProcessingException e) {
+                ctx.status(400).json(Map.of("error", "Invalid JSON: " + e.getMessage()));
+                return;
+            }
+            String id = (String) req.get("id");
+            if (id == null || id.isBlank()) {
+                ctx.status(400).json(Map.of("error", "missing 'id' field"));
+                return;
+            }
+            try {
+                String yaml = buildYamlFromRequest(req);
+                Path outDir = jvmlogPatternsDir.get();
+                java.nio.file.Files.createDirectories(outDir);
+                Path outFile = outDir.resolve(id + ".yaml");
+                java.nio.file.Files.writeString(outFile, yaml);
+                ctx.json(Map.of("ok", true, "path", outFile.toString()));
+            } catch (Exception e) {
+                ctx.status(500).json(Map.of("error", e.getMessage()));
+            }
+        });
+
         return app;
     }
 
@@ -349,6 +407,33 @@ public class ServeCommand implements Runnable {
         try {
             Thread.currentThread().join();
         } catch (InterruptedException ignored) {}
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String buildYamlFromRequest(Map<?, ?> req) {
+        String id = (String) req.get("id");
+        Object tagsObj = req.get("tags");
+        List<String> tags = tagsObj instanceof List ? (List<String>) tagsObj : List.of();
+        Object levelObj = req.get("level");
+        String level = levelObj instanceof String ? (String) levelObj : "info";
+        Object patternObj = req.get("pattern");
+        String pattern = patternObj instanceof String ? (String) patternObj : "";
+        Object fieldsObj = req.get("fields");
+        List<Map<String, String>> fields = fieldsObj instanceof List ? (List<Map<String, String>>) fieldsObj : List.of();
+        Object tableObj = req.get("table");
+        String table = tableObj instanceof String ? (String) tableObj : "jvmlog_unknown_lines";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("- id: ").append(id).append("\n");
+        sb.append("  tags: [").append(String.join(", ", tags)).append("]\n");
+        sb.append("  level: ").append(level).append("\n");
+        sb.append("  pattern: '").append(pattern.replace("'", "''")).append("'\n");
+        sb.append("  fields:\n");
+        for (Map<String, String> f : fields) {
+            sb.append("    ").append(f.get("name")).append(": ").append(f.get("type")).append("\n");
+        }
+        sb.append("  table: ").append(table).append("\n");
+        return sb.toString();
     }
 
     private static List<Map<String, Object>> executeQuery(DuckDBConnection conn, String sql) throws SQLException {
