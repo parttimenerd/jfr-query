@@ -2971,6 +2971,7 @@ public class ViewCollection {
                                    e.pauseMs
                             FROM jvmlog_heap_snapshot h
                             LEFT JOIN jvmlog_gc_event e ON h.gcId = e.gcId
+                            QUALIFY row_number() OVER (PARTITION BY h.gcId ORDER BY h.heapCommittedBefore DESC NULLS LAST) = 1
                             ORDER BY h.gcId
                             """,
                         "jvmlog_heap_snapshot",

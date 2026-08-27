@@ -1,0 +1,32 @@
+# GC event inline heap sizes — extracted from pause lines when [gc,heap] lines are absent.
+# With multi-match support, these patterns fire on the SAME line as gc_pause_event /
+# gc_zgc_collection and write heap data to jvmlog_heap_snapshot in parallel.
+#
+# Useful for users who log only -Xlog:gc (no gc* wildcard) and don't get the
+# dedicated [gc,heap] "GC(N) Heap: N->N(N)" lines.
+
+# G1/Parallel/Serial pause with embedded heap: "128M->64M(256M)"
+# e.g.: GC(0) Pause Young (Normal) (G1 Evacuation Pause) 128M->64M(256M) 3.14ms
+#       GC(2) Pause Full (G1 Compaction) 200M->50M(256M) 100ms
+- id: gc_pause_heap_inline
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Pause \S+.*\((?:[^)]+)\) (\d+[KMG]?)->(\d+[KMG]?)\((\d+[KMG]?)\) [0-9.]+ms$'
+  fields:
+    gcId: int
+    heapBefore: bytes
+    heapAfter: bytes
+    heapCommittedAfter: bytes
+  table: jvmlog_heap_snapshot
+
+# ZGC garbage collection with heap percentages: "128M(25%)->64M(12%)"
+# e.g.: GC(0) Garbage Collection (Allocation Rate) 128M(25%)->64M(12%)
+- id: gc_zgc_heap_inline
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Garbage Collection \([^)]+\) (\d+[KMG]?)\(\d+%\)->(\d+[KMG]?)\(\d+%\)'
+  fields:
+    gcId: int
+    heapBefore: bytes
+    heapAfter: bytes
+  table: jvmlog_heap_snapshot

@@ -876,6 +876,7 @@ class JvmLogImporterTest {
                                e.pauseMs
                         FROM jvmlog_heap_snapshot h
                         LEFT JOIN jvmlog_gc_event e ON h.gcId = e.gcId
+                        QUALIFY row_number() OVER (PARTITION BY h.gcId ORDER BY h.heapCommittedBefore DESC NULLS LAST) = 1
                         ORDER BY h.gcId
                         """);
                     try (var rs = st.executeQuery("SELECT count(*) FROM \"jvmlog-heap-timeline\"")) {
@@ -1349,6 +1350,42 @@ class JvmLogImporterTest {
                     assertThat(rs.next()).isTrue();
                     assertThat(rs.getDouble("totalMs")).isEqualTo(15.234);
                     assertThat(rs.getDouble("syncMs")).isEqualTo(1.234);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void inlineHeapSizesExtractedFromPauseLine() throws Exception {
+        var tmp = Files.createTempFile("test-heap-inline", ".log");
+        try {
+            // No [gc,heap] lines — heap data is only in the pause line itself
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [0.500s][info][gc] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 128M->64M(256M) 3.14ms
+                    [1.000s][info][gc] GC(1) Pause Young (Normal) (G1 Evacuation Pause) 64M->32M(256M) 2.00ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                // Multi-match: both jvmlog_gc_event and jvmlog_heap_snapshot get rows
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_heap_snapshot")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("Inline heap rows extracted").isEqualTo(2);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT heapBefore, heapAfter FROM jvmlog_heap_snapshot WHERE gcId = 0")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("heapBefore")).isEqualTo(128L * 1024 * 1024);
+                    assertThat(rs.getLong("heapAfter")).isEqualTo(64L * 1024 * 1024);
+                }
+                // The gc_event row must also exist (multi-match doesn't break primary routing)
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_gc_event")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("GC events still captured").isEqualTo(2);
                 }
             }
         } finally {

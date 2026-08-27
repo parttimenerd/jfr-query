@@ -72,12 +72,12 @@ public final class JvmLogImporter {
                     var parsed = LogLineParser.parse(rawLine);
                     if (parsed.isEmpty()) return;
                     var line = parsed.get();
-                    var match = registry.match(line);
-                    if (match.isPresent()) {
-                        var result = match.get();
-                        // Inject log-line metadata (uptime, timestamp) if the table has those columns
-                        result = enrichFromLine(result, line, tableColumns);
-                        accumulator.accumulate(result);
+                    var matches = registry.matchAll(line);
+                    if (!matches.isEmpty()) {
+                        for (var result : matches) {
+                            var enriched = enrichFromLine(result, line, tableColumns);
+                            accumulator.accumulate(enriched);
+                        }
                     } else {
                         String prefix = normalizePrefix(line.message());
                         String tagsStr = String.join(",", line.tags());

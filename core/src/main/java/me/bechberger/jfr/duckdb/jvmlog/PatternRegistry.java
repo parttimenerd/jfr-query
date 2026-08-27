@@ -43,6 +43,21 @@ public final class PatternRegistry {
         return Optional.empty();
     }
 
+    /**
+     * Match a line against ALL registered patterns, returning one MatchResult per
+     * matching pattern. Patterns that write to the same table are all included.
+     * Patterns that produce no result (empty Optional from extract()) are silently skipped.
+     */
+    public List<MatchResult> matchAll(LogLine line) {
+        var results = new ArrayList<MatchResult>();
+        for (var pattern : patterns) {
+            if (pattern.matches(line)) {
+                pattern.extract(line).ifPresent(results::add);
+            }
+        }
+        return results;
+    }
+
     public List<LogPattern> patterns() {
         return List.copyOf(patterns);
     }

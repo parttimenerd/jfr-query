@@ -4,3 +4,4 @@ g1-extras.yaml
 shenandoah.yaml
 cms.yaml
 safepoint.yaml
+heap-inline.yaml
