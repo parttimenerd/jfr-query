@@ -11,6 +11,7 @@ cellConditions:
   has-zgc: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_phases'"
   has-zgc-director: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_director'"
   has-parallel: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_parallel_sizing'"
+  has-stringdedup: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_stringdedup'"
   has-metaspace: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_metaspace'"
   has-jfr-correlation: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_jfr_correlation'"
 ---
@@ -237,12 +238,7 @@ BAR(x="GC ID", y="Concurrent ms")
 Allocation rate, free heap %, and time-to-OOM that triggered each GC.
 
 ```sql
-SELECT gcId AS "GC ID", ruleName AS "Rule",
-       round(allocationRateMbps, 1) AS "Alloc Rate (MB/s)",
-       round(freeHeapPct, 1) AS "Free Heap %",
-       round(timeUntilOomSecs, 1) AS "Time to OOM (s)"
-FROM jvmlog_zgc_director
-ORDER BY gcId
+SELECT * FROM "jvmlog-zgc-director-summary"
 ```
 
 ```plot
@@ -255,19 +251,30 @@ TABLE()
 
 ## Parallel: Generation Sizing
 
-Eden, Survivor, and Old generation sizes after each GC.
+Young and Old generation sizes and throughput per GC cycle.
 
 ```sql
-SELECT gcId AS "GC ID",
-       youngGenBytes / 1048576.0 AS "Young Gen (MB)",
-       oldGenBytes / 1048576.0 AS "Old Gen (MB)",
-       round(throughputPct, 1) AS "Throughput %"
-FROM jvmlog_parallel_sizing
-ORDER BY gcId
+SELECT * FROM "jvmlog-parallel-sizing"
 ```
 
 ```plot
 LINE(x="GC ID", y="Throughput %")
+```
+
+---
+
+<!-- @cell name=stringdedup requires="has-stringdedup" -->
+
+## String Deduplication
+
+Objects deduped, duration, and bytes saved per GC cycle.
+
+```sql
+SELECT * FROM "jvmlog-stringdedup-summary"
+```
+
+```plot
+BAR(x="GC ID", y="Bytes Saved")
 ```
 
 ---

@@ -1263,4 +1263,67 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void cmsConcurrentPhasesAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-cms", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using Concurrent Mark Sweep
+                    [0.100s][info][gc] GC(0) Pause Young (Allocation Failure) 128M->64M(512M) 10.00ms
+                    [0.200s][info][gc,phases] GC(1) Concurrent Mark 45.678ms
+                    [0.250s][info][gc,phases] GC(1) Concurrent Preclean 1.234ms
+                    [0.300s][info][gc,phases] GC(1) Concurrent Abortable Preclean 12.000ms
+                    [0.310s][info][gc,phases] GC(1) Pause Remark 3.456ms
+                    [0.350s][info][gc,phases] GC(1) Concurrent Sweep 20.000ms
+                    [0.360s][info][gc,phases] GC(1) Concurrent Reset 5.000ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                // 5 concurrent phases go to jvmlog_gc_phase; Pause Remark goes to jvmlog_gc_event
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_gc_phase WHERE gcId = 1")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("CMS concurrent phases captured").isEqualTo(5);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT phaseName FROM jvmlog_gc_phase WHERE gcId = 1 ORDER BY phaseName")) {
+                    var names = new java.util.ArrayList<String>();
+                    while (rs.next()) names.add(rs.getString("phaseName"));
+                    // gc_zgc_concurrent_phase captures the part after "Concurrent "
+                    assertThat(names).contains("Mark", "Preclean", "Sweep", "Reset");
+                }
+                // Pause Remark routes to jvmlog_gc_event (gc_pause_event_no_cause pattern)
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT gcType, pauseMs FROM jvmlog_gc_event WHERE gcId = 1")) {
+                    assertThat(rs.next()).as("Pause Remark captured as GC event").isTrue();
+                    assertThat(rs.getString("gcType")).isEqualTo("Remark");
+                    assertThat(rs.getDouble("pauseMs")).isEqualTo(3.456);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void cmsPromotionFailureCapturedAsGcEvent() throws Exception {
+        var tmp = Files.createTempFile("test-cms-pf", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using Concurrent Mark Sweep
+                    [1.500s][info][gc] GC(5) Pause Young (Promotion Failed) 250.00ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT gcId, pauseMs FROM jvmlog_gc_event WHERE gcId = 5")) {
+                    assertThat(rs.next()).as("Promotion Failed event captured").isTrue();
+                    assertThat(rs.getDouble("pauseMs")).isEqualTo(250.0);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }

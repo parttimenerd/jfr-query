@@ -17,7 +17,8 @@ class JvmlogViewsTest {
             "jvmlog-phase-timeline", "jvmlog-g1-regions", "jvmlog-zgc-cycle", "jvmlog-jfr-correlation",
             "jvmlog-gc-pause-summary", "jvmlog-gc-pause-by-type", "jvmlog-gc-phase-breakdown",
             "jvmlog-gc-init-summary", "jvmlog-gc-cumulative-pause", "jvmlog-g1-heap-expansion",
-            "jvmlog-unknown-summary", "jvmlog-metaspace-timeline"
+            "jvmlog-unknown-summary", "jvmlog-metaspace-timeline",
+            "jvmlog-parallel-sizing", "jvmlog-stringdedup-summary", "jvmlog-zgc-director-summary"
     );
 
     @Test
@@ -147,6 +148,72 @@ class JvmlogViewsTest {
                 if (rs.getLong("GC ID") == 0) rowsForGc0++;
             } while (rs.next());
             assertThat(rowsForGc0).as("GC 0 has two generations (Young + N/A)").isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void parallelSizingViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_parallel_sizing (gcId INTEGER, youngGenBytes BIGINT, youngGenCapacity BIGINT, oldGenBytes BIGINT, oldGenCapacity BIGINT, throughputPct DOUBLE)");
+            s.execute("INSERT INTO jvmlog_parallel_sizing VALUES (0, 134217728, 268435456, 67108864, 536870912, 98.5)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-parallel-sizing".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-parallel-sizing not found"));
+        assertThat(view.isValid(Set.of("jvmlog_parallel_sizing"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_parallel_sizing"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Throughput %\" FROM \"jvmlog-parallel-sizing\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getDouble("Throughput %")).isEqualTo(98.5);
+        }
+        conn.close();
+    }
+
+    @Test
+    void stringdedupViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_stringdedup (gcId INTEGER, savedBytes BIGINT, objectCount BIGINT, deduplicatedObjects BIGINT, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_stringdedup VALUES (3, 12345, 678, 100, 1.23)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-stringdedup-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-stringdedup-summary not found"));
+        assertThat(view.isValid(Set.of("jvmlog_stringdedup"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_stringdedup"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Bytes Saved\" FROM \"jvmlog-stringdedup-summary\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(3);
+            assertThat(rs.getLong("Bytes Saved")).isEqualTo(12345);
+        }
+        conn.close();
+    }
+
+    @Test
+    void zgcDirectorViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_director (gcId INTEGER, ruleName VARCHAR, allocationRateMbps DOUBLE, freeHeapPct DOUBLE, timeUntilOomSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_zgc_director VALUES (0, 'Allocation Rate', 125.3, 25.0, 8.3)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-director-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-director-summary not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_director"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_zgc_director"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Rule\" FROM \"jvmlog-zgc-director-summary\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getString("Rule")).isEqualTo("Allocation Rate");
         }
         conn.close();
     }

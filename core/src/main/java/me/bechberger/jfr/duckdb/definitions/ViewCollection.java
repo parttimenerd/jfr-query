@@ -3071,6 +3071,58 @@ public class ViewCollection {
                         "jvmlog_metaspace")
                     .description("Metaspace usage before and after each GC event."),
                 new View(
+                        "jvmlog-parallel-sizing",
+                        "jvmlog",
+                        "GC Log: Parallel GC Generation Sizes",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-parallel-sizing" AS
+                            SELECT gcId AS "GC ID",
+                                   round(youngGenBytes / 1048576.0, 2) AS "Young Gen (MB)",
+                                   round(youngGenCapacity / 1048576.0, 2) AS "Young Capacity (MB)",
+                                   round(oldGenBytes / 1048576.0, 2) AS "Old Gen (MB)",
+                                   round(oldGenCapacity / 1048576.0, 2) AS "Old Capacity (MB)",
+                                   round(throughputPct, 1) AS "Throughput %"
+                            FROM jvmlog_parallel_sizing
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_parallel_sizing")
+                    .description("Parallel GC Young/Old generation sizes and throughput per GC cycle."),
+                new View(
+                        "jvmlog-stringdedup-summary",
+                        "jvmlog",
+                        "GC Log: String Deduplication Summary",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-stringdedup-summary" AS
+                            SELECT gcId AS "GC ID",
+                                   deduplicatedObjects AS "Objects Deduped",
+                                   round(durationMs, 2) AS "Duration (ms)",
+                                   savedBytes AS "Bytes Saved",
+                                   objectCount AS "Objects with Savings"
+                            FROM jvmlog_stringdedup
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_stringdedup")
+                    .description("String deduplication statistics per GC cycle."),
+                new View(
+                        "jvmlog-zgc-director-summary",
+                        "jvmlog",
+                        "GC Log: ZGC Director Decisions",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-zgc-director-summary" AS
+                            SELECT gcId AS "GC ID",
+                                   ruleName AS "Rule",
+                                   round(allocationRateMbps, 1) AS "Alloc Rate (MB/s)",
+                                   round(freeHeapPct, 1) AS "Free Heap %",
+                                   round(timeUntilOomSecs, 1) AS "Time to OOM (s)"
+                            FROM jvmlog_zgc_director
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_zgc_director")
+                    .description("ZGC director decisions: allocation rate, free heap percentage, and time to OOM."),
+                new View(
                         "jvmlog-unknown-summary",
                         "jvmlog",
                         "GC Log: Unrecognised Lines",

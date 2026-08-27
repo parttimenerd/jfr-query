@@ -1,0 +1,18 @@
+# CMS (Concurrent Mark Sweep) patterns — JDK 9-11
+# Note: CMS concurrent phases (Concurrent Mark, Concurrent Sweep, etc.) use
+# tags [gc,phases] and are matched by the Java gc_zgc_concurrent_phase pattern
+# which captures the name after "Concurrent " and routes to jvmlog_gc_phase.
+# Pause phases (Pause Remark, Pause Initial Mark) are captured by
+# gc_pause_event_no_cause and gc_pause_event → jvmlog_gc_event.
+
+# CMS heap sizes — tags [gc,heap]
+# e.g.: GC(0) CMS Old Gen: 256M->128M(512M)
+- id: cms_old_gen_sizing
+  tags: [gc, heap]
+  level: info
+  pattern: 'GC\((\d+)\) CMS Old Gen: (\d+[KMG]?)->\d+[KMG]?\((\d+[KMG]?)\)'
+  fields:
+    gcId: int
+    oldGenBytes: bytes
+    oldGenCapacity: bytes
+  table: jvmlog_parallel_sizing
