@@ -6,3 +6,4 @@ cms.yaml
 safepoint.yaml
 heap-inline.yaml
 alloc-stall.yaml
+gc-errors.yaml

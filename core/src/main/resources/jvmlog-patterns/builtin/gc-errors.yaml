@@ -1,0 +1,67 @@
+# GC error and warning patterns — tags [gc] or [gc,phases]
+# These capture abnormal GC conditions: to-space exhaustion, evacuation failures,
+# humongous allocation failures, and OOM-triggering events.
+
+# G1 "To-space exhausted" — heap is completely full during young GC evacuation
+# e.g.: GC(4) To-space exhausted
+- id: gc_to_space_exhausted
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) To-space exhausted'
+  fields:
+    gcId: int
+  constants:
+    errorType: To-space exhausted
+  table: jvmlog_gc_errors
+
+# G1 "Evacuation Failure" — some objects could not be evacuated
+# e.g.: GC(4) Evacuation Failure 1.234ms
+- id: gc_evacuation_failure
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Evacuation Failure ([0-9.]+)ms'
+  fields:
+    gcId: int
+    durationMs: double
+  constants:
+    errorType: Evacuation Failure
+  table: jvmlog_gc_errors
+
+# G1 humongous allocation failure
+# e.g.: GC(4) Humongous object allocation failed
+- id: gc_humongous_failure
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Humongous object allocation failed'
+  fields:
+    gcId: int
+  constants:
+    errorType: Humongous Allocation Failed
+  table: jvmlog_gc_errors
+
+# ZGC allocation failure / out-of-memory hint
+# e.g.: GC(4) Out Of Memory (Allocation 256M)
+- id: gc_oom_event
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Out Of Memory \((.+)\)'
+  fields:
+    gcId: int
+    errorDetail: string
+  constants:
+    errorType: Out Of Memory
+  table: jvmlog_gc_errors
+
+# Shenandoah "Degenerated GC" is a degraded-mode full-heap collection
+# e.g.: GC(N) Pause Degenerated GC (Evacuation) 256M->64M(512M) 123.456ms
+# Already captured by gc_pause_event with type "Degenerated" — just add to errors too
+- id: gc_degenerated
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Pause Degenerated GC \(([^)]+)\)(?:\s+\S+\s+[0-9.]+ms)?'
+  fields:
+    gcId: int
+    errorDetail: string
+  constants:
+    errorType: Degenerated GC
+  table: jvmlog_gc_errors

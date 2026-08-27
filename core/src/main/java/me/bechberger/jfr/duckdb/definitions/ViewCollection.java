@@ -3181,6 +3181,104 @@ public class ViewCollection {
                         "jvmlog_alloc_stall")
                     .description("Per-thread allocation stall statistics: count, total, average, and max stall time."),
                 new View(
+                        "jvmlog-gc-errors",
+                        "jvmlog",
+                        "GC Log: GC Error Events",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-errors" AS
+                            SELECT gcId AS "GC ID",
+                                   errorType AS "Error Type",
+                                   errorDetail AS "Detail",
+                                   round(durationMs, 2) AS "Duration (ms)"
+                            FROM jvmlog_gc_errors
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_gc_errors")
+                    .description("GC error conditions: to-space exhausted, evacuation failures, OOM events."),
+                new View(
+                        "jvmlog-gc-error-summary",
+                        "jvmlog",
+                        "GC Log: GC Error Summary",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-error-summary" AS
+                            SELECT errorType AS "Error Type",
+                                   count(*) AS "Count",
+                                   round(sum(durationMs), 2) AS "Total (ms)",
+                                   round(avg(durationMs), 2) AS "Avg (ms)"
+                            FROM jvmlog_gc_errors
+                            GROUP BY errorType
+                            ORDER BY "Count" DESC
+                            """,
+                        "jvmlog_gc_errors")
+                    .description("GC error event counts and durations grouped by error type."),
+                new View(
+                        "jvmlog-pause-percentiles-by-cause",
+                        "jvmlog",
+                        "GC Log: Pause Percentiles by Cause",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-pause-percentiles-by-cause" AS
+                            SELECT cause AS "Cause",
+                                   count(*) AS "Count",
+                                   round(min(pauseMs), 2) AS "Min (ms)",
+                                   round(approx_quantile(pauseMs, 0.5), 2) AS "P50 (ms)",
+                                   round(approx_quantile(pauseMs, 0.95), 2) AS "P95 (ms)",
+                                   round(approx_quantile(pauseMs, 0.99), 2) AS "P99 (ms)",
+                                   round(max(pauseMs), 2) AS "Max (ms)",
+                                   round(sum(pauseMs), 2) AS "Total (ms)"
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                            GROUP BY cause
+                            ORDER BY "Total (ms)" DESC
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Pause time percentiles (p50/p95/p99) grouped by GC cause."),
+                new View(
+                        "jvmlog-combined-timeline",
+                        "jvmlog",
+                        "GC Log: Combined Heap + Pause Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-combined-timeline" AS
+                            SELECT e.uptimeSecs AS "Uptime (s)",
+                                   e.gcId AS "GC ID",
+                                   e.gcType AS "Type",
+                                   e.cause AS "Cause",
+                                   round(e.pauseMs, 2) AS "Pause (ms)",
+                                   round(h.heapBeforeMB, 1) AS "Heap Before (MB)",
+                                   round(h.heapAfterMB, 1) AS "Heap After (MB)"
+                            FROM jvmlog_gc_event e
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       heapBefore / 1048576.0 AS heapBeforeMB,
+                                       heapAfter / 1048576.0 AS heapAfterMB
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                            ) h ON e.gcId = h.gcId
+                            WHERE e.uptimeSecs IS NOT NULL
+                            ORDER BY e.uptimeSecs
+                            """,
+                        "jvmlog_gc_event",
+                        "jvmlog_heap_snapshot")
+                    .description("GC pause and heap usage combined per-event timeline."),
+                new View(
+                        "jvmlog-alloc-stall-timeline",
+                        "jvmlog",
+                        "GC Log: Allocation Stall Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-alloc-stall-timeline" AS
+                            SELECT threadName AS "Thread",
+                                   round(stallMs, 2) AS "Stall (ms)",
+                                   gcId AS "GC ID"
+                            FROM jvmlog_alloc_stall
+                            ORDER BY rowid
+                            """,
+                        "jvmlog_alloc_stall")
+                    .description("Chronological allocation stall events with thread name and duration."),
+                new View(
                         "jvmlog-unknown-summary",
                         "jvmlog",
                         "GC Log: Unrecognised Lines",

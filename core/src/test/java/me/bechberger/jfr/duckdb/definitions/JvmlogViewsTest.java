@@ -19,7 +19,9 @@ class JvmlogViewsTest {
             "jvmlog-gc-init-summary", "jvmlog-gc-cumulative-pause", "jvmlog-g1-heap-expansion",
             "jvmlog-unknown-summary", "jvmlog-metaspace-timeline",
             "jvmlog-parallel-sizing", "jvmlog-stringdedup-summary", "jvmlog-zgc-director-summary",
-            "jvmlog-safepoint-summary", "jvmlog-safepoint-timeline", "jvmlog-alloc-stall-summary"
+            "jvmlog-safepoint-summary", "jvmlog-safepoint-timeline", "jvmlog-alloc-stall-summary",
+            "jvmlog-gc-errors", "jvmlog-gc-error-summary", "jvmlog-pause-percentiles-by-cause",
+            "jvmlog-combined-timeline", "jvmlog-alloc-stall-timeline"
     );
 
     @Test
@@ -263,6 +265,92 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getString("Thread")).isEqualTo("main");
             assertThat(rs.getLong("Stalls")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcErrorViewsExecuteWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_errors (gcId INTEGER, errorType VARCHAR, errorDetail VARCHAR, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (2, 'To-space exhausted', NULL, NULL)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (2, 'Evacuation Failure', NULL, 1.23)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (5, 'To-space exhausted', NULL, NULL)");
+        }
+        View errView = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-errors".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-errors not found"));
+        assertThat(errView.isValid(Set.of("jvmlog_gc_errors"))).isTrue();
+        String query = errView.getBestMatchingQuery(Set.of("jvmlog_gc_errors"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-gc-errors\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(3);
+        }
+
+        View summaryView = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-error-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-error-summary not found"));
+        assertThat(summaryView.isValid(Set.of("jvmlog_gc_errors"))).isTrue();
+        String summaryQuery = summaryView.getBestMatchingQuery(Set.of("jvmlog_gc_errors"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(summaryQuery);
+            var rs = s.executeQuery("SELECT \"Error Type\", \"Count\" FROM \"jvmlog-gc-error-summary\" ORDER BY \"Count\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Error Type")).isEqualTo("To-space exhausted");
+            assertThat(rs.getLong("Count")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void pausePercentilesViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 10; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', " + (i + 1.0) + ", " + i + ".0)");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-percentiles-by-cause".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-percentiles-by-cause not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Cause\", \"Count\", \"P95 (ms)\" FROM \"jvmlog-pause-percentiles-by-cause\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Cause")).isEqualTo("G1 Evacuation Pause");
+            assertThat(rs.getLong("Count")).isEqualTo(10);
+            assertThat(rs.getDouble("P95 (ms)")).isGreaterThan(8.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void combinedTimelineViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 3.14, 0.5)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (0, 134217728, 67108864, 268435456, 268435456)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-combined-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-combined-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Heap Before (MB)\", \"Pause (ms)\" FROM \"jvmlog-combined-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getDouble("Heap Before (MB)")).isEqualTo(128.0);
+            assertThat(rs.getDouble("Pause (ms)")).isEqualTo(3.14);
         }
         conn.close();
     }

@@ -16,6 +16,8 @@ cellConditions:
   has-jfr-correlation: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_jfr_correlation'"
   has-safepoint: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_safepoint'"
   has-alloc-stall: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_alloc_stall'"
+  has-gc-errors: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_gc_errors'"
+  has-combined-timeline: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_heap_snapshot'"
 ---
 
 <!-- @cell name=intro -->
@@ -24,7 +26,7 @@ cellConditions:
 
 A ready-to-run analysis of JVM garbage-collection logs captured with `-Xlog:gc*`.
 
-**What's here:** Pause summary, heap timeline, phase breakdown, and collector-specific details (G1, ZGC, Parallel, CMS, Shenandoah). Load a `.log` file to begin.
+**What's here:** Pause summary and percentiles, heap + pause combined timeline, error events, phase breakdown, and collector-specific details (G1, ZGC, Parallel, CMS, Shenandoah). Load a `.log` file to begin.
 
 ---
 
@@ -60,6 +62,22 @@ BAR(x="Cause", y="Total ms")
 
 ---
 
+<!-- @cell name=pause-percentiles -->
+
+## Pause Percentiles
+
+P50, P95, and P99 pause times per GC cause.
+
+```sql
+SELECT * FROM "jvmlog-pause-percentiles-by-cause"
+```
+
+```plot
+BAR(x="Cause", y="P99 (ms)")
+```
+
+---
+
 <!-- @cell name=pause-timeline -->
 
 ## Pause Timeline
@@ -75,6 +93,38 @@ ORDER BY uptimeSecs
 
 ```plot
 SCATTER(x="Uptime (s)", y="Pause (ms)", color="Type")
+```
+
+---
+
+<!-- @cell name=combined-timeline requires="has-combined-timeline" -->
+
+## Heap + Pause Combined Timeline
+
+Pause duration and heap usage before/after each GC event in one view.
+
+```sql
+SELECT * FROM "jvmlog-combined-timeline"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Heap Before (MB)")
+```
+
+---
+
+<!-- @cell name=gc-errors requires="has-gc-errors" -->
+
+## GC Error Events
+
+To-space exhaustion, evacuation failures, and OOM events.
+
+```sql
+SELECT * FROM "jvmlog-gc-error-summary"
+```
+
+```plot
+BAR(x="Error Type", y="Count")
 ```
 
 ---
@@ -287,6 +337,22 @@ SELECT * FROM "jvmlog-alloc-stall-summary"
 
 ```plot
 BAR(x="Thread", y="Total Stall (ms)")
+```
+
+---
+
+<!-- @cell name=alloc-stall-timeline requires="has-alloc-stall" -->
+
+## Allocation Stall Timeline
+
+Individual stall events in log order.
+
+```sql
+SELECT * FROM "jvmlog-alloc-stall-timeline"
+```
+
+```plot
+SCATTER(x="GC ID", y="Stall (ms)", color="Thread")
 ```
 
 ---
