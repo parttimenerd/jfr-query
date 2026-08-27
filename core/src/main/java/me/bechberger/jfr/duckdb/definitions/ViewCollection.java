@@ -3123,6 +3123,42 @@ public class ViewCollection {
                         "jvmlog_zgc_director")
                     .description("ZGC director decisions: allocation rate, free heap percentage, and time to OOM."),
                 new View(
+                        "jvmlog-safepoint-summary",
+                        "jvmlog",
+                        "GC Log: Safepoint Summary",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-safepoint-summary" AS
+                            SELECT operation AS "Operation",
+                                   count(*) AS "Count",
+                                   round(avg(totalMs), 2) AS "Avg Total (ms)",
+                                   round(max(totalMs), 2) AS "Max Total (ms)",
+                                   round(avg(syncMs), 2) AS "Avg Sync (ms)",
+                                   round(sum(totalMs), 2) AS "Total (ms)"
+                            FROM jvmlog_safepoint
+                            WHERE operation IS NOT NULL
+                            GROUP BY operation
+                            ORDER BY "Total (ms)" DESC
+                            """,
+                        "jvmlog_safepoint")
+                    .description("Safepoint operations: count, average, and max total and sync time."),
+                new View(
+                        "jvmlog-safepoint-timeline",
+                        "jvmlog",
+                        "GC Log: Safepoint Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-safepoint-timeline" AS
+                            SELECT operation AS "Operation",
+                                   round(totalMs, 2) AS "Total (ms)",
+                                   round(syncMs, 2) AS "Sync (ms)"
+                            FROM jvmlog_safepoint
+                            WHERE operation IS NOT NULL
+                            ORDER BY rowid
+                            """,
+                        "jvmlog_safepoint")
+                    .description("Per-safepoint operation name and duration in log order."),
+                new View(
                         "jvmlog-unknown-summary",
                         "jvmlog",
                         "GC Log: Unrecognised Lines",

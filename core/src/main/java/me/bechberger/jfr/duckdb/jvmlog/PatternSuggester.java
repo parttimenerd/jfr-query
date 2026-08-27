@@ -114,6 +114,7 @@ public final class PatternSuggester {
         if (tagSet.contains("gc") && tagSet.contains("shenandoah"))  return "jvmlog_gc_init";
         if (tagSet.contains("z")  && tagSet.contains("gc"))          return "jvmlog_zgc_phases";
         if (tagSet.contains("gc"))                                    return "jvmlog_gc_event";
+        if (tagSet.contains("safepoint"))                             return "jvmlog_safepoint";
         return "jvmlog_unknown_lines";
     }
 

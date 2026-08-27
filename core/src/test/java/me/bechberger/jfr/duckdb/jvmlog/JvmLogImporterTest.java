@@ -1326,4 +1326,33 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void safepointEventsAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-safepoint", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [1.234s][info][safepoint] Safepoint "G1CollectForAllocation", time 15.234 ms, reaching threads in 1.234 ms
+                    [2.500s][info][safepoint] Safepoint "HandshakeFallback", time 0.234 ms, reaching threads in 0.100 ms
+                    [3.000s][info][safepoint] Safepoint "G1CollectForAllocation", time 12.000 ms, reaching threads in 0.500 ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_safepoint")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("All safepoint events captured").isEqualTo(3);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT operation, totalMs, syncMs FROM jvmlog_safepoint WHERE operation='G1CollectForAllocation' LIMIT 1")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getDouble("totalMs")).isEqualTo(15.234);
+                    assertThat(rs.getDouble("syncMs")).isEqualTo(1.234);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }

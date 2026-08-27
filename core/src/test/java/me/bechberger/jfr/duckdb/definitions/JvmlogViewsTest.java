@@ -18,7 +18,8 @@ class JvmlogViewsTest {
             "jvmlog-gc-pause-summary", "jvmlog-gc-pause-by-type", "jvmlog-gc-phase-breakdown",
             "jvmlog-gc-init-summary", "jvmlog-gc-cumulative-pause", "jvmlog-g1-heap-expansion",
             "jvmlog-unknown-summary", "jvmlog-metaspace-timeline",
-            "jvmlog-parallel-sizing", "jvmlog-stringdedup-summary", "jvmlog-zgc-director-summary"
+            "jvmlog-parallel-sizing", "jvmlog-stringdedup-summary", "jvmlog-zgc-director-summary",
+            "jvmlog-safepoint-summary", "jvmlog-safepoint-timeline"
     );
 
     @Test
@@ -214,6 +215,30 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getInt("GC ID")).isEqualTo(0);
             assertThat(rs.getString("Rule")).isEqualTo("Allocation Rate");
+        }
+        conn.close();
+    }
+
+    @Test
+    void safepointViewsExecuteWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_safepoint (operation VARCHAR, totalMs DOUBLE, syncMs DOUBLE, gcId INTEGER)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('G1CollectForAllocation', 15.234, 1.234, NULL)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('G1CollectForAllocation', 12.000, 0.500, NULL)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('HandshakeFallback', 0.234, 0.100, NULL)");
+        }
+        View summaryView = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-safepoint-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-safepoint-summary not found"));
+        assertThat(summaryView.isValid(Set.of("jvmlog_safepoint"))).isTrue();
+        String query = summaryView.getBestMatchingQuery(Set.of("jvmlog_safepoint"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Operation\", \"Count\" FROM \"jvmlog-safepoint-summary\" ORDER BY \"Total (ms)\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Operation")).isEqualTo("G1CollectForAllocation");
+            assertThat(rs.getLong("Count")).isEqualTo(2);
         }
         conn.close();
     }

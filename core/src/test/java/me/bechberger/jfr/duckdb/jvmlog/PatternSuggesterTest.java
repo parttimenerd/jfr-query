@@ -33,7 +33,7 @@ class PatternSuggesterTest {
     @Test
     void unknownTagsRoutedToUnknownTable() {
         var s = PatternSuggester.suggest(
-                "[0.001s][info][safepoint] Safepoint reached");
+                "[0.001s][info][jit] Method compiled successfully");
         assertThat(s.table()).isEqualTo("jvmlog_unknown_lines");
     }
 
@@ -71,5 +71,12 @@ class PatternSuggesterTest {
         var s = PatternSuggester.suggest(
                 "[0.002s][info][gc,shenandoah] Shenandoah GC Mode: Saturation");
         assertThat(s.table()).isEqualTo("jvmlog_gc_init");
+    }
+
+    @Test
+    void safepointTagRoutedToSafepointTable() {
+        var s = PatternSuggester.suggest(
+                "[1.234s][info][safepoint] Safepoint \"G1CollectForAllocation\", time 15.234 ms, reaching threads in 1.234 ms");
+        assertThat(s.table()).isEqualTo("jvmlog_safepoint");
     }
 }

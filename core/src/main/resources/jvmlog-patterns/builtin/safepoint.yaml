@@ -1,0 +1,30 @@
+# Safepoint patterns — tags [safepoint]
+# JDK 17+ safepoint logging with -Xlog:safepoint
+#
+# JDK 17+ format:
+#   Safepoint "G1CollectForAllocation", time 15.234 ms, reaching threads in 1.234 ms
+# JDK 11 format:
+#   Total time: 15.234 ms  (and separate lines for sync/cleanup/vmop)
+
+# JDK 17+: combined safepoint line with operation name and times
+# e.g.: Safepoint "G1CollectForAllocation", time 15.234 ms, reaching threads in 1.234 ms
+- id: safepoint_event
+  tags: [safepoint]
+  level: info
+  pattern: 'Safepoint "([^"]+)", time ([0-9.]+) ms, reaching threads in ([0-9.]+) ms'
+  fields:
+    operation: string
+    totalMs: double
+    syncMs: double
+  table: jvmlog_safepoint
+
+# JDK 11: vmop line — "Total time: N ms" used alongside separate sync/cleanup lines
+# e.g.: GC(0) Total time: 15.234 ms
+- id: safepoint_total_time
+  tags: [safepoint]
+  level: info
+  pattern: 'GC\((\d+)\) Total time: ([0-9.]+) ms'
+  fields:
+    gcId: int
+    totalMs: double
+  table: jvmlog_safepoint
