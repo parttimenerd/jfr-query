@@ -15,6 +15,7 @@ cellConditions:
   has-metaspace: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_metaspace'"
   has-jfr-correlation: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_jfr_correlation'"
   has-safepoint: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_safepoint'"
+  has-alloc-stall: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_alloc_stall'"
 ---
 
 <!-- @cell name=intro -->
@@ -270,6 +271,22 @@ SELECT * FROM "jvmlog-safepoint-summary"
 
 ```plot
 BAR(x="Operation", y="Total (ms)")
+```
+
+---
+
+<!-- @cell name=alloc-stall requires="has-alloc-stall" -->
+
+## Allocation Stalls
+
+Threads stalled waiting for GC to free memory — grouped by thread name.
+
+```sql
+SELECT * FROM "jvmlog-alloc-stall-summary"
+```
+
+```plot
+BAR(x="Thread", y="Total Stall (ms)")
 ```
 
 ---

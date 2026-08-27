@@ -5,3 +5,4 @@ shenandoah.yaml
 cms.yaml
 safepoint.yaml
 heap-inline.yaml
+alloc-stall.yaml

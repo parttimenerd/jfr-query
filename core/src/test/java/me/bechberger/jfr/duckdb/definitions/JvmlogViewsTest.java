@@ -19,7 +19,7 @@ class JvmlogViewsTest {
             "jvmlog-gc-init-summary", "jvmlog-gc-cumulative-pause", "jvmlog-g1-heap-expansion",
             "jvmlog-unknown-summary", "jvmlog-metaspace-timeline",
             "jvmlog-parallel-sizing", "jvmlog-stringdedup-summary", "jvmlog-zgc-director-summary",
-            "jvmlog-safepoint-summary", "jvmlog-safepoint-timeline"
+            "jvmlog-safepoint-summary", "jvmlog-safepoint-timeline", "jvmlog-alloc-stall-summary"
     );
 
     @Test
@@ -239,6 +239,30 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getString("Operation")).isEqualTo("G1CollectForAllocation");
             assertThat(rs.getLong("Count")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void allocStallViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_alloc_stall (threadName VARCHAR, stallMs DOUBLE, gcId INTEGER)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES ('main', 15.234, NULL)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES ('main', 12.000, NULL)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES ('worker-1', 5.000, NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-alloc-stall-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-alloc-stall-summary not found"));
+        assertThat(view.isValid(Set.of("jvmlog_alloc_stall"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_alloc_stall"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Thread\", \"Stalls\" FROM \"jvmlog-alloc-stall-summary\" ORDER BY \"Total Stall (ms)\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Thread")).isEqualTo("main");
+            assertThat(rs.getLong("Stalls")).isEqualTo(2);
         }
         conn.close();
     }

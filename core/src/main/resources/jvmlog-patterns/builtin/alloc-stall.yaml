@@ -1,0 +1,25 @@
+# Allocation stall patterns — tags [gc,alloc] or [gc]
+# ZGC and other collectors log stalls when allocation fails and a GC is triggered.
+# JDK 17+: Stall "Thread name" N ms
+# Older:   Allocation Stall - Thread "name" N ms
+
+# JDK 17+ ZGC stall: [gc,alloc] Stall: Thread "main" 15.234 ms
+- id: gc_alloc_stall
+  tags: [gc, alloc]
+  level: info
+  pattern: 'Stall: Thread "([^"]+)" ([0-9.]+) ms'
+  fields:
+    threadName: string
+    stallMs: double
+  table: jvmlog_alloc_stall
+
+# Older ZGC stall format in [gc] tag
+- id: gc_alloc_stall_old
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Allocation Stall - Thread "([^"]+)" ([0-9.]+) ms'
+  fields:
+    gcId: int
+    threadName: string
+    stallMs: double
+  table: jvmlog_alloc_stall

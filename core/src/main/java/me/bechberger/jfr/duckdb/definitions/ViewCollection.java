@@ -3160,6 +3160,24 @@ public class ViewCollection {
                         "jvmlog_safepoint")
                     .description("Per-safepoint operation name and duration in log order."),
                 new View(
+                        "jvmlog-alloc-stall-summary",
+                        "jvmlog",
+                        "GC Log: Allocation Stalls",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-alloc-stall-summary" AS
+                            SELECT threadName AS "Thread",
+                                   count(*) AS "Stalls",
+                                   round(sum(stallMs), 2) AS "Total Stall (ms)",
+                                   round(avg(stallMs), 2) AS "Avg Stall (ms)",
+                                   round(max(stallMs), 2) AS "Max Stall (ms)"
+                            FROM jvmlog_alloc_stall
+                            GROUP BY threadName
+                            ORDER BY "Total Stall (ms)" DESC
+                            """,
+                        "jvmlog_alloc_stall")
+                    .description("Per-thread allocation stall statistics: count, total, average, and max stall time."),
+                new View(
                         "jvmlog-unknown-summary",
                         "jvmlog",
                         "GC Log: Unrecognised Lines",
