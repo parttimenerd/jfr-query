@@ -1000,4 +1000,142 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void g1AllRegionTypesAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-g1-regions", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [1.000s][info][gc] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 128M->64M(256M) 12.34ms
+                    [1.001s][debug][gc,region] GC(0) Eden regions: 24->0(25)
+                    [1.001s][debug][gc,region] GC(0) Survivor regions: 3->3(3)
+                    [1.001s][debug][gc,region] GC(0) Old regions: 10->11
+                    [1.001s][debug][gc,region] GC(0) Humongous regions: 2->2
+                    [1.001s][debug][gc,region] GC(0) Archive regions: 0->0
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT edenBefore, edenAfter, edenMax FROM jvmlog_g1_regions WHERE edenBefore IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Eden regions parsed").isTrue();
+                    assertThat(rs.getInt("edenBefore")).isEqualTo(24);
+                    assertThat(rs.getInt("edenAfter")).isEqualTo(0);
+                    assertThat(rs.getInt("edenMax")).isEqualTo(25);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT survivorBefore, survivorAfter FROM jvmlog_g1_regions WHERE survivorBefore IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Survivor regions parsed").isTrue();
+                    assertThat(rs.getInt("survivorBefore")).isEqualTo(3);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT oldBefore, oldAfter FROM jvmlog_g1_regions WHERE oldBefore IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Old regions parsed").isTrue();
+                    assertThat(rs.getInt("oldBefore")).isEqualTo(10);
+                    assertThat(rs.getInt("oldAfter")).isEqualTo(11);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT humongousBefore, humongousAfter FROM jvmlog_g1_regions WHERE humongousBefore IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Humongous regions parsed").isTrue();
+                    assertThat(rs.getInt("humongousBefore")).isEqualTo(2);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void zgcNonGenerationalPhasesAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-zgc-phases", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.005s][info][gc,init] Initializing The Z Garbage Collector
+                    [0.005s][info][gc,init] Min Capacity: 256M
+                    [0.005s][info][gc,init] Max Capacity: 4096M
+                    [1.000s][info][z,gc] GC(0) Pause Mark Start 0.456ms
+                    [1.023s][info][z,gc] GC(0) Concurrent Mark 23.4ms
+                    [1.046s][info][z,gc] GC(0) Pause Mark End 0.234ms
+                    [1.050s][info][z,gc] GC(0) Concurrent Mark Free 0.001ms
+                    [1.055s][info][z,gc] GC(0) Concurrent Process Non-Strong References 1.23ms
+                    [1.060s][info][z,gc] GC(0) Concurrent Reset Relocation Set 0.001ms
+                    [1.065s][info][z,gc] GC(0) Concurrent Select Relocation Set 4.5ms
+                    [1.070s][info][z,gc] GC(0) Pause Relocate Start 0.123ms
+                    [1.130s][info][z,gc] GC(0) Concurrent Relocate 56.7ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) FROM jvmlog_zgc_phases")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong(1)).as("ZGC phase rows").isGreaterThanOrEqualTo(8);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT phaseName, concurrent FROM jvmlog_zgc_phases WHERE phaseName = 'Pause Mark Start' LIMIT 1")) {
+                    assertThat(rs.next()).as("Pause Mark Start captured").isTrue();
+                    assertThat(rs.getBoolean("concurrent")).isFalse();
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT phaseName, concurrent, generation FROM jvmlog_zgc_phases WHERE phaseName = 'Mark' LIMIT 1")) {
+                    assertThat(rs.next()).as("Concurrent Mark captured").isTrue();
+                    assertThat(rs.getBoolean("concurrent")).isTrue();
+                    assertThat(rs.getString("generation")).isEqualTo("N/A");
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void zgcGenerationalPhasesAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-zgc-gen-phases", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.005s][info][gc,init] Initializing The Z Garbage Collector
+                    [0.005s][info][gc,init] Min Capacity: 256M
+                    [0.005s][info][gc,init] Max Capacity: 4096M
+                    [1.000s][info][gc] GC(0) Garbage Collection (Allocation Rate)
+                    [1.046s][info][z,gc] GC(0) Young Collection 45.678ms
+                    [2.000s][info][gc] GC(1) Garbage Collection (Allocation Rate)
+                    [2.200s][info][z,gc] GC(1) Old Collection 123.456ms
+                    [3.000s][info][gc] GC(2) Garbage Collection (Proactive)
+                    [3.200s][info][z,gc] GC(2) Major Collection 200.0ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT generation FROM jvmlog_zgc_phases WHERE phaseName = 'Young Collection' LIMIT 1")) {
+                    assertThat(rs.next()).as("Young Collection phase").isTrue();
+                    assertThat(rs.getString("generation")).isEqualTo("Young");
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT generation FROM jvmlog_zgc_phases WHERE phaseName = 'Old Collection' LIMIT 1")) {
+                    assertThat(rs.next()).as("Old Collection phase").isTrue();
+                    assertThat(rs.getString("generation")).isEqualTo("Old");
+                }
+                // Verify the zgc-cycle view works
+                try (var st = conn.createStatement()) {
+                    st.execute("""
+                        CREATE VIEW "jvmlog-zgc-cycle" AS
+                        SELECT
+                            gcId AS "GC ID",
+                            generation AS "Generation",
+                            sum(CASE WHEN concurrent THEN durationMs ELSE 0 END) AS "Concurrent ms",
+                            sum(CASE WHEN NOT concurrent THEN durationMs ELSE 0 END) AS "Pause ms"
+                        FROM jvmlog_zgc_phases
+                        GROUP BY gcId, generation
+                        ORDER BY gcId
+                        """);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) FROM \"jvmlog-zgc-cycle\"")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong(1)).as("ZGC cycle view rows").isGreaterThan(0);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }

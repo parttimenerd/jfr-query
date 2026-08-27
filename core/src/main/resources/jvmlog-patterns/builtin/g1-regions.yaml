@@ -1,4 +1,4 @@
-- id: g1_region_count
+- id: g1_region_eden
   tags: [gc, region]
   level: debug
   pattern: 'GC\((\d+)\) Eden regions: (\d+)->(\d+)\((\d+)\)'
@@ -7,4 +7,45 @@
     edenBefore: int
     edenAfter: int
     edenMax: int
+  table: jvmlog_g1_regions
+
+- id: g1_region_survivor
+  tags: [gc, region]
+  level: debug
+  pattern: 'GC\((\d+)\) Survivor regions: (\d+)->(\d+)\((\d+)\)'
+  fields:
+    gcId: int
+    survivorBefore: int
+    survivorAfter: int
+    survivorMax: int
+  table: jvmlog_g1_regions
+
+- id: g1_region_old
+  tags: [gc, region]
+  level: debug
+  pattern: 'GC\((\d+)\) Old regions: (\d+)->(\d+)'
+  fields:
+    gcId: int
+    oldBefore: int
+    oldAfter: int
+  table: jvmlog_g1_regions
+
+- id: g1_region_humongous
+  tags: [gc, region]
+  level: debug
+  pattern: 'GC\((\d+)\) Humongous regions: (\d+)->(\d+)'
+  fields:
+    gcId: int
+    humongousBefore: int
+    humongousAfter: int
+  table: jvmlog_g1_regions
+
+- id: g1_region_archive
+  tags: [gc, region]
+  level: debug
+  pattern: 'GC\((\d+)\) Archive regions: (\d+)->(\d+)'
+  fields:
+    gcId: int
+    archiveBefore: int
+    archiveAfter: int
   table: jvmlog_g1_regions

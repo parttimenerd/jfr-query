@@ -143,10 +143,11 @@ public final class JvmLogImporter {
             return;
         }
         switch (type) {
-            case INT    -> appender.append((Integer) val);
+            case INT     -> appender.append((Integer) val);
             case LONG, BYTES -> appender.append(val instanceof Long l ? l : ((Integer) val).longValue());
-            case DOUBLE -> appender.append((Double) val);
-            case STRING -> appender.append((String) val);
+            case DOUBLE  -> appender.append((Double) val);
+            case STRING  -> appender.append((String) val);
+            case BOOLEAN -> appender.append((Boolean) val);
         }
     }
 

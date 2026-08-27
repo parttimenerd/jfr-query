@@ -3,7 +3,7 @@ package me.bechberger.jfr.duckdb.jvmlog;
 import java.util.regex.Pattern;
 
 public enum FieldType {
-    INT, LONG, DOUBLE, STRING, BYTES;
+    INT, LONG, DOUBLE, STRING, BYTES, BOOLEAN;
 
     private static final Pattern BYTES_PAT = Pattern.compile("^(\\d+)([KMGkmg]?)B?$");
 
@@ -11,11 +11,12 @@ public enum FieldType {
     public Object parse(String raw) {
         if (raw == null) return null;
         return switch (this) {
-            case INT    -> Integer.parseInt(raw.trim());
-            case LONG   -> Long.parseLong(raw.trim());
-            case DOUBLE -> Double.parseDouble(raw.trim());
-            case STRING -> raw;
-            case BYTES  -> parseBytes(raw.trim());
+            case INT     -> Integer.parseInt(raw.trim());
+            case LONG    -> Long.parseLong(raw.trim());
+            case DOUBLE  -> Double.parseDouble(raw.trim());
+            case STRING  -> raw;
+            case BYTES   -> parseBytes(raw.trim());
+            case BOOLEAN -> Boolean.parseBoolean(raw.trim());
         };
     }
 
@@ -36,20 +37,22 @@ public enum FieldType {
     /** DuckDB DDL type string */
     public String duckDbType() {
         return switch (this) {
-            case INT    -> "INTEGER";
+            case INT     -> "INTEGER";
             case LONG, BYTES -> "BIGINT";
-            case DOUBLE -> "DOUBLE";
-            case STRING -> "VARCHAR";
+            case DOUBLE  -> "DOUBLE";
+            case STRING  -> "VARCHAR";
+            case BOOLEAN -> "BOOLEAN";
         };
     }
 
     public static FieldType fromYaml(String s) {
         return switch (s.toLowerCase().trim()) {
-            case "int"    -> INT;
-            case "long"   -> LONG;
-            case "double" -> DOUBLE;
-            case "bytes"  -> BYTES;
-            default       -> STRING;
+            case "int"     -> INT;
+            case "long"    -> LONG;
+            case "double"  -> DOUBLE;
+            case "bytes"   -> BYTES;
+            case "boolean" -> BOOLEAN;
+            default        -> STRING;
         };
     }
 }

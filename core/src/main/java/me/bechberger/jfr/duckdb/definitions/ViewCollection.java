@@ -2854,14 +2854,20 @@ public class ViewCollection {
                                 e.cause AS "Cause",
                                 r.edenBefore AS "Eden Before",
                                 r.edenAfter AS "Eden After",
-                                r.edenMax AS "Eden Max"
+                                r.edenMax AS "Eden Max",
+                                r.survivorBefore AS "Survivor Before",
+                                r.survivorAfter AS "Survivor After",
+                                r.oldBefore AS "Old Before",
+                                r.oldAfter AS "Old After",
+                                r.humongousBefore AS "Humongous Before",
+                                r.humongousAfter AS "Humongous After"
                             FROM jvmlog_g1_regions r
                             LEFT JOIN jvmlog_gc_event e ON r.gcId = e.gcId
                             ORDER BY r.gcId
                             """,
                         "jvmlog_g1_regions",
                         "jvmlog_gc_event")
-                    .description("G1 Eden region counts before and after each GC event."),
+                    .description("G1 Eden, Survivor, Old, and Humongous region counts before and after each GC event."),
                 new View(
                         "jvmlog-zgc-cycle",
                         "jvmlog",

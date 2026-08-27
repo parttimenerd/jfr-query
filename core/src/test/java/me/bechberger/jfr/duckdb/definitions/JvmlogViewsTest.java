@@ -107,4 +107,47 @@ class JvmlogViewsTest {
         }
         conn.close();
     }
+
+    @Test
+    void zgcCycleViewExecutesWithPhaseData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("""
+                CREATE TABLE jvmlog_zgc_phases (
+                    gcId INTEGER,
+                    durationMs DOUBLE,
+                    phaseName VARCHAR,
+                    generation VARCHAR,
+                    concurrent BOOLEAN
+                )
+                """);
+            s.execute("""
+                INSERT INTO jvmlog_zgc_phases VALUES
+                    (0, 45.6, 'Young Collection', 'Young', true),
+                    (0, 0.5, 'Pause Mark Start',  'N/A',   false),
+                    (0, 23.4, 'Mark',              'N/A',   true),
+                    (1, 120.0, 'Old Collection',   'Old',   true)
+                """);
+        }
+        View cycleView = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-cycle".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-cycle not found"));
+        assertThat(cycleView.isValid(Set.of("jvmlog_zgc_phases"))).isTrue();
+        String query = cycleView.getBestMatchingQuery(Set.of("jvmlog_zgc_phases"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT * FROM \"jvmlog-zgc-cycle\" ORDER BY \"GC ID\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("GC ID")).isEqualTo(0);
+            // GC 0, N/A generation: 23.4ms concurrent (Mark), 0.5ms pause
+            // GC 0, Young generation: 45.6ms concurrent
+            long rowsForGc0 = 0;
+            do {
+                if (rs.getLong("GC ID") == 0) rowsForGc0++;
+            } while (rs.next());
+            assertThat(rowsForGc0).as("GC 0 has two generations (Young + N/A)").isEqualTo(2);
+        }
+        conn.close();
+    }
 }

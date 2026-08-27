@@ -247,7 +247,59 @@ public final class BuiltinPatterns {
                     FieldDef.nullable("uptimeSecs", FieldType.DOUBLE)),
                 "jvmlog_gc_event"),
 
-            // jvmlog_gc_event: ZGC concurrent phase: "GC(0) Concurrent Mark 5.123ms"
+            // jvmlog_zgc_phases: ZGC non-generational STW pauses (tags: z,gc — more specific than [gc])
+            // These must appear BEFORE gc_zgc_concurrent_phase so they claim [z,gc] STW lines first.
+            // e.g.: GC(0) Pause Mark Start 0.456ms
+            new JavaLogPattern("zgc_pause_mark_start",
+                List.of("z", "gc"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Pause Mark Start ([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.constant("phaseName", FieldType.STRING, "Pause Mark Start"),
+                    FieldDef.constant("generation", FieldType.STRING, "N/A"),
+                    FieldDef.constant("concurrent", FieldType.BOOLEAN, false)),
+                "jvmlog_zgc_phases"),
+
+            // e.g.: GC(0) Pause Mark End 0.234ms
+            new JavaLogPattern("zgc_pause_mark_end",
+                List.of("z", "gc"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Pause Mark End ([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.constant("phaseName", FieldType.STRING, "Pause Mark End"),
+                    FieldDef.constant("generation", FieldType.STRING, "N/A"),
+                    FieldDef.constant("concurrent", FieldType.BOOLEAN, false)),
+                "jvmlog_zgc_phases"),
+
+            // e.g.: GC(0) Pause Relocate Start 0.123ms
+            new JavaLogPattern("zgc_pause_relocate_start",
+                List.of("z", "gc"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Pause Relocate Start ([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.constant("phaseName", FieldType.STRING, "Pause Relocate Start"),
+                    FieldDef.constant("generation", FieldType.STRING, "N/A"),
+                    FieldDef.constant("concurrent", FieldType.BOOLEAN, false)),
+                "jvmlog_zgc_phases"),
+
+            // ZGC concurrent phases into jvmlog_zgc_phases (must come before gc_zgc_concurrent_phase
+            // which uses generic [gc] tags and would steal [z,gc] lines).
+            // Longer alternatives first so "Mark Free" beats "Mark".
+            new JavaLogPattern("zgc_concurrent_phase_to_zgc_table",
+                List.of("z", "gc"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Concurrent (Process Non-Strong References|Reset Relocation Set|Select Relocation Set|Mark Free|Relocate|Mark) ([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("phaseName", FieldType.STRING),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.constant("generation", FieldType.STRING, "N/A"),
+                    FieldDef.constant("concurrent", FieldType.BOOLEAN, true)),
+                "jvmlog_zgc_phases"),
+
+            // jvmlog_gc_phase: ZGC/G1 concurrent phase (generic [gc] tag, e.g. "GC(0) Concurrent Cycle 145ms")
             new JavaLogPattern("gc_zgc_concurrent_phase",
                 List.of("gc"), LogLevel.INFO,
                 "^GC\\((\\d+)\\) Concurrent (\\S.*?) ([\\d.]+)ms$",
@@ -320,7 +372,66 @@ public final class BuiltinPatterns {
                     FieldDef.of("requestedExpansionBytes", FieldType.BYTES),
                     FieldDef.of("actualExpansionBytes", FieldType.BYTES),
                     FieldDef.constant("decision", FieldType.STRING, "expand")),
-                "jvmlog_g1_ergonomics")
+                "jvmlog_g1_ergonomics"),
+
+            // jvmlog_g1_ergonomics: heap shrink
+            // e.g.: Shrink the heap. requested shrinking amount: 268435456B shrinking amount: 268435456B
+            new JavaLogPattern("g1_ergo_heap_shrink",
+                List.of("gc", "ergo", "heap"), LogLevel.DEBUG,
+                "^Shrink the heap\\. requested shrinking amount: (\\d+[KMGkmg]?B?) shrinking amount: (\\d+[KMGkmg]?B?)$",
+                List.of(
+                    FieldDef.nullable("requestedExpansionBytes", FieldType.BYTES),
+                    FieldDef.of("actualExpansionBytes", FieldType.BYTES),
+                    FieldDef.constant("decision", FieldType.STRING, "shrink")),
+                "jvmlog_g1_ergonomics"),
+
+            // jvmlog_g1_ergonomics: attempt heap shrink
+            // e.g.: Attempt heap shrinking (capacity 10485760). Capacity is at minimum. Won't shrink.
+            new JavaLogPattern("g1_ergo_no_shrink",
+                List.of("gc", "ergo", "heap"), LogLevel.DEBUG,
+                "^Attempt heap shrinking.*Won't shrink\\.$",
+                List.of(
+                    FieldDef.nullable("requestedExpansionBytes", FieldType.BYTES),
+                    FieldDef.nullable("actualExpansionBytes", FieldType.BYTES),
+                    FieldDef.constant("decision", FieldType.STRING, "no-shrink")),
+                "jvmlog_g1_ergonomics"),
+
+            // jvmlog_zgc_phases: ZGC generational collection boundaries (JDK 21+, tags: z,gc)
+            // e.g.: GC(0) Young Collection 45.678ms
+            new JavaLogPattern("zgc_young_collection",
+                List.of("z", "gc"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Young Collection ([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.constant("phaseName", FieldType.STRING, "Young Collection"),
+                    FieldDef.constant("generation", FieldType.STRING, "Young"),
+                    FieldDef.constant("concurrent", FieldType.BOOLEAN, true)),
+                "jvmlog_zgc_phases"),
+
+            // e.g.: GC(0) Old Collection 123.456ms
+            new JavaLogPattern("zgc_old_collection",
+                List.of("z", "gc"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Old Collection ([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.constant("phaseName", FieldType.STRING, "Old Collection"),
+                    FieldDef.constant("generation", FieldType.STRING, "Old"),
+                    FieldDef.constant("concurrent", FieldType.BOOLEAN, true)),
+                "jvmlog_zgc_phases"),
+
+            // e.g.: GC(0) Major Collection 200.0ms
+            new JavaLogPattern("zgc_major_collection",
+                List.of("z", "gc"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Major Collection ([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.constant("phaseName", FieldType.STRING, "Major Collection"),
+                    FieldDef.constant("generation", FieldType.STRING, "Old"),
+                    FieldDef.constant("concurrent", FieldType.BOOLEAN, true)),
+                "jvmlog_zgc_phases")
         );
     }
 
