@@ -1,0 +1,66 @@
+# Shenandoah GC patterns — tags [gc,shenandoah] or [gc]
+# Shenandoah uses -Xlog:gc+shenandoah or gc* logging.
+
+# Shenandoah init: "Shenandoah GC Mode: Saturation"
+- id: shenandoah_init_mode
+  tags: [gc, shenandoah]
+  level: info
+  pattern: 'Shenandoah GC Mode: (.+)'
+  fields:
+    gcMode: string
+  table: jvmlog_gc_init
+
+- id: shenandoah_init_heuristics
+  tags: [gc, shenandoah]
+  level: info
+  pattern: 'Shenandoah Heuristics: (.+)'
+  fields:
+    heuristics: string
+  table: jvmlog_gc_init
+
+# Shenandoah concurrent phases (tagged with [gc,phases]):
+# GC(0) Concurrent marking 56.789ms
+- id: shenandoah_concurrent_marking
+  tags: [gc, phases]
+  level: info
+  pattern: 'GC\((\d+)\) Concurrent marking ([0-9.]+)ms'
+  fields:
+    gcId: int
+    durationMs: double
+  table: jvmlog_gc_phase
+
+- id: shenandoah_concurrent_evacuation
+  tags: [gc, phases]
+  level: info
+  pattern: 'GC\((\d+)\) Concurrent evacuation ([0-9.]+)ms'
+  fields:
+    gcId: int
+    durationMs: double
+  table: jvmlog_gc_phase
+
+- id: shenandoah_concurrent_update_refs
+  tags: [gc, phases]
+  level: info
+  pattern: 'GC\((\d+)\) Concurrent update references ([0-9.]+)ms'
+  fields:
+    gcId: int
+    durationMs: double
+  table: jvmlog_gc_phase
+
+- id: shenandoah_concurrent_cleanup
+  tags: [gc, phases]
+  level: info
+  pattern: 'GC\((\d+)\) Concurrent cleanup ([0-9.]+)ms'
+  fields:
+    gcId: int
+    durationMs: double
+  table: jvmlog_gc_phase
+
+- id: shenandoah_concurrent_reset_bitmaps
+  tags: [gc, phases]
+  level: info
+  pattern: 'GC\((\d+)\) Concurrent reset bitmaps ([0-9.]+)ms'
+  fields:
+    gcId: int
+    durationMs: double
+  table: jvmlog_gc_phase

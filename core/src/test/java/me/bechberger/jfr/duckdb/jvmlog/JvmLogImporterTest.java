@@ -1203,4 +1203,64 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void shenandoahPatternsAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-shenandoah", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using Shenandoah
+                    [0.002s][info][gc,shenandoah] Shenandoah GC Mode: Saturation
+                    [0.002s][info][gc,shenandoah] Shenandoah Heuristics: adaptive
+                    [0.500s][info][gc] GC(0) Pause Init Mark (unload classes) 1.23ms
+                    [0.600s][info][gc,phases] GC(0) Concurrent marking 56.789ms
+                    [0.700s][info][gc,phases] GC(0) Concurrent evacuation 12.345ms
+                    [0.800s][info][gc,phases] GC(0) Concurrent update references 8.901ms
+                    [0.900s][info][gc,phases] GC(0) Concurrent cleanup 0.123ms
+                    [1.000s][info][gc,phases] GC(0) Concurrent reset bitmaps 0.456ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT gcMode FROM jvmlog_gc_init WHERE gcMode IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Shenandoah GC mode parsed").isTrue();
+                    assertThat(rs.getString("gcMode")).isEqualTo("Saturation");
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) FROM jvmlog_gc_phase WHERE phaseName IS NOT NULL")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong(1)).as("Shenandoah concurrent phases").isGreaterThanOrEqualTo(5);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT phaseName FROM jvmlog_gc_phase WHERE phaseName LIKE '%evacuation%' LIMIT 1")) {
+                    assertThat(rs.next()).as("Shenandoah evacuation phase").isTrue();
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void metaspaceSizingAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-metaspace", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [0.500s][info][gc] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 128M->64M(256M) 12.34ms
+                    [0.501s][info][gc,metaspace] GC(0) Metaspace: 45678K->45678K(1056768K)
+                    [0.501s][info][gc,metaspace] GC(0) class space  5432K->5432K(131072K)
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT metaspaceBefore, metaspaceAfter FROM jvmlog_metaspace WHERE metaspaceBefore IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Metaspace sizing parsed").isTrue();
+                    assertThat(rs.getLong("metaspaceBefore")).isEqualTo(45678L * 1024);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }
