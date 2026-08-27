@@ -74,7 +74,10 @@ public final class JvmLogImporter {
                     var line = parsed.get();
                     var match = registry.match(line);
                     if (match.isPresent()) {
-                        accumulator.accumulate(match.get());
+                        var result = match.get();
+                        // Inject log-line metadata (uptime, timestamp) if the table has those columns
+                        result = enrichFromLine(result, line, tableColumns);
+                        accumulator.accumulate(result);
                     } else {
                         String prefix = normalizePrefix(line.message());
                         String tagsStr = String.join(",", line.tags());
@@ -107,6 +110,30 @@ public final class JvmLogImporter {
                 try { appender.close(); } catch (SQLException ignored) {}
             }
         }
+    }
+
+    private static MatchResult enrichFromLine(MatchResult result, LogLine line,
+            HashMap<String, List<FieldDef>> tableColumns) {
+        List<FieldDef> cols = tableColumns.getOrDefault(result.tableName(), List.of());
+        boolean hasUptime = cols.stream().anyMatch(f -> "uptimeSecs".equals(f.name()));
+        if (!hasUptime || line.uptimeSecs() == null) return result;
+
+        // Inject uptime into an existing null slot, or append if not present
+        for (int i = 0; i < result.fields().size(); i++) {
+            if ("uptimeSecs".equals(result.fields().get(i).name()) && result.values().get(i) == null) {
+                var newValues = new ArrayList<>(result.values());
+                newValues.set(i, line.uptimeSecs());
+                return new MatchResult(result.tableName(), result.fields(), newValues);
+            }
+        }
+        // uptimeSecs not in fields at all — append
+        boolean alreadySetNonNull = result.fields().stream().anyMatch(f -> "uptimeSecs".equals(f.name()));
+        if (alreadySetNonNull) return result;
+        var newFields = new ArrayList<>(result.fields());
+        var newValues = new ArrayList<>(result.values());
+        newFields.add(FieldDef.nullable("uptimeSecs", FieldType.DOUBLE));
+        newValues.add(line.uptimeSecs());
+        return new MatchResult(result.tableName(), newFields, newValues);
     }
 
     private static void appendValue(Appender appender, FieldType type, Object val)

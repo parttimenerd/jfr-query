@@ -243,7 +243,8 @@ public final class BuiltinPatterns {
                 List.of(
                     FieldDef.of("gcId", FieldType.INT),
                     FieldDef.of("cause", FieldType.STRING),
-                    FieldDef.constant("gcType", FieldType.STRING, "Garbage Collection")),
+                    FieldDef.constant("gcType", FieldType.STRING, "Garbage Collection"),
+                    FieldDef.nullable("uptimeSecs", FieldType.DOUBLE)),
                 "jvmlog_gc_event"),
 
             // jvmlog_gc_event: ZGC concurrent phase: "GC(0) Concurrent Mark 5.123ms"
@@ -267,8 +268,24 @@ public final class BuiltinPatterns {
                     FieldDef.of("gcId", FieldType.INT),
                     FieldDef.of("gcType", FieldType.STRING),
                     FieldDef.of("cause", FieldType.STRING),
-                    FieldDef.of("pauseMs", FieldType.DOUBLE)),
+                    FieldDef.of("pauseMs", FieldType.DOUBLE),
+                    FieldDef.nullable("uptimeSecs", FieldType.DOUBLE)),
                 "jvmlog_gc_event"),
+
+            // G1 STW pauses without explicit cause: "GC(5) Pause Remark 1.23ms"
+            // e.g. Pause Remark, Pause Cleanup (G1 concurrent cycle STW pauses)
+            new JavaLogPattern("gc_pause_event_no_cause",
+                List.of("gc"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Pause (Remark|Cleanup) ([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("gcType", FieldType.STRING),
+                    FieldDef.of("pauseMs", FieldType.DOUBLE),
+                    FieldDef.nullable("uptimeSecs", FieldType.DOUBLE)),
+                "jvmlog_gc_event"),
+
+            // G1 concurrent phase events: "GC(5) Concurrent Cycle 145.123ms" (with [gc] tag, not [gc,phases])
+            // Already handled by gc_zgc_concurrent_phase which matches tags=[gc] + "GC(N) Concurrent ... ms"
 
             // jvmlog_gc_phase: phase timings
             // e.g.: GC(0)   Pre Evacuate Collection Set: 0.01ms

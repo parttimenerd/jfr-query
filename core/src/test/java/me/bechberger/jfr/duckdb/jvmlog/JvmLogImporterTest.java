@@ -893,4 +893,111 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void uptimeSecsIsInjectedIntoGcEvent() throws Exception {
+        var tmp = Files.createTempFile("test-uptime", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [1.500s][info][gc] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 10M->5M(256M) 12.34ms
+                    [3.750s][info][gc] GC(1) Pause Young (Normal) (G1 Evacuation Pause) 20M->10M(256M) 8.90ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT uptimeSecs FROM jvmlog_gc_event WHERE gcId = 0 LIMIT 1")) {
+                    assertThat(rs.next()).as("GC(0) event exists").isTrue();
+                    assertThat(rs.getDouble("uptimeSecs")).as("uptimeSecs injected from log decorator").isEqualTo(1.5);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT uptimeSecs FROM jvmlog_gc_event WHERE gcId = 1 LIMIT 1")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getDouble("uptimeSecs")).isEqualTo(3.75);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void gcOverheadViewWorksWhenUptimePresent() throws Exception {
+        var tmp = Files.createTempFile("test-gc-overhead", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [1.000s][info][gc] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 10M->5M(256M) 200.00ms
+                    [5.000s][info][gc] GC(1) Pause Young (Normal) (G1 Evacuation Pause) 10M->5M(256M) 300.00ms
+                    [15.000s][info][gc] GC(2) Pause Young (Normal) (G1 Evacuation Pause) 10M->5M(256M) 150.00ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                // Verify uptimeSecs is populated
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) FROM jvmlog_gc_event WHERE uptimeSecs IS NOT NULL")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong(1)).as("uptimeSecs populated for all events").isEqualTo(3);
+                }
+                // Run gc-overhead view inline
+                try (var st = conn.createStatement()) {
+                    st.execute("""
+                        CREATE VIEW "jvmlog-gc-overhead" AS
+                        SELECT floor(uptimeSecs / 10) * 10 AS "Window Start (s)",
+                               round(sum(pauseMs) / 10000.0 * 100, 2) AS "GC Overhead %",
+                               count(*) AS "GC Events"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 10)
+                        ORDER BY 1
+                        """);
+                    try (var rs = st.executeQuery("SELECT count(*) FROM \"jvmlog-gc-overhead\"")) {
+                        assertThat(rs.next()).isTrue();
+                        assertThat(rs.getLong(1)).as("gc overhead view has rows").isGreaterThan(0);
+                    }
+                    try (var rs = st.executeQuery("SELECT \"GC Overhead %\" FROM \"jvmlog-gc-overhead\" ORDER BY \"Window Start (s)\" LIMIT 1")) {
+                        assertThat(rs.next()).isTrue();
+                        assertThat(rs.getDouble(1)).as("GC overhead % > 0").isGreaterThan(0.0);
+                    }
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void g1RemarkAndCleanupPausesAreCaptured() throws Exception {
+        var tmp = Files.createTempFile("test-g1-remark", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [1.000s][info][gc] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 128M->64M(256M) 12.34ms
+                    [1.500s][info][gc] GC(1) Concurrent Cycle 85.432ms
+                    [1.501s][info][gc] GC(1) Pause Remark 1.23ms
+                    [1.502s][info][gc] GC(1) Pause Cleanup 0.45ms
+                    [2.000s][info][gc] GC(2) Pause Young (Normal) (G1 Evacuation Pause) 96M->48M(256M) 9.88ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT gcType, pauseMs FROM jvmlog_gc_event WHERE gcType = 'Remark' LIMIT 1")) {
+                    assertThat(rs.next()).as("Remark pause event captured").isTrue();
+                    assertThat(rs.getDouble("pauseMs")).isEqualTo(1.23);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT gcType FROM jvmlog_gc_event WHERE gcType = 'Cleanup' LIMIT 1")) {
+                    assertThat(rs.next()).as("Cleanup pause event captured").isTrue();
+                }
+                // Concurrent Cycle also captured via gc_zgc_concurrent_phase (which accepts [gc] tags)
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) FROM jvmlog_gc_event WHERE gcId IS NOT NULL")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong(1)).as("all pause events captured").isGreaterThanOrEqualTo(4);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }
