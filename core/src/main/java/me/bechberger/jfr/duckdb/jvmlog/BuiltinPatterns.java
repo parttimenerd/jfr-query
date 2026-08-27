@@ -134,6 +134,7 @@ public final class BuiltinPatterns {
         registry.addPatterns(YamlPatternLoader.fromClasspath("jvmlog-patterns/builtin"));
         userPatternsDir.ifPresent(dir ->
             registry.addPatterns(YamlPatternLoader.fromDirectory(dir)));
+        userPatternsDir.ifPresent(registry::startWatching);
         return registry;
     }
 }

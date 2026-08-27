@@ -1,5 +1,6 @@
 package me.bechberger.jfr.duckdb.jvmlog;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -48,5 +49,38 @@ public final class PatternRegistry {
 
     public Optional<LogPattern> findById(String id) {
         return patterns.stream().filter(p -> id.equals(p.id())).findFirst();
+    }
+
+    public void startWatching(Path dir) {
+        if (dir == null || !dir.toFile().isDirectory()) return;
+        Thread watcher = new Thread(() -> {
+            try (java.nio.file.WatchService ws = dir.getFileSystem().newWatchService()) {
+                dir.register(ws,
+                        java.nio.file.StandardWatchEventKinds.ENTRY_CREATE,
+                        java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY);
+                while (!Thread.currentThread().isInterrupted()) {
+                    java.nio.file.WatchKey key = ws.take();
+                    for (java.nio.file.WatchEvent<?> event : key.pollEvents()) {
+                        java.nio.file.Path changed = dir.resolve(
+                                (java.nio.file.Path) event.context());
+                        if (changed.toString().endsWith(".yaml")) {
+                            try {
+                                YamlPatternLoader.loadAndRegisterFile(changed, this);
+                                System.out.println("[jvmlog] Reloaded pattern: " + changed.getFileName());
+                            } catch (Exception e) {
+                                System.err.println("[jvmlog] Failed to reload " + changed + ": " + e.getMessage());
+                            }
+                        }
+                    }
+                    if (!key.reset()) break;
+                }
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                System.err.println("[jvmlog] WatchService error: " + e.getMessage());
+            }
+        }, "jvmlog-pattern-watcher");
+        watcher.setDaemon(true);
+        watcher.start();
     }
 }
