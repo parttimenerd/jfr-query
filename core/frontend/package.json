@@ -24,6 +24,7 @@
     "bench:import:large": "node tests/e2e/benchmark-import.mjs --large",
     "bench:import:large:serial": "node tests/e2e/benchmark-import.mjs --large --serial",
     "test:e2e:all": "npx playwright test e2e/",
+    "test:jvmlog-e2e": "npx playwright test --config playwright.jvmlog.config.ts",
     "bench": "vite --config vite.bench.config.ts",
     "dataset:plot": "tsx scripts/training/generatePlotDataset.ts",
     "train:plot": "python scripts/training/python/train.py",
