@@ -6,6 +6,7 @@ const PERF_KEY = 'jfr_import_ms_per_byte';
 
 interface JFRDropZoneProps {
     onFileSelected: (file: File, name: string, stacktraceDepth: number) => void;
+    onFilesSelected?: (files: File[]) => void;
     isImporting: boolean;
     importPhase?: string;
     importProgress?: number | null;
@@ -39,7 +40,7 @@ interface PendingFile {
     sizeMb: number;
 }
 
-const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, importPhase, importProgress, errorMessage, onLoadDemo, onLoadGcNotebook, onOpenTemplates, wasmInitializing }) => {
+const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, onFilesSelected, isImporting, importPhase, importProgress, errorMessage, onLoadDemo, onLoadGcNotebook, onOpenTemplates, wasmInitializing }) => {
     const [fileName, setFileName] = useState<string | null>(null);
     const [fileBytes, setFileBytes] = useState<number | null>(null);
     const [fileMb, setFileMb] = useState<number | null>(null);
@@ -56,12 +57,25 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
     })() : null;
 
     const onDrop = useCallback(async (accepted: File[]) => {
+        if (!accepted.length) return;
+
+        const isMulti = accepted.length > 1;
+        const isLogFile = accepted.length === 1 &&
+            (accepted[0].name.toLowerCase().endsWith('.log') ||
+             accepted[0].name.toLowerCase().endsWith('.txt'));
+
+        if ((isMulti || isLogFile) && onFilesSelected) {
+            onFilesSelected(accepted);
+            setFileName(accepted.map(f => f.name).join(', '));
+            return;
+        }
+
         const file = accepted[0];
-        if (!file) return;
         setFileName(file.name);
         setFileBytes(file.size);
-        const isJfr = file.name.toLowerCase().endsWith('.jfr');
-        const isCjfr = file.name.toLowerCase().endsWith('.cjfr');
+        const lowerName = file.name.toLowerCase();
+        const isJfr = lowerName.endsWith('.jfr');
+        const isCjfr = lowerName.endsWith('.cjfr');
         const sizeMb = file.size / (1024 * 1024);
         setFileMb(sizeMb);
         setIsCjfrFile(isCjfr);
@@ -74,7 +88,7 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
         } else {
             onFileSelected(file, file.name, 10);
         }
-    }, [onFileSelected]);
+    }, [onFileSelected, onFilesSelected]);
 
     const confirmImport = useCallback(() => {
         if (!pending) return;
@@ -85,8 +99,8 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
-        accept: { 'application/octet-stream': ['.jfr', '.cjfr', '.duckdb', '.db'] },
-        multiple: false,
+        accept: { 'application/octet-stream': ['.jfr', '.cjfr', '.duckdb', '.db', '.log', '.txt'] },
+        multiple: true,
         disabled: isImporting || !!pending,
     });
 
@@ -199,8 +213,8 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, isImporting, 
                         </div>
                     ) : (
                         <div className="text-gray-300">
-                            <p className="text-lg font-medium">{isDragActive ? 'Drop the file' : 'Drop a .jfr or .duckdb file here'}</p>
-                            <p className="text-sm text-gray-500 mt-1">or click to choose one · runs entirely in-browser, no server needed</p>
+                            <p className="text-lg font-medium">{isDragActive ? 'Drop the file(s)' : 'Drop a .jfr, .duckdb, or .log file here'}</p>
+                            <p className="text-sm text-gray-500 mt-1">or click to choose · also accepts .cjfr, .db, .txt · runs entirely in-browser, no server needed</p>
                             {wasmInitializing && (
                                 <div className="mt-3 flex items-center justify-center gap-2 text-xs text-cyan-400/70">
                                     <div className="w-1.5 h-1.5 bg-cyan-400/70 rounded-full animate-pulse" />
