@@ -2843,6 +2843,23 @@ public class ViewCollection {
                         "jvmlog_gc_phase")
                     .description("Average and P99 duration per GC phase from the JVM GC log."),
                 new View(
+                        "jvmlog-phase-timeline",
+                        "jvmlog",
+                        "GC Log: Phase Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-phase-timeline" AS
+                            SELECT gcId AS "GC ID",
+                                   phaseName AS "Phase",
+                                   round(durationMs, 2) AS "Duration (ms)",
+                                   uptimeSecs AS "Uptime (s)"
+                            FROM jvmlog_gc_phase
+                            WHERE durationMs IS NOT NULL
+                            ORDER BY uptimeSecs NULLS LAST, gcId
+                            """,
+                        "jvmlog_gc_phase")
+                    .description("Per-GC phase durations over time, useful for spotting trends."),
+                new View(
                         "jvmlog-g1-regions",
                         "jvmlog",
                         "GC Log: G1 Region Counts",

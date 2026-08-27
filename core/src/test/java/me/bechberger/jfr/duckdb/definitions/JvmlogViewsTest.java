@@ -14,7 +14,7 @@ class JvmlogViewsTest {
     private static final Set<String> JVMLOG_VIEW_NAMES = Set.of(
             "jvmlog-gc-summary", "jvmlog-pause-percentiles", "jvmlog-gc-overhead",
             "jvmlog-heap-timeline", "jvmlog-heap-snapshot-raw", "jvmlog-phase-breakdown",
-            "jvmlog-g1-regions", "jvmlog-zgc-cycle", "jvmlog-jfr-correlation",
+            "jvmlog-phase-timeline", "jvmlog-g1-regions", "jvmlog-zgc-cycle", "jvmlog-jfr-correlation",
             "jvmlog-gc-pause-summary", "jvmlog-gc-pause-by-type", "jvmlog-gc-phase-breakdown",
             "jvmlog-gc-init-summary", "jvmlog-gc-cumulative-pause", "jvmlog-g1-heap-expansion",
             "jvmlog-unknown-summary", "jvmlog-metaspace-timeline"

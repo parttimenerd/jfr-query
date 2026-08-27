@@ -158,6 +158,24 @@ BAR(x="Phase", y="Avg ms")
 
 ---
 
+<!-- @cell name=phase-timeline requires="has-gc-phase" -->
+
+## Phase Timeline
+
+Individual phase durations over JVM uptime — useful for spotting degradation trends.
+
+```sql
+SELECT * FROM "jvmlog-phase-timeline"
+WHERE "Uptime (s)" IS NOT NULL
+LIMIT 1000
+```
+
+```plot
+SCATTER(x="Uptime (s)", y="Duration (ms)", color="Phase")
+```
+
+---
+
 <!-- @cell name=g1-regions requires="has-g1-regions" -->
 
 ## G1: Region Counts

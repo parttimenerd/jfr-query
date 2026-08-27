@@ -306,7 +306,8 @@ public final class BuiltinPatterns {
                 List.of(
                     FieldDef.of("gcId", FieldType.INT),
                     FieldDef.of("phaseName", FieldType.STRING),
-                    FieldDef.of("durationMs", FieldType.DOUBLE)),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.nullable("uptimeSecs", FieldType.DOUBLE)),
                 "jvmlog_gc_phase"),
 
             // jvmlog_gc_event: GC pause events
@@ -347,7 +348,8 @@ public final class BuiltinPatterns {
                 List.of(
                     FieldDef.of("gcId", FieldType.INT),
                     FieldDef.of("phaseName", FieldType.STRING),
-                    FieldDef.of("durationMs", FieldType.DOUBLE)),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.nullable("uptimeSecs", FieldType.DOUBLE)),
                 "jvmlog_gc_phase"),
 
             // jvmlog_heap_snapshot: heap before/after GC
