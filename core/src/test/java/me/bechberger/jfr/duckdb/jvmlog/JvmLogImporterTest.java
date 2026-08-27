@@ -1625,4 +1625,33 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void zgcStatsAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-zgc-stats", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using ZGC
+                    [1.000s][info][gc,stats] GC(0) Mark Start      Used: 512M (32%), Capacity: 1024M (64%)
+                    [1.200s][info][gc,stats] GC(0) Mark End        Used: 460M (28%)
+                    [1.300s][info][gc,stats] GC(0) Relocate Start  Live: 234M (14%), Garbage: 173M (11%), Small: 18M (1%), Medium: 4M (0%)
+                    [1.400s][info][gc,stats] GC(0) Relocate End    Used: 136M (9%)
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_zgc_stats")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("ZGC stats rows (4 phases)").isGreaterThanOrEqualTo(3);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT liveBytes FROM jvmlog_zgc_stats WHERE phase = 'Relocate Start' LIMIT 1")) {
+                    assertThat(rs.next()).as("Relocate Start stats captured").isTrue();
+                    assertThat(rs.getLong("liveBytes")).as("Live bytes > 200MB").isGreaterThan(200_000_000L);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }

@@ -1,0 +1,51 @@
+# ZGC statistics per cycle — tags [gc,stats]
+# JDK 21+ ZGC logs per-phase statistics including live set, garbage, allocation pressure.
+
+# "GC(N) Mark Start      Used: 512M (32%), Capacity: 4096M (100%)"
+- id: zgc_stats_mark_start
+  tags: [gc, stats]
+  level: info
+  pattern: 'GC\((\d+)\) Mark Start\s+Used:\s*(\d+[KMG]?)\s*\(\d+%\)'
+  fields:
+    gcId: int
+    usedBytes: bytes
+  constants:
+    phase: Mark Start
+  table: jvmlog_zgc_stats
+
+# "GC(N) Mark End        Used: 460M (28%), Allocation Rate: 4.2 GB/s"
+- id: zgc_stats_mark_end
+  tags: [gc, stats]
+  level: info
+  pattern: 'GC\((\d+)\) Mark End\s+Used:\s*(\d+[KMG]?)\s*\(\d+%\)'
+  fields:
+    gcId: int
+    usedBytes: bytes
+  constants:
+    phase: Mark End
+  table: jvmlog_zgc_stats
+
+# "GC(N) Relocate Start  Live: 234M (14%), Garbage: 173M (11%), Small: 18M (1%), Medium: 4M (0%)"
+- id: zgc_stats_relocate_start
+  tags: [gc, stats]
+  level: info
+  pattern: 'GC\((\d+)\) Relocate Start\s+Live:\s*(\d+[KMG]?)\s*\(\d+%\),\s*Garbage:\s*(\d+[KMG]?)\s*\(\d+%\)'
+  fields:
+    gcId: int
+    liveBytes: bytes
+    garbageBytes: bytes
+  constants:
+    phase: Relocate Start
+  table: jvmlog_zgc_stats
+
+# "GC(N) Relocate End    Used: 136M (9%)"
+- id: zgc_stats_relocate_end
+  tags: [gc, stats]
+  level: info
+  pattern: 'GC\((\d+)\) Relocate End\s+Used:\s*(\d+[KMG]?)\s*\(\d+%\)'
+  fields:
+    gcId: int
+    usedBytes: bytes
+  constants:
+    phase: Relocate End
+  table: jvmlog_zgc_stats

@@ -21,6 +21,7 @@ cellConditions:
   has-gc-errors: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_gc_errors'"
   has-combined-timeline: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_heap_snapshot'"
   has-shenandoah: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_shenandoah_free'"
+  has-zgc-stats: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_stats'"
 ---
 
 <!-- @cell name=intro -->
@@ -500,6 +501,22 @@ SELECT * FROM "jvmlog-zgc-load"
 
 ```plot
 LINE(x="GC ID", y="Load 1s")
+```
+
+---
+
+<!-- @cell name=zgc-stats requires="has-zgc-stats" -->
+
+## ZGC: Per-Cycle Live Set & Garbage
+
+Used heap at each phase boundary (Mark Start, Mark End, Relocate Start/End) and live vs garbage breakdown — the key sizing data logged under `-Xlog:gc+stats`.
+
+```sql
+SELECT * FROM "jvmlog-zgc-stats"
+```
+
+```plot
+LINE(x="GC ID", y="Live (MB)")
 ```
 
 ---

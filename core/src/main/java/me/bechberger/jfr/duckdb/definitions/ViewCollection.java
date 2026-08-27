@@ -3815,6 +3815,25 @@ public class ViewCollection {
                             """,
                         "jvmlog_shenandoah_free")
                     .description("Shenandoah free heap regions and headroom per GC cycle — shows how close the JVM is to running out of memory."),
+                new View(
+                        "jvmlog-zgc-stats",
+                        "jvmlog",
+                        "GC Log: ZGC Per-Cycle Statistics",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-zgc-stats" AS
+                            SELECT gcId AS "GC ID",
+                                   round(max(usedBytes) FILTER (WHERE phase = 'Mark Start') / 1048576.0, 1) AS "Used at Mark Start (MB)",
+                                   round(max(usedBytes) FILTER (WHERE phase = 'Mark End') / 1048576.0, 1) AS "Used at Mark End (MB)",
+                                   round(max(liveBytes) FILTER (WHERE phase = 'Relocate Start') / 1048576.0, 1) AS "Live (MB)",
+                                   round(max(garbageBytes) FILTER (WHERE phase = 'Relocate Start') / 1048576.0, 1) AS "Garbage (MB)",
+                                   round(max(usedBytes) FILTER (WHERE phase = 'Relocate End') / 1048576.0, 1) AS "Used at Relocate End (MB)"
+                            FROM jvmlog_zgc_stats
+                            GROUP BY gcId
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_zgc_stats")
+                    .description("ZGC per-cycle live set, garbage, and used bytes at each phase boundary."),
             };
 
     public static List<View> getViews() {

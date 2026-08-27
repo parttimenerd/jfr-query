@@ -29,7 +29,8 @@ class JvmlogViewsTest {
             "jvmlog-problematic-gcs", "jvmlog-g1-cycle-detail",
             "jvmlog-zgc-cycle-detail",
             "jvmlog-gc-error-timeline", "jvmlog-metaspace-detail",
-            "jvmlog-shenandoah-cycle-detail", "jvmlog-shenandoah-free-timeline"
+            "jvmlog-shenandoah-cycle-detail", "jvmlog-shenandoah-free-timeline",
+            "jvmlog-zgc-stats"
     );
 
     @Test
@@ -699,6 +700,31 @@ class JvmlogViewsTest {
             assertThat(rs.getInt("GC ID")).isEqualTo(0);
             assertThat(rs.getDouble("Free (MB)")).isEqualTo(256.0);
             assertThat(rs.getInt("Free Regions")).isEqualTo(256);
+        }
+        conn.close();
+    }
+
+    @Test
+    void zgcStatsViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_stats (gcId INTEGER, phase VARCHAR, usedBytes BIGINT, liveBytes BIGINT, garbageBytes BIGINT)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (0, 'Mark Start', 536870912, NULL, NULL)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (0, 'Mark End', 482344960, NULL, NULL)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (0, 'Relocate Start', NULL, 245366784, 181403648)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (0, 'Relocate End', 142606336, NULL, NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-stats".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-stats not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_stats"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_zgc_stats"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Live (MB)\", \"Garbage (MB)\" FROM \"jvmlog-zgc-stats\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getDouble("Live (MB)")).isGreaterThan(230.0);
         }
         conn.close();
     }
