@@ -1138,4 +1138,69 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void parallelGenSizingAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-parallel-sizing", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using Parallel
+                    [0.500s][info][gc] GC(0) Pause Young (Allocation Failure) 128M->64M(256M) 15.3ms
+                    [0.501s][info][gc,heap] GC(0) PSYoungGen: 131072K->32768K(196608K)
+                    [0.501s][info][gc,heap] GC(0) ParOldGen: 65536K->73728K(196608K)
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT youngGenBytes, youngGenCapacity FROM jvmlog_parallel_sizing WHERE youngGenBytes IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("PSYoungGen row").isTrue();
+                    assertThat(rs.getLong("youngGenBytes")).isEqualTo(131072L * 1024);
+                    assertThat(rs.getLong("youngGenCapacity")).isEqualTo(196608L * 1024);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT oldGenBytes FROM jvmlog_parallel_sizing WHERE oldGenBytes IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("ParOldGen row").isTrue();
+                    assertThat(rs.getLong("oldGenBytes")).isEqualTo(65536L * 1024);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void zgcDirectorPatternsAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-zgc-director", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.005s][info][gc,init] Initializing The Z Garbage Collector
+                    [0.005s][info][gc,init] Min Capacity: 256M
+                    [0.005s][info][gc,init] Max Capacity: 4096M
+                    [1.000s][debug][gc,director] GC(0) Selection: Allocation Rate
+                    [1.000s][debug][gc,director] GC(0) Allocation Rate: 125.3 MB/s
+                    [1.000s][debug][gc,director] GC(0) Free Heap: 25.0%
+                    [1.000s][debug][gc,director] GC(0) Time Until OOM: 8.3 s
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT ruleName FROM jvmlog_zgc_director WHERE ruleName IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("ZGC director selection").isTrue();
+                    assertThat(rs.getString("ruleName")).isEqualTo("Allocation Rate");
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT allocationRateMbps, freeHeapPct, timeUntilOomSecs FROM jvmlog_zgc_director WHERE allocationRateMbps IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("ZGC director alloc rate").isTrue();
+                    assertThat(rs.getDouble("allocationRateMbps")).isEqualTo(125.3);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT timeUntilOomSecs FROM jvmlog_zgc_director WHERE timeUntilOomSecs IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("ZGC director time to OOM").isTrue();
+                    assertThat(rs.getDouble("timeUntilOomSecs")).isEqualTo(8.3);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }

@@ -431,7 +431,73 @@ public final class BuiltinPatterns {
                     FieldDef.constant("phaseName", FieldType.STRING, "Major Collection"),
                     FieldDef.constant("generation", FieldType.STRING, "Old"),
                     FieldDef.constant("concurrent", FieldType.BOOLEAN, true)),
-                "jvmlog_zgc_phases")
+                "jvmlog_zgc_phases"),
+
+            // jvmlog_parallel_sizing: Parallel/Serial GC heap generation sizes (tags: gc,heap)
+            // e.g.: GC(0) PSYoungGen: 128M->32M(192M)  /  GC(0) ParOldGen: 64M->72M(192M)
+            new JavaLogPattern("parallel_young_gen_sizing",
+                List.of("gc", "heap"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) (?:PSYoungGen|DefNew|ParNew|NewGen): (\\d+[KMG]?)->\\d+[KMG]?\\((\\d+[KMG]?)\\)$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("youngGenBytes", FieldType.BYTES),
+                    FieldDef.of("youngGenCapacity", FieldType.BYTES)),
+                "jvmlog_parallel_sizing"),
+
+            new JavaLogPattern("parallel_old_gen_sizing",
+                List.of("gc", "heap"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) (?:ParOldGen|Tenured|OldGen|PSOldGen): (\\d+[KMG]?)->\\d+[KMG]?\\((\\d+[KMG]?)\\)$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("oldGenBytes", FieldType.BYTES),
+                    FieldDef.of("oldGenCapacity", FieldType.BYTES)),
+                "jvmlog_parallel_sizing"),
+
+            // Parallel GC throughput from ergo: "Throughput: 99.0"
+            new JavaLogPattern("parallel_throughput",
+                List.of("gc", "ergo"), LogLevel.DEBUG,
+                "^GC\\((\\d+)\\)\\s+Throughput:\\s+([\\d.]+)$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("throughputPct", FieldType.DOUBLE)),
+                "jvmlog_parallel_sizing"),
+
+            // jvmlog_zgc_director: ZGC director decisions (tags: gc,director)
+            // e.g.: GC(0) Selection: Allocation Rate
+            new JavaLogPattern("zgc_director_selection",
+                List.of("gc", "director"), LogLevel.DEBUG,
+                "^GC\\((\\d+)\\) Selection: (.+)$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("ruleName", FieldType.STRING)),
+                "jvmlog_zgc_director"),
+
+            // e.g.: GC(0) Allocation Rate: 125.3 MB/s
+            new JavaLogPattern("zgc_director_alloc_rate",
+                List.of("gc", "director"), LogLevel.DEBUG,
+                "^GC\\((\\d+)\\) Allocation Rate:\\s+([\\d.]+) MB/s$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("allocationRateMbps", FieldType.DOUBLE)),
+                "jvmlog_zgc_director"),
+
+            // e.g.: GC(0) Free Heap: 25.0%
+            new JavaLogPattern("zgc_director_free_heap",
+                List.of("gc", "director"), LogLevel.DEBUG,
+                "^GC\\((\\d+)\\) Free Heap:\\s+([\\d.]+)%$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("freeHeapPct", FieldType.DOUBLE)),
+                "jvmlog_zgc_director"),
+
+            // e.g.: GC(0) Time Until OOM: 8.3 s
+            new JavaLogPattern("zgc_director_time_to_oom",
+                List.of("gc", "director"), LogLevel.DEBUG,
+                "^GC\\((\\d+)\\) Time Until OOM:\\s+([\\d.]+) s$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("timeUntilOomSecs", FieldType.DOUBLE)),
+                "jvmlog_zgc_director")
         );
     }
 
