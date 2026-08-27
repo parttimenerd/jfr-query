@@ -44,4 +44,32 @@ class PatternSuggesterTest {
         assertThat(s.id()).isNotBlank();
         assertThat(s.id()).matches("[a-z][a-z0-9_]*");
     }
+
+    @Test
+    void gcMetaspaceRoutedToMetaspaceTable() {
+        var s = PatternSuggester.suggest(
+                "[0.502s][info][gc,metaspace] GC(0) Metaspace: 45678K->45678K(1056768K)");
+        assertThat(s.table()).isEqualTo("jvmlog_metaspace");
+    }
+
+    @Test
+    void gcStringDedupRoutedToStringDedupTable() {
+        var s = PatternSuggester.suggest(
+                "[1.234s][info][gc,stringdedup] GC(3) Savings: 12345 bytes in 678 objects");
+        assertThat(s.table()).isEqualTo("jvmlog_stringdedup");
+    }
+
+    @Test
+    void gcDirectorRoutedToZgcDirectorTable() {
+        var s = PatternSuggester.suggest(
+                "[1.000s][debug][gc,director] GC(0) Selection: Allocation Rate");
+        assertThat(s.table()).isEqualTo("jvmlog_zgc_director");
+    }
+
+    @Test
+    void shenandoahTagRoutedToInitTable() {
+        var s = PatternSuggester.suggest(
+                "[0.002s][info][gc,shenandoah] Shenandoah GC Mode: Saturation");
+        assertThat(s.table()).isEqualTo("jvmlog_gc_init");
+    }
 }
