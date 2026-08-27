@@ -62,7 +62,8 @@ public class JvmLogAddPatternCommand implements Runnable {
         List<FieldSuggestion> finalFields = new ArrayList<>();
         for (FieldSuggestion f : suggestion.fields()) {
             String override = reader.readLine("  Field name [" + f.name() + "]: ");
-            String name = (override == null || override.isBlank()) ? f.name() : override.trim();
+            String rawName = (override == null || override.isBlank()) ? f.name() : override.trim();
+            String name = rawName.replaceAll("[^a-zA-Z0-9_]", "_");
             String typeOverride = reader.readLine("  Field type [" + f.fieldType() + "] (int/long/double/string/bytes): ");
             String type = (typeOverride == null || typeOverride.isBlank()) ? f.fieldType() : typeOverride.trim();
             finalFields.add(new FieldSuggestion(name, type));
@@ -70,10 +71,13 @@ public class JvmLogAddPatternCommand implements Runnable {
 
         String idDefault = suggestion.id();
         String idInput = reader.readLine("\nPattern id [" + idDefault + "]: ");
-        String patternId = (idInput == null || idInput.isBlank()) ? idDefault : idInput.trim();
+        String rawPatternId = (idInput == null || idInput.isBlank()) ? idDefault : idInput.trim();
+        // Sanitise to prevent path traversal: only allow safe identifier characters
+        String patternId = rawPatternId.replaceAll("[^a-z0-9_]", "_");
 
         String tableInput = reader.readLine("Table [" + suggestion.table() + "]: ");
-        String table = (tableInput == null || tableInput.isBlank()) ? suggestion.table() : tableInput.trim();
+        String rawTable = (tableInput == null || tableInput.isBlank()) ? suggestion.table() : tableInput.trim();
+        String table = rawTable.replaceAll("[^a-zA-Z0-9_]", "_");
 
         Path outputDir;
         if (outputDirOverride != null) {
@@ -105,7 +109,7 @@ public class JvmLogAddPatternCommand implements Runnable {
         sb.append("- id: ").append(id).append("\n");
         sb.append("  tags: [").append(String.join(", ", tags)).append("]\n");
         sb.append("  level: ").append(level).append("\n");
-        sb.append("  pattern: '").append(pattern.replace("'", "\\'")).append("'\n");
+        sb.append("  pattern: '").append(pattern.replace("'", "''")).append("'\n");
         sb.append("  fields:\n");
         for (FieldSuggestion f : fields) {
             sb.append("    ").append(f.name()).append(": ").append(f.fieldType()).append("\n");
