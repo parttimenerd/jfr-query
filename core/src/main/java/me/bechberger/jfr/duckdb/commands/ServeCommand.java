@@ -136,7 +136,8 @@ public class ServeCommand implements Runnable {
         return conn;
     }
 
-    private static DuckDBConnection openFile(String path, Options options) throws Exception {
+    private static DuckDBConnection openFile(String path, Options options,
+                                               Optional<Path> jvmlogPatternsDir) throws Exception {
         FileTypeRouter.FileType type;
         try {
             type = FileTypeRouter.detect(Path.of(path));
@@ -150,7 +151,7 @@ public class ServeCommand implements Runnable {
             return (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:" + path);
         }
         // For JFR, CJFR, JVMLOG: import into in-memory connection
-        return openFiles(List.of(Path.of(path)), options, Optional.empty());
+        return openFiles(List.of(Path.of(path)), options, jvmlogPatternsDir);
     }
 
     /**
@@ -387,9 +388,11 @@ public class ServeCommand implements Runnable {
 
     @Override
     public void run() {
+        Optional<Path> patternsDir = (jvmlogPatternsDir == null || jvmlogPatternsDir.isBlank())
+                ? Optional.empty() : Optional.of(Path.of(jvmlogPatternsDir));
         DuckDBConnection initialConn;
         try {
-            initialConn = openFile(inputFile, options);
+            initialConn = openFile(inputFile, options, patternsDir);
         } catch (Exception e) {
             System.err.println("Failed to open file: " + e.getMessage());
             e.printStackTrace();
