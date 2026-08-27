@@ -1654,4 +1654,27 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void gcWorkerCountIsParsed() throws Exception {
+        var tmp = Files.createTempFile("test-gc-workers", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [1.000s][debug][gc,task] GC(0) Using 8 workers of 8 for evacuation
+                    [1.001s][debug][gc,task] GC(0) Using 4 workers of 8 for marking
+                    [2.000s][debug][gc,task] GC(1) Using 8 workers of 8 for evacuation
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_gc_workers")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("GC worker rows").isGreaterThanOrEqualTo(2);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }

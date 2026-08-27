@@ -30,7 +30,8 @@ class JvmlogViewsTest {
             "jvmlog-zgc-cycle-detail",
             "jvmlog-gc-error-timeline", "jvmlog-metaspace-detail",
             "jvmlog-shenandoah-cycle-detail", "jvmlog-shenandoah-free-timeline",
-            "jvmlog-zgc-stats"
+            "jvmlog-zgc-stats",
+            "jvmlog-gc-worker-summary", "jvmlog-gc-worker-timeline"
     );
 
     @Test
@@ -725,6 +726,41 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getInt("GC ID")).isEqualTo(0);
             assertThat(rs.getDouble("Live (MB)")).isGreaterThan(230.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcWorkerViewsExecuteWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_workers (gcId INTEGER, workersUsed INTEGER, workersMax INTEGER, taskName VARCHAR)");
+            s.execute("INSERT INTO jvmlog_gc_workers VALUES (0, 8, 8, 'evacuation')");
+            s.execute("INSERT INTO jvmlog_gc_workers VALUES (0, 8, 8, 'marking')");
+            s.execute("INSERT INTO jvmlog_gc_workers VALUES (1, 4, 8, 'evacuation')");
+            s.execute("INSERT INTO jvmlog_gc_workers VALUES (1, 8, 8, 'marking')");
+        }
+        View summaryView = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-worker-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-worker-summary not found"));
+        assertThat(summaryView.isValid(Set.of("jvmlog_gc_workers"))).isTrue();
+        String query = summaryView.getBestMatchingQuery(Set.of("jvmlog_gc_workers"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Task\", \"Utilisation %\" FROM \"jvmlog-gc-worker-summary\" WHERE \"Task\" = 'evacuation'");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Utilisation %")).isCloseTo(75.0, within(0.1));
+        }
+
+        View timelineView = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-worker-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-worker-timeline not found"));
+        String tlQuery = timelineView.getBestMatchingQuery(Set.of("jvmlog_gc_workers"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(tlQuery);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-gc-worker-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(4);
         }
         conn.close();
     }

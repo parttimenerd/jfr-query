@@ -1,0 +1,29 @@
+# GC worker thread usage per phase — tags [gc,task] or [gc,phases]
+# Logs how many parallel workers were used for each GC phase vs the maximum.
+# Useful for diagnosing under-utilisation of parallel GC threads.
+
+# G1 / Parallel: "Using N workers of M for <phase>"
+# e.g.: GC(0) Using 8 workers of 8 for evacuation
+# e.g.: GC(0) Using 4 workers of 8 for marking
+- id: gc_workers_used
+  tags: [gc, task]
+  level: debug
+  pattern: 'GC\((\d+)\) Using (\d+) workers of (\d+) for (.+)'
+  fields:
+    gcId: int
+    workersUsed: int
+    workersMax: int
+    taskName: string
+  table: jvmlog_gc_workers
+
+# Shenandoah also uses this pattern with [gc] tag
+- id: gc_workers_used_shenandoah
+  tags: [gc]
+  level: debug
+  pattern: 'GC\((\d+)\) Using (\d+) workers of (\d+) for (.+)'
+  fields:
+    gcId: int
+    workersUsed: int
+    workersMax: int
+    taskName: string
+  table: jvmlog_gc_workers

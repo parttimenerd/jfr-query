@@ -15,6 +15,7 @@ cellConditions:
   has-parallel: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_parallel_sizing'"
   has-stringdedup: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_stringdedup'"
   has-metaspace: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_metaspace'"
+  has-gc-workers: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_gc_workers'"
   has-jfr-correlation: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_jfr_correlation'"
   has-safepoint: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_safepoint'"
   has-alloc-stall: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_alloc_stall'"
@@ -42,6 +43,22 @@ Algorithm, JDK version, heap configuration, and worker counts from JVM startup l
 
 ```sql
 SELECT * FROM "jvmlog-gc-init-summary"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=overall-pause-percentiles -->
+
+## Overall Pause Percentiles
+
+P50, P90, P95, P99, and max pause across all GC events — the key SLA check.
+
+```sql
+SELECT * FROM "jvmlog-pause-percentiles"
 ```
 
 ```plot
@@ -356,6 +373,39 @@ LIMIT 1000
 
 ```plot
 SCATTER(x="Uptime (s)", y="Duration (ms)", color="Phase")
+```
+
+---
+
+<!-- @cell name=gc-worker-summary requires="has-gc-workers" -->
+
+## GC Worker Utilisation
+
+Average and minimum worker thread counts per task — low utilisation indicates GC is not using all available parallel threads.
+
+```sql
+SELECT * FROM "jvmlog-gc-worker-summary"
+```
+
+```plot
+BAR(x="Task", y="Utilisation %")
+```
+
+---
+
+<!-- @cell name=gc-worker-timeline requires="has-gc-workers" -->
+
+## GC Worker Usage Timeline
+
+Per-GC worker usage — spot individual events where parallelism was reduced (e.g., thread pool contention or adaptive sizing).
+
+```sql
+SELECT * FROM "jvmlog-gc-worker-timeline"
+LIMIT 1000
+```
+
+```plot
+SCATTER(x="GC ID", y="Utilisation %", color="Task")
 ```
 
 ---

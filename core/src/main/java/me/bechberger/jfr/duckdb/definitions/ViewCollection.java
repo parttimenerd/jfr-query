@@ -3881,6 +3881,43 @@ public class ViewCollection {
                             """,
                         "jvmlog_zgc_stats")
                     .description("ZGC per-cycle live set, garbage, and used bytes at each phase boundary."),
+                new View(
+                        "jvmlog-gc-worker-summary",
+                        "jvmlog",
+                        "GC Log: GC Worker Utilisation",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-worker-summary" AS
+                            SELECT taskName AS "Task",
+                                   count(*) AS "Count",
+                                   round(avg(workersUsed), 1) AS "Avg Workers Used",
+                                   round(avg(workersMax), 1) AS "Workers Max",
+                                   round(avg(workersUsed) * 100.0 / nullif(avg(workersMax), 0), 1) AS "Utilisation %",
+                                   min(workersUsed) AS "Min Used",
+                                   max(workersUsed) AS "Max Used"
+                            FROM jvmlog_gc_workers
+                            GROUP BY taskName
+                            ORDER BY "Count" DESC
+                            """,
+                        "jvmlog_gc_workers")
+                    .description("Average worker thread utilisation per GC task — reveals phases not using all available threads."),
+                new View(
+                        "jvmlog-gc-worker-timeline",
+                        "jvmlog",
+                        "GC Log: GC Worker Usage Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-worker-timeline" AS
+                            SELECT gcId AS "GC ID",
+                                   taskName AS "Task",
+                                   workersUsed AS "Workers Used",
+                                   workersMax AS "Workers Max",
+                                   round(workersUsed * 100.0 / nullif(workersMax, 0), 1) AS "Utilisation %"
+                            FROM jvmlog_gc_workers
+                            ORDER BY gcId, taskName
+                            """,
+                        "jvmlog_gc_workers")
+                    .description("Per-GC worker thread usage per task — useful for spotting individual GC events where parallelism was reduced."),
             };
 
     public static List<View> getViews() {

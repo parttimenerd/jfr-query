@@ -11,3 +11,4 @@ g1-mixed.yaml
 zgc-load.yaml
 shenandoah-ergo.yaml
 zgc-stats.yaml
+gc-workers.yaml
