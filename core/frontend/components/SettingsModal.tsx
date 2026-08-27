@@ -78,6 +78,7 @@ const LogPatternsTab: React.FC = () => {
     const [saveError, setSaveError] = React.useState<string | null>(null);
     const [saveSuccess, setSaveSuccess] = React.useState(false);
     const [suggesting, setSuggesting] = React.useState(false);
+    const [saving, setSaving] = React.useState(false);
 
     const handleSuggest = async () => {
         if (!rawLine.trim()) return;
@@ -105,26 +106,39 @@ const LogPatternsTab: React.FC = () => {
     };
 
     const handleSave = async () => {
-        if (!suggestion || !patternId) return;
+        if (!suggestion || !patternId.trim() || !table.trim()) return;
         setSaveError(null);
         setSaveSuccess(false);
-        const r = await fetch('/api/jvmlog/save-pattern', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                id: patternId,
-                tags: suggestion.tags,
-                level: suggestion.level,
-                pattern: suggestion.pattern,
-                fields: editableFields,
-                table,
-            }),
-        });
-        const data = await r.json();
-        if (!r.ok) {
-            setSaveError(data.error ?? 'Save failed');
-        } else {
-            setSaveSuccess(true);
+        setSaving(true);
+        try {
+            const r = await fetch('/api/jvmlog/save-pattern', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: patternId,
+                    tags: suggestion.tags,
+                    level: suggestion.level,
+                    pattern: suggestion.pattern,
+                    fields: editableFields,
+                    table,
+                }),
+            });
+            let data: Record<string, unknown> = {};
+            try { data = await r.json(); } catch { /* non-JSON response */ }
+            if (!r.ok) {
+                setSaveError((data.error as string) ?? 'Save failed');
+            } else {
+                setSaveSuccess(true);
+                setRawLine('');
+                setSuggestion(null);
+                setEditableFields([]);
+                setPatternId('');
+                setTable('');
+            }
+        } catch (err) {
+            setSaveError(err instanceof Error ? err.message : 'Network error');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -148,6 +162,7 @@ const LogPatternsTab: React.FC = () => {
                 <textarea
                     className="w-full bg-gray-800 border border-gray-600 rounded p-2 text-sm text-gray-200 font-mono resize-y h-20 focus:outline-none focus:border-cyan-500"
                     placeholder="[1.234s][info][gc] GC(42) Pause Young (Normal) 256M->128M(512M) 12.34ms"
+                    aria-label="Log line to analyse"
                     value={rawLine}
                     onChange={e => setRawLine(e.target.value)}
                 />
@@ -235,9 +250,10 @@ const LogPatternsTab: React.FC = () => {
 
                     <button
                         onClick={handleSave}
-                        className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-sm"
+                        disabled={saving || !patternId.trim() || !table.trim()}
+                        className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white rounded text-sm"
                     >
-                        Save Pattern
+                        {saving ? 'Saving…' : 'Save Pattern'}
                     </button>
                 </div>
             )}
