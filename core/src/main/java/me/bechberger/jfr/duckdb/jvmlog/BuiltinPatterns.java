@@ -77,11 +77,12 @@ public final class BuiltinPatterns {
                 "jvmlog_gc_init"),
 
             // jvmlog_gc_event: GC pause events
-            // e.g.: GC(0) Pause Young (Normal) (G1 Evacuation Pause) 10M->5M(256M) 3.14ms
-            // or simpler: GC(0) Pause Young (Normal) 3.14ms
+            // e.g. (G1): GC(0) Pause Young (Normal) (G1 Evacuation Pause) 10M->5M(256M) 3.14ms
+            //      (Parallel): GC(0) Pause Young (Normal) 3.14ms
+            // The subtype paren group "(Normal)" is optional; cause is always the last paren group.
             new JavaLogPattern("gc_pause_event",
                 List.of("gc"), LogLevel.INFO,
-                "^GC\\((\\d+)\\) Pause (\\S+) \\((.+?)\\)(?:\\s+\\d+[KMG]?->\\d+[KMG]?\\(\\d+[KMG]?\\))? ([\\d.]+)ms$",
+                "^GC\\((\\d+)\\) Pause (\\S+) (?:\\([^)]+\\) )?\\((.+?)\\)(?:\\s+\\d+[KMG]?->\\d+[KMG]?\\(\\d+[KMG]?\\))? ([\\d.]+)ms$",
                 List.of(
                     FieldDef.of("gcId", FieldType.INT),
                     FieldDef.of("gcType", FieldType.STRING),
