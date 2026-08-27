@@ -14,6 +14,7 @@ cellConditions:
   has-stringdedup: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_stringdedup'"
   has-metaspace: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_metaspace'"
   has-jfr-correlation: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_jfr_correlation'"
+  has-safepoint: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_safepoint'"
 ---
 
 <!-- @cell name=intro -->
@@ -22,7 +23,7 @@ cellConditions:
 
 A ready-to-run analysis of JVM garbage-collection logs captured with `-Xlog:gc*`.
 
-**What's here:** Pause summary, heap timeline, phase breakdown, and collector-specific details (G1, ZGC, Parallel). Load a `.log` file to begin.
+**What's here:** Pause summary, heap timeline, phase breakdown, and collector-specific details (G1, ZGC, Parallel, CMS, Shenandoah). Load a `.log` file to begin.
 
 ---
 
@@ -33,24 +34,7 @@ A ready-to-run analysis of JVM garbage-collection logs captured with `-Xlog:gc*`
 Algorithm, JDK version, heap configuration, and worker counts from JVM startup lines.
 
 ```sql
-SELECT algorithm AS "Collector",
-       jdkVersion AS "JDK Version",
-       maxHeap / 1048576 AS "Max Heap (MB)",
-       initialHeap / 1048576 AS "Initial Heap (MB)",
-       softMaxCapacity / 1048576 AS "Soft Max (MB)",
-       parallelWorkers AS "Parallel Workers",
-       concurrentWorkers AS "Concurrent Workers",
-       workersOldGen AS "Old Gen Workers",
-       workersYoungGen AS "Young Gen Workers",
-       runtimeWorkers AS "Runtime Workers",
-       refinementWorkers AS "Refinement Workers",
-       cpuTotal AS "CPUs",
-       physicalMemory / 1073741824 AS "Physical Memory (GB)",
-       numaSupport AS "NUMA",
-       heapRegionSize / 1048576 AS "Region Size (MB)",
-       periodicGc AS "Periodic GC",
-       preTouch AS "Pre-touch"
-FROM jvmlog_gc_init LIMIT 5
+SELECT * FROM "jvmlog-gc-init-summary"
 ```
 
 ```plot
@@ -105,7 +89,7 @@ SELECT * FROM "jvmlog-heap-timeline"
 ```
 
 ```plot
-LINE(x="GC ID", y="Heap Before (MB)")
+LINE(x="gcId", y="heapBeforeMB")
 ```
 
 ---
@@ -200,12 +184,7 @@ LINE(x="GC ID", y="Eden Before")
 Heap expand/shrink decisions.
 
 ```sql
-SELECT gcId AS "GC ID",
-       requestedExpansionBytes / 1048576.0 AS "Requested MB",
-       actualExpansionBytes / 1048576.0 AS "Actual MB",
-       decision AS "Decision"
-FROM jvmlog_g1_ergonomics
-ORDER BY gcId
+SELECT * FROM "jvmlog-g1-heap-expansion"
 ```
 
 ```plot
@@ -275,6 +254,22 @@ SELECT * FROM "jvmlog-stringdedup-summary"
 
 ```plot
 BAR(x="GC ID", y="Bytes Saved")
+```
+
+---
+
+<!-- @cell name=safepoint-summary requires="has-safepoint" -->
+
+## Safepoints
+
+Safepoint operations ranked by total stop-the-world time.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-summary"
+```
+
+```plot
+BAR(x="Operation", y="Total (ms)")
 ```
 
 ---
