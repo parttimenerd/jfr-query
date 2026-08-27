@@ -7,11 +7,16 @@ import io.javalin.http.staticfiles.Location;
 import me.bechberger.jfr.duckdb.BasicParallelImporter;
 import me.bechberger.jfr.duckdb.Options;
 import me.bechberger.jfr.duckdb.RuntimeSQLException;
+import me.bechberger.jfr.duckdb.jvmlog.CorrelationFinalizer;
+import me.bechberger.jfr.duckdb.jvmlog.FileTypeRouter;
+import me.bechberger.jfr.duckdb.jvmlog.JvmLogImporter;
 import me.bechberger.jfr.duckdb.templates.TemplateService;
+import me.bechberger.jfr.duckdb.util.JdbcDuckDBSink;
 import org.duckdb.DuckDBConnection;
 import picocli.CommandLine;
 
 import java.awt.*;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.sql.DriverManager;
@@ -54,45 +59,111 @@ public class ServeCommand implements Runnable {
             defaultValue = "")
     private String templatesDir;
 
+    @CommandLine.Option(
+            names = {"--jvmlog-patterns-dir"},
+            description = "Directory containing user JVM log pattern files (.yaml)",
+            defaultValue = "")
+    private String jvmlogPatternsDir;
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private static DuckDBConnection openFile(String path, Options options) throws Exception {
-        if (path.toLowerCase().endsWith(".jfr")) {
-            System.out.println("Importing " + path + " ...");
-            DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
-            BasicParallelImporter.importIntoConnection(Path.of(path), conn, options);
-            return conn;
-        } else {
-            System.out.println("Opening " + path + " ...");
-            return (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:" + path);
+    /**
+     * Load a single file into the given connection.
+     * For JFR/CJFR uses BasicParallelImporter; for JVMLOG uses JvmLogImporter;
+     * for DUCKDB attaches and copies tables.
+     */
+    public static void loadFileIntoConnection(DuckDBConnection conn, Path path, Options options,
+                                               Optional<Path> jvmlogPatternsDir) throws Exception {
+        FileTypeRouter.FileType type = FileTypeRouter.detect(path);
+        switch (type) {
+            case JFR, CJFR -> {
+                System.out.println("Importing JFR: " + path);
+                BasicParallelImporter.importIntoConnection(path, conn, options);
+            }
+            case JVMLOG -> {
+                System.out.println("Importing JVM log: " + path);
+                var sink = new JdbcDuckDBSink(conn);
+                JvmLogImporter.importLog(path, sink);
+            }
+            case DUCKDB -> {
+                System.out.println("Attaching DuckDB: " + path);
+                String alias = "_src_" + System.nanoTime();
+                try (var stmt = conn.createStatement()) {
+                    stmt.execute("ATTACH '" + path.toAbsolutePath() + "' AS " + alias + " (READ_ONLY)");
+                    try {
+                        // Copy all tables from the attached DB into memory
+                        ResultSet rs = stmt.executeQuery(
+                                "SELECT table_name FROM information_schema.tables WHERE table_catalog = '" + alias + "'");
+                        List<String> tables = new ArrayList<>();
+                        while (rs.next()) tables.add(rs.getString(1));
+                        rs.close();
+                        for (String tbl : tables) {
+                            stmt.execute("CREATE TABLE IF NOT EXISTS \"" + tbl + "\" AS SELECT * FROM " + alias + ".\"" + tbl + "\"");
+                        }
+                    } finally {
+                        stmt.execute("DETACH " + alias);
+                    }
+                }
+            }
         }
     }
 
-    @Override
-    public void run() {
-        DuckDBConnection initialConn;
-        try {
-            initialConn = openFile(inputFile, options);
-        } catch (Exception e) {
-            System.err.println("Failed to open file: " + e.getMessage());
-            e.printStackTrace();
-            System.exit(1);
-            return;
+    /**
+     * Open all given files into a single in-memory DuckDB connection.
+     * Returns the connection — caller is responsible for closing it.
+     */
+    public static DuckDBConnection openFiles(List<Path> paths, Options options,
+                                              Optional<Path> jvmlogPatternsDir) throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        for (Path p : paths) {
+            loadFileIntoConnection(conn, p, options, jvmlogPatternsDir);
         }
+        CorrelationFinalizer.runIfApplicable(conn);
+        return conn;
+    }
 
+    private static DuckDBConnection openFile(String path, Options options) throws Exception {
+        FileTypeRouter.FileType type;
+        try {
+            type = FileTypeRouter.detect(Path.of(path));
+        } catch (IllegalArgumentException e) {
+            // Fall back: treat as DuckDB if extension unknown
+            System.out.println("Opening " + path + " ...");
+            return (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:" + path);
+        }
+        if (type == FileTypeRouter.FileType.DUCKDB) {
+            System.out.println("Opening " + path + " ...");
+            return (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:" + path);
+        }
+        // For JFR, CJFR, JVMLOG: import into in-memory connection
+        return openFiles(List.of(Path.of(path)), options, Optional.empty());
+    }
+
+    /**
+     * Build a Javalin app wired to the given connection.
+     *
+     * @param initialConn        pre-opened DuckDB connection
+     * @param options            query/import options
+     * @param templatesDirStr    path to user templates dir, or null/empty for none
+     * @param jvmlogPatternsDirStr path to user jvmlog patterns dir, or null/empty for none
+     */
+    public static Javalin buildApp(DuckDBConnection initialConn, Options options,
+                                    String templatesDirStr, String jvmlogPatternsDirStr) {
         AtomicReference<DuckDBConnection> connRef = new AtomicReference<>(initialConn);
-        AtomicReference<String> currentFile = new AtomicReference<>(inputFile);
+        AtomicReference<String> currentFile = new AtomicReference<>("<in-memory>");
 
-        Optional<Path> userTemplatesDir = (templatesDir == null || templatesDir.isBlank())
+        Optional<Path> userTemplatesDir = (templatesDirStr == null || templatesDirStr.isBlank())
                 ? Optional.empty()
-                : Optional.of(Path.of(templatesDir));
+                : Optional.of(Path.of(templatesDirStr));
+        Optional<Path> jvmlogPatternsDir = (jvmlogPatternsDirStr == null || jvmlogPatternsDirStr.isBlank())
+                ? Optional.empty()
+                : Optional.of(Path.of(jvmlogPatternsDirStr));
+
         TemplateService templateService;
         try {
             templateService = new TemplateService(userTemplatesDir);
         } catch (IllegalStateException e) {
-            System.err.println("Failed to initialize template service: " + e.getMessage());
-            System.exit(1);
-            return;
+            throw new RuntimeException("Failed to initialize template service: " + e.getMessage(), e);
         }
 
         var app = Javalin.create(config -> {
@@ -137,28 +208,78 @@ public class ServeCommand implements Runnable {
         });
 
         app.post("/api/load-file", ctx -> {
-            String path;
+            Map<?, ?> req;
             try {
-                Map<?, ?> req = MAPPER.readValue(ctx.body(), Map.class);
-                path = (String) req.get("path");
+                req = MAPPER.readValue(ctx.body(), Map.class);
             } catch (JsonProcessingException e) {
                 ctx.status(400).json(Map.of("error", "Invalid JSON: " + e.getMessage()));
                 return;
             }
-            if (path == null || path.isBlank()) {
-                ctx.status(400).json(Map.of("error", "missing 'path' field"));
+
+            // Resolve the list of paths from either legacy "path" or new "files" key
+            List<Path> paths;
+            if (req.containsKey("path")) {
+                // Legacy single-file form: { "path": "..." }
+                String p = (String) req.get("path");
+                if (p == null || p.isBlank()) {
+                    ctx.status(400).json(Map.of("error", "Expected 'path' or 'files' field"));
+                    return;
+                }
+                paths = List.of(Path.of(p));
+            } else if (req.containsKey("files")) {
+                // New multi-file form: { "files": [{"path":"...", "type":"..."}] }
+                Object filesObj = req.get("files");
+                if (!(filesObj instanceof List<?> filesList) || filesList.isEmpty()) {
+                    ctx.status(400).json(Map.of("error", "Expected 'files' to be a non-empty array"));
+                    return;
+                }
+                List<Path> collected = new ArrayList<>();
+                for (Object entry : filesList) {
+                    if (!(entry instanceof Map<?, ?> fileEntry)) {
+                        ctx.status(400).json(Map.of("error", "Each file entry must be an object"));
+                        return;
+                    }
+                    Object pathObj = fileEntry.get("path");
+                    if (pathObj == null) {
+                        ctx.status(400).json(Map.of("error", "File entry missing 'path'"));
+                        return;
+                    }
+                    collected.add(Path.of(pathObj.toString()));
+                }
+                paths = collected;
+            } else {
+                ctx.status(400).json(Map.of("error", "Expected 'path' or 'files' field"));
                 return;
             }
-            if (!Path.of(path).toFile().exists()) {
-                ctx.status(400).json(Map.of("error", "file not found: " + path));
-                return;
+
+            // Validate all paths exist before doing any work
+            for (Path p : paths) {
+                if (!p.toFile().exists()) {
+                    ctx.status(400).json(Map.of("error", "file not found: " + p));
+                    return;
+                }
             }
+
             try {
-                DuckDBConnection newConn = openFile(path, options);
+                DuckDBConnection newConn;
+                if (paths.size() == 1) {
+                    FileTypeRouter.FileType type = FileTypeRouter.detect(paths.get(0));
+                    if (type == FileTypeRouter.FileType.DUCKDB) {
+                        // Open DuckDB directly (persistent)
+                        newConn = (DuckDBConnection) DriverManager.getConnection(
+                                "jdbc:duckdb:" + paths.get(0).toAbsolutePath());
+                    } else {
+                        newConn = openFiles(paths, options, jvmlogPatternsDir);
+                    }
+                } else {
+                    newConn = openFiles(paths, options, jvmlogPatternsDir);
+                }
+                CorrelationFinalizer.runIfApplicable(newConn);
                 DuckDBConnection old = connRef.getAndSet(newConn);
-                currentFile.set(path);
+                currentFile.set(paths.size() == 1 ? paths.get(0).toString() : paths.toString());
                 try { old.close(); } catch (SQLException ignored) {}
-                ctx.json(Map.of("ok", true, "path", path));
+                List<String> pathStrs = paths.stream().map(Path::toString).toList();
+                ctx.json(Map.of("ok", true, "paths", pathStrs));
             } catch (Exception e) {
                 ctx.status(500).json(Map.of("error", e.getMessage()));
             }
@@ -183,6 +304,33 @@ public class ServeCommand implements Runnable {
             ctx.result(body.get());
         });
 
+        return app;
+    }
+
+    @Override
+    public void run() {
+        DuckDBConnection initialConn;
+        try {
+            initialConn = openFile(inputFile, options);
+        } catch (Exception e) {
+            System.err.println("Failed to open file: " + e.getMessage());
+            e.printStackTrace();
+            System.exit(1);
+            return;
+        }
+
+        Javalin app;
+        try {
+            app = buildApp(initialConn, options, templatesDir, jvmlogPatternsDir);
+        } catch (RuntimeException e) {
+            System.err.println(e.getMessage());
+            System.exit(1);
+            return;
+        }
+
+        // Wire shutdown to close the initial connection (connRef inside buildApp handles the rest)
+        Runtime.getRuntime().addShutdownHook(new Thread(app::stop));
+
         app.start(port);
         String url = "http://localhost:" + port;
         System.out.println("Serving notebook at " + url);
@@ -190,11 +338,6 @@ public class ServeCommand implements Runnable {
         if (!noOpen) {
             openBrowser(url);
         }
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            app.stop();
-            try { connRef.get().close(); } catch (SQLException ignored) {}
-        }));
 
         try {
             Thread.currentThread().join();
