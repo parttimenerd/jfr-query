@@ -88,15 +88,16 @@ public class ServeCommand implements Runnable {
             case DUCKDB -> {
                 System.out.println("Attaching DuckDB: " + path);
                 String alias = "_src_" + System.nanoTime();
+                // Escape single-quotes in path to prevent SQL injection
+                String escapedPath = path.toAbsolutePath().toString().replace("'", "''");
                 try (var stmt = conn.createStatement()) {
-                    stmt.execute("ATTACH '" + path.toAbsolutePath() + "' AS " + alias + " (READ_ONLY)");
+                    stmt.execute("ATTACH '" + escapedPath + "' AS " + alias + " (READ_ONLY)");
                     try {
-                        // Copy all tables from the attached DB into memory
-                        ResultSet rs = stmt.executeQuery(
-                                "SELECT table_name FROM information_schema.tables WHERE table_catalog = '" + alias + "'");
                         List<String> tables = new ArrayList<>();
-                        while (rs.next()) tables.add(rs.getString(1));
-                        rs.close();
+                        try (ResultSet rs = stmt.executeQuery(
+                                "SELECT table_name FROM information_schema.tables WHERE table_catalog = '" + alias + "'")) {
+                            while (rs.next()) tables.add(rs.getString(1));
+                        }
                         for (String tbl : tables) {
                             stmt.execute("CREATE TABLE IF NOT EXISTS \"" + tbl + "\" AS SELECT * FROM " + alias + ".\"" + tbl + "\"");
                         }
@@ -115,10 +116,15 @@ public class ServeCommand implements Runnable {
     public static DuckDBConnection openFiles(List<Path> paths, Options options,
                                               Optional<Path> jvmlogPatternsDir) throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
-        for (Path p : paths) {
-            loadFileIntoConnection(conn, p, options, jvmlogPatternsDir);
+        try {
+            for (Path p : paths) {
+                loadFileIntoConnection(conn, p, options, jvmlogPatternsDir);
+            }
+            CorrelationFinalizer.runIfApplicable(conn);
+        } catch (Exception e) {
+            try { conn.close(); } catch (Exception ignored) {}
+            throw e;
         }
-        CorrelationFinalizer.runIfApplicable(conn);
         return conn;
     }
 
@@ -265,7 +271,7 @@ public class ServeCommand implements Runnable {
                 if (paths.size() == 1) {
                     FileTypeRouter.FileType type = FileTypeRouter.detect(paths.get(0));
                     if (type == FileTypeRouter.FileType.DUCKDB) {
-                        // Open DuckDB directly (persistent)
+                        // Open DuckDB directly (persistent) — no correlation possible
                         newConn = (DuckDBConnection) DriverManager.getConnection(
                                 "jdbc:duckdb:" + paths.get(0).toAbsolutePath());
                     } else {
@@ -274,7 +280,8 @@ public class ServeCommand implements Runnable {
                 } else {
                     newConn = openFiles(paths, options, jvmlogPatternsDir);
                 }
-                CorrelationFinalizer.runIfApplicable(newConn);
+                // Note: openFiles() already calls CorrelationFinalizer internally;
+                // only the DUCKDB direct-open path skips openFiles, and correlation is not applicable there.
                 DuckDBConnection old = connRef.getAndSet(newConn);
                 currentFile.set(paths.size() == 1 ? paths.get(0).toString() : paths.toString());
                 try { old.close(); } catch (SQLException ignored) {}

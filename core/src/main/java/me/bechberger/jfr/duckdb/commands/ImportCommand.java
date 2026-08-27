@@ -64,8 +64,9 @@ public class ImportCommand implements Runnable {
             deleteSilently(outputPath);
             DuckDBConnection memConn = ServeCommand.openFiles(inputPaths, options, Optional.empty());
             try {
+                String escapedOutput = outputPath.toAbsolutePath().toString().replace("'", "''");
                 try (var stmt = memConn.createStatement()) {
-                    stmt.execute("ATTACH '" + outputPath + "' AS _export");
+                    stmt.execute("ATTACH '" + escapedOutput + "' AS _export");
                     stmt.execute("COPY FROM DATABASE memory TO _export");
                     stmt.execute("DETACH _export");
                 }
