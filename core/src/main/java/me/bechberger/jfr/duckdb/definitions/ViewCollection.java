@@ -2899,12 +2899,12 @@ public class ViewCollection {
                         "jvmlog_jfr_correlation")
                     .description("Side-by-side comparison of pause times from JFR events and the GC log."),
                 new View(
-                        "jvmlog_gc_pause_summary",
+                        "jvmlog-gc-pause-summary",
                         "jvmlog",
                         "GC Log: Pause Summary by Cause",
                         null,
                         """
-                            CREATE VIEW jvmlog_gc_pause_summary AS
+                            CREATE VIEW "jvmlog-gc-pause-summary" AS
                             SELECT cause,
                                    count(*) AS count,
                                    avg(pauseMs) AS avgMs,
@@ -2917,12 +2917,12 @@ public class ViewCollection {
                         "jvmlog_gc_event")
                     .description("Per-cause pause statistics: count, average, max, and total pause time."),
                 new View(
-                        "jvmlog_gc_pause_by_type",
+                        "jvmlog-gc-pause-by-type",
                         "jvmlog",
                         "GC Log: Pause Stats by GC Type",
                         null,
                         """
-                            CREATE VIEW jvmlog_gc_pause_by_type AS
+                            CREATE VIEW "jvmlog-gc-pause-by-type" AS
                             SELECT gcType,
                                    count(*) AS count,
                                    avg(pauseMs) AS avgMs,
@@ -2934,12 +2934,12 @@ public class ViewCollection {
                         "jvmlog_gc_event")
                     .description("Per-GC-type pause statistics: count, average, and max pause time."),
                 new View(
-                        "jvmlog_heap_timeline",
+                        "jvmlog-heap-timeline-v2",
                         "jvmlog",
                         "GC Log: Heap Timeline (MB)",
                         null,
                         """
-                            CREATE VIEW jvmlog_heap_timeline AS
+                            CREATE VIEW "jvmlog-heap-timeline-v2" AS
                             SELECT h.gcId,
                                    round(h.heapBefore / 1048576.0, 2) AS heapBeforeMB,
                                    round(h.heapAfter / 1048576.0, 2) AS heapAfterMB,
@@ -2954,12 +2954,12 @@ public class ViewCollection {
                         "jvmlog_gc_event")
                     .description("Heap before and after each GC cycle (converted from bytes to MB), joined with pause time."),
                 new View(
-                        "jvmlog_gc_phase_breakdown",
+                        "jvmlog-gc-phase-breakdown",
                         "jvmlog",
                         "GC Log: Phase Breakdown",
                         null,
                         """
-                            CREATE VIEW jvmlog_gc_phase_breakdown AS
+                            CREATE VIEW "jvmlog-gc-phase-breakdown" AS
                             SELECT phaseName,
                                    count(*) AS count,
                                    avg(durationMs) AS avgMs,
@@ -2972,17 +2972,17 @@ public class ViewCollection {
                         "jvmlog_gc_phase")
                     .description("Average phase durations across all GC cycles."),
                 new View(
-                        "jvmlog_gc_init_summary",
+                        "jvmlog-gc-init-summary",
                         "jvmlog",
                         "GC Log: Init Summary",
                         null,
                         """
-                            CREATE VIEW jvmlog_gc_init_summary AS
+                            CREATE VIEW "jvmlog-gc-init-summary" AS
                             SELECT max(algorithm) AS algorithm,
                                    max(jdkVersion) AS jdkVersion,
-                                   max(minHeap) / 1048576 AS minHeapMB,
-                                   max(initialHeap) / 1048576 AS initialHeapMB,
-                                   max(maxHeap) / 1048576 AS maxHeapMB,
+                                   max(minHeap) / 1048576.0 AS minHeapMB,
+                                   max(initialHeap) / 1048576.0 AS initialHeapMB,
+                                   max(maxHeap) / 1048576.0 AS maxHeapMB,
                                    max(parallelWorkers) AS parallelWorkers,
                                    max(concurrentWorkers) AS concurrentWorkers
                             FROM jvmlog_gc_init
@@ -2990,12 +2990,12 @@ public class ViewCollection {
                         "jvmlog_gc_init")
                     .description("GC configuration summary: algorithm, JDK version, and heap sizing in MB."),
                 new View(
-                        "jvmlog_gc_throughput",
+                        "jvmlog-gc-cumulative-pause",
                         "jvmlog",
                         "GC Log: Cumulative Pause Time",
                         null,
                         """
-                            CREATE VIEW jvmlog_gc_throughput AS
+                            CREATE VIEW "jvmlog-gc-cumulative-pause" AS
                             SELECT gcId,
                                    pauseMs,
                                    sum(pauseMs) OVER (ORDER BY gcId ROWS UNBOUNDED PRECEDING) AS cumulativePauseMs
@@ -3005,27 +3005,27 @@ public class ViewCollection {
                         "jvmlog_gc_event")
                     .description("Per-GC pause time with running cumulative total."),
                 new View(
-                        "jvmlog_g1_heap_expansion",
+                        "jvmlog-g1-heap-expansion",
                         "jvmlog",
                         "GC Log: G1 Heap Expansion",
                         null,
                         """
-                            CREATE VIEW jvmlog_g1_heap_expansion AS
+                            CREATE VIEW "jvmlog-g1-heap-expansion" AS
                             SELECT count(*) AS expansionCount,
-                                   sum(actualExpansionBytes) / 1048576 AS totalExpansionMB,
-                                   avg(actualExpansionBytes) / 1048576 AS avgExpansionMB
+                                   sum(actualExpansionBytes) / 1048576.0 AS totalExpansionMB,
+                                   avg(actualExpansionBytes) / 1048576.0 AS avgExpansionMB
                             FROM jvmlog_g1_ergonomics
                             WHERE decision = 'expand'
                             """,
                         "jvmlog_g1_ergonomics")
                     .description("G1 heap expansion decisions: count and total/average expansion in MB."),
                 new View(
-                        "jvmlog_unknown_summary",
+                        "jvmlog-unknown-summary",
                         "jvmlog",
                         "GC Log: Unrecognised Lines",
                         null,
                         """
-                            CREATE VIEW jvmlog_unknown_summary AS
+                            CREATE VIEW "jvmlog-unknown-summary" AS
                             SELECT tags, level, messagePrefix, count
                             FROM jvmlog_unknown_lines
                             ORDER BY count DESC
