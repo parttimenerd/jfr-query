@@ -1,0 +1,17 @@
+- id: gc_metaspace_compressed_class
+  tags: [gc, metaspace]
+  level: info
+  pattern: 'Compressed class space mapped at: (\S+), reserved size: (\d+)'
+  fields:
+    compressedClassAddress: string
+    compressedClassReservedBytes: long
+  table: jvmlog_gc_init
+
+- id: gc_metaspace_flags
+  tags: [gc, metaspace]
+  level: info
+  pattern: 'UseCompressedClassPointers (\d+), UseCompactObjectHeaders (\d+)'
+  fields:
+    useCompressedClassPointers: int
+    useCompactObjectHeaders: int
+  table: jvmlog_gc_init

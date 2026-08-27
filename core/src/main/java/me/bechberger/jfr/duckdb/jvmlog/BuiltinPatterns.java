@@ -63,7 +63,7 @@ public final class BuiltinPatterns {
                 List.of(FieldDef.of("maxHeap", FieldType.BYTES)),
                 "jvmlog_gc_init"),
 
-            // jvmlog_gc_init: worker counts
+            // jvmlog_gc_init: worker counts (G1/Parallel style)
             new JavaLogPattern("gc_init_parallel_workers",
                 List.of("gc", "init"), LogLevel.INFO,
                 "^Parallel Workers: (\\d+)$",
@@ -75,6 +75,120 @@ public final class BuiltinPatterns {
                 "^Concurrent Workers: (\\d+)$",
                 List.of(FieldDef.of("concurrentWorkers", FieldType.INT)),
                 "jvmlog_gc_init"),
+
+            // jvmlog_gc_init: G1 debug-level thread counts: "ConcGCThreads: 3 offset 22"
+            new JavaLogPattern("gc_init_conc_threads",
+                List.of("gc"), LogLevel.DEBUG,
+                "^ConcGCThreads: (\\d+).*$",
+                List.of(FieldDef.of("concurrentWorkers", FieldType.INT)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_parallel_threads",
+                List.of("gc"), LogLevel.DEBUG,
+                "^ParallelGCThreads: (\\d+)$",
+                List.of(FieldDef.of("parallelWorkers", FieldType.INT)),
+                "jvmlog_gc_init"),
+
+            // jvmlog_gc_init: G1 debug heap line — "Minimum heap N  Initial heap N  Maximum heap N"
+            new JavaLogPattern("gc_init_heap_debug",
+                List.of("gc", "heap"), LogLevel.DEBUG,
+                "^Minimum heap (\\d+)\\s+Initial heap (\\d+)\\s+Maximum heap (\\d+)$",
+                List.of(
+                    FieldDef.of("minHeap", FieldType.BYTES),
+                    FieldDef.of("initialHeap", FieldType.BYTES),
+                    FieldDef.of("maxHeap", FieldType.BYTES)),
+                "jvmlog_gc_init"),
+
+            // jvmlog_gc_init: ZGC-specific init fields
+            new JavaLogPattern("gc_init_zgc_name",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Initializing The Z Garbage Collector$",
+                List.of(FieldDef.constant("algorithm", FieldType.STRING, "ZGC")),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_numa",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^NUMA Support: (\\S+)$",
+                List.of(FieldDef.of("numaSupport", FieldType.STRING)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_cpus",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^CPUs: (\\d+) total, (\\d+) available$",
+                List.of(
+                    FieldDef.of("cpuTotal", FieldType.INT),
+                    FieldDef.of("cpuAvailable", FieldType.INT)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_memory",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Memory: (\\d+[KMG]?)$",
+                List.of(FieldDef.of("physicalMemory", FieldType.BYTES)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_large_page",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Large Page Support: (\\S+)$",
+                List.of(FieldDef.of("largePagingSupport", FieldType.STRING)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_soft_max",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Soft Max Capacity: (\\d+[KMG]?)$",
+                List.of(FieldDef.of("softMaxCapacity", FieldType.BYTES)),
+                "jvmlog_gc_init"),
+
+            // ZGC: "GC Workers for Old Generation: 2 (dynamic)"
+            new JavaLogPattern("gc_init_workers_old",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^GC Workers for Old Generation: (\\d+).*$",
+                List.of(FieldDef.of("workersOldGen", FieldType.INT)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_workers_young",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^GC Workers for Young Generation: (\\d+).*$",
+                List.of(FieldDef.of("workersYoungGen", FieldType.INT)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_workers_max",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^GC Workers Max: (\\d+).*$",
+                List.of(FieldDef.of("workersMax", FieldType.INT)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_runtime_workers",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Runtime Workers: (\\d+)$",
+                List.of(FieldDef.of("runtimeWorkers", FieldType.INT)),
+                "jvmlog_gc_init"),
+
+            // jvmlog_gc_init: compressed oops (G1 has "Compressed Oops: Enabled (Zero based)")
+            new JavaLogPattern("gc_init_compressed_oops",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Compressed Oops: (\\S+).*$",
+                List.of(FieldDef.of("compressedOops", FieldType.STRING)),
+                "jvmlog_gc_init"),
+
+            // jvmlog_gc_event: ZGC-style Garbage Collection (no subtype paren): "GC(0) Garbage Collection (Allocation Rate) 128M(25%)->64M(12%)"
+            new JavaLogPattern("gc_zgc_collection",
+                List.of("gc"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Garbage Collection \\((.+?)\\)(?:\\s+[\\d.]+[KMG]?\\(\\d+%\\)->[\\d.]+[KMG]?\\(\\d+%\\))?$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("cause", FieldType.STRING),
+                    FieldDef.constant("gcType", FieldType.STRING, "Garbage Collection")),
+                "jvmlog_gc_event"),
+
+            // jvmlog_gc_event: ZGC concurrent phase: "GC(0) Concurrent Mark 5.123ms"
+            new JavaLogPattern("gc_zgc_concurrent_phase",
+                List.of("gc"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Concurrent (\\S.*?) ([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("phaseName", FieldType.STRING),
+                    FieldDef.of("durationMs", FieldType.DOUBLE)),
+                "jvmlog_gc_phase"),
 
             // jvmlog_gc_event: GC pause events
             // e.g. (G1): GC(0) Pause Young (Normal) (G1 Evacuation Pause) 10M->5M(256M) 3.14ms
