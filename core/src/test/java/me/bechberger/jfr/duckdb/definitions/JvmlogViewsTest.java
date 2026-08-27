@@ -26,7 +26,8 @@ class JvmlogViewsTest {
             "jvmlog-g1-mixed-gc", "jvmlog-g1-mixed-gc-summary",
             "jvmlog-zgc-load",
             "jvmlog-pause-histogram", "jvmlog-gc-frequency", "jvmlog-gc-pressure-timeline",
-            "jvmlog-problematic-gcs", "jvmlog-g1-cycle-detail"
+            "jvmlog-problematic-gcs", "jvmlog-g1-cycle-detail",
+            "jvmlog-zgc-cycle-detail"
     );
 
     @Test
@@ -569,6 +570,33 @@ class JvmlogViewsTest {
             assertThat(rs.getInt("GC ID")).isEqualTo(0);
             assertThat(rs.getInt("Eden Before")).isEqualTo(10);
             assertThat(rs.getDouble("Pause (ms)")).isEqualTo(3.5);
+        }
+        conn.close();
+    }
+
+    @Test
+    void zgcCycleDetailViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'N/A', 'Allocation Rate', 0.456, 1.0)");
+            s.execute("CREATE TABLE jvmlog_zgc_phases (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE, generation VARCHAR, concurrent BOOLEAN)");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (0, 'Concurrent Mark', 45.6, 'N/A', true)");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (0, 'Pause Mark Start', 0.456, 'N/A', false)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-cycle-detail".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-cycle-detail not found"));
+        Set<String> tables = Set.of("jvmlog_gc_event", "jvmlog_zgc_phases");
+        // primary requires 4 tables; fallback to alternative that uses 2
+        String query = view.getBestMatchingQuery(tables);
+        assertThat(query).as("zgc-cycle-detail should resolve via 2-table alternative").isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Concurrent (ms)\", \"STW (ms)\" FROM \"jvmlog-zgc-cycle-detail\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getDouble("Concurrent (ms)")).isEqualTo(45.6);
         }
         conn.close();
     }

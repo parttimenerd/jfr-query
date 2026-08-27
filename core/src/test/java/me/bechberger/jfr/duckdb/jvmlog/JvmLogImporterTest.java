@@ -1550,4 +1550,26 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void shenandoahHeapInlineIsParsed() throws Exception {
+        var tmp = Files.createTempFile("test-shenandoah-heap-inline", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using Shenandoah
+                    [1.200s][info][gc] GC(3) Pause Final Mark (unload classes) 512M->256M(1024M) 2.345ms
+                    [1.500s][info][gc] GC(4) Pause Init Update Refs 128M->100M(256M) 0.123ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_heap_snapshot")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("Shenandoah heap snapshots from inline data").isGreaterThanOrEqualTo(1);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }

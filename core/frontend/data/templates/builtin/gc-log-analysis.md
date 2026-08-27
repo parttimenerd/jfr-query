@@ -423,6 +423,22 @@ BAR(x="GC ID", y="Concurrent ms")
 
 ---
 
+<!-- @cell name=zgc-cycle-detail requires="has-zgc" -->
+
+## ZGC: Full Cycle Detail
+
+Per-cycle view combining pause time, concurrent work, heap before/after, and allocation pressure — scroll through cycles to correlate spikes.
+
+```sql
+SELECT * FROM "jvmlog-zgc-cycle-detail"
+```
+
+```plot
+SCATTER(x="GC ID", y="Concurrent (ms)")
+```
+
+---
+
 <!-- @cell name=zgc-director requires="has-zgc-director" -->
 
 ## ZGC: Director Rules

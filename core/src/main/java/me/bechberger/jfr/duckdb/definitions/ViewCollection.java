@@ -3370,6 +3370,98 @@ public class ViewCollection {
                         "jvmlog_zgc_load")
                     .description("System load averages and allocation pressure per ZGC cycle."),
                 new View(
+                        "jvmlog-zgc-cycle-detail",
+                        "jvmlog",
+                        "GC Log: ZGC Full Cycle Detail",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-zgc-cycle-detail" AS
+                            SELECT e.gcId AS "GC ID",
+                                   e.cause AS "Cause",
+                                   round(e.pauseMs, 2) AS "Pause (ms)",
+                                   round(p.concurrentMs, 1) AS "Concurrent (ms)",
+                                   round(p.pauseMs, 2) AS "STW (ms)",
+                                   round(h.heapBefore / 1048576.0, 1) AS "Heap Before (MB)",
+                                   round(h.heapAfter / 1048576.0, 1) AS "Heap After (MB)",
+                                   round(l.allocRateMbps, 1) AS "Alloc Rate (MB/s)",
+                                   l.allocStalls AS "Alloc Stalls"
+                            FROM jvmlog_gc_event e
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       sum(CASE WHEN concurrent THEN durationMs ELSE 0 END) AS concurrentMs,
+                                       sum(CASE WHEN NOT concurrent THEN durationMs ELSE 0 END) AS pauseMs
+                                FROM jvmlog_zgc_phases
+                                GROUP BY gcId
+                            ) p ON e.gcId = p.gcId
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       heapBefore,
+                                       heapAfter
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                            ) h ON e.gcId = h.gcId
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       max(allocRateMbps) AS allocRateMbps,
+                                       max(allocStalls) AS allocStalls
+                                FROM jvmlog_zgc_load
+                                GROUP BY gcId
+                            ) l ON e.gcId = l.gcId
+                            WHERE e.gcType IS NOT NULL OR e.cause IS NOT NULL
+                            ORDER BY e.gcId
+                            """,
+                        "jvmlog_gc_event", "jvmlog_zgc_phases", "jvmlog_heap_snapshot", "jvmlog_zgc_load")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-zgc-cycle-detail" AS
+                            SELECT e.gcId AS "GC ID",
+                                   e.cause AS "Cause",
+                                   round(e.pauseMs, 2) AS "Pause (ms)",
+                                   round(p.concurrentMs, 1) AS "Concurrent (ms)",
+                                   round(p.pauseMs, 2) AS "STW (ms)",
+                                   round(h.heapBefore / 1048576.0, 1) AS "Heap Before (MB)",
+                                   round(h.heapAfter / 1048576.0, 1) AS "Heap After (MB)"
+                            FROM jvmlog_gc_event e
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       sum(CASE WHEN concurrent THEN durationMs ELSE 0 END) AS concurrentMs,
+                                       sum(CASE WHEN NOT concurrent THEN durationMs ELSE 0 END) AS pauseMs
+                                FROM jvmlog_zgc_phases
+                                GROUP BY gcId
+                            ) p ON e.gcId = p.gcId
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       heapBefore,
+                                       heapAfter
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                            ) h ON e.gcId = h.gcId
+                            WHERE e.gcType IS NOT NULL OR e.cause IS NOT NULL
+                            ORDER BY e.gcId
+                            """,
+                        "jvmlog_gc_event", "jvmlog_zgc_phases", "jvmlog_heap_snapshot")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-zgc-cycle-detail" AS
+                            SELECT e.gcId AS "GC ID",
+                                   e.cause AS "Cause",
+                                   round(e.pauseMs, 2) AS "Pause (ms)",
+                                   round(p.concurrentMs, 1) AS "Concurrent (ms)",
+                                   round(p.pauseMs, 2) AS "STW (ms)"
+                            FROM jvmlog_gc_event e
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       sum(CASE WHEN concurrent THEN durationMs ELSE 0 END) AS concurrentMs,
+                                       sum(CASE WHEN NOT concurrent THEN durationMs ELSE 0 END) AS pauseMs
+                                FROM jvmlog_zgc_phases
+                                GROUP BY gcId
+                            ) p ON e.gcId = p.gcId
+                            WHERE e.gcType IS NOT NULL OR e.cause IS NOT NULL
+                            ORDER BY e.gcId
+                            """,
+                        "jvmlog_gc_event", "jvmlog_zgc_phases")
+                    .description("ZGC per-cycle: pause, concurrent time, heap before/after, and allocation pressure in one row."),
+                new View(
                         "jvmlog-pause-histogram",
                         "jvmlog",
                         "GC Log: Pause Duration Histogram",

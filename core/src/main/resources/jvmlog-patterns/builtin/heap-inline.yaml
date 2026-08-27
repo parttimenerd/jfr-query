@@ -30,3 +30,16 @@
     heapBefore: bytes
     heapAfter: bytes
   table: jvmlog_heap_snapshot
+
+# Shenandoah pause with inline heap (multi-word pause type + heap suffix):
+# e.g.: GC(0) Pause Final Mark (unload classes) 512M->256M(1024M) 2.345ms
+- id: gc_shenandoah_pause_heap_inline
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Pause (?:Init|Final) (?:Mark|Update Refs)(?:[^0-9]*)(\d+[KMG]?)->(\d+[KMG]?)\((\d+[KMG]?)\) [0-9.]+ms$'
+  fields:
+    gcId: int
+    heapBefore: bytes
+    heapAfter: bytes
+    heapCommittedAfter: bytes
+  table: jvmlog_heap_snapshot
