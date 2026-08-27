@@ -2929,14 +2929,15 @@ public class ViewCollection {
                         null,
                         """
                             CREATE VIEW "jvmlog-gc-pause-summary" AS
-                            SELECT cause,
-                                   count(*) AS count,
-                                   avg(pauseMs) AS avgMs,
-                                   max(pauseMs) AS maxMs,
-                                   sum(pauseMs) AS totalMs
+                            SELECT cause AS "Cause",
+                                   count(*) AS "Count",
+                                   round(avg(pauseMs), 2) AS "Avg (ms)",
+                                   round(max(pauseMs), 2) AS "Max (ms)",
+                                   round(sum(pauseMs), 1) AS "Total (ms)"
                             FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
                             GROUP BY cause
-                            ORDER BY totalMs DESC
+                            ORDER BY "Total (ms)" DESC
                             """,
                         "jvmlog_gc_event")
                     .description("Per-cause pause statistics: count, average, max, and total pause time."),
@@ -2947,13 +2948,13 @@ public class ViewCollection {
                         null,
                         """
                             CREATE VIEW "jvmlog-gc-pause-by-type" AS
-                            SELECT gcType,
-                                   count(*) AS count,
-                                   avg(pauseMs) AS avgMs,
-                                   max(pauseMs) AS maxMs
+                            SELECT gcType AS "Type",
+                                   count(*) AS "Count",
+                                   round(avg(pauseMs), 2) AS "Avg (ms)",
+                                   round(max(pauseMs), 2) AS "Max (ms)"
                             FROM jvmlog_gc_event
                             GROUP BY gcType
-                            ORDER BY count DESC
+                            ORDER BY "Count" DESC
                             """,
                         "jvmlog_gc_event")
                     .description("Per-GC-type pause statistics: count, average, and max pause time."),
@@ -2985,14 +2986,14 @@ public class ViewCollection {
                         null,
                         """
                             CREATE VIEW "jvmlog-gc-phase-breakdown" AS
-                            SELECT phaseName,
-                                   count(*) AS count,
-                                   avg(durationMs) AS avgMs,
-                                   max(durationMs) AS maxMs,
-                                   sum(durationMs) AS totalMs
+                            SELECT phaseName AS "Phase",
+                                   count(*) AS "Count",
+                                   round(avg(durationMs), 2) AS "Avg (ms)",
+                                   round(max(durationMs), 2) AS "Max (ms)",
+                                   round(sum(durationMs), 1) AS "Total (ms)"
                             FROM jvmlog_gc_phase
                             GROUP BY phaseName
-                            ORDER BY avgMs DESC
+                            ORDER BY "Avg (ms)" DESC
                             """,
                         "jvmlog_gc_phase")
                     .description("Average phase durations across all GC cycles."),
@@ -3032,10 +3033,11 @@ public class ViewCollection {
                         null,
                         """
                             CREATE VIEW "jvmlog-gc-cumulative-pause" AS
-                            SELECT gcId,
-                                   pauseMs,
-                                   sum(pauseMs) OVER (ORDER BY gcId ROWS UNBOUNDED PRECEDING) AS cumulativePauseMs
+                            SELECT gcId AS "GC ID",
+                                   round(pauseMs, 2) AS "Pause (ms)",
+                                   round(sum(pauseMs) OVER (ORDER BY gcId ROWS UNBOUNDED PRECEDING), 1) AS "Cumulative (ms)"
                             FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
                             ORDER BY gcId
                             """,
                         "jvmlog_gc_event")
@@ -3173,7 +3175,8 @@ public class ViewCollection {
                         null,
                         """
                             CREATE VIEW "jvmlog-safepoint-timeline" AS
-                            SELECT operation AS "Operation",
+                            SELECT row_number() OVER (ORDER BY rowid) AS "#",
+                                   operation AS "Operation",
                                    round(totalMs, 2) AS "Total (ms)",
                                    round(syncMs, 2) AS "Sync (ms)"
                             FROM jvmlog_safepoint

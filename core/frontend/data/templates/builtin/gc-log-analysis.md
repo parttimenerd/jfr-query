@@ -62,6 +62,22 @@ BAR(x="Cause", y="Total ms")
 
 ---
 
+<!-- @cell name=pause-by-type -->
+
+## Pause by GC Type
+
+Count, average, and max pause grouped by GC algorithm / collection type.
+
+```sql
+SELECT * FROM "jvmlog-gc-pause-by-type"
+```
+
+```plot
+BAR(x="Type", y="Avg (ms)")
+```
+
+---
+
 <!-- @cell name=pause-percentiles -->
 
 ## Pause Percentiles
@@ -93,6 +109,22 @@ ORDER BY uptimeSecs
 
 ```plot
 SCATTER(x="Uptime (s)", y="Pause (ms)", color="Type")
+```
+
+---
+
+<!-- @cell name=cumulative-pause -->
+
+## Cumulative Pause Time
+
+Running total of stop-the-world time — shows how pause load accumulates over the JVM's lifetime.
+
+```sql
+SELECT * FROM "jvmlog-gc-cumulative-pause"
+```
+
+```plot
+LINE(x="GC ID", y="Cumulative (ms)")
 ```
 
 ---
@@ -337,6 +369,38 @@ SELECT * FROM "jvmlog-safepoint-summary"
 
 ```plot
 BAR(x="Operation", y="Total (ms)")
+```
+
+---
+
+<!-- @cell name=safepoint-timeline requires="has-safepoint" -->
+
+## Safepoint Timeline
+
+Individual safepoint events in log order — useful for spotting periodic or irregular stop-the-world spikes.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-timeline"
+```
+
+```plot
+SCATTER(x="#", y="Total (ms)", color="Operation")
+```
+
+---
+
+<!-- @cell name=longest-pauses -->
+
+## Longest GC Pauses
+
+Top 20 individual GC pause events by duration.
+
+```sql
+SELECT * FROM "jvmlog-longest-pauses"
+```
+
+```plot
+BAR(x="GC ID", y="Pause (ms)")
 ```
 
 ---
