@@ -359,11 +359,17 @@ public class ServeCommand implements Runnable {
             }
             try {
                 String yaml = buildYamlFromRequest(req);
-                Path outDir = jvmlogPatternsDir.get();
+                Path outDir = jvmlogPatternsDir.get().toAbsolutePath().normalize();
                 java.nio.file.Files.createDirectories(outDir);
-                Path outFile = outDir.resolve(id + ".yaml");
+                // Sanitise id to prevent path traversal
+                String safeId = id.replaceAll("[^a-zA-Z0-9_]", "_");
+                Path outFile = outDir.resolve(safeId + ".yaml").normalize();
+                if (!outFile.startsWith(outDir)) {
+                    ctx.status(400).json(Map.of("error", "invalid id"));
+                    return;
+                }
                 java.nio.file.Files.writeString(outFile, yaml);
-                ctx.json(Map.of("ok", true, "path", outFile.toString()));
+                ctx.json(Map.of("ok", true));
             } catch (Exception e) {
                 ctx.status(500).json(Map.of("error", e.getMessage()));
             }
@@ -424,16 +430,21 @@ public class ServeCommand implements Runnable {
         String table = tableObj instanceof String ? (String) tableObj : "jvmlog_unknown_lines";
 
         StringBuilder sb = new StringBuilder();
-        sb.append("- id: ").append(id).append("\n");
-        sb.append("  tags: [").append(String.join(", ", tags)).append("]\n");
-        sb.append("  level: ").append(level).append("\n");
+        sb.append("- id: ").append(safeIdentifier(id)).append("\n");
+        sb.append("  tags: [").append(tags.stream().map(ServeCommand::safeIdentifier).collect(java.util.stream.Collectors.joining(", "))).append("]\n");
+        sb.append("  level: ").append(safeIdentifier(level)).append("\n");
         sb.append("  pattern: '").append(pattern.replace("'", "''")).append("'\n");
         sb.append("  fields:\n");
         for (Map<String, String> f : fields) {
-            sb.append("    ").append(f.get("name")).append(": ").append(f.get("type")).append("\n");
+            sb.append("    ").append(safeIdentifier(f.get("name"))).append(": ").append(safeIdentifier(f.get("type"))).append("\n");
         }
-        sb.append("  table: ").append(table).append("\n");
+        sb.append("  table: ").append(safeIdentifier(table)).append("\n");
         return sb.toString();
+    }
+
+    private static String safeIdentifier(String s) {
+        if (s == null) return "unknown";
+        return s.replaceAll("[^a-zA-Z0-9_]", "_");
     }
 
     private static List<Map<String, Object>> executeQuery(DuckDBConnection conn, String sql) throws SQLException {

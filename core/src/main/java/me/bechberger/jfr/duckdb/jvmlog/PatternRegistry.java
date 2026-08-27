@@ -61,6 +61,7 @@ public final class PatternRegistry {
                 while (!Thread.currentThread().isInterrupted()) {
                     java.nio.file.WatchKey key = ws.take();
                     for (java.nio.file.WatchEvent<?> event : key.pollEvents()) {
+                        if (event.kind() == java.nio.file.StandardWatchEventKinds.OVERFLOW) continue;
                         java.nio.file.Path changed = dir.resolve(
                                 (java.nio.file.Path) event.context());
                         if (changed.toString().endsWith(".yaml")) {
