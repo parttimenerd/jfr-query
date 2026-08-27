@@ -607,10 +607,7 @@ TABLE()
 Log lines that did not match any known pattern.
 
 ```sql
-SELECT tags AS "Tags", level AS "Level", messagePrefix AS "Message Prefix", count AS "Count"
-FROM jvmlog_unknown_lines
-ORDER BY count DESC
-LIMIT 50
+SELECT * FROM "jvmlog-unknown-summary"
 ```
 
 ```plot

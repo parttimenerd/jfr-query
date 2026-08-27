@@ -3658,7 +3658,10 @@ public class ViewCollection {
                         null,
                         """
                             CREATE VIEW "jvmlog-unknown-summary" AS
-                            SELECT tags, level, messagePrefix, count
+                            SELECT tags AS "Tags",
+                                   level AS "Level",
+                                   messagePrefix AS "Message Prefix",
+                                   count AS "Count"
                             FROM jvmlog_unknown_lines
                             ORDER BY count DESC
                             LIMIT 20
