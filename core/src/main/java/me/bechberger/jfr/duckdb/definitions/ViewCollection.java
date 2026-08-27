@@ -3201,6 +3201,25 @@ public class ViewCollection {
                         "jvmlog_alloc_stall")
                     .description("Per-thread allocation stall statistics: count, total, average, and max stall time."),
                 new View(
+                        "jvmlog-longest-pauses",
+                        "jvmlog",
+                        "GC Log: Longest Pause Events",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-longest-pauses" AS
+                            SELECT gcId AS "GC ID",
+                                   gcType AS "Type",
+                                   cause AS "Cause",
+                                   round(pauseMs, 2) AS "Pause (ms)",
+                                   uptimeSecs AS "Uptime (s)"
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                            ORDER BY pauseMs DESC
+                            LIMIT 20
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Top 20 longest GC pause events with type, cause, and timestamp."),
+                new View(
                         "jvmlog-gc-errors",
                         "jvmlog",
                         "GC Log: GC Error Events",
