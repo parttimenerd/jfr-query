@@ -57,4 +57,54 @@ class JvmlogViewsTest {
         }
         conn.close();
     }
+
+    @Test
+    void gcInitSummaryViewExecutesWithNewColumns() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        // Create gc_init table with all columns the view references
+        try (Statement s = conn.createStatement()) {
+            s.execute("""
+                CREATE TABLE jvmlog_gc_init (
+                    algorithm VARCHAR,
+                    jdkVersion VARCHAR,
+                    minHeap BIGINT,
+                    initialHeap BIGINT,
+                    maxHeap BIGINT,
+                    softMaxCapacity BIGINT,
+                    parallelWorkers INT,
+                    concurrentWorkers INT,
+                    workersOldGen INT,
+                    workersYoungGen INT,
+                    runtimeWorkers INT,
+                    refinementWorkers INT,
+                    cpuTotal INT,
+                    physicalMemory BIGINT,
+                    numaSupport VARCHAR,
+                    heapRegionSize BIGINT,
+                    periodicGc VARCHAR,
+                    preTouch VARCHAR
+                )
+                """);
+            s.execute("""
+                INSERT INTO jvmlog_gc_init (algorithm, jdkVersion, minHeap, maxHeap,
+                    parallelWorkers, cpuTotal, numaSupport, periodicGc, preTouch)
+                VALUES ('G1', '25.0.3', 268435456, 268435456, 10, 12, 'Disabled', 'Disabled', 'Disabled')
+                """);
+        }
+        View initView = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-init-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-init-summary not found"));
+        assertThat(initView.isValid(Set.of("jvmlog_gc_init"))).isTrue();
+        String query = initView.getBestMatchingQuery(Set.of("jvmlog_gc_init"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query); // CREATE VIEW
+            var rs = s.executeQuery("SELECT algorithm, parallelWorkers, cpuTotal FROM \"jvmlog-gc-init-summary\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("algorithm")).isEqualTo("G1");
+            assertThat(rs.getInt("parallelWorkers")).isEqualTo(10);
+            assertThat(rs.getInt("cpuTotal")).isEqualTo(12);
+        }
+        conn.close();
+    }
 }

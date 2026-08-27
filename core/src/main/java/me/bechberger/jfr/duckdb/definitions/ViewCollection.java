@@ -2983,12 +2983,23 @@ public class ViewCollection {
                                    max(minHeap) / 1048576.0 AS minHeapMB,
                                    max(initialHeap) / 1048576.0 AS initialHeapMB,
                                    max(maxHeap) / 1048576.0 AS maxHeapMB,
+                                   max(softMaxCapacity) / 1048576.0 AS softMaxMB,
                                    max(parallelWorkers) AS parallelWorkers,
-                                   max(concurrentWorkers) AS concurrentWorkers
+                                   max(concurrentWorkers) AS concurrentWorkers,
+                                   max(workersOldGen) AS workersOldGen,
+                                   max(workersYoungGen) AS workersYoungGen,
+                                   max(runtimeWorkers) AS runtimeWorkers,
+                                   max(refinementWorkers) AS refinementWorkers,
+                                   max(cpuTotal) AS cpuTotal,
+                                   max(physicalMemory) / 1073741824.0 AS physicalMemoryGB,
+                                   max(numaSupport) AS numaSupport,
+                                   max(heapRegionSize) AS heapRegionBytes,
+                                   max(periodicGc) AS periodicGc,
+                                   max(preTouch) AS preTouch
                             FROM jvmlog_gc_init
                             """,
                         "jvmlog_gc_init")
-                    .description("GC configuration summary: algorithm, JDK version, and heap sizing in MB."),
+                    .description("GC configuration summary: algorithm, JDK version, heap sizing, worker counts, and hardware info."),
                 new View(
                         "jvmlog-gc-cumulative-pause",
                         "jvmlog",

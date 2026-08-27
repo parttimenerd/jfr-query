@@ -340,6 +340,113 @@ class JvmLogImporterTest {
     // ------------------------------------------------------------------
 
     @Test
+    void g1NewInitFieldsAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-g1-init-fields", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [0.001s][info][gc,init] CardTable entry size: 512
+                    [0.001s][info][gc,init] Heap Region Size: 1M
+                    [0.001s][info][gc,init] Concurrent Refinement Workers: 10
+                    [0.001s][info][gc,init] Periodic GC: Disabled
+                    [0.001s][info][gc,init] Pre-touch: Disabled
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT cardTableEntrySize FROM jvmlog_gc_init WHERE cardTableEntrySize IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("CardTable entry size parsed").isTrue();
+                    assertThat(rs.getInt(1)).isEqualTo(512);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT heapRegionSize FROM jvmlog_gc_init WHERE heapRegionSize IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Heap Region Size parsed").isTrue();
+                    assertThat(rs.getLong(1)).isEqualTo(1024 * 1024L); // 1M
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT refinementWorkers FROM jvmlog_gc_init WHERE refinementWorkers IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Concurrent Refinement Workers parsed").isTrue();
+                    assertThat(rs.getInt(1)).isEqualTo(10);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT periodicGc FROM jvmlog_gc_init WHERE periodicGc IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Periodic GC parsed").isTrue();
+                    assertThat(rs.getString(1)).isEqualTo("Disabled");
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT preTouch FROM jvmlog_gc_init WHERE preTouch IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Pre-touch parsed").isTrue();
+                    assertThat(rs.getString(1)).isEqualTo("Disabled");
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void parallelAlignmentsAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-parallel-align", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using Parallel
+                    [0.001s][info][gc,init] Alignments: Space 512K, Generation 512K, Heap 8M
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT alignSpace, alignGeneration, alignHeap FROM jvmlog_gc_init WHERE alignSpace IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Alignments parsed").isTrue();
+                    assertThat(rs.getLong("alignSpace")).isEqualTo(512 * 1024L);
+                    assertThat(rs.getLong("alignGeneration")).isEqualTo(512 * 1024L);
+                    assertThat(rs.getLong("alignHeap")).isEqualTo(8 * 1024 * 1024L);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void zgcAddressSpaceFieldsAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-zgc-addr", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.005s][info][gc,init] Initializing The Z Garbage Collector
+                    [0.005s][info][gc,init] Address Space Size: unlimited
+                    [0.005s][info][gc,init] Reserved Space Size: 4G
+                    [0.005s][info][gc,init] Uncommit: Implicitly Disabled (-Xms equals -Xmx)
+                    [0.005s][info][gc,init] Page Size Medium: Range [2M, 8M]
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT reservedSpaceSize FROM jvmlog_gc_init WHERE reservedSpaceSize IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Reserved Space Size parsed").isTrue();
+                    assertThat(rs.getLong(1)).isEqualTo(4L * 1024 * 1024 * 1024);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT addressSpaceSize FROM jvmlog_gc_init WHERE addressSpaceSize IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Address Space Size parsed").isTrue();
+                    assertThat(rs.getString(1)).isEqualTo("unlimited");
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT uncommitPolicy FROM jvmlog_gc_init WHERE uncommitPolicy IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Uncommit policy parsed").isTrue();
+                    assertThat(rs.getString(1)).contains("Disabled");
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT pageSizeMedium FROM jvmlog_gc_init WHERE pageSizeMedium IS NOT NULL LIMIT 1")) {
+                    assertThat(rs.next()).as("Page Size Medium parsed").isTrue();
+                    assertThat(rs.getString(1)).contains("2M");
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
     void g1SyntheticLogProducesGcEvents() throws Exception {
         var tmp = Files.createTempFile("test-g1-events", ".log");
         try {

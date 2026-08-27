@@ -170,6 +170,72 @@ public final class BuiltinPatterns {
                 List.of(FieldDef.of("compressedOops", FieldType.STRING)),
                 "jvmlog_gc_init"),
 
+            // jvmlog_gc_init: G1-specific init fields
+            new JavaLogPattern("gc_init_card_table",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^CardTable entry size: (\\d+)$",
+                List.of(FieldDef.of("cardTableEntrySize", FieldType.INT)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_heap_region_size",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Heap Region Size: (\\d+[KMG]?)$",
+                List.of(FieldDef.of("heapRegionSize", FieldType.BYTES)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_refinement_workers",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Concurrent Refinement Workers: (\\d+)$",
+                List.of(FieldDef.of("refinementWorkers", FieldType.INT)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_periodic_gc",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Periodic GC: (\\S+)$",
+                List.of(FieldDef.of("periodicGc", FieldType.STRING)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_pretouch",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Pre-touch: (\\S+)$",
+                List.of(FieldDef.of("preTouch", FieldType.STRING)),
+                "jvmlog_gc_init"),
+
+            // Parallel GC: "Alignments: Space 512K, Generation 512K, Heap 8M"
+            new JavaLogPattern("gc_init_alignments",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Alignments: Space (\\d+[KMG]?), Generation (\\d+[KMG]?), Heap (\\d+[KMG]?)$",
+                List.of(
+                    FieldDef.of("alignSpace", FieldType.BYTES),
+                    FieldDef.of("alignGeneration", FieldType.BYTES),
+                    FieldDef.of("alignHeap", FieldType.BYTES)),
+                "jvmlog_gc_init"),
+
+            // ZGC-specific init: address space / reserved space
+            new JavaLogPattern("gc_init_address_space",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Address Space Size: (.+)$",
+                List.of(FieldDef.of("addressSpaceSize", FieldType.STRING)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_reserved_space",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Reserved Space Size: (\\d+[KMG]?)$",
+                List.of(FieldDef.of("reservedSpaceSize", FieldType.BYTES)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_uncommit",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Uncommit: (.+)$",
+                List.of(FieldDef.of("uncommitPolicy", FieldType.STRING)),
+                "jvmlog_gc_init"),
+
+            new JavaLogPattern("gc_init_page_size_medium",
+                List.of("gc", "init"), LogLevel.INFO,
+                "^Page Size Medium: (.+)$",
+                List.of(FieldDef.of("pageSizeMedium", FieldType.STRING)),
+                "jvmlog_gc_init"),
+
             // jvmlog_gc_event: ZGC-style Garbage Collection (no subtype paren): "GC(0) Garbage Collection (Allocation Rate) 128M(25%)->64M(12%)"
             new JavaLogPattern("gc_zgc_collection",
                 List.of("gc"), LogLevel.INFO,

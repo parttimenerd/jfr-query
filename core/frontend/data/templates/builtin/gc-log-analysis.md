@@ -28,12 +28,26 @@ A ready-to-run analysis of JVM garbage-collection logs captured with `-Xlog:gc*`
 
 ## GC Overview
 
-Algorithm, JDK version, and heap configuration from JVM startup lines.
+Algorithm, JDK version, heap configuration, and worker counts from JVM startup lines.
 
 ```sql
-SELECT algorithm AS "Collector", jdkVersion AS "JDK Version",
-       maxHeap / 1048576 AS "Max Heap (MB)", initialHeap / 1048576 AS "Initial Heap (MB)",
-       parallelWorkers AS "Parallel Workers", concurrentWorkers AS "Concurrent Workers"
+SELECT algorithm AS "Collector",
+       jdkVersion AS "JDK Version",
+       maxHeap / 1048576 AS "Max Heap (MB)",
+       initialHeap / 1048576 AS "Initial Heap (MB)",
+       softMaxCapacity / 1048576 AS "Soft Max (MB)",
+       parallelWorkers AS "Parallel Workers",
+       concurrentWorkers AS "Concurrent Workers",
+       workersOldGen AS "Old Gen Workers",
+       workersYoungGen AS "Young Gen Workers",
+       runtimeWorkers AS "Runtime Workers",
+       refinementWorkers AS "Refinement Workers",
+       cpuTotal AS "CPUs",
+       physicalMemory / 1073741824 AS "Physical Memory (GB)",
+       numaSupport AS "NUMA",
+       heapRegionSize / 1048576 AS "Region Size (MB)",
+       periodicGc AS "Periodic GC",
+       preTouch AS "Pre-touch"
 FROM jvmlog_gc_init LIMIT 5
 ```
 
