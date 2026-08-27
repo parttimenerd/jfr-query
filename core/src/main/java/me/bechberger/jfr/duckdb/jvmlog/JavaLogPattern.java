@@ -33,6 +33,12 @@ public final class JavaLogPattern implements LogPattern {
     public String id() { return id; }
 
     @Override
+    public String tableName() { return tableName; }
+
+    @Override
+    public List<FieldDef> fields() { return fields; }
+
+    @Override
     public boolean matches(LogLine line) {
         if (!line.hasAllTags(requiredTags)) return false;
         if (line.level() != null && minLevel != null &&
