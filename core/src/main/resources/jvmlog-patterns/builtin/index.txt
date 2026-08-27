@@ -7,3 +7,5 @@ safepoint.yaml
 heap-inline.yaml
 alloc-stall.yaml
 gc-errors.yaml
+g1-mixed.yaml
+zgc-load.yaml

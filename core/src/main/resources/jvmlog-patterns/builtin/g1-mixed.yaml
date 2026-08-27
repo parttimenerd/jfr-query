@@ -1,0 +1,43 @@
+# G1 mixed GC ergonomics — tags [gc,ergo]
+# Triggered when G1 decides to start or skip a mixed collection cycle.
+
+# "GC(N) Do Mixed GC. candidate old regions: 47 reclaimable: 45.3% (12.5%) threshold: 5%"
+- id: g1_ergo_do_mixed
+  tags: [gc, ergo]
+  level: info
+  pattern: 'GC\((\d+)\) Do Mixed GC\. candidate old regions:\s*(\d+) reclaimable: ([0-9.]+)%\s*\(([0-9.]+)%\) threshold: ([0-9.]+)%'
+  fields:
+    gcId: int
+    candidateOldRegions: int
+    reclaimablePct: double
+    reclaimableBytes: double
+    thresholdPct: double
+  constants:
+    decision: Do Mixed GC
+  table: jvmlog_g1_mixed_gc
+
+# "GC(N) Skip Mixed GC: reclaimable percentage (X.X%) is below threshold (Y.Y%)"
+- id: g1_ergo_skip_mixed
+  tags: [gc, ergo]
+  level: info
+  pattern: 'GC\((\d+)\) Skip Mixed GC.*reclaimable percentage\s*\(([0-9.]+)%\).*threshold\s*\(([0-9.]+)%\)'
+  fields:
+    gcId: int
+    reclaimablePct: double
+    thresholdPct: double
+  constants:
+    decision: Skip Mixed GC
+  table: jvmlog_g1_mixed_gc
+
+# "GC(N) Initiate Mixed GC (occupancy 45.2% at threshold 45.0%)"
+- id: g1_ergo_initiate_mixed
+  tags: [gc, ergo]
+  level: info
+  pattern: 'GC\((\d+)\) Initiate Mixed GC.*occupancy\s*([0-9.]+)%.*threshold\s*([0-9.]+)%'
+  fields:
+    gcId: int
+    reclaimablePct: double
+    thresholdPct: double
+  constants:
+    decision: Initiate Mixed GC
+  table: jvmlog_g1_mixed_gc

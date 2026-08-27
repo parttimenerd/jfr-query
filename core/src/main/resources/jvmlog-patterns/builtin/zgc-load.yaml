@@ -1,0 +1,34 @@
+# ZGC load statistics — tags [gc,load]
+# JDK 21+ ZGC logs system load averages and allocation rates per cycle.
+
+# "GC(N) Load: 2.55/2.37/2.36 (1s/5s/15s avg)"
+- id: zgc_load_averages
+  tags: [gc, load]
+  level: info
+  pattern: 'GC\((\d+)\) Load: ([0-9.]+)/([0-9.]+)/([0-9.]+)'
+  fields:
+    gcId: int
+    load1s: double
+    load5s: double
+    load15s: double
+  table: jvmlog_zgc_load
+
+# "GC(N) Allocation Rate: 456M/s (avg), 789M/s (peak)"
+- id: zgc_load_alloc_rate
+  tags: [gc, load]
+  level: info
+  pattern: 'GC\((\d+)\) Allocation Rate: ([0-9.]+)[KMG]?/s'
+  fields:
+    gcId: int
+    allocRateMbps: double
+  table: jvmlog_zgc_load
+
+# "GC(N) Allocation Stall: 3"
+- id: zgc_load_alloc_stalls
+  tags: [gc, load]
+  level: info
+  pattern: 'GC\((\d+)\) Allocation Stall: (\d+)'
+  fields:
+    gcId: int
+    allocStalls: int
+  table: jvmlog_zgc_load

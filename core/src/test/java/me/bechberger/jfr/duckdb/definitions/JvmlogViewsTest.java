@@ -22,7 +22,10 @@ class JvmlogViewsTest {
             "jvmlog-safepoint-summary", "jvmlog-safepoint-timeline", "jvmlog-alloc-stall-summary",
             "jvmlog-gc-errors", "jvmlog-gc-error-summary", "jvmlog-pause-percentiles-by-cause",
             "jvmlog-combined-timeline", "jvmlog-alloc-stall-timeline", "jvmlog-heap-efficiency",
-            "jvmlog-longest-pauses"
+            "jvmlog-longest-pauses",
+            "jvmlog-g1-mixed-gc", "jvmlog-g1-mixed-gc-summary",
+            "jvmlog-zgc-load",
+            "jvmlog-pause-histogram", "jvmlog-gc-frequency", "jvmlog-gc-pressure-timeline"
     );
 
     @Test
@@ -396,6 +399,123 @@ class JvmlogViewsTest {
             assertThat(rs.getInt("GC ID")).isEqualTo(0);
             assertThat(rs.getDouble("Heap Before (MB)")).isEqualTo(128.0);
             assertThat(rs.getDouble("Pause (ms)")).isEqualTo(3.14);
+        }
+        conn.close();
+    }
+
+    @Test
+    void pauseHistogramViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'GCLocker Initiated GC', 0.5, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 3.0, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Full', 'System.gc()', 150.0, 3.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-histogram".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-histogram not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-pause-histogram\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isGreaterThanOrEqualTo(1);
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcFrequencyViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 3.0, 5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 2.5, 7.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Young', 'G1 Evacuation Pause', 4.0, 15.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-frequency".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-frequency not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT sum(\"GC Count\") AS total FROM \"jvmlog-gc-frequency\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("total")).isEqualTo(3);
+        }
+        conn.close();
+    }
+
+    @Test
+    void g1MixedGcViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_mixed_gc (gcId INTEGER, decision VARCHAR, reclaimablePct DOUBLE, thresholdPct DOUBLE, candidateOldRegions INTEGER)");
+            s.execute("INSERT INTO jvmlog_g1_mixed_gc VALUES (5, 'Do Mixed GC', 45.2, 5.0, 47)");
+            s.execute("INSERT INTO jvmlog_g1_mixed_gc VALUES (8, 'Skip Mixed GC', 3.1, 5.0, NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-mixed-gc-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-mixed-gc-summary not found"));
+        assertThat(view.isValid(Set.of("jvmlog_g1_mixed_gc"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_g1_mixed_gc"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-g1-mixed-gc-summary\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void zgcLoadViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_load (gcId INTEGER, load1s DOUBLE, load5s DOUBLE, load15s DOUBLE, allocRateMbps DOUBLE, allocStalls INTEGER)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (0, 2.55, 2.37, 2.36, NULL, NULL)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (0, NULL, NULL, NULL, 456.0, NULL)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (0, NULL, NULL, NULL, NULL, 3)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-load".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-load not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_load"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_zgc_load"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Load 1s\", \"Alloc Stalls\" FROM \"jvmlog-zgc-load\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getDouble("Load 1s")).isEqualTo(2.55);
+            assertThat(rs.getInt("Alloc Stalls")).isEqualTo(3);
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcPressureTimelineViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 5.0, 3.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (0, 268435456, 134217728, 536870912, 536870912)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-pressure-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-pressure-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Heap Before (MB)\", \"Pause (ms)\" FROM \"jvmlog-gc-pressure-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getDouble("Heap Before (MB)")).isEqualTo(256.0);
         }
         conn.close();
     }

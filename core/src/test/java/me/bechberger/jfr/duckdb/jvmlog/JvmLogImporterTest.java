@@ -1492,4 +1492,62 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void g1MixedGcDecisionsAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-g1-mixed", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [1.200s][info][gc,ergo] GC(5) Do Mixed GC. candidate old regions: 47 reclaimable: 45.3% (12.5%) threshold: 5%
+                    [2.400s][info][gc,ergo] GC(8) Skip Mixed GC: reclaimable percentage (3.1%) is below threshold (5.0%)
+                    [3.600s][info][gc,ergo] GC(12) Initiate Mixed GC occupancy 46.0% at threshold 45.0%
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_g1_mixed_gc")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("G1 mixed GC decision rows").isGreaterThanOrEqualTo(1);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery(
+                             "SELECT decision FROM jvmlog_g1_mixed_gc WHERE gcId = 5")) {
+                    assertThat(rs.next()).as("Do Mixed GC decision for GC 5").isTrue();
+                    assertThat(rs.getString("decision")).isEqualTo("Do Mixed GC");
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void zgcLoadPatternsAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-zgc-load", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using ZGC
+                    [0.500s][info][gc,load] GC(0) Load: 2.55/2.37/2.36
+                    [0.501s][info][gc,load] GC(0) Allocation Rate: 456/s
+                    [0.502s][info][gc,load] GC(0) Allocation Stall: 3
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_zgc_load")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("ZGC load rows").isGreaterThanOrEqualTo(1);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery(
+                             "SELECT load1s FROM jvmlog_zgc_load WHERE gcId = 0 AND load1s IS NOT NULL")) {
+                    assertThat(rs.next()).as("ZGC load averages for GC 0").isTrue();
+                    assertThat(rs.getDouble("load1s")).isEqualTo(2.55);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }

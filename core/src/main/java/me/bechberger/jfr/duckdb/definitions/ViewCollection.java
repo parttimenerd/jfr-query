@@ -3321,6 +3321,152 @@ public class ViewCollection {
                         "jvmlog_alloc_stall")
                     .description("Chronological allocation stall events with thread name and duration."),
                 new View(
+                        "jvmlog-g1-mixed-gc",
+                        "jvmlog",
+                        "GC Log: G1 Mixed GC Decisions",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-g1-mixed-gc" AS
+                            SELECT gcId AS "GC ID",
+                                   decision AS "Decision",
+                                   round(reclaimablePct, 1) AS "Reclaimable %",
+                                   round(thresholdPct, 1) AS "Threshold %",
+                                   candidateOldRegions AS "Candidate Regions"
+                            FROM jvmlog_g1_mixed_gc
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_g1_mixed_gc")
+                    .description("G1 mixed GC trigger/skip decisions with reclaimable heap percentage."),
+                new View(
+                        "jvmlog-g1-mixed-gc-summary",
+                        "jvmlog",
+                        "GC Log: G1 Mixed GC Decision Summary",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-g1-mixed-gc-summary" AS
+                            SELECT decision AS "Decision",
+                                   count(*) AS "Count",
+                                   round(avg(reclaimablePct), 1) AS "Avg Reclaimable %",
+                                   round(avg(thresholdPct), 1) AS "Avg Threshold %"
+                            FROM jvmlog_g1_mixed_gc
+                            GROUP BY decision
+                            ORDER BY "Count" DESC
+                            """,
+                        "jvmlog_g1_mixed_gc")
+                    .description("Counts of G1 mixed GC decisions grouped by outcome."),
+                new View(
+                        "jvmlog-zgc-load",
+                        "jvmlog",
+                        "GC Log: ZGC Load Per Cycle",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-zgc-load" AS
+                            SELECT gcId AS "GC ID",
+                                   round(max(load1s), 2) AS "Load 1s",
+                                   round(max(load5s), 2) AS "Load 5s",
+                                   round(max(load15s), 2) AS "Load 15s",
+                                   round(max(allocRateMbps), 1) AS "Alloc Rate (MB/s)",
+                                   max(allocStalls) AS "Alloc Stalls"
+                            FROM jvmlog_zgc_load
+                            GROUP BY gcId
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_zgc_load")
+                    .description("System load averages and allocation pressure per ZGC cycle."),
+                new View(
+                        "jvmlog-pause-histogram",
+                        "jvmlog",
+                        "GC Log: Pause Duration Histogram",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-pause-histogram" AS
+                            SELECT bucket AS "Bucket (ms)",
+                                   count(*) AS "Count"
+                            FROM (
+                                SELECT CASE
+                                    WHEN pauseMs < 1   THEN '<1'
+                                    WHEN pauseMs < 5   THEN '1-5'
+                                    WHEN pauseMs < 10  THEN '5-10'
+                                    WHEN pauseMs < 25  THEN '10-25'
+                                    WHEN pauseMs < 50  THEN '25-50'
+                                    WHEN pauseMs < 100 THEN '50-100'
+                                    WHEN pauseMs < 250 THEN '100-250'
+                                    WHEN pauseMs < 500 THEN '250-500'
+                                    ELSE '500+'
+                                END AS bucket,
+                                CASE
+                                    WHEN pauseMs < 1   THEN 0
+                                    WHEN pauseMs < 5   THEN 1
+                                    WHEN pauseMs < 10  THEN 2
+                                    WHEN pauseMs < 25  THEN 3
+                                    WHEN pauseMs < 50  THEN 4
+                                    WHEN pauseMs < 100 THEN 5
+                                    WHEN pauseMs < 250 THEN 6
+                                    WHEN pauseMs < 500 THEN 7
+                                    ELSE 8
+                                END AS sort_order
+                                FROM jvmlog_gc_event
+                                WHERE pauseMs IS NOT NULL
+                            ) t
+                            GROUP BY bucket, sort_order
+                            ORDER BY sort_order
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Histogram of GC pause durations bucketed by millisecond ranges."),
+                new View(
+                        "jvmlog-gc-frequency",
+                        "jvmlog",
+                        "GC Log: GC Frequency Over Time",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-frequency" AS
+                            SELECT floor(uptimeSecs / 10) * 10 AS "Window Start (s)",
+                                   count(*) AS "GC Count",
+                                   round(sum(pauseMs), 1) AS "Total Pause (ms)",
+                                   round(avg(pauseMs), 2) AS "Avg Pause (ms)"
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL AND pauseMs IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 10) * 10
+                            ORDER BY 1
+                            """,
+                        "jvmlog_gc_event")
+                    .description("GC count and total pause per 10-second window."),
+                new View(
+                        "jvmlog-gc-pressure-timeline",
+                        "jvmlog",
+                        "GC Log: Combined GC Pressure Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-pressure-timeline" AS
+                            SELECT e.uptimeSecs AS "Uptime (s)",
+                                   e.gcId AS "GC ID",
+                                   e.gcType AS "Type",
+                                   e.cause AS "Cause",
+                                   round(e.pauseMs, 2) AS "Pause (ms)",
+                                   round(h.heapBeforeMB, 1) AS "Heap Before (MB)",
+                                   round(h.heapAfterMB, 1) AS "Heap After (MB)",
+                                   round(w.gcOverheadPct, 1) AS "GC Overhead %"
+                            FROM jvmlog_gc_event e
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       heapBefore / 1048576.0 AS heapBeforeMB,
+                                       heapAfter / 1048576.0 AS heapAfterMB
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                            ) h ON e.gcId = h.gcId
+                            LEFT JOIN (
+                                SELECT floor(uptimeSecs / 10) * 10 AS windowStart,
+                                       100.0 * sum(pauseMs) / 10000.0 AS gcOverheadPct
+                                FROM jvmlog_gc_event
+                                WHERE uptimeSecs IS NOT NULL AND pauseMs IS NOT NULL
+                                GROUP BY floor(uptimeSecs / 10) * 10
+                            ) w ON floor(e.uptimeSecs / 10) * 10 = w.windowStart
+                            WHERE e.uptimeSecs IS NOT NULL
+                            ORDER BY e.uptimeSecs
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Per-GC event with pause, heap before/after, and windowed overhead — all in one row."),
+                new View(
                         "jvmlog-unknown-summary",
                         "jvmlog",
                         "GC Log: Unrecognised Lines",

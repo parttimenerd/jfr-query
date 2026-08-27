@@ -8,8 +8,10 @@ cellConditions:
   has-gc-phase: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_gc_phase'"
   has-g1-regions: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_g1_regions'"
   has-g1-ergo: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_g1_ergonomics'"
+  has-g1-mixed: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_g1_mixed_gc'"
   has-zgc: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_phases'"
   has-zgc-director: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_director'"
+  has-zgc-load: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_load'"
   has-parallel: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_parallel_sizing'"
   has-stringdedup: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_stringdedup'"
   has-metaspace: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_metaspace'"
@@ -209,6 +211,54 @@ BAR(x="Window Start (s)", y="GC Overhead %")
 
 ---
 
+<!-- @cell name=gc-frequency -->
+
+## GC Frequency Over Time
+
+Number of GC events and total pause per 10-second window — shows when GC pressure spikes.
+
+```sql
+SELECT * FROM "jvmlog-gc-frequency"
+```
+
+```plot
+BAR(x="Window Start (s)", y="GC Count")
+```
+
+---
+
+<!-- @cell name=pause-histogram -->
+
+## Pause Duration Histogram
+
+Distribution of pause durations across logarithmic buckets — reveals whether pauses cluster below latency targets.
+
+```sql
+SELECT * FROM "jvmlog-pause-histogram"
+```
+
+```plot
+BAR(x="Bucket (ms)", y="Count")
+```
+
+---
+
+<!-- @cell name=gc-pressure-timeline requires="has-combined-timeline" -->
+
+## GC Pressure Timeline
+
+Pause duration, heap before/after, and windowed GC overhead in a single scrollable view — use this to spot correlated heap pressure and latency spikes.
+
+```sql
+SELECT * FROM "jvmlog-gc-pressure-timeline"
+```
+
+```plot
+SCATTER(x="Uptime (s)", y="Pause (ms)", color="Type")
+```
+
+---
+
 <!-- @cell name=metaspace-timeline requires="has-metaspace" -->
 
 ## Metaspace Timeline
@@ -292,6 +342,38 @@ TABLE()
 
 ---
 
+<!-- @cell name=g1-mixed requires="has-g1-mixed" -->
+
+## G1: Mixed GC Decisions
+
+When G1 decides to start or skip a mixed collection — driven by old-gen reclaimable percentage vs. threshold.
+
+```sql
+SELECT * FROM "jvmlog-g1-mixed-gc"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=g1-mixed-summary requires="has-g1-mixed" -->
+
+## G1: Mixed GC Decision Summary
+
+Counts of initiate/skip/do decisions with average reclaimable % — reveals if G1 is frequently skipping mixed collections.
+
+```sql
+SELECT * FROM "jvmlog-g1-mixed-gc-summary"
+```
+
+```plot
+BAR(x="Decision", y="Count")
+```
+
+---
+
 <!-- @cell name=zgc-phases requires="has-zgc" -->
 
 ## ZGC: Phase Timeline
@@ -321,6 +403,22 @@ SELECT * FROM "jvmlog-zgc-director-summary"
 
 ```plot
 TABLE()
+```
+
+---
+
+<!-- @cell name=zgc-load requires="has-zgc-load" -->
+
+## ZGC: Load & Allocation Pressure
+
+System load averages and allocation stalls per GC cycle — identifies cycles that ran under heavy application pressure.
+
+```sql
+SELECT * FROM "jvmlog-zgc-load"
+```
+
+```plot
+LINE(x="GC ID", y="Load 1s")
 ```
 
 ---
