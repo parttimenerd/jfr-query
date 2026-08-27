@@ -2743,6 +2743,161 @@ public class ViewCollection {
                             ORDER BY SUM(duration) DESC
                             """,
                         "ExecuteVMOperation"),
+                // ── jvmlog views ──────────────────────────────────────────────────
+                new View(
+                        "jvmlog-gc-summary",
+                        "jvmlog",
+                        "GC Log: Pause Summary",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-summary" AS
+                            SELECT
+                                cause AS "Cause",
+                                count(*) AS "Count",
+                                round(sum(pauseMs), 1) AS "Total ms",
+                                round(avg(pauseMs), 2) AS "Avg ms",
+                                round(approx_quantile(pauseMs, 0.5), 2) AS "P50 ms",
+                                round(approx_quantile(pauseMs, 0.9), 2) AS "P90 ms",
+                                round(approx_quantile(pauseMs, 0.99), 2) AS "P99 ms",
+                                round(max(pauseMs), 2) AS "Max ms"
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                            GROUP BY cause
+                            ORDER BY "Total ms" DESC
+                            """,
+                        "jvmlog_gc_event")
+                    .description("GC pause statistics grouped by cause from JVM GC log."),
+                new View(
+                        "jvmlog-pause-percentiles",
+                        "jvmlog",
+                        "GC Log: Pause Percentiles",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-pause-percentiles" AS
+                            SELECT
+                                round(approx_quantile(pauseMs, 0.5),  2) AS "P50 ms",
+                                round(approx_quantile(pauseMs, 0.9),  2) AS "P90 ms",
+                                round(approx_quantile(pauseMs, 0.95), 2) AS "P95 ms",
+                                round(approx_quantile(pauseMs, 0.99), 2) AS "P99 ms",
+                                round(max(pauseMs), 2) AS "Max ms",
+                                count(*) AS "Count"
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Overall pause-time percentiles from the JVM GC log."),
+                new View(
+                        "jvmlog-gc-overhead",
+                        "jvmlog",
+                        "GC Log: GC Overhead",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-overhead" AS
+                            SELECT
+                                floor(uptimeSecs / 10) * 10 AS "Window Start (s)",
+                                round(sum(pauseMs) / 10000.0 * 100, 2) AS "GC Overhead %",
+                                count(*) AS "GC Events"
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 10)
+                            ORDER BY 1
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Stop-the-world overhead as percentage of wall time in 10-second windows."),
+                new View(
+                        "jvmlog-heap-timeline",
+                        "jvmlog",
+                        "GC Log: Heap Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-heap-timeline" AS
+                            SELECT
+                                gcId AS "GC ID",
+                                heapBefore / 1048576.0 AS "Heap Before (MB)",
+                                heapAfter / 1048576.0 AS "Heap After (MB)",
+                                heapCommittedBefore / 1048576.0 AS "Committed Before (MB)",
+                                heapCommittedAfter / 1048576.0 AS "Committed After (MB)"
+                            FROM jvmlog_heap_snapshot
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_heap_snapshot")
+                    .description("Heap size before and after each GC event."),
+                new View(
+                        "jvmlog-phase-breakdown",
+                        "jvmlog",
+                        "GC Log: Phase Breakdown",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-phase-breakdown" AS
+                            SELECT
+                                phaseName AS "Phase",
+                                count(*) AS "Count",
+                                round(avg(durationMs), 2) AS "Avg ms",
+                                round(approx_quantile(durationMs, 0.99), 2) AS "P99 ms",
+                                round(max(durationMs), 2) AS "Max ms"
+                            FROM jvmlog_gc_phase
+                            WHERE durationMs IS NOT NULL
+                            GROUP BY phaseName
+                            ORDER BY "Avg ms" DESC
+                            """,
+                        "jvmlog_gc_phase")
+                    .description("Average and P99 duration per GC phase from the JVM GC log."),
+                new View(
+                        "jvmlog-g1-regions",
+                        "jvmlog",
+                        "GC Log: G1 Region Counts",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-g1-regions" AS
+                            SELECT
+                                r.gcId AS "GC ID",
+                                e.cause AS "Cause",
+                                r.edenBefore AS "Eden Before",
+                                r.edenAfter AS "Eden After",
+                                r.edenMax AS "Eden Max"
+                            FROM jvmlog_g1_regions r
+                            LEFT JOIN jvmlog_gc_event e ON r.gcId = e.gcId
+                            ORDER BY r.gcId
+                            """,
+                        "jvmlog_g1_regions",
+                        "jvmlog_gc_event")
+                    .description("G1 Eden region counts before and after each GC event."),
+                new View(
+                        "jvmlog-zgc-cycle",
+                        "jvmlog",
+                        "GC Log: ZGC Cycle Summary",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-zgc-cycle" AS
+                            SELECT
+                                gcId AS "GC ID",
+                                generation AS "Generation",
+                                sum(CASE WHEN concurrent THEN durationMs ELSE 0 END) AS "Concurrent ms",
+                                sum(CASE WHEN NOT concurrent THEN durationMs ELSE 0 END) AS "Pause ms"
+                            FROM jvmlog_zgc_phases
+                            GROUP BY gcId, generation
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_zgc_phases")
+                    .description("Concurrent vs stop-the-world time per ZGC cycle."),
+                new View(
+                        "jvmlog-jfr-correlation",
+                        "jvmlog",
+                        "GC Log: JFR vs Log Correlation",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-jfr-correlation" AS
+                            SELECT
+                                gcId AS "GC ID",
+                                source AS "Source",
+                                round(jfrLongestPauseMs, 2) AS "JFR Pause ms",
+                                round(logPauseMs, 2) AS "Log Pause ms",
+                                round(abs(jfrLongestPauseMs - logPauseMs), 2) AS "Delta ms"
+                            FROM jvmlog_jfr_correlation
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_jfr_correlation")
+                    .description("Side-by-side comparison of pause times from JFR events and the GC log."),
             };
 
     public static List<View> getViews() {
