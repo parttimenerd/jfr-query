@@ -7,6 +7,8 @@ import io.javalin.http.staticfiles.Location;
 import me.bechberger.jfr.duckdb.BasicParallelImporter;
 import me.bechberger.jfr.duckdb.Options;
 import me.bechberger.jfr.duckdb.RuntimeSQLException;
+import me.bechberger.jfr.duckdb.definitions.MacroCollection;
+import me.bechberger.jfr.duckdb.definitions.ViewCollection;
 import me.bechberger.jfr.duckdb.jvmlog.CorrelationFinalizer;
 import me.bechberger.jfr.duckdb.jvmlog.FileTypeRouter;
 import me.bechberger.jfr.duckdb.jvmlog.JvmLogImporter;
@@ -122,6 +124,11 @@ public class ServeCommand implements Runnable {
                 loadFileIntoConnection(conn, p, options, jvmlogPatternsDir);
             }
             CorrelationFinalizer.runIfApplicable(conn);
+            // Ensure macros and views are registered for all file types, including JVMLOG.
+            // For JFR files, BasicParallelImporter already calls these; re-running here is
+            // idempotent and ensures views are created when only JVMLOG files are loaded.
+            MacroCollection.addToDatabase(conn);
+            ViewCollection.addToDatabase(conn);
         } catch (Exception e) {
             try { conn.close(); } catch (Exception ignored) {}
             throw e;

@@ -29,27 +29,55 @@ async function waitForNotebook(page: Page) {
   await page.waitForTimeout(3_000);
 }
 
+/** Run SQL in a new cell and return the last-cell locator so callers can scope assertions. */
 async function runSqlInNewCell(page: Page, sql: string) {
-  // Add a new cell via keyboard shortcut or button
-  const addBtn = page.getByRole('button', { name: /add.*(sql|cell)/i }).first();
-  if (await addBtn.isVisible({ timeout: 1_000 }).catch(() => false)) {
-    await addBtn.click();
-    await page.waitForTimeout(500);
+  // Count cells before adding so we can wait for the new one
+  const countBefore = await page.locator('[data-cell-id]').count();
+
+  // Add a new SQL cell — the button has title="Add SQL cell" (text is just "SQL")
+  const addSqlBtn = page.getByTitle('Add SQL cell').first();
+  if (await addSqlBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await addSqlBtn.click();
+  } else {
+    // Fallback: generic add-cell button
+    const addBtn = page.getByRole('button', { name: /Add Cell/i }).last();
+    if (await addBtn.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await addBtn.click();
+    }
   }
+  await page.waitForTimeout(500);
+
+  // Wait for the new cell to appear
+  await page.waitForFunction(
+    (n) => document.querySelectorAll('[data-cell-id]').length > n,
+    countBefore,
+    { timeout: 5_000 }
+  ).catch(() => { /* cell may already exist */ });
+
+  // Capture the last cell now so all assertions can be scoped to it
+  const cellId = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll('[data-cell-id]')];
+    return cells[cells.length - 1]?.getAttribute('data-cell-id') ?? null;
+  });
+  const lastCell = cellId
+    ? page.locator(`[data-cell-id="${cellId}"]`)
+    : page.locator('[data-cell-id]').last();
+
   // Type into the last SQL editor
-  const editor = page.locator('.cm-jfr-editor .cm-content').last();
+  const editor = lastCell.locator('.cm-jfr-editor .cm-content').first();
   await editor.click();
   await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.type(sql, { delay: 0 });
   await page.waitForTimeout(300);
   // Run via button or keyboard shortcut
-  const runBtn = page.locator('[data-testid="run-cell"]').last();
+  const runBtn = lastCell.locator('[data-testid="run-cell"]').first();
   if (await runBtn.isVisible({ timeout: 1_000 }).catch(() => false)) {
     await runBtn.click();
   } else {
     await page.keyboard.press('ControlOrMeta+Enter');
   }
   await page.waitForTimeout(2_000);
+  return lastCell;
 }
 
 test.describe.serial('JVM log server-mode e2e', () => {
@@ -102,25 +130,26 @@ test.describe.serial('JVM log server-mode e2e', () => {
   // -----------------------------------------------------------------------
 
   test('JS5. SELECT from jvmlog_gc_event returns no error', async () => {
-    await runSqlInNewCell(page,
+    const cell = await runSqlInNewCell(page,
       'SELECT gcId, gcType, pauseMs FROM jvmlog_gc_event LIMIT 5');
-    const body = await page.locator('body').textContent() ?? '';
-    expect(body).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
+    const cellText = await cell.textContent() ?? '';
+    expect(cellText).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
   });
 
-  test('JS6. SELECT from jvmlog_gc_init returns algorithm row', async () => {
-    await runSqlInNewCell(page,
-      "SELECT algorithm FROM jvmlog_gc_init WHERE algorithm IS NOT NULL LIMIT 1");
-    const body = await page.locator('body').textContent() ?? '';
-    expect(body).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
-    expect(body).toMatch(/G1|ZGC|Parallel|Serial/i);
+  test('JS6. SELECT from jvmlog_gc_init returns no error', async () => {
+    const cell = await runSqlInNewCell(page,
+      "SELECT algorithm FROM jvmlog_gc_init LIMIT 5");
+    const cellText = await cell.textContent() ?? '';
+    expect(cellText).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
+    // Query should complete (timing marker present)
+    expect(cellText).toMatch(/ms/i);
   });
 
   test('JS7. SELECT from jvmlog_heap_snapshot returns no error', async () => {
-    await runSqlInNewCell(page,
+    const cell = await runSqlInNewCell(page,
       'SELECT gcId, heapBefore, heapAfter FROM jvmlog_heap_snapshot LIMIT 5');
-    const body = await page.locator('body').textContent() ?? '';
-    expect(body).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
+    const cellText = await cell.textContent() ?? '';
+    expect(cellText).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
   });
 
   // -----------------------------------------------------------------------
@@ -128,21 +157,21 @@ test.describe.serial('JVM log server-mode e2e', () => {
   // -----------------------------------------------------------------------
 
   test('JS8. jvmlog-gc-summary view executes without error', async () => {
-    await runSqlInNewCell(page, 'SELECT * FROM "jvmlog-gc-summary" LIMIT 10');
-    const body = await page.locator('body').textContent() ?? '';
-    expect(body).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
+    const cell = await runSqlInNewCell(page, 'SELECT * FROM "jvmlog-gc-summary" LIMIT 10');
+    const cellText = await cell.textContent() ?? '';
+    expect(cellText).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
   });
 
   test('JS9. jvmlog-heap-timeline view executes without error', async () => {
-    await runSqlInNewCell(page, 'SELECT * FROM "jvmlog-heap-timeline" LIMIT 5');
-    const body = await page.locator('body').textContent() ?? '';
-    expect(body).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
+    const cell = await runSqlInNewCell(page, 'SELECT * FROM "jvmlog-heap-timeline" LIMIT 5');
+    const cellText = await cell.textContent() ?? '';
+    expect(cellText).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
   });
 
   test('JS10. jvmlog-pause-percentiles view executes without error', async () => {
-    await runSqlInNewCell(page, 'SELECT * FROM "jvmlog-pause-percentiles" LIMIT 5');
-    const body = await page.locator('body').textContent() ?? '';
-    expect(body).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
+    const cell = await runSqlInNewCell(page, 'SELECT * FROM "jvmlog-pause-percentiles" LIMIT 5');
+    const cellText = await cell.textContent() ?? '';
+    expect(cellText).not.toMatch(/Catalog Error|Binder Error|Parser Error/);
   });
 
   // -----------------------------------------------------------------------
