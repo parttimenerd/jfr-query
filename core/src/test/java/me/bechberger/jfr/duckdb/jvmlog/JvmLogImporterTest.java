@@ -1457,4 +1457,39 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void gcErrorPatternsAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-gc-errors", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using G1
+                    [0.500s][info][gc] GC(2) To-space exhausted
+                    [0.501s][info][gc] GC(2) Pause Young (Allocation Failure) (G1 Evacuation Pause) 128M->128M(256M) 45.678ms
+                    [1.000s][info][gc] GC(3) Evacuation Failure 1.234ms
+                    [1.500s][info][gc] GC(5) Humongous object allocation failed
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_gc_errors")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("GC error events").isEqualTo(3);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery(
+                             "SELECT errorType FROM jvmlog_gc_errors WHERE gcId = 2 AND errorType = 'To-space exhausted'")) {
+                    assertThat(rs.next()).as("To-space exhausted captured for GC 2").isTrue();
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery(
+                             "SELECT durationMs FROM jvmlog_gc_errors WHERE errorType = 'Evacuation Failure'")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getDouble("durationMs")).isEqualTo(1.234);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }
