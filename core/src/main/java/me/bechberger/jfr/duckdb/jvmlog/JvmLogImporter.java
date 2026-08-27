@@ -17,7 +17,12 @@ public final class JvmLogImporter {
     private JvmLogImporter() {}
 
     public static void importLog(Path logFile, DuckDBSink sink) throws IOException, SQLException {
-        var registry = BuiltinPatterns.createRegistry(Optional.empty());
+        importLog(logFile, sink, Optional.empty());
+    }
+
+    public static void importLog(Path logFile, DuckDBSink sink, Optional<Path> userPatternsDir)
+            throws IOException, SQLException {
+        var registry = BuiltinPatterns.createRegistry(userPatternsDir);
         var schemas = TableSchemaBuilder.buildSchemas(registry);
 
         sink.execute("""

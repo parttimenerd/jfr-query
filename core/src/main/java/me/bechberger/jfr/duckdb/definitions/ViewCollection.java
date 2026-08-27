@@ -2805,12 +2805,12 @@ public class ViewCollection {
                         "jvmlog_gc_event")
                     .description("Stop-the-world overhead as percentage of wall time in 10-second windows."),
                 new View(
-                        "jvmlog-heap-timeline",
+                        "jvmlog-heap-snapshot-raw",
                         "jvmlog",
-                        "GC Log: Heap Timeline",
+                        "GC Log: Heap Snapshot (raw bytes)",
                         null,
                         """
-                            CREATE VIEW "jvmlog-heap-timeline" AS
+                            CREATE VIEW "jvmlog-heap-snapshot-raw" AS
                             SELECT
                                 gcId AS "GC ID",
                                 heapBefore / 1048576.0 AS "Heap Before (MB)",
@@ -2821,7 +2821,7 @@ public class ViewCollection {
                             ORDER BY gcId
                             """,
                         "jvmlog_heap_snapshot")
-                    .description("Heap size before and after each GC event."),
+                    .description("Heap size before and after each GC event (raw, without pause time)."),
                 new View(
                         "jvmlog-phase-breakdown",
                         "jvmlog",
@@ -2934,12 +2934,12 @@ public class ViewCollection {
                         "jvmlog_gc_event")
                     .description("Per-GC-type pause statistics: count, average, and max pause time."),
                 new View(
-                        "jvmlog-heap-timeline-v2",
+                        "jvmlog-heap-timeline",
                         "jvmlog",
                         "GC Log: Heap Timeline (MB)",
                         null,
                         """
-                            CREATE VIEW "jvmlog-heap-timeline-v2" AS
+                            CREATE VIEW "jvmlog-heap-timeline" AS
                             SELECT h.gcId,
                                    round(h.heapBefore / 1048576.0, 2) AS heapBeforeMB,
                                    round(h.heapAfter / 1048576.0, 2) AS heapAfterMB,

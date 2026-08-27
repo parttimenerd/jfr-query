@@ -84,7 +84,7 @@ public class ServeCommand implements Runnable {
             case JVMLOG -> {
                 System.out.println("Importing JVM log: " + path);
                 var sink = new JdbcDuckDBSink(conn);
-                JvmLogImporter.importLog(path, sink);
+                JvmLogImporter.importLog(path, sink, jvmlogPatternsDir);
             }
             case DUCKDB -> {
                 System.out.println("Attaching DuckDB: " + path);

@@ -47,6 +47,7 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, onFilesSelect
     const [isCjfrFile, setIsCjfrFile] = useState(false);
     const [pending, setPending] = useState<PendingFile | null>(null);
     const [selectedDepth, setSelectedDepth] = useState(10);
+    const [logFileModeError, setLogFileModeError] = useState<string | null>(null);
 
     // Estimated total duration, shown as "~Xs" hint below the bar.
     const estimatedSeconds = fileBytes != null ? (() => {
@@ -67,12 +68,19 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, onFilesSelect
         if ((isMulti || isLogFile) && onFilesSelected) {
             onFilesSelected(accepted);
             setFileName(accepted.map(f => f.name).join(', '));
+            setLogFileModeError(null);
+            return;
+        }
+
+        if (isLogFile && !onFilesSelected) {
+            setLogFileModeError(`Log files (.log/.txt) require server mode — run "jfr-query serve" to load GC logs.`);
             return;
         }
 
         const file = accepted[0];
         setFileName(file.name);
         setFileBytes(file.size);
+        setLogFileModeError(null);
         const lowerName = file.name.toLowerCase();
         const isJfr = lowerName.endsWith('.jfr');
         const isCjfr = lowerName.endsWith('.cjfr');
@@ -229,6 +237,13 @@ const JFRDropZone: React.FC<JFRDropZoneProps> = ({ onFileSelected, onFilesSelect
                     <div className="mt-4 p-3 bg-red-900/40 border border-red-500/40 rounded text-red-300 text-sm text-left" role="alert">
                         <p className="font-semibold">Import failed</p>
                         <p className="mt-1">{errorMessage}</p>
+                    </div>
+                )}
+
+                {logFileModeError && (
+                    <div className="mt-4 p-3 bg-amber-900/30 border border-amber-500/40 rounded text-amber-300 text-sm text-left" role="alert">
+                        <p className="font-semibold">Server mode required</p>
+                        <p className="mt-1">{logFileModeError}</p>
                     </div>
                 )}
 
