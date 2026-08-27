@@ -83,12 +83,18 @@ public final class YamlPatternLoader {
         String pattern = (String) map.get("pattern");
         String table = (String) map.get("table");
         Map<String, String> fieldsMap = (Map<String, String>) map.get("fields");
+        Map<String, String> constantsMap = (Map<String, String>) map.get("constants");
 
         LogLevel level = LogLevel.parse(levelStr);
         var fields = new ArrayList<FieldDef>();
         if (fieldsMap != null) {
             for (var entry : fieldsMap.entrySet()) {
                 fields.add(FieldDef.of(entry.getKey(), FieldType.fromYaml(entry.getValue())));
+            }
+        }
+        if (constantsMap != null) {
+            for (var entry : constantsMap.entrySet()) {
+                fields.add(FieldDef.constant(entry.getKey(), FieldType.STRING, entry.getValue()));
             }
         }
         return new YamlLogPattern(id, tags, level, pattern, fields, table);

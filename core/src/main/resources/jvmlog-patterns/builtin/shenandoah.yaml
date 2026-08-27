@@ -64,3 +64,55 @@
     gcId: int
     durationMs: double
   table: jvmlog_gc_phase
+
+# Shenandoah STW pauses:
+# GC(0) Pause Init Mark (unload classes) 1.234ms  — cause in parens, but type is "Init Mark" (two words)
+# GC(0) Pause Final Mark (process weakrefs) 2.345ms — same
+# GC(0) Pause Init Update Refs 0.234ms  — no cause paren
+# GC(0) Pause Final Update Refs 1.234ms  — no cause paren
+# GC(0) Pause Degenerated GC (Evacuation) ... — handled by gc_pause_event (single-word type "Degenerated")
+- id: shenandoah_pause_init_mark
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Pause Init Mark(?: \(([^)]+)\))? ([0-9.]+)ms'
+  fields:
+    gcId: int
+    cause: string
+    pauseMs: double
+  constants:
+    gcType: Init Mark
+  table: jvmlog_gc_event
+
+- id: shenandoah_pause_final_mark
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Pause Final Mark(?: \(([^)]+)\))? ([0-9.]+)ms'
+  fields:
+    gcId: int
+    cause: string
+    pauseMs: double
+  constants:
+    gcType: Final Mark
+  table: jvmlog_gc_event
+
+- id: shenandoah_pause_init_update_refs
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Pause Init Update Refs ([0-9.]+)ms'
+  fields:
+    gcId: int
+    pauseMs: double
+  constants:
+    gcType: Init Update Refs
+  table: jvmlog_gc_event
+
+- id: shenandoah_pause_final_update_refs
+  tags: [gc]
+  level: info
+  pattern: 'GC\((\d+)\) Pause Final Update Refs ([0-9.]+)ms'
+  fields:
+    gcId: int
+    pauseMs: double
+  constants:
+    gcType: Final Update Refs
+  table: jvmlog_gc_event

@@ -1392,4 +1392,69 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void allocStallPatternsAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-alloc-stall", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using The Z Garbage Collector
+                    [0.500s][info][gc,alloc] Stall: Thread "main" 15.234 ms
+                    [0.600s][info][gc,alloc] Stall: Thread "worker-1" 5.000 ms
+                    [0.700s][info][gc] GC(1) Allocation Stall - Thread "main" 12.000 ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_alloc_stall")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("alloc stall rows").isEqualTo(3);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery(
+                             "SELECT threadName, stallMs FROM jvmlog_alloc_stall ORDER BY stallMs DESC LIMIT 1")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getString("threadName")).isEqualTo("main");
+                    assertThat(rs.getDouble("stallMs")).isEqualTo(15.234);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
+    void shenandoahUpdateRefPausesAreParsed() throws Exception {
+        var tmp = Files.createTempFile("test-shenandoah-updaterefs", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using Shenandoah
+                    [0.500s][info][gc] GC(0) Pause Init Mark (unload classes) 1.234ms
+                    [0.600s][info][gc] GC(0) Pause Final Mark (process weakrefs) 2.345ms
+                    [0.700s][info][gc] GC(0) Pause Init Update Refs 0.123ms
+                    [0.800s][info][gc] GC(0) Pause Final Update Refs 1.111ms
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_gc_event")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("Shenandoah pause events").isEqualTo(4);
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery(
+                             "SELECT gcType FROM jvmlog_gc_event WHERE gcType = 'Init Update Refs'")) {
+                    assertThat(rs.next()).as("Init Update Refs pause captured").isTrue();
+                }
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery(
+                             "SELECT pauseMs FROM jvmlog_gc_event WHERE gcType = 'Final Update Refs'")) {
+                    assertThat(rs.next()).as("Final Update Refs pause captured").isTrue();
+                    assertThat(rs.getDouble("pauseMs")).isEqualTo(1.111);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }
