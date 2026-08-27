@@ -3668,6 +3668,153 @@ public class ViewCollection {
                             """,
                         "jvmlog_unknown_lines")
                     .description("Top unrecognised log lines by occurrence count."),
+                new View(
+                        "jvmlog-gc-error-timeline",
+                        "jvmlog",
+                        "GC Log: GC Error Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-error-timeline" AS
+                            SELECT err.gcId AS "GC ID",
+                                   err.errorType AS "Error Type",
+                                   err.errorDetail AS "Detail",
+                                   round(err.durationMs, 2) AS "Duration (ms)",
+                                   e.uptimeSecs AS "Uptime (s)",
+                                   round(e.pauseMs, 2) AS "Pause (ms)"
+                            FROM jvmlog_gc_errors err
+                            LEFT JOIN jvmlog_gc_event e ON err.gcId = e.gcId
+                            ORDER BY err.gcId
+                            """,
+                        "jvmlog_gc_errors", "jvmlog_gc_event")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-gc-error-timeline" AS
+                            SELECT gcId AS "GC ID",
+                                   errorType AS "Error Type",
+                                   errorDetail AS "Detail",
+                                   round(durationMs, 2) AS "Duration (ms)"
+                            FROM jvmlog_gc_errors
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_gc_errors")
+                    .description("GC error events with uptime context — shows when failures occurred in the JVM lifecycle."),
+                new View(
+                        "jvmlog-metaspace-detail",
+                        "jvmlog",
+                        "GC Log: Metaspace + Class Space Detail",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-metaspace-detail" AS
+                            SELECT gcId AS "GC ID",
+                                   round(max(metaspaceBefore) / 1048576.0, 2) AS "Metaspace Before (MB)",
+                                   round(max(metaspaceAfter) / 1048576.0, 2) AS "Metaspace After (MB)",
+                                   round(max(metaspaceCommitted) / 1048576.0, 2) AS "Committed (MB)",
+                                   round(max(classSpaceBefore) / 1048576.0, 2) AS "Class Before (MB)",
+                                   round(max(classSpaceAfter) / 1048576.0, 2) AS "Class After (MB)",
+                                   round(max(classSpaceCommitted) / 1048576.0, 2) AS "Class Committed (MB)"
+                            FROM jvmlog_metaspace
+                            GROUP BY gcId
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_metaspace")
+                    .description("Metaspace and class space usage before/after each GC event."),
+                new View(
+                        "jvmlog-shenandoah-cycle-detail",
+                        "jvmlog",
+                        "GC Log: Shenandoah Full Cycle Detail",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-shenandoah-cycle-detail" AS
+                            SELECT e.gcId AS "GC ID",
+                                   e.cause AS "Cause",
+                                   round(sum(e.pauseMs) FILTER (WHERE e.gcType = 'Init Mark'), 2) AS "Init Mark (ms)",
+                                   round(sum(e.pauseMs) FILTER (WHERE e.gcType = 'Final Mark'), 2) AS "Final Mark (ms)",
+                                   round(sum(e.pauseMs) FILTER (WHERE e.gcType = 'Init Update Refs'), 2) AS "Init UpdateRefs (ms)",
+                                   round(sum(e.pauseMs) FILTER (WHERE e.gcType = 'Final Update Refs'), 2) AS "Final UpdateRefs (ms)",
+                                   round(sum(e.pauseMs), 2) AS "Total STW (ms)",
+                                   round(h.heapBefore / 1048576.0, 1) AS "Heap Before (MB)",
+                                   round(h.heapAfter / 1048576.0, 1) AS "Heap After (MB)",
+                                   round(f.freeBytes / 1048576.0, 1) AS "Free After (MB)",
+                                   f.freeRegions AS "Free Regions"
+                            FROM jvmlog_gc_event e
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       heapBefore,
+                                       heapAfter
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                            ) h ON e.gcId = h.gcId
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       max(freeBytes) AS freeBytes,
+                                       max(freeRegions) AS freeRegions
+                                FROM jvmlog_shenandoah_free
+                                GROUP BY gcId
+                            ) f ON e.gcId = f.gcId
+                            WHERE e.gcType IN ('Init Mark', 'Final Mark', 'Init Update Refs', 'Final Update Refs')
+                            GROUP BY e.gcId, e.cause, h.heapBefore, h.heapAfter, f.freeBytes, f.freeRegions
+                            ORDER BY e.gcId
+                            """,
+                        "jvmlog_gc_event", "jvmlog_heap_snapshot", "jvmlog_shenandoah_free")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-shenandoah-cycle-detail" AS
+                            SELECT e.gcId AS "GC ID",
+                                   e.cause AS "Cause",
+                                   round(sum(e.pauseMs) FILTER (WHERE e.gcType = 'Init Mark'), 2) AS "Init Mark (ms)",
+                                   round(sum(e.pauseMs) FILTER (WHERE e.gcType = 'Final Mark'), 2) AS "Final Mark (ms)",
+                                   round(sum(e.pauseMs) FILTER (WHERE e.gcType = 'Init Update Refs'), 2) AS "Init UpdateRefs (ms)",
+                                   round(sum(e.pauseMs) FILTER (WHERE e.gcType = 'Final Update Refs'), 2) AS "Final UpdateRefs (ms)",
+                                   round(sum(e.pauseMs), 2) AS "Total STW (ms)",
+                                   round(h.heapBefore / 1048576.0, 1) AS "Heap Before (MB)",
+                                   round(h.heapAfter / 1048576.0, 1) AS "Heap After (MB)"
+                            FROM jvmlog_gc_event e
+                            LEFT JOIN (
+                                SELECT gcId,
+                                       heapBefore,
+                                       heapAfter
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                            ) h ON e.gcId = h.gcId
+                            WHERE e.gcType IN ('Init Mark', 'Final Mark', 'Init Update Refs', 'Final Update Refs')
+                            GROUP BY e.gcId, e.cause, h.heapBefore, h.heapAfter
+                            ORDER BY e.gcId
+                            """,
+                        "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-shenandoah-cycle-detail" AS
+                            SELECT gcId AS "GC ID",
+                                   cause AS "Cause",
+                                   round(sum(pauseMs) FILTER (WHERE gcType = 'Init Mark'), 2) AS "Init Mark (ms)",
+                                   round(sum(pauseMs) FILTER (WHERE gcType = 'Final Mark'), 2) AS "Final Mark (ms)",
+                                   round(sum(pauseMs) FILTER (WHERE gcType = 'Init Update Refs'), 2) AS "Init UpdateRefs (ms)",
+                                   round(sum(pauseMs) FILTER (WHERE gcType = 'Final Update Refs'), 2) AS "Final UpdateRefs (ms)",
+                                   round(sum(pauseMs), 2) AS "Total STW (ms)"
+                            FROM jvmlog_gc_event
+                            WHERE gcType IN ('Init Mark', 'Final Mark', 'Init Update Refs', 'Final Update Refs')
+                            GROUP BY gcId, cause
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Shenandoah per-cycle: all pause phases, total STW, and heap before/after in one row."),
+                new View(
+                        "jvmlog-shenandoah-free-timeline",
+                        "jvmlog",
+                        "GC Log: Shenandoah Free Heap Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-shenandoah-free-timeline" AS
+                            SELECT gcId AS "GC ID",
+                                   round(max(freeBytes) / 1048576.0, 1) AS "Free (MB)",
+                                   max(freeRegions) AS "Free Regions",
+                                   round(max(headroomBytes) / 1048576.0, 1) AS "Headroom (MB)"
+                            FROM jvmlog_shenandoah_free
+                            GROUP BY gcId
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_shenandoah_free")
+                    .description("Shenandoah free heap regions and headroom per GC cycle — shows how close the JVM is to running out of memory."),
             };
 
     public static List<View> getViews() {

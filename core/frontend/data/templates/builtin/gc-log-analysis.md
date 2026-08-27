@@ -20,6 +20,7 @@ cellConditions:
   has-alloc-stall: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_alloc_stall'"
   has-gc-errors: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_gc_errors'"
   has-combined-timeline: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_heap_snapshot'"
+  has-shenandoah: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_shenandoah_free'"
 ---
 
 <!-- @cell name=intro -->
@@ -179,6 +180,22 @@ BAR(x="Error Type", y="Count")
 
 ---
 
+<!-- @cell name=gc-error-timeline requires="has-gc-errors" -->
+
+## GC Error Timeline
+
+Error events in context — when each failure occurred during the JVM run and what pause surrounded it.
+
+```sql
+SELECT * FROM "jvmlog-gc-error-timeline"
+```
+
+```plot
+SCATTER(x="Uptime (s)", y="Pause (ms)", color="Error Type")
+```
+
+---
+
 <!-- @cell name=heap-timeline requires="has-heap-snapshot" -->
 
 ## Heap Before / After
@@ -283,6 +300,22 @@ Metaspace usage before and after each GC event.
 
 ```sql
 SELECT * FROM "jvmlog-metaspace-timeline"
+```
+
+```plot
+LINE(x="GC ID", y="Metaspace After (MB)")
+```
+
+---
+
+<!-- @cell name=metaspace-detail requires="has-metaspace" -->
+
+## Metaspace + Class Space Detail
+
+Metaspace and compressed class space usage side-by-side — useful for tracking class loader leaks.
+
+```sql
+SELECT * FROM "jvmlog-metaspace-detail"
 ```
 
 ```plot
@@ -579,6 +612,38 @@ SELECT * FROM "jvmlog-alloc-stall-timeline"
 
 ```plot
 SCATTER(x="GC ID", y="Stall (ms)", color="Thread")
+```
+
+---
+
+<!-- @cell name=shenandoah-cycle-detail requires="has-shenandoah" -->
+
+## Shenandoah: Full Cycle Detail
+
+Per-cycle view with all pause phases (Init Mark, Final Mark, Init Update Refs, Final Update Refs), total STW, and heap before/after — the combined view for Shenandoah cycle analysis.
+
+```sql
+SELECT * FROM "jvmlog-shenandoah-cycle-detail"
+```
+
+```plot
+BAR(x="GC ID", y="Total STW (ms)")
+```
+
+---
+
+<!-- @cell name=shenandoah-free-timeline requires="has-shenandoah" -->
+
+## Shenandoah: Free Heap Timeline
+
+Free heap regions and headroom per GC cycle — shows how close the JVM is to running out of space and triggering degenerated or full GC.
+
+```sql
+SELECT * FROM "jvmlog-shenandoah-free-timeline"
+```
+
+```plot
+LINE(x="GC ID", y="Free (MB)")
 ```
 
 ---

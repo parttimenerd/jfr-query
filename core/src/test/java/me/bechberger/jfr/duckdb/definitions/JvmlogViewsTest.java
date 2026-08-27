@@ -27,7 +27,9 @@ class JvmlogViewsTest {
             "jvmlog-zgc-load",
             "jvmlog-pause-histogram", "jvmlog-gc-frequency", "jvmlog-gc-pressure-timeline",
             "jvmlog-problematic-gcs", "jvmlog-g1-cycle-detail",
-            "jvmlog-zgc-cycle-detail"
+            "jvmlog-zgc-cycle-detail",
+            "jvmlog-gc-error-timeline", "jvmlog-metaspace-detail",
+            "jvmlog-shenandoah-cycle-detail", "jvmlog-shenandoah-free-timeline"
     );
 
     @Test
@@ -597,6 +599,106 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getInt("GC ID")).isEqualTo(0);
             assertThat(rs.getDouble("Concurrent (ms)")).isEqualTo(45.6);
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcErrorTimelineViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_errors (gcId INTEGER, errorType VARCHAR, errorDetail VARCHAR, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (2, 'To-space exhausted', NULL, NULL)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (5, 'Evacuation Failure', NULL, 1.23)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Young', 'G1 Evacuation Pause', 450.0, 12.5)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (5, 'Full', 'G1 Evacuation Pause', 300.0, 30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-error-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-error-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_errors", "jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_errors", "jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Error Type\", \"Uptime (s)\" FROM \"jvmlog-gc-error-timeline\" ORDER BY \"GC ID\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(2);
+            assertThat(rs.getString("Error Type")).isEqualTo("To-space exhausted");
+            assertThat(rs.getDouble("Uptime (s)")).isEqualTo(12.5);
+        }
+        conn.close();
+    }
+
+    @Test
+    void metaspaceDetailViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_metaspace (gcId INTEGER, metaspaceBefore BIGINT, metaspaceAfter BIGINT, metaspaceCommitted BIGINT, classSpaceBefore BIGINT, classSpaceAfter BIGINT, classSpaceCommitted BIGINT)");
+            s.execute("INSERT INTO jvmlog_metaspace VALUES (0, 52428800, 52428800, 67108864, 6291456, 6291456, 8388608)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-metaspace-detail".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-metaspace-detail not found"));
+        assertThat(view.isValid(Set.of("jvmlog_metaspace"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_metaspace"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Metaspace After (MB)\" FROM \"jvmlog-metaspace-detail\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getDouble("Metaspace After (MB)")).isEqualTo(50.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void shenandoahCycleDetailViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Init Mark', 'Allocation Failure', 0.5, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Final Mark', 'Allocation Failure', 1.2, 1.5)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Init Update Refs', 'Allocation Failure', 0.3, 1.8)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Final Update Refs', 'Allocation Failure', 0.4, 2.1)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-shenandoah-cycle-detail".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-shenandoah-cycle-detail not found"));
+        Set<String> tables = Set.of("jvmlog_gc_event");
+        String query = view.getBestMatchingQuery(tables);
+        assertThat(query).as("shenandoah-cycle-detail should resolve via minimal alternative").isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Init Mark (ms)\", \"Total STW (ms)\" FROM \"jvmlog-shenandoah-cycle-detail\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getDouble("Init Mark (ms)")).isEqualTo(0.5);
+            assertThat(rs.getDouble("Total STW (ms)")).isCloseTo(2.4, within(0.01));
+        }
+        conn.close();
+    }
+
+    @Test
+    void shenandoahFreeTimelineViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_shenandoah_free (gcId INTEGER, freeBytes BIGINT, freeRegions INTEGER, headroomBytes BIGINT, uncommittedBytes BIGINT)");
+            s.execute("INSERT INTO jvmlog_shenandoah_free VALUES (0, 268435456, 256, 134217728, NULL)");
+            s.execute("INSERT INTO jvmlog_shenandoah_free VALUES (1, 201326592, 192, 100663296, NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-shenandoah-free-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-shenandoah-free-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_shenandoah_free"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_shenandoah_free"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Free (MB)\", \"Free Regions\" FROM \"jvmlog-shenandoah-free-timeline\" ORDER BY \"GC ID\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getDouble("Free (MB)")).isEqualTo(256.0);
+            assertThat(rs.getInt("Free Regions")).isEqualTo(256);
         }
         conn.close();
     }

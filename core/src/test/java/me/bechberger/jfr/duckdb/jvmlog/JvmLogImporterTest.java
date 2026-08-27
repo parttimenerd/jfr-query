@@ -1572,4 +1572,27 @@ class JvmLogImporterTest {
             Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void shenandoahFreeRegionsParsed() throws Exception {
+        var tmp = Files.createTempFile("test-shenandoah-free", ".log");
+        try {
+            Files.writeString(tmp, """
+                    [0.001s][info][gc,init] Using Shenandoah
+                    [1.200s][info][gc,ergo] GC(0) Free: 512K (1 regions)
+                    [1.201s][info][gc,ergo] GC(0) Free headroom: 1024K (free) - 256K (spike) - 128K (penalties) = 640K
+                    [2.400s][info][gc,ergo] GC(1) Free: 256K (1 regions)
+                    """);
+            try (var conn = newConn(); var sink = new JdbcDuckDBSink(conn)) {
+                JvmLogImporter.importLog(tmp, sink);
+                try (var st = conn.createStatement();
+                     var rs = st.executeQuery("SELECT count(*) AS cnt FROM jvmlog_shenandoah_free")) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong("cnt")).as("Shenandoah free region rows").isGreaterThanOrEqualTo(2);
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 }

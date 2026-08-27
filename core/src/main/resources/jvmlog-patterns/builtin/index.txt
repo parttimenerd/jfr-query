@@ -9,3 +9,4 @@ alloc-stall.yaml
 gc-errors.yaml
 g1-mixed.yaml
 zgc-load.yaml
+shenandoah-ergo.yaml

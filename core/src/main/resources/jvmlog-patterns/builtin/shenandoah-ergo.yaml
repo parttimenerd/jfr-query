@@ -1,0 +1,34 @@
+# Shenandoah ergonomics — tags [gc,ergo]
+# Free heap regions and bytes after each GC cycle.
+# These appear in -Xlog:gc+ergo output from Shenandoah.
+
+# "GC(0) Free: 512K (1 regions), Max regular: 256K, Max humongous: 256K, External frag: 0%, Internal frag: 0%"
+- id: shenandoah_free_regions
+  tags: [gc, ergo]
+  level: info
+  pattern: 'GC\((\d+)\) Free: (\d+[KMG]?) \((\d+) regions?\)'
+  fields:
+    gcId: int
+    freeBytes: bytes
+    freeRegions: int
+  table: jvmlog_shenandoah_free
+
+# "GC(0) Free headroom: 512K (free) - 256K (spike) - 128K (penalties) = 128K"
+- id: shenandoah_free_headroom
+  tags: [gc, ergo]
+  level: info
+  pattern: 'GC\((\d+)\) Free headroom: \d+[KMG]? \(free\) - \d+[KMG]? \(spike\) - \d+[KMG]? \(penalties\) = (\d+[KMG]?)'
+  fields:
+    gcId: int
+    headroomBytes: bytes
+  table: jvmlog_shenandoah_free
+
+# "GC(0) Uncommitted 512K. Heap: 128M reserved, 64M committed, 32M used"
+- id: shenandoah_uncommitted
+  tags: [gc, ergo]
+  level: info
+  pattern: 'GC\((\d+)\) Uncommitted (\d+[KMG]?)\.'
+  fields:
+    gcId: int
+    uncommittedBytes: bytes
+  table: jvmlog_shenandoah_free
