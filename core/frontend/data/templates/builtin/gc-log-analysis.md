@@ -11,6 +11,7 @@ cellConditions:
   has-zgc: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_phases'"
   has-zgc-director: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_director'"
   has-parallel: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_parallel_sizing'"
+  has-metaspace: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_metaspace'"
   has-jfr-correlation: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_jfr_correlation'"
 ---
 
@@ -124,6 +125,22 @@ BAR(x="Window Start (s)", y="GC Overhead %")
 
 ---
 
+<!-- @cell name=metaspace-timeline requires="has-metaspace" -->
+
+## Metaspace Timeline
+
+Metaspace usage before and after each GC event.
+
+```sql
+SELECT * FROM "jvmlog-metaspace-timeline"
+```
+
+```plot
+LINE(x="GC ID", y="Metaspace After (MB)")
+```
+
+---
+
 <!-- @cell name=phase-breakdown requires="has-gc-phase" -->
 
 ## Phase Breakdown
@@ -145,7 +162,7 @@ BAR(x="Phase", y="Avg ms")
 
 ## G1: Region Counts
 
-Eden region counts per GC event.
+Eden, Survivor, Old, and Humongous region counts per GC event.
 
 ```sql
 SELECT * FROM "jvmlog-g1-regions"

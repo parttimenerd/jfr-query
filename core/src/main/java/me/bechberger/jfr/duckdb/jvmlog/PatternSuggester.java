@@ -104,13 +104,15 @@ public final class PatternSuggester {
 
     private static String tableHeuristic(List<String> tags) {
         Set<String> tagSet = Set.copyOf(tags);
-        if (tagSet.contains("gc") && tagSet.contains("init"))       return "jvmlog_gc_init";
-        if (tagSet.contains("gc") && tagSet.contains("region"))     return "jvmlog_g1_regions";
-        if (tagSet.contains("gc") && tagSet.contains("ergo"))       return "jvmlog_g1_ergonomics";
-        if (tagSet.contains("gc") && tagSet.contains("phases"))     return "jvmlog_gc_phase";
-        if (tagSet.contains("gc") && tagSet.contains("director"))   return "jvmlog_zgc_director";
-        if (tagSet.contains("z")  && tagSet.contains("gc"))         return "jvmlog_zgc_phases";
-        if (tagSet.contains("gc"))                                   return "jvmlog_gc_event";
+        if (tagSet.contains("gc") && tagSet.contains("init"))        return "jvmlog_gc_init";
+        if (tagSet.contains("gc") && tagSet.contains("region"))      return "jvmlog_g1_regions";
+        if (tagSet.contains("gc") && tagSet.contains("ergo"))        return "jvmlog_g1_ergonomics";
+        if (tagSet.contains("gc") && tagSet.contains("phases"))      return "jvmlog_gc_phase";
+        if (tagSet.contains("gc") && tagSet.contains("director"))    return "jvmlog_zgc_director";
+        if (tagSet.contains("gc") && tagSet.contains("metaspace"))   return "jvmlog_metaspace";
+        if (tagSet.contains("gc") && tagSet.contains("stringdedup")) return "jvmlog_stringdedup";
+        if (tagSet.contains("z")  && tagSet.contains("gc"))          return "jvmlog_zgc_phases";
+        if (tagSet.contains("gc"))                                    return "jvmlog_gc_event";
         return "jvmlog_unknown_lines";
     }
 

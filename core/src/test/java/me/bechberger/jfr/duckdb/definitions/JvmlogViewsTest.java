@@ -17,7 +17,7 @@ class JvmlogViewsTest {
             "jvmlog-g1-regions", "jvmlog-zgc-cycle", "jvmlog-jfr-correlation",
             "jvmlog-gc-pause-summary", "jvmlog-gc-pause-by-type", "jvmlog-gc-phase-breakdown",
             "jvmlog-gc-init-summary", "jvmlog-gc-cumulative-pause", "jvmlog-g1-heap-expansion",
-            "jvmlog-unknown-summary"
+            "jvmlog-unknown-summary", "jvmlog-metaspace-timeline"
     );
 
     @Test

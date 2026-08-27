@@ -3037,6 +3037,23 @@ public class ViewCollection {
                         "jvmlog_g1_ergonomics")
                     .description("G1 heap expansion decisions: count and total/average expansion in MB."),
                 new View(
+                        "jvmlog-metaspace-timeline",
+                        "jvmlog",
+                        "GC Log: Metaspace Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-metaspace-timeline" AS
+                            SELECT gcId AS "GC ID",
+                                   metaspaceBefore / 1048576.0 AS "Metaspace Before (MB)",
+                                   metaspaceAfter / 1048576.0 AS "Metaspace After (MB)",
+                                   metaspaceCommitted / 1048576.0 AS "Committed (MB)"
+                            FROM jvmlog_metaspace
+                            WHERE metaspaceBefore IS NOT NULL
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_metaspace")
+                    .description("Metaspace usage before and after each GC event."),
+                new View(
                         "jvmlog-unknown-summary",
                         "jvmlog",
                         "GC Log: Unrecognised Lines",

@@ -1,0 +1,44 @@
+# G1 concurrent timing lines — tags [gc] — "GC(N) Concurrent Cycle Nms" style
+# These include G1 Young-Only concurrent phases shown in JDK 17+
+
+- id: gc_metaspace_sizing
+  tags: [gc, metaspace]
+  level: info
+  pattern: 'GC\((\d+)\) Metaspace: (\d+[KMG]?)->(\d+[KMG]?)\((\d+[KMG]?)\)'
+  fields:
+    gcId: int
+    metaspaceBefore: bytes
+    metaspaceAfter: bytes
+    metaspaceCommitted: bytes
+  table: jvmlog_metaspace
+
+- id: gc_metaspace_class_space
+  tags: [gc, metaspace]
+  level: info
+  pattern: 'GC\((\d+)\) class space\s+(\d+[KMG]?)->(\d+[KMG]?)\((\d+[KMG]?)\)'
+  fields:
+    gcId: int
+    classSpaceBefore: bytes
+    classSpaceAfter: bytes
+    classSpaceCommitted: bytes
+  table: jvmlog_metaspace
+
+- id: gc_stringdedup_savings
+  tags: [gc, stringdedup]
+  level: info
+  pattern: 'GC\((\d+)\) Savings: (\d+) bytes in (\d+) objects'
+  fields:
+    gcId: int
+    savedBytes: long
+    objectCount: long
+  table: jvmlog_stringdedup
+
+- id: gc_stringdedup_exec
+  tags: [gc, stringdedup]
+  level: info
+  pattern: 'GC\((\d+)\) Deduplication: (\d+) objects\s+\(([0-9.]+) ms\)'
+  fields:
+    gcId: int
+    deduplicatedObjects: long
+    durationMs: double
+  table: jvmlog_stringdedup
