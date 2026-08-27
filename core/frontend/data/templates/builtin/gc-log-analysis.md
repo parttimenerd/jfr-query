@@ -145,6 +145,22 @@ LINE(x="gcId", y="heapBeforeMB")
 
 ---
 
+<!-- @cell name=heap-efficiency requires="has-heap-snapshot" -->
+
+## Heap Collection Efficiency
+
+Memory reclaimed per GC event as MB and percentage.
+
+```sql
+SELECT * FROM "jvmlog-heap-efficiency"
+```
+
+```plot
+LINE(x="GC ID", y="Reclaim %")
+```
+
+---
+
 <!-- @cell name=gc-overhead -->
 
 ## GC Overhead
