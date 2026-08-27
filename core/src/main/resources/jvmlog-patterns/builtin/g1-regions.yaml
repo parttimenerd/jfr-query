@@ -1,0 +1,10 @@
+- id: g1_region_count
+  tags: [gc, region]
+  level: debug
+  pattern: 'GC\((\d+)\) Eden regions: (\d+)->(\d+)\((\d+)\)'
+  fields:
+    gcId: int
+    edenBefore: int
+    edenAfter: int
+    edenMax: int
+  table: jvmlog_g1_regions
