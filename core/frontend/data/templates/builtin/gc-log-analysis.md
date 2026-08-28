@@ -2271,3 +2271,67 @@ SELECT * FROM "jvmlog-dominant-cause-timeline"
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=heap-max-proximity requires="has-jvmlog-gc" -->
+
+## Heap Utilisation vs Committed Ceiling
+
+Per-GC heap before/after as a percentage of the committed heap ceiling — a rising "Before / Committed %" trend means the JVM is running out of headroom and will soon trigger GC at every allocation.
+
+```sql
+SELECT * FROM "jvmlog-heap-max-proximity"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Before / Committed %", color="GC Type")
+```
+
+---
+
+<!-- @cell name=gc-type-mix-trend requires="has-jvmlog-gc" -->
+
+## GC Type Mix Over Time
+
+Young/Mixed/Full GC counts and percentages per 5-minute window — a growing Full% means the heap is no longer reclaimable by minor collections; a growing Mixed% signals G1 is struggling to stay ahead of tenuring.
+
+```sql
+SELECT * FROM "jvmlog-gc-type-mix-trend"
+```
+
+```plot
+BAR(x="5-Min Window", y=["Young %","Mixed %","Full %"], stacked=true)
+```
+
+---
+
+<!-- @cell name=alloc-rate-by-cause requires="has-jvmlog-gc" -->
+
+## Allocation Rate by GC Cause
+
+Average, max, and p95 allocation rate (MB/s) grouped by trigger cause — "Allocation Failure" at high rates means objects are being allocated faster than minor GC can reclaim them; other causes at high rates reveal unexpected pressure sources.
+
+```sql
+SELECT * FROM "jvmlog-alloc-rate-by-cause"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=pause-trend-by-cause requires="has-jvmlog-gc" -->
+
+## Pause Duration Trend per GC Cause
+
+Linear regression of pause time over JVM uptime for each cause — "Degrading" causes have a statistically significant positive slope (R² > 0.4), meaning pauses for that cause are reliably getting longer as the session progresses.
+
+```sql
+SELECT * FROM "jvmlog-pause-trend-by-cause"
+```
+
+```plot
+TABLE()
+```

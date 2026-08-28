@@ -7552,6 +7552,171 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("The dominant GC cause (by count) per 5-minute window — shows how the trigger mix evolves: transitioning from Evacuation to Allocation Failure to System.gc() indicates escalating heap pressure."),
+
+            // -----------------------------------------------------------------------
+            // Heap committed vs max over time (when did heap reach max?)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-heap-max-proximity", "jvmlog",
+                    "GC Log: Heap Size vs Maximum Over Time", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-max-proximity" AS
+                        WITH heap AS (
+                            SELECT gcId,
+                                   heapBefore, heapAfter, heapCommittedBefore
+                            FROM jvmlog_heap_snapshot
+                            QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                        )
+                        SELECT e.gcId                                                         AS "GC ID",
+                               round(e.uptimeSecs, 3)                                        AS "Uptime (s)",
+                               e.gcType                                                       AS "GC Type",
+                               round(h.heapBefore / 1048576.0, 1)                            AS "Heap Before (MB)",
+                               round(h.heapAfter  / 1048576.0, 1)                            AS "Heap After (MB)",
+                               round(h.heapCommittedBefore / 1048576.0, 1)                   AS "Committed (MB)",
+                               round(100.0 * h.heapBefore / NULLIF(h.heapCommittedBefore, 0), 1)
+                                                                                             AS "Before / Committed %",
+                               round(100.0 * h.heapAfter  / NULLIF(h.heapCommittedBefore, 0), 1)
+                                                                                             AS "After / Committed %",
+                               round((h.heapCommittedBefore - h.heapBefore) / 1048576.0, 1) AS "Free Before (MB)"
+                        FROM jvmlog_gc_event e
+                        JOIN heap h USING (gcId)
+                        WHERE e.uptimeSecs IS NOT NULL
+                        ORDER BY e.uptimeSecs
+                        """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Heap size (before/after) vs committed per GC event — shows how close each GC brings the heap to the ceiling, useful for identifying the onset of heap saturation.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-heap-max-proximity" AS
+                        SELECT gcId AS "GC ID", round(uptimeSecs, 3) AS "Uptime (s)", gcType AS "GC Type"
+                        FROM jvmlog_gc_event
+                        WHERE uptimeSecs IS NOT NULL
+                        ORDER BY uptimeSecs
+                        """,
+                        "jvmlog_gc_event"),
+
+            // -----------------------------------------------------------------------
+            // GC type mix trend (is the ratio of Young vs Mixed vs Full changing?)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-type-mix-trend", "jvmlog",
+                    "GC Log: GC Type Mix Trend Over Time", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-type-mix-trend" AS
+                        WITH windows AS (
+                            SELECT floor(uptimeSecs / 300.0)::BIGINT AS w,
+                                   count(*) FILTER (WHERE gcType IN ('Young', 'GarbageFirst (young)', 'Pause Young'))
+                                       AS youngCount,
+                                   count(*) FILTER (WHERE gcType IN ('Mixed', 'GarbageFirst (mixed)'))
+                                       AS mixedCount,
+                                   count(*) FILTER (WHERE gcType IN ('Full', 'Degenerated', 'GarbageFirst (Full)'))
+                                       AS fullCount,
+                                   count(*) AS totalCount
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL AND gcType IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 300.0)::BIGINT
+                        )
+                        SELECT w                                                    AS "5-Min Window",
+                               youngCount                                            AS "Young",
+                               mixedCount                                            AS "Mixed",
+                               fullCount                                             AS "Full",
+                               totalCount                                            AS "Total",
+                               round(100.0 * youngCount / NULLIF(totalCount, 0), 1) AS "Young %",
+                               round(100.0 * mixedCount / NULLIF(totalCount, 0), 1) AS "Mixed %",
+                               round(100.0 * fullCount  / NULLIF(totalCount, 0), 1) AS "Full %"
+                        FROM windows
+                        ORDER BY w
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC type mix per 5-minute window: Young/Mixed/Full counts and percentages — a rising Full% or Mixed% indicates increasing heap pressure and imminent risk of concurrent mode failure."),
+
+            // -----------------------------------------------------------------------
+            // Allocation rate per GC cause (which causes trigger high-alloc GCs?)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-alloc-rate-by-cause", "jvmlog",
+                    "GC Log: Allocation Rate at Trigger by GC Cause", null,
+                    """
+                        CREATE VIEW "jvmlog-alloc-rate-by-cause" AS
+                        WITH heap AS (
+                            SELECT gcId, heapBefore, heapAfter
+                            FROM jvmlog_heap_snapshot
+                            QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                        ),
+                        intervals AS (
+                            SELECT e.gcId,
+                                   e.cause,
+                                   e.uptimeSecs,
+                                   h.heapBefore,
+                                   LAG(h.heapAfter)  OVER (ORDER BY e.uptimeSecs) AS prevAfter,
+                                   LAG(e.uptimeSecs) OVER (ORDER BY e.uptimeSecs) AS prevUptime
+                            FROM jvmlog_gc_event e
+                            JOIN heap h USING (gcId)
+                            WHERE e.uptimeSecs IS NOT NULL AND h.heapBefore IS NOT NULL
+                        ),
+                        rates AS (
+                            SELECT cause,
+                                   (heapBefore - prevAfter) / NULLIF(uptimeSecs - prevUptime, 0)
+                                       AS allocBytesPerSec
+                            FROM intervals
+                            WHERE prevAfter IS NOT NULL AND uptimeSecs > prevUptime
+                              AND heapBefore >= prevAfter
+                        )
+                        SELECT cause                                                AS "GC Cause",
+                               count(*)                                             AS "Events",
+                               round(avg(allocBytesPerSec) / 1048576.0, 1)         AS "Avg Alloc Rate (MB/s)",
+                               round(max(allocBytesPerSec) / 1048576.0, 1)         AS "Max Alloc Rate (MB/s)",
+                               round(approx_quantile(allocBytesPerSec, 0.95) / 1048576.0, 1)
+                                                                                   AS "p95 Alloc Rate (MB/s)"
+                        FROM rates
+                        WHERE cause IS NOT NULL AND allocBytesPerSec > 0
+                        GROUP BY cause
+                        ORDER BY "Avg Alloc Rate (MB/s)" DESC
+                        """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Allocation rate at GC trigger grouped by cause — identifies which GC causes are associated with the highest allocation pressure, useful for correlating cause with workload behavior.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-alloc-rate-by-cause" AS
+                        SELECT cause AS "GC Cause", count(*) AS "Events"
+                        FROM jvmlog_gc_event
+                        WHERE cause IS NOT NULL
+                        GROUP BY cause
+                        ORDER BY "Events" DESC
+                        """,
+                        "jvmlog_gc_event"),
+
+            // -----------------------------------------------------------------------
+            // Pause time trend by GC cause (is each cause getting worse over time?)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-pause-trend-by-cause", "jvmlog",
+                    "GC Log: Pause Duration Trend per GC Cause", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-trend-by-cause" AS
+                        SELECT cause                                                AS "GC Cause",
+                               count(*)                                             AS "Events",
+                               round(avg(pauseMs), 2)                              AS "Avg Pause (ms)",
+                               round(regr_slope(pauseMs, uptimeSecs), 4)           AS "Trend (ms/s)",
+                               round(regr_r2(pauseMs, uptimeSecs), 4)              AS "R²",
+                               CASE
+                                 WHEN regr_r2(pauseMs, uptimeSecs) > 0.4
+                                      AND regr_slope(pauseMs, uptimeSecs) > 0
+                                 THEN 'Degrading — pauses for this cause growing over time'
+                                 WHEN regr_r2(pauseMs, uptimeSecs) > 0.4
+                                      AND regr_slope(pauseMs, uptimeSecs) < 0
+                                 THEN 'Improving — pauses for this cause shrinking over time'
+                                 ELSE 'Stable'
+                               END                                                 AS "Trend"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                          AND cause IS NOT NULL
+                        GROUP BY cause
+                        HAVING count(*) >= 5
+                        ORDER BY "Trend (ms/s)" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Pause duration trend per GC cause — detects which causes are getting systematically worse over the log duration, not just which are worst overall."),
             };
 
     public static List<View> getViews() {

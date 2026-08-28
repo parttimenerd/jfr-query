@@ -82,7 +82,9 @@ class JvmlogViewsTest {
             "jvmlog-long-concurrent-phases", "jvmlog-eden-fill-at-trigger",
             "jvmlog-trend-summary", "jvmlog-safepoint-ttr-outliers",
             "jvmlog-survivor-occupancy-timeline", "jvmlog-stringdedup-rate-timeline",
-            "jvmlog-full-gc-recovery", "jvmlog-dominant-cause-timeline"
+            "jvmlog-full-gc-recovery", "jvmlog-dominant-cause-timeline",
+            "jvmlog-heap-max-proximity", "jvmlog-gc-type-mix-trend",
+            "jvmlog-alloc-rate-by-cause", "jvmlog-pause-trend-by-cause"
     );
 
     @Test
@@ -3373,6 +3375,105 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS windows FROM \"jvmlog-dominant-cause-timeline\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("windows")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testHeapMaxProximity() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',10.0,5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',12.0,15.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1, 400000000, 200000000, 512000000, 512000000)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2, 480000000, 210000000, 512000000, 512000000)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-max-proximity".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-max-proximity not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-heap-max-proximity\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testGcTypeMixTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ",'Young','Allocation Failure',10.0," + (i * 60.0) + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (10,'Full','System.gc()',100.0,600.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-type-mix-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-type-mix-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS windows FROM \"jvmlog-gc-type-mix-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("windows")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testAllocRateByCause() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',10.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',12.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Full','System.gc()',80.0,30.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1, 400000000, 200000000, 512000000, 512000000)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2, 450000000, 210000000, 512000000, 512000000)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (3, 490000000, 250000000, 512000000, 512000000)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-alloc-rate-by-cause".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-alloc-rate-by-cause not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS causes FROM \"jvmlog-alloc-rate-by-cause\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("causes")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testPauseTrendByCause() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 8; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ",'Young','Allocation Failure'," + (10.0 + i * 2.0) + "," + (i * 30.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-trend-by-cause".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-trend-by-cause not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS causes FROM \"jvmlog-pause-trend-by-cause\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("causes")).isGreaterThan(0);
         }
         conn.close();
     }
