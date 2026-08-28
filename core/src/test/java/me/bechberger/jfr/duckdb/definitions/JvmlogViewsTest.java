@@ -143,7 +143,10 @@ class JvmlogViewsTest {
             "jvmlog-collector-diagnostics",
             "jvmlog-gc-phase-hot-spot", "jvmlog-pause-recovery-time",
             "jvmlog-safepoint-stw-breakdown", "jvmlog-gc-worker-phase-efficiency",
-            "jvmlog-heap-live-data-ratio"
+            "jvmlog-heap-live-data-ratio",
+            "jvmlog-zgc-load-vs-duration", "jvmlog-gc-interval-trend",
+            "jvmlog-g1-mixed-decision-log", "jvmlog-alloc-stall-cause-summary",
+            "jvmlog-gc-overhead-forecast"
     );
 
     @Test
@@ -5839,6 +5842,134 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getDouble("Avg Live/Committed %")).isGreaterThan(0.0);
             assertThat(rs.getString("Sizing Status")).isNotEmpty();
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogZgcLoadVsDuration() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_load (gcId INTEGER, load1s DOUBLE, load5s DOUBLE, load15s DOUBLE, allocRateMbps DOUBLE)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (1, 1.5, 1.4, 1.3, 200.0)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (2, 2.2, 2.0, 1.8, 350.0)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'ZGC','Allocation Rate',5.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'ZGC','Allocation Rate',7.0,20.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-load-vs-duration".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-load-vs-duration not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_load", "jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Load 1s\", \"Load Category\" FROM \"jvmlog-zgc-load-vs-duration\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(1);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogZgcLoadVsDurationAlternative() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_load (gcId INTEGER, load1s DOUBLE, load5s DOUBLE, load15s DOUBLE, allocRateMbps DOUBLE)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (1, 1.5, 1.4, 1.3, 200.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-load-vs-duration".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-load-vs-duration not found"));
+        assertThat(view.getBestMatchingQuery(Set.of("jvmlog_zgc_load"))).isNotNull();
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcIntervalTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 1; i <= 15; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ",'G1 Young','G1 Evacuation Pause',5.0," + (i * 2.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-interval-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-interval-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Avg Interval (s)\", \"Trend Assessment\" FROM \"jvmlog-gc-interval-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Avg Interval (s)")).isGreaterThan(0.0);
+            assertThat(rs.getString("Trend Assessment")).isNotEmpty();
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogG1MixedDecisionLog() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_mixed_gc (gcId INTEGER, decision VARCHAR, reclaimablePct DOUBLE, thresholdPct DOUBLE, candidateOldRegions INTEGER, reclaimableBytes DOUBLE)");
+            s.execute("INSERT INTO jvmlog_g1_mixed_gc VALUES (10,'Do Mixed GC',45.3,5.0,47,12.5)");
+            s.execute("INSERT INTO jvmlog_g1_mixed_gc VALUES (15,'Skip Mixed GC',3.0,5.0,NULL,NULL)");
+            s.execute("INSERT INTO jvmlog_g1_mixed_gc VALUES (20,'Initiate Mixed GC',46.0,45.0,NULL,NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-mixed-decision-log".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-mixed-decision-log not found"));
+        assertThat(view.isValid(Set.of("jvmlog_g1_mixed_gc"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-g1-mixed-decision-log\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(3L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogAllocStallCauseSummary() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_alloc_stall (gcId INTEGER, threadName VARCHAR, stallMs DOUBLE, requestedBytes BIGINT)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES (1,'main',5.0,1024*1024)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES (2,'main',8.0,2*1024*1024)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES (3,'worker-1',2.0,512*1024)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-alloc-stall-cause-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-alloc-stall-cause-summary not found"));
+        assertThat(view.isValid(Set.of("jvmlog_alloc_stall"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Thread\", \"Stall Count\" FROM \"jvmlog-alloc-stall-cause-summary\" ORDER BY \"Total Stall (ms)\" DESC LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Thread")).isEqualTo("main");
+            assertThat(rs.getLong("Stall Count")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcOverheadForecast() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 1; i <= 30; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ",'G1 Young','G1 Evacuation Pause'," + (i * 0.5 + 3.0) + "," + (i * 3.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-overhead-forecast".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-overhead-forecast not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Current Avg Overhead %\", \"20% Threshold Projection\" FROM \"jvmlog-gc-overhead-forecast\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("20% Threshold Projection")).isNotEmpty();
         }
         conn.close();
     }

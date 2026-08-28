@@ -10663,6 +10663,167 @@ public class ViewCollection {
                     """,
                     "jvmlog_heap_snapshot")
                     .description("Heap live-data ratio — computes what fraction of committed heap is actual live data after GC; >85% means the heap is too small and GC will thrash, <50% means potential over-provisioning; essential for -Xmx tuning decisions."),
+
+            // ── Batch 22: trend, projection, and cross-table views ───────────────────
+
+            new View(
+                    "jvmlog-zgc-load-vs-duration", "jvmlog",
+                    "GC Log: ZGC System Load vs Cycle Duration Correlation", null,
+                    """
+                    CREATE VIEW "jvmlog-zgc-load-vs-duration" AS
+                    SELECT l.gcId                               AS "GC ID",
+                           round(l.load1s, 2)                  AS "Load 1s",
+                           round(l.load5s, 2)                  AS "Load 5s",
+                           round(l.load15s, 2)                 AS "Load 15s",
+                           round(e.pauseMs, 3)                 AS "Cycle Duration (ms)",
+                           round(l.allocRateMbps, 1)           AS "Alloc Rate (MB/s)",
+                           CASE
+                             WHEN l.load1s > 4.0 THEN 'HIGH LOAD'
+                             WHEN l.load1s > 2.0 THEN 'MODERATE LOAD'
+                             ELSE 'LOW LOAD'
+                           END                                 AS "Load Category"
+                    FROM jvmlog_zgc_load l
+                    JOIN jvmlog_gc_event e ON e.gcId = l.gcId
+                    WHERE l.load1s IS NOT NULL AND e.pauseMs IS NOT NULL
+                    ORDER BY l.gcId
+                    """,
+                    "jvmlog_zgc_load", "jvmlog_gc_event")
+                    .addAlternative(
+                    """
+                    CREATE VIEW "jvmlog-zgc-load-vs-duration" AS
+                    SELECT gcId AS "GC ID",
+                           round(load1s, 2)  AS "Load 1s",
+                           round(load5s, 2)  AS "Load 5s",
+                           round(load15s, 2) AS "Load 15s",
+                           round(allocRateMbps, 1) AS "Alloc Rate (MB/s)"
+                    FROM jvmlog_zgc_load
+                    WHERE load1s IS NOT NULL
+                    ORDER BY gcId
+                    """, "jvmlog_zgc_load")
+                    .description("ZGC system load vs cycle duration — correlates OS load averages logged per ZGC cycle with the GC duration and allocation rate; helps identify whether GC pauses are caused by CPU saturation rather than heap pressure."),
+
+            new View(
+                    "jvmlog-gc-interval-trend", "jvmlog",
+                    "GC Log: GC Interval Trend (Is GC Frequency Accelerating?)", null,
+                    """
+                    CREATE VIEW "jvmlog-gc-interval-trend" AS
+                    WITH intervals AS (
+                        SELECT gcId,
+                               uptimeSecs,
+                               uptimeSecs - LAG(uptimeSecs, 1) OVER (ORDER BY uptimeSecs) AS intervalSecs
+                        FROM jvmlog_gc_event
+                        WHERE uptimeSecs IS NOT NULL
+                    ),
+                    windowed AS (
+                        SELECT gcId,
+                               uptimeSecs AS "Uptime (s)",
+                               round(intervalSecs, 3) AS "Interval (s)",
+                               round(avg(intervalSecs) OVER (ORDER BY uptimeSecs
+                                   ROWS BETWEEN 9 PRECEDING AND CURRENT ROW), 3) AS "Rolling Avg Interval (s)"
+                        FROM intervals WHERE intervalSecs IS NOT NULL
+                    ),
+                    stats AS (
+                        SELECT count(*)                              AS "Total GC Events",
+                               round(avg("Interval (s)"), 3)        AS "Avg Interval (s)",
+                               round(min("Interval (s)"), 3)        AS "Min Interval (s)",
+                               round(max("Interval (s)"), 3)        AS "Max Interval (s)",
+                               round(regr_slope("Interval (s)", "Uptime (s)"), 6) AS "Interval Trend (s per s)",
+                               CASE
+                                 WHEN regr_slope("Interval (s)", "Uptime (s)") < -0.001 THEN 'ACCELERATING — GC frequency increasing over time'
+                                 WHEN regr_slope("Interval (s)", "Uptime (s)") > 0.001  THEN 'SLOWING — GC frequency decreasing (good if deliberate)'
+                                 ELSE 'STABLE — GC frequency roughly constant'
+                               END AS "Trend Assessment"
+                        FROM windowed
+                    )
+                    SELECT * FROM stats
+                    """,
+                    "jvmlog_gc_event")
+                    .description("GC interval trend — uses linear regression on the time between GC events to detect whether GC is accelerating (a sign of growing memory pressure) or stable; accelerating GC frequency is an early warning of heap exhaustion."),
+
+            new View(
+                    "jvmlog-g1-mixed-decision-log", "jvmlog",
+                    "GC Log: G1 Mixed GC Decision History (Do/Skip/Initiate)", null,
+                    """
+                    CREATE VIEW "jvmlog-g1-mixed-decision-log" AS
+                    SELECT gcId                          AS "GC ID",
+                           decision                     AS "Decision",
+                           round(reclaimablePct, 2)     AS "Reclaimable %",
+                           round(thresholdPct, 2)       AS "Threshold %",
+                           CASE
+                             WHEN decision = 'Skip Mixed GC'
+                               THEN 'Mixed GC skipped — old gen not reclaimable enough yet'
+                             WHEN decision = 'Initiate Mixed GC'
+                               THEN 'Concurrent marking triggered for mixed GC preparation'
+                             ELSE 'Mixed GC executing — reclaiming old gen regions'
+                           END AS "Interpretation"
+                    FROM jvmlog_g1_mixed_gc
+                    ORDER BY gcId
+                    """,
+                    "jvmlog_g1_mixed_gc")
+                    .description("G1 Mixed GC decision history — shows every Do/Skip/Initiate Mixed GC ergonomic decision with reclaimable percentage and threshold; many 'Skip' decisions with high reclaimable% suggests the G1MixedGCLiveThresholdPercent is set too low."),
+
+            new View(
+                    "jvmlog-alloc-stall-cause-summary", "jvmlog",
+                    "GC Log: Allocation Stall Summary by Thread and Cause", null,
+                    """
+                    CREATE VIEW "jvmlog-alloc-stall-cause-summary" AS
+                    SELECT threadName                            AS "Thread",
+                           count(*)                             AS "Stall Count",
+                           round(sum(stallMs), 2)               AS "Total Stall (ms)",
+                           round(avg(stallMs), 3)               AS "Avg Stall (ms)",
+                           round(max(stallMs), 3)               AS "Max Stall (ms)",
+                           round(sum(requestedBytes) / 1048576.0, 2) AS "Total Requested (MB)",
+                           CASE
+                             WHEN count(*) >= 10 THEN 'FREQUENT — thread repeatedly stalling; check allocation rate'
+                             WHEN count(*) >= 3  THEN 'OCCASIONAL — check if stalls cluster in time'
+                             ELSE 'RARE — isolated stall event'
+                           END AS "Frequency Verdict"
+                    FROM jvmlog_alloc_stall
+                    WHERE threadName IS NOT NULL
+                    GROUP BY threadName
+                    ORDER BY "Total Stall (ms)" DESC
+                    """,
+                    "jvmlog_alloc_stall")
+                    .description("Allocation stall summary by thread — which application threads are stalling most during GC allocation bursts; high stall count in a single thread identifies the hot allocator to profile with async-profiler --alloc."),
+
+            new View(
+                    "jvmlog-gc-overhead-forecast", "jvmlog",
+                    "GC Log: GC Overhead Forecast (Trend-Based Projection)", null,
+                    """
+                    CREATE VIEW "jvmlog-gc-overhead-forecast" AS
+                    WITH per_minute AS (
+                        SELECT floor(uptimeSecs / 60.0) AS minute,
+                               sum(pauseMs) / 60000.0 * 100.0 AS overheadPct
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 60.0)
+                    ),
+                    regression AS (
+                        SELECT count(*)                       AS minutes_observed,
+                               round(avg(overheadPct), 2)    AS "Current Avg Overhead %",
+                               round(min(overheadPct), 2)    AS "Min Overhead %",
+                               round(max(overheadPct), 2)    AS "Max Overhead %",
+                               regr_slope(overheadPct, minute) AS slope,
+                               regr_intercept(overheadPct, minute) AS intercept,
+                               round(regr_r2(overheadPct, minute), 3) AS "R² (trend reliability)"
+                        FROM per_minute
+                    )
+                    SELECT "Current Avg Overhead %",
+                           "Min Overhead %",
+                           "Max Overhead %",
+                           round(slope * 60.0, 4)  AS "Overhead Change per Hour (%/h)",
+                           "R² (trend reliability)",
+                           CASE
+                             WHEN slope > 0 AND "R² (trend reliability)" > 0.5
+                               THEN round((20.0 - intercept) / NULLIF(slope, 0), 0) || ' minutes to 20% overhead threshold'
+                             WHEN slope <= 0
+                               THEN 'Overhead stable or decreasing — no threshold breach projected'
+                             ELSE 'Trend too noisy to project (R² < 0.5)'
+                           END AS "20% Threshold Projection"
+                    FROM regression
+                    """,
+                    "jvmlog_gc_event")
+                    .description("GC overhead forecast — uses linear regression on per-minute GC overhead to project when overhead will cross the 20% threshold; R² < 0.5 means the trend is too variable to project; useful for capacity planning and alerting on degrading applications."),
             };
 
     public static List<View> getViews() {

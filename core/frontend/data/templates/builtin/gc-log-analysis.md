@@ -4127,3 +4127,75 @@ Average and peak fraction of committed heap occupied by live objects after GC �
 SELECT * FROM "jvmlog-heap-live-data-ratio"
 ```
 
+---
+
+<!-- @cell name=zgc-load-vs-duration requires="has-zgc-load" -->
+
+## ZGC System Load vs Cycle Duration
+
+OS load averages logged per ZGC cycle correlated with GC duration and allocation rate — if cycle duration increases with load1s, the JVM is CPU-bound rather than heap-bound; reduce `-XX:ZCollectionInterval` or increase heap so fewer cycles occur under high CPU load.
+
+```sql
+SELECT * FROM "jvmlog-zgc-load-vs-duration"
+```
+
+```plot
+LINE(x="GC ID", y="Cycle Duration (ms)", color="Load Category")
+```
+
+---
+
+<!-- @cell name=gc-interval-trend requires="has-jvmlog-gc" -->
+
+## GC Interval Trend (Is GC Frequency Accelerating?)
+
+Linear regression on the time between GC events — "ACCELERATING" means GC is happening more frequently over the run duration, which is a reliable early warning of growing memory pressure; combine with the memory-leak-risk view to determine if the root cause is a leak or under-provisioned heap.
+
+```sql
+SELECT * FROM "jvmlog-gc-interval-trend"
+```
+
+---
+
+<!-- @cell name=g1-mixed-decision-log requires="has-g1-mixed" -->
+
+## G1 Mixed GC Decision History
+
+Complete history of G1's Do/Skip/Initiate Mixed GC decisions with reclaimable percentage — frequent "Skip Mixed GC" decisions with high reclaimable% indicate `-XX:G1MixedGCLiveThresholdPercent` is set too low (default 85%); lower the threshold to force more aggressive mixed collection and reduce old gen accumulation.
+
+```sql
+SELECT * FROM "jvmlog-g1-mixed-decision-log"
+```
+
+```plot
+BAR(x="GC ID", y="Reclaimable %", color="Decision")
+```
+
+---
+
+<!-- @cell name=alloc-stall-cause-summary requires="has-alloc-stall" -->
+
+## Allocation Stall Summary by Thread
+
+Which threads stall most during GC allocation pressure and for how long — profile the top thread with `async-profiler -e alloc` to identify the allocation hot-path; consider object pooling, batching, or reducing large array allocations in the hot path.
+
+```sql
+SELECT * FROM "jvmlog-alloc-stall-cause-summary"
+```
+
+```plot
+BAR(x="Thread", y="Total Stall (ms)", color="Frequency Verdict")
+```
+
+---
+
+<!-- @cell name=gc-overhead-forecast requires="has-jvmlog-gc" -->
+
+## GC Overhead Forecast (When Will 20% Threshold Be Breached?)
+
+Linear regression on per-minute GC overhead projects when overhead will exceed the 20% application-impact threshold — R² > 0.5 means the trend is reliable; plan capacity changes or heap tuning before the projection point to avoid reactive emergency changes.
+
+```sql
+SELECT * FROM "jvmlog-gc-overhead-forecast"
+```
+
