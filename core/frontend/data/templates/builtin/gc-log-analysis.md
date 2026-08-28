@@ -3826,3 +3826,83 @@ SELECT * FROM "jvmlog-worker-saturation-rate"
 BAR(x="Task", y="Avg Saturation %")
 ```
 
+---
+
+<!-- @cell name=zgc-stall-to-gc-ratio requires="has-jvmlog-gc" -->
+
+## ZGC Allocation Stalls per GC Cycle
+
+Each ZGC cycle annotated with whether it had allocation stalls — cycles marked "Stalled" had application threads waiting for GC to free memory; if most cycles are "Stalled", the GC pace cannot keep up with the allocation rate and heap size should be increased.
+
+```sql
+SELECT * FROM "jvmlog-zgc-stall-to-gc-ratio"
+```
+
+```plot
+BAR(x="GC ID", y="Total Stall (ms)", color="Status")
+```
+
+---
+
+<!-- @cell name=g1-mixed-effectiveness requires="has-g1-regions" -->
+
+## G1 Mixed GC Effectiveness
+
+Old generation regions reclaimed per mixed GC cycle — low reclaim percentage (below 30%) means mixed GC is not collecting effectively, possibly due to high object survival rates in old gen; consider tuning `-XX:G1MixedGCLiveThresholdPercent`.
+
+```sql
+SELECT * FROM "jvmlog-g1-mixed-effectiveness"
+```
+
+```plot
+BAR(x="GC ID", y="Old Reclaim %")
+```
+
+---
+
+<!-- @cell name=concurrent-mark-duration-trend requires="has-gc-phase" -->
+
+## Concurrent Mark Phase Duration Trend
+
+How long concurrent marking takes per cycle with rolling average and trend — a rising trend (positive ms/cycle) indicates the live object graph is growing, requiring more marking work each cycle; consider checking for growing caches or session objects.
+
+```sql
+SELECT * FROM "jvmlog-concurrent-mark-duration-trend"
+```
+
+```plot
+LINE(x="GC ID", y="Duration (ms)")
+```
+
+---
+
+<!-- @cell name=stringdedup-savings-trend requires="has-stringdedup" -->
+
+## String Deduplication Savings Trend
+
+Heap savings from JVM string deduplication per cycle (`-XX:+UseStringDeduplication`) — low efficiency suggests most strings are already unique and deduplication overhead may exceed its benefit; consider disabling it if savings are consistently below 1% of heap.
+
+```sql
+SELECT * FROM "jvmlog-stringdedup-savings-trend"
+```
+
+```plot
+LINE(x="GC ID", y="Saved (MB)")
+```
+
+---
+
+<!-- @cell name=parallel-gen-sizing-trend requires="has-parallel-sizing" -->
+
+## Parallel/CMS Old Gen Sizing Trend
+
+CMS or Parallel collector old generation utilisation per collection — utilisation approaching 100% means the old gen is nearly full; a persistent upward trend indicates a memory leak or that `-Xmx` is too small for the application's live data set.
+
+```sql
+SELECT * FROM "jvmlog-parallel-gen-sizing-trend"
+```
+
+```plot
+LINE(x="GC ID", y="Old Gen Utilisation %")
+```
+

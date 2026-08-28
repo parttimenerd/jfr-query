@@ -131,7 +131,10 @@ class JvmlogViewsTest {
             "jvmlog-safepoint-gc-vs-nongc-stw",
             "jvmlog-g1-humongous-objects", "jvmlog-gc-cause-shift",
             "jvmlog-gc-phase-summary", "jvmlog-heap-pressure-events",
-            "jvmlog-worker-saturation-rate"
+            "jvmlog-worker-saturation-rate",
+            "jvmlog-zgc-stall-to-gc-ratio", "jvmlog-g1-mixed-effectiveness",
+            "jvmlog-concurrent-mark-duration-trend", "jvmlog-stringdedup-savings-trend",
+            "jvmlog-parallel-gen-sizing-trend"
     );
 
     @Test
@@ -5360,6 +5363,119 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS tasks FROM \"jvmlog-worker-saturation-rate\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("tasks")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogZgcStallToGcRatio() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'ZGC','Proactive',2.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'ZGC','Allocation Rate',3.0,20.0)");
+            s.execute("CREATE TABLE jvmlog_alloc_stall (gcId INTEGER, threadName VARCHAR, stallMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES (1,'worker-1',50.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-stall-to-gc-ratio".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-stall-to-gc-ratio not found"));
+        assertThat(view.isValid(Set.of("jvmlog_alloc_stall", "jvmlog_gc_event"))).isTrue();
+        assertThat(view.getBestMatchingQuery(Set.of("jvmlog_alloc_stall"))).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-zgc-stall-to-gc-ratio\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogG1MixedEffectiveness() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, edenBefore INTEGER, edenAfter INTEGER, edenMax INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, survivorMax INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER)");
+            s.execute("INSERT INTO jvmlog_g1_regions VALUES (1,0,0,250,0,0,30,200,140,5,3)");
+            s.execute("INSERT INTO jvmlog_g1_regions VALUES (2,0,0,250,0,0,30,140,80,3,0)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'G1 Mixed','Mixed GC',120.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'G1 Mixed','Mixed GC',110.0,20.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-mixed-effectiveness".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-mixed-effectiveness not found"));
+        assertThat(view.isValid(Set.of("jvmlog_g1_regions", "jvmlog_gc_event"))).isTrue();
+        assertThat(view.getBestMatchingQuery(Set.of("jvmlog_g1_regions"))).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-g1-mixed-effectiveness\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogConcurrentMarkDurationTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Concurrent Mark from Roots',45.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (2,'Concurrent Mark from Roots',55.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (3,'Concurrent Mark from Roots',65.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-concurrent-mark-duration-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-concurrent-mark-duration-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_phase"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-concurrent-mark-duration-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(3L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogStringdedupSavingsTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_stringdedup (gcId INTEGER, savedBytes BIGINT, objectCount BIGINT, deduplicatedObjects BIGINT, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_stringdedup VALUES (1,1048576,500,480,5.0)");
+            s.execute("INSERT INTO jvmlog_stringdedup VALUES (2,2097152,800,750,8.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-stringdedup-savings-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-stringdedup-savings-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_stringdedup"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-stringdedup-savings-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogParallelGenSizingTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_parallel_sizing (gcId INTEGER, oldGenBytes BIGINT, oldGenCapacity BIGINT)");
+            s.execute("INSERT INTO jvmlog_parallel_sizing VALUES (1,268435456,536870912)");
+            s.execute("INSERT INTO jvmlog_parallel_sizing VALUES (2,300000000,536870912)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-parallel-gen-sizing-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-parallel-gen-sizing-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_parallel_sizing"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-parallel-gen-sizing-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
         }
         conn.close();
     }

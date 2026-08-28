@@ -9988,6 +9988,151 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_workers")
                     .description("Worker thread saturation by task — tasks with saturation below 70% are under-utilising available GC threads; increase `-XX:ParallelGCThreads` or investigate why threads are not being assigned to phases."),
+
+            // ── Batch 18 ──────────────────────────────────────────────────────────────
+
+            // ZGC stall-to-GC cycle ratio — how many stall events occur per ZGC collection
+            new View(
+                    "jvmlog-zgc-stall-to-gc-ratio", "jvmlog",
+                    "GC Log: ZGC Allocation Stall Events per GC Cycle", null,
+                    """
+                        CREATE VIEW "jvmlog-zgc-stall-to-gc-ratio" AS
+                        WITH stalls_per_gc AS (
+                            SELECT gcId,
+                                   count(*) AS stallCount,
+                                   sum(stallMs) AS totalStallMs
+                            FROM jvmlog_alloc_stall
+                            GROUP BY gcId
+                        ),
+                        gc_events AS (
+                            SELECT gcId,
+                                   round(uptimeSecs, 1) AS uptimeSecs,
+                                   gcType,
+                                   round(pauseMs, 2) AS pauseMs
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL
+                        )
+                        SELECT e.gcId                                          AS "GC ID",
+                               e.uptimeSecs                                   AS "Uptime (s)",
+                               e.gcType                                       AS "GC Type",
+                               e.pauseMs                                      AS "STW Pause (ms)",
+                               coalesce(s.stallCount, 0)                     AS "Stall Events",
+                               round(coalesce(s.totalStallMs, 0), 2)         AS "Total Stall (ms)",
+                               CASE WHEN coalesce(s.stallCount, 0) > 0 THEN 'Stalled' ELSE 'Clean' END AS "Status"
+                        FROM gc_events e
+                        LEFT JOIN stalls_per_gc s USING (gcId)
+                        ORDER BY e.gcId
+                        """,
+                    "jvmlog_alloc_stall", "jvmlog_gc_event")
+                    .addAlternative(
+                        """
+                        SELECT gcId                                            AS "GC ID",
+                               count(*) AS "Stall Events",
+                               round(sum(stallMs), 2) AS "Total Stall (ms)"
+                        FROM jvmlog_alloc_stall
+                        GROUP BY gcId
+                        ORDER BY gcId
+                        """,
+                        "jvmlog_alloc_stall")
+                    .description("ZGC allocation stalls per GC cycle — cycles marked 'Stalled' had application threads waiting for GC to free memory; high stall events per cycle indicate the GC cycle pace cannot keep up with the allocation rate."),
+
+            // G1 mixed GC effectiveness — old gen regions reclaimed per mixed GC cycle
+            new View(
+                    "jvmlog-g1-mixed-effectiveness", "jvmlog",
+                    "GC Log: G1 Mixed GC Effectiveness (Old Gen Regions Reclaimed)", null,
+                    """
+                        CREATE VIEW "jvmlog-g1-mixed-effectiveness" AS
+                        SELECT r.gcId                                          AS "GC ID",
+                               r.oldBefore - r.oldAfter                      AS "Old Regions Reclaimed",
+                               r.oldBefore                                    AS "Old Regions Before",
+                               r.oldAfter                                     AS "Old Regions After",
+                               round((r.oldBefore - r.oldAfter) * 100.0 /
+                                     nullif(r.oldBefore, 0), 1)              AS "Old Reclaim %",
+                               r.humongousBefore - r.humongousAfter          AS "Humongous Reclaimed",
+                               round(e.pauseMs, 2)                           AS "Pause (ms)",
+                               e.gcType                                      AS "GC Type"
+                        FROM jvmlog_g1_regions r
+                        JOIN jvmlog_gc_event e USING (gcId)
+                        WHERE e.gcType LIKE '%Mixed%' OR e.gcType LIKE '%Full%'
+                        ORDER BY "Old Reclaim %" DESC
+                        """,
+                    "jvmlog_g1_regions", "jvmlog_gc_event")
+                    .addAlternative(
+                        """
+                        SELECT gcId                                            AS "GC ID",
+                               oldBefore - oldAfter                          AS "Old Regions Reclaimed",
+                               oldBefore                                     AS "Old Regions Before",
+                               round((oldBefore - oldAfter) * 100.0 /
+                                     nullif(oldBefore, 0), 1)                AS "Old Reclaim %"
+                        FROM jvmlog_g1_regions
+                        WHERE oldBefore > 0
+                        ORDER BY "Old Reclaim %" DESC
+                        """,
+                        "jvmlog_g1_regions")
+                    .description("G1 mixed GC effectiveness — old generation regions reclaimed per mixed collection; low reclaim % means mixed GC is not cleaning up effectively, likely due to fragmentation or high object survival rates."),
+
+            // Concurrent mark duration trend — how long concurrent marking takes over time
+            new View(
+                    "jvmlog-concurrent-mark-duration-trend", "jvmlog",
+                    "GC Log: Concurrent Mark Phase Duration Trend", null,
+                    """
+                        CREATE VIEW "jvmlog-concurrent-mark-duration-trend" AS
+                        SELECT gcId                                            AS "GC ID",
+                               phaseName                                     AS "Phase",
+                               round(durationMs, 2)                         AS "Duration (ms)",
+                               round(avg(durationMs) OVER (
+                                   ORDER BY gcId
+                                   ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
+                               ), 2)                                        AS "5-cycle Rolling Avg (ms)",
+                               round(regr_slope(durationMs, gcId) OVER (
+                                   ORDER BY gcId
+                                   ROWS BETWEEN 9 PRECEDING AND CURRENT ROW
+                               ), 3)                                        AS "10-cycle Trend (ms/cycle)"
+                        FROM jvmlog_gc_phase
+                        WHERE phaseName LIKE '%Mark%' AND durationMs IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_gc_phase")
+                    .description("Concurrent mark phase duration trend — a rising 10-cycle trend (ms/cycle) means marking is taking longer per cycle, which indicates growing live data set or increased object graph complexity requiring more marking work."),
+
+            // String deduplication savings summary per GC cycle
+            new View(
+                    "jvmlog-stringdedup-savings-trend", "jvmlog",
+                    "GC Log: String Deduplication Savings Trend", null,
+                    """
+                        CREATE VIEW "jvmlog-stringdedup-savings-trend" AS
+                        SELECT gcId                                            AS "GC ID",
+                               sum(savedBytes)                               AS "Saved Bytes",
+                               round(sum(savedBytes) / 1048576.0, 3)        AS "Saved (MB)",
+                               sum(objectCount)                              AS "Deduplicated Objects",
+                               sum(deduplicatedObjects)                     AS "Objects Processed",
+                               round(sum(savedBytes) * 100.0 /
+                                     nullif(sum(savedBytes) + sum(deduplicatedObjects), 0), 1) AS "Dedup Efficiency %"
+                        FROM jvmlog_stringdedup
+                        GROUP BY gcId
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_stringdedup")
+                    .description("String deduplication savings per GC cycle — measures how much heap the JVM's string deduplication (`-XX:+UseStringDeduplication`) is saving; low efficiency suggests most strings are already unique and dedup overhead may exceed savings."),
+
+            // Parallel/CMS gen sizing trend — how old gen capacity and usage evolve across collections
+            new View(
+                    "jvmlog-parallel-gen-sizing-trend", "jvmlog",
+                    "GC Log: Parallel/CMS Old Gen Sizing Trend", null,
+                    """
+                        CREATE VIEW "jvmlog-parallel-gen-sizing-trend" AS
+                        SELECT gcId                                            AS "GC ID",
+                               round(oldGenBytes / 1048576.0, 1)             AS "Old Gen Used Before (MB)",
+                               round(oldGenCapacity / 1048576.0, 1)          AS "Old Gen Capacity (MB)",
+                               round(oldGenBytes * 100.0 /
+                                     nullif(oldGenCapacity, 0), 1)           AS "Old Gen Utilisation %",
+                               round(oldGenCapacity - oldGenBytes, 0) / 1048576.0 AS "Free Headroom (MB)"
+                        FROM jvmlog_parallel_sizing
+                        WHERE oldGenBytes IS NOT NULL AND oldGenCapacity IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_parallel_sizing")
+                    .description("CMS/Parallel old gen sizing trend — utilisation approaching 100% means old gen is nearly full; the GC will escalate to Full GC if it cannot free enough space during concurrent collection."),
             };
 
     public static List<View> getViews() {
