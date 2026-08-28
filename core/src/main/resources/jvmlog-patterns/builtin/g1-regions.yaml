@@ -1,6 +1,6 @@
 - id: g1_region_eden
-  tags: [gc, region]
-  level: debug
+  tags: [gc, heap]
+  level: info
   pattern: 'GC\((\d+)\) Eden regions: (\d+)->(\d+)\((\d+)\)'
   fields:
     gcId: int
@@ -10,8 +10,8 @@
   table: jvmlog_g1_regions
 
 - id: g1_region_survivor
-  tags: [gc, region]
-  level: debug
+  tags: [gc, heap]
+  level: info
   pattern: 'GC\((\d+)\) Survivor regions: (\d+)->(\d+)\((\d+)\)'
   fields:
     gcId: int
@@ -21,8 +21,8 @@
   table: jvmlog_g1_regions
 
 - id: g1_region_old
-  tags: [gc, region]
-  level: debug
+  tags: [gc, heap]
+  level: info
   pattern: 'GC\((\d+)\) Old regions: (\d+)->(\d+)'
   fields:
     gcId: int
@@ -31,8 +31,8 @@
   table: jvmlog_g1_regions
 
 - id: g1_region_humongous
-  tags: [gc, region]
-  level: debug
+  tags: [gc, heap]
+  level: info
   pattern: 'GC\((\d+)\) Humongous regions: (\d+)->(\d+)'
   fields:
     gcId: int
@@ -41,8 +41,8 @@
   table: jvmlog_g1_regions
 
 - id: g1_region_archive
-  tags: [gc, region]
-  level: debug
+  tags: [gc, heap]
+  level: info
   pattern: 'GC\((\d+)\) Archive regions: (\d+)->(\d+)'
   fields:
     gcId: int

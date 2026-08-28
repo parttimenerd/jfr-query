@@ -4,26 +4,33 @@ description: Analyse JVM -Xlog GC logs — pause summary, heap timeline, phase b
 tags: [gc, jvmlog, performance]
 license: MIT
 cellConditions:
-  has-jvmlog-gc: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_gc_event'"
-  has-heap-snapshot: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_heap_snapshot'"
-  has-gc-phase: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_gc_phase'"
-  has-g1-regions: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_g1_regions'"
-  has-g1-ergo: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_g1_ergonomics'"
-  has-g1-mixed: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_g1_mixed_gc'"
-  has-zgc: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_phases'"
-  has-zgc-director: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_director'"
-  has-zgc-load: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_load'"
-  has-parallel: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_parallel_sizing'"
-  has-stringdedup: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_stringdedup'"
-  has-metaspace: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_metaspace'"
-  has-gc-workers: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_gc_workers'"
+  has-jvmlog-gc: "SELECT count(*) > 0 FROM jvmlog_gc_event"
+  has-heap-snapshot: "SELECT count(*) > 0 FROM jvmlog_heap_snapshot"
+  has-gc-phase: "SELECT count(*) > 0 FROM jvmlog_gc_phase"
+  has-g1-regions: "SELECT count(*) > 0 FROM jvmlog_g1_regions"
+  has-g1-ergo: "SELECT count(*) > 0 FROM jvmlog_g1_ergonomics"
+  has-g1-mixed: "SELECT count(*) > 0 FROM jvmlog_g1_mixed_gc"
+  has-zgc: "SELECT count(*) > 0 FROM jvmlog_zgc_phases"
+  has-zgc-director: "SELECT count(*) > 0 FROM jvmlog_zgc_director"
+  has-zgc-load: "SELECT count(*) > 0 FROM jvmlog_zgc_load"
+  has-parallel: "SELECT count(*) > 0 FROM jvmlog_parallel_sizing"
+  has-stringdedup: "SELECT count(*) > 0 FROM jvmlog_stringdedup"
+  has-metaspace: "SELECT count(*) > 0 FROM jvmlog_metaspace"
+  has-gc-workers: "SELECT count(*) > 0 FROM jvmlog_gc_workers"
   has-jfr-correlation: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_jfr_correlation'"
-  has-safepoint: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_safepoint'"
-  has-alloc-stall: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_alloc_stall'"
-  has-gc-errors: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_gc_errors'"
-  has-combined-timeline: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_heap_snapshot'"
-  has-shenandoah: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_shenandoah_free'"
-  has-zgc-stats: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_zgc_stats'"
+  has-safepoint: "SELECT count(*) > 0 FROM jvmlog_safepoint"
+  has-alloc-stall: "SELECT count(*) > 0 FROM jvmlog_alloc_stall"
+  has-gc-errors: "SELECT count(*) > 0 FROM jvmlog_gc_errors"
+  has-combined-timeline: "SELECT count(*) > 0 FROM jvmlog_heap_snapshot"
+  has-shenandoah: "SELECT count(*) > 0 FROM jvmlog_shenandoah_free"
+  has-zgc-stats: "SELECT count(*) > 0 FROM jvmlog_zgc_stats"
+  has-zgc-phases: "SELECT count(*) > 0 FROM jvmlog_zgc_phases"
+  has-gc-phases: "SELECT count(*) > 0 FROM jvmlog_gc_phase"
+  has-phases: "SELECT count(*) > 0 FROM jvmlog_gc_phase"
+  has-gc-init: "SELECT count(*) > 0 FROM jvmlog_gc_init"
+  has-safepoints: "SELECT count(*) > 0 FROM jvmlog_safepoint"
+  has-parallel-sizing: "SELECT count(*) > 0 FROM jvmlog_parallel_sizing"
+  has-shenandoah-ergo: "SELECT count(*) > 0 FROM jvmlog_shenandoah_free"
 ---
 
 <!-- @cell name=intro -->
@@ -33,6 +40,8 @@ cellConditions:
 A ready-to-run analysis of JVM garbage-collection logs captured with `-Xlog:gc*`.
 
 **What's here:** Health dashboard, memory leak risk, SLA impact summary, collector diagnostics, pause summary and percentiles, heap + pause combined timeline, pause histogram, GC frequency, problematic GC events, error events, phase breakdown, and collector-specific details (G1, ZGC, Parallel, CMS, Shenandoah). Load a `.log` file to begin.
+
+**Quick navigation:** @cell:collector-diagnostics | @cell:gc-health-dashboard | @cell:pause-summary | @cell:heap-timeline | @cell:gc-frequency
 
 ---
 
@@ -46,6 +55,8 @@ Auto-detects which GC collector is in use and provides targeted tuning guidance 
 SELECT * FROM "jvmlog-collector-diagnostics"
 ```
 
+> See also: @cell:gc-health-dashboard for overall health KPIs • @cell:gc-sla-impact-summary for SLA compliance
+
 ---
 
 <!-- @cell name=gc-health-dashboard requires="has-jvmlog-gc" -->
@@ -57,6 +68,8 @@ Single-row KPI summary — pause percentiles, GC overhead, throughput, and autom
 ```sql
 SELECT * FROM "jvmlog-gc-health-dashboard"
 ```
+
+> See also: @cell:memory-leak-risk for heap growth risk • @cell:gc-recommendations for tuning guidance
 
 ---
 
@@ -70,6 +83,8 @@ Multi-dimensional SLA compliance check — evaluates 4 key SLA criteria (200ms p
 SELECT * FROM "jvmlog-gc-sla-impact-summary"
 ```
 
+> See also: @cell:pause-percentiles for per-cause percentile detail • @cell:gc-overhead for windowed overhead
+
 ---
 
 <!-- @cell name=memory-leak-risk requires="has-heap-snapshot" -->
@@ -81,6 +96,8 @@ Linear regression on heap-after-GC values to detect steady heap growth — HIGH 
 ```sql
 SELECT * FROM "jvmlog-memory-leak-risk"
 ```
+
+> See also: @cell:heap-growth-trend for the actual growth chart • @cell:oom-risk-estimate for time-to-OOM projection
 
 ---
 
@@ -130,6 +147,8 @@ SELECT * FROM "jvmlog-pause-percentiles"
 TABLE()
 ```
 
+> See also: @cell:gc-recommendations for actionable tuning • @cell:pause-percentiles for per-cause breakdown
+
 ---
 
 <!-- @cell name=throughput-summary -->
@@ -161,6 +180,8 @@ SELECT * FROM "jvmlog-gc-health-score"
 ```plot
 TABLE()
 ```
+
+> See also: @cell:gc-recommendations for actionable tuning flags • @cell:overall-pause-percentiles for global percentiles
 
 ---
 
@@ -194,6 +215,8 @@ SELECT * FROM "jvmlog-gc-summary"
 BAR(x="Cause", y="Total ms")
 ```
 
+> See also: @cell:pause-by-type for per-type breakdown • @cell:pause-percentiles for per-cause percentiles • @cell:pause-timeline for time series
+
 ---
 
 <!-- @cell name=pause-by-type -->
@@ -209,6 +232,8 @@ SELECT * FROM "jvmlog-gc-pause-by-type"
 ```plot
 BAR(x="Type", y="Avg (ms)")
 ```
+
+> See also: @cell:gc-type-breakdown for category share of pause time • @cell:young-vs-old-time for generation split
 
 ---
 
@@ -257,6 +282,8 @@ SELECT * FROM "jvmlog-pause-percentiles-by-cause"
 ```plot
 BAR(x="Cause", y="P99 (ms)")
 ```
+
+> See also: @cell:pause-variance for consistency analysis • @cell:pause-sla for SLA compliance
 
 ---
 
@@ -308,6 +335,8 @@ ORDER BY uptimeSecs
 ```plot
 SCATTER(x="Uptime (s)", y="Pause (ms)", color="Type")
 ```
+
+> See also: @cell:cumulative-pause for running total • @cell:combined-timeline for heap + pause view
 
 ---
 
@@ -373,6 +402,8 @@ SELECT * FROM "jvmlog-gc-error-summary"
 BAR(x="Error Type", y="Count")
 ```
 
+> See also: @cell:gc-error-timeline for errors in context • @cell:evacuation-failure-detail for evacuation detail
+
 ---
 
 <!-- @cell name=gc-error-timeline requires="has-gc-errors" -->
@@ -405,6 +436,8 @@ SELECT * FROM "jvmlog-full-gc-analysis"
 BAR(x="GC ID", y="Pause (ms)")
 ```
 
+> See also: @cell:gc-errors for error events • @cell:problematic-gcs for all problematic events
+
 ---
 
 <!-- @cell name=heap-timeline requires="has-heap-snapshot" -->
@@ -420,6 +453,8 @@ SELECT * FROM "jvmlog-heap-timeline"
 ```plot
 LINE(x="gcId", y="Heap Before (MB)")
 ```
+
+> See also: @cell:heap-growth-trend for growth trend analysis • @cell:allocation-rate for allocation pressure
 
 ---
 
@@ -501,6 +536,8 @@ SELECT * FROM "jvmlog-allocation-rate"
 LINE(x="Uptime (s)", y="Allocation Rate (MB/s)")
 ```
 
+> See also: @cell:allocation-rate-timeline for windowed view • @cell:alloc-pressure-correlation for pressure scoring
+
 ---
 
 <!-- @cell name=allocation-rate-timeline requires="has-combined-timeline" -->
@@ -549,6 +586,8 @@ SELECT * FROM "jvmlog-oom-risk-estimate"
 TABLE()
 ```
 
+> See also: @cell:heap-growth-trend for the trend chart • @cell:memory-leak-risk for leak risk assessment
+
 ---
 
 <!-- @cell name=heap-growth-trend requires="has-combined-timeline" -->
@@ -564,6 +603,8 @@ SELECT * FROM "jvmlog-heap-growth-trend"
 ```plot
 LINE(x="Window Start (s)", y="Max Heap After (MB)")
 ```
+
+> See also: @cell:oom-risk-estimate for OOM projection • @cell:heap-fragmentation for reservation analysis
 
 ---
 
@@ -581,6 +622,8 @@ SELECT * FROM "jvmlog-gc-overhead"
 BAR(x="Window Start (s)", y="GC Overhead %")
 ```
 
+> See also: @cell:throughput-summary for application throughput • @cell:throughput-degradation for overhead trend
+
 ---
 
 <!-- @cell name=throughput-degradation -->
@@ -596,6 +639,8 @@ SELECT * FROM "jvmlog-throughput-degradation"
 ```plot
 TABLE()
 ```
+
+> See also: @cell:throughput-timeline for windowed time series • @cell:pause-regression for P99 trend
 
 ---
 
@@ -661,6 +706,8 @@ SELECT * FROM "jvmlog-gc-frequency"
 BAR(x="Window Start (s)", y="GC Count")
 ```
 
+> See also: @cell:gc-interval-stats for inter-GC timing • @cell:cause-distribution for what drives GC
+
 ---
 
 <!-- @cell name=pause-histogram -->
@@ -676,6 +723,8 @@ SELECT * FROM "jvmlog-pause-histogram"
 ```plot
 BAR(x="Bucket (ms)", y="Count")
 ```
+
+> See also: @cell:longest-pauses for individual top pauses • @cell:pause-sla for SLA compliance thresholds
 
 ---
 
@@ -724,6 +773,8 @@ SELECT * FROM "jvmlog-gc-interval-stats"
 ```plot
 TABLE()
 ```
+
+> See also: @cell:gc-interval-timeline for interval time series • @cell:gc-pressure-timeline for combined pressure view
 
 ---
 
@@ -824,6 +875,8 @@ ORDER BY "Avg ms" DESC
 BAR(x="Phase", y="Avg ms")
 ```
 
+> See also: @cell:phases-per-gc for per-cycle counts • @cell:phase-top-slow for slowest outliers • @cell:phase-timeline for time series
+
 ---
 
 <!-- @cell name=phases-per-gc requires="has-gc-phase" -->
@@ -855,6 +908,8 @@ SELECT * FROM "jvmlog-g1-mark-trend"
 ```plot
 TABLE()
 ```
+
+> See also: @cell:phase-breakdown for all phases summary
 
 ---
 
@@ -906,6 +961,8 @@ SELECT * FROM "jvmlog-gc-worker-summary"
 BAR(x="Task", y="Utilisation %")
 ```
 
+> See also: @cell:gc-worker-efficiency-trend for utilisation trend • @cell:gc-worker-timeline for per-event view
+
 ---
 
 <!-- @cell name=gc-worker-efficiency-trend requires="has-gc-workers" -->
@@ -954,6 +1011,8 @@ SELECT * FROM "jvmlog-g1-regions"
 ```plot
 LINE(x="GC ID", y="Eden Before")
 ```
+
+> See also: @cell:g1-survivor-trend for survivor analysis • @cell:g1-old-region-trend for old gen trend • @cell:g1-humongous for humongous objects
 
 ---
 
@@ -1053,7 +1112,7 @@ BAR(x="Decision", y="Count")
 
 ---
 
-<!-- @cell name=g1-mixed requires="has-g1-mixed" -->
+<!-- @cell name=g1-mixed-analysis requires="has-g1-mixed" -->
 
 ## G1: Mixed GC Decisions
 
@@ -1067,12 +1126,6 @@ SELECT * FROM "jvmlog-g1-mixed-gc"
 TABLE()
 ```
 
----
-
-<!-- @cell name=g1-mixed-summary requires="has-g1-mixed" -->
-
-## G1: Mixed GC Decision Summary
-
 Counts of initiate/skip/do decisions with average reclaimable % — reveals if G1 is frequently skipping mixed collections.
 
 ```sql
@@ -1082,6 +1135,8 @@ SELECT * FROM "jvmlog-g1-mixed-gc-summary"
 ```plot
 BAR(x="Decision", y="Count")
 ```
+
+> See also: @cell:gc-efficiency-by-cause for reclaim efficiency
 
 ---
 
@@ -1100,12 +1155,6 @@ ORDER BY "GC ID"
 BAR(x="GC ID", y="Concurrent ms")
 ```
 
----
-
-<!-- @cell name=zgc-phase-breakdown requires="has-zgc" -->
-
-## ZGC: Phase Type Breakdown
-
 All ZGC phases grouped by STW vs concurrent and by work category (Mark/Relocate/Reference Processing). Shows which phase categories dominate total cycle time.
 
 ```sql
@@ -1115,6 +1164,8 @@ SELECT * FROM "jvmlog-zgc-phase-breakdown"
 ```plot
 BAR(x="Phase", y="Total (ms)", color="Type")
 ```
+
+> See also: @cell:zgc-cycle-detail for full per-cycle detail
 
 ---
 
@@ -1179,6 +1230,8 @@ SELECT * FROM "jvmlog-zgc-load"
 ```plot
 LINE(x="GC ID", y="Load 1s")
 ```
+
+> See also: @cell:zgc-allocation-rate for per-cycle allocation rate • @cell:alloc-stall-overview for stall events
 
 ---
 
@@ -1292,13 +1345,7 @@ SELECT * FROM "jvmlog-safepoint-summary"
 BAR(x="Operation", y="Total (ms)")
 ```
 
----
-
-<!-- @cell name=safepoint-ttr-stats requires="has-safepoint" -->
-
-## Safepoint Time-to-Reach (TTR) Analysis
-
-Time for all threads to reach a safepoint, per operation. High TTR % of STW indicates slow safepoint entry — commonly caused by long JNI calls, tight loops without safepoint polls, or large JIT-compiled methods.
+Time for all threads to reach a safepoint (TTR), per operation. High TTR % of STW indicates slow safepoint entry — commonly caused by long JNI calls, tight loops without safepoint polls, or large JIT-compiled methods.
 
 ```sql
 SELECT * FROM "jvmlog-safepoint-ttr-stats"
@@ -1307,6 +1354,8 @@ SELECT * FROM "jvmlog-safepoint-ttr-stats"
 ```plot
 BAR(x="Operation", y="P99 TTR (ms)")
 ```
+
+> See also: @cell:safepoint-timeline for individual events
 
 ---
 
@@ -1356,6 +1405,8 @@ SELECT * FROM "jvmlog-longest-pauses"
 BAR(x="GC ID", y="Pause (ms)")
 ```
 
+> See also: @cell:top-pauses-by-cause for worst pauses per cause • @cell:problematic-gcs for combined analysis
+
 ---
 
 <!-- @cell name=top-pauses-by-cause -->
@@ -1374,7 +1425,7 @@ SCATTER(x="Uptime (s)", y="Pause (ms)", color="Cause")
 
 ---
 
-<!-- @cell name=alloc-stall requires="has-alloc-stall" -->
+<!-- @cell name=alloc-stall-overview requires="has-alloc-stall" -->
 
 ## Allocation Stalls
 
@@ -1388,12 +1439,6 @@ SELECT * FROM "jvmlog-alloc-stall-summary"
 BAR(x="Thread", y="Total Stall (ms)")
 ```
 
----
-
-<!-- @cell name=alloc-stall-rate-timeline requires="has-alloc-stall" -->
-
-## Allocation Stall Rate Timeline
-
 Stall count and duration per 30-second window — bursts of stalls show when GC throughput was insufficient to keep up with allocation and application threads were directly impacted.
 
 ```sql
@@ -1403,6 +1448,8 @@ SELECT * FROM "jvmlog-alloc-stall-rate-timeline"
 ```plot
 BAR(x="Window Start (s)", y="Stalls")
 ```
+
+> See also: @cell:alloc-stall-timeline for individual events
 
 ---
 
@@ -1435,6 +1482,8 @@ SELECT * FROM "jvmlog-shenandoah-cycle-detail"
 ```plot
 BAR(x="GC ID", y="Total STW (ms)")
 ```
+
+> See also: @cell:shenandoah-headroom for headroom trend • @cell:shenandoah-free-timeline for free heap timeline
 
 ---
 
