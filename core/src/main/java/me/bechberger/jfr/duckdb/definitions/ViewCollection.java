@@ -9454,6 +9454,140 @@ public class ViewCollection {
                         ORDER BY gcId
                         """,
                     "jvmlog_g1_regions"),
+
+                    // Batch 14
+                    new View(
+                    "jvmlog-gc-bottleneck-summary", "jvmlog",
+                    "GC Log: Primary GC Bottleneck Identification", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-bottleneck-summary" AS
+                        WITH stats AS (
+                            SELECT count(*)                                                    AS totalGCs,
+                                   sum(CASE WHEN gcType = 'Full' THEN 1 ELSE 0 END)           AS fullGCs,
+                                   round(avg(pauseMs), 2)                                     AS avgPause,
+                                   round(approx_quantile(pauseMs, 0.99), 2)                  AS p99Pause,
+                                   round(sum(pauseMs) / nullif(max(uptimeSecs) * 10.0, 0), 2) AS overheadPct,
+                                   round(count(*) / nullif(max(uptimeSecs) / 60.0, 0), 2)    AS gcPerMin
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL AND uptimeSecs > 0
+                        )
+                        SELECT CASE WHEN fullGCs > 0 AND fullGCs * 1.0 / totalGCs > 0.05 THEN 'Too Many Full GCs'
+                                    WHEN overheadPct >= 10 THEN 'GC Overhead Too High'
+                                    WHEN p99Pause >= 500 THEN 'P99 Pause Violates SLA'
+                                    WHEN gcPerMin > 10 THEN 'GC Frequency Too High'
+                                    WHEN avgPause >= 200 THEN 'Average Pause Too High'
+                                    ELSE 'No Obvious Bottleneck' END                         AS "Primary Bottleneck",
+                               totalGCs                                                       AS "Total GCs",
+                               fullGCs                                                        AS "Full GCs",
+                               avgPause                                                       AS "Avg Pause (ms)",
+                               p99Pause                                                       AS "P99 Pause (ms)",
+                               overheadPct                                                    AS "Overhead %",
+                               gcPerMin                                                       AS "GC/min"
+                        FROM stats
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Automated GC bottleneck identification — evaluates Full GC ratio, overhead%, P99 pause, GC frequency, and average pause to identify the primary problem category. Use as a quick triage starting point."),
+
+                    new View(
+                    "jvmlog-pause-p99-rolling", "jvmlog",
+                    "GC Log: Rolling P99 Pause Time (window of 50 GCs)", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-p99-rolling" AS
+                        SELECT gcId                                                              AS "GC ID",
+                               round(uptimeSecs, 1)                                             AS "Uptime (s)",
+                               round(pauseMs, 2)                                                AS "Pause (ms)",
+                               round(approx_quantile(pauseMs, 0.99)
+                                         OVER (ORDER BY gcId ROWS BETWEEN 49 PRECEDING AND CURRENT ROW), 2) AS "Rolling P99 (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Rolling P99 pause time over a 50-GC window — a rising Rolling P99 indicates systematic pause degradation; a sudden jump means an episodic change in GC behaviour (heap resizing, class unloading, workload change)."),
+
+                    new View(
+                    "jvmlog-alloc-stall-gc-phase", "jvmlog",
+                    "GC Log: Allocation Stalls Correlated with Concurrent GC Phases", null,
+                    """
+                        CREATE VIEW "jvmlog-alloc-stall-gc-phase" AS
+                        SELECT s.gcId                                                          AS "GC ID",
+                               p.phaseName                                                    AS "Concurrent Phase",
+                               round(p.durationMs, 1)                                        AS "Phase Duration (ms)",
+                               count(s.threadName)                                           AS "Stalls",
+                               round(sum(s.stallMs), 2)                                      AS "Total Stall (ms)",
+                               round(sum(s.stallMs) / nullif(p.durationMs, 0) * 100, 1)     AS "Stall % of Phase"
+                        FROM jvmlog_alloc_stall s
+                        JOIN (
+                            SELECT gcId, phaseName, sum(durationMs) AS durationMs
+                            FROM jvmlog_gc_phase
+                            GROUP BY gcId, phaseName
+                        ) p USING (gcId)
+                        GROUP BY s.gcId, p.phaseName, p.durationMs
+                        ORDER BY "Total Stall (ms)" DESC
+                        """,
+                    "jvmlog_alloc_stall", "jvmlog_gc_phase")
+                    .description("Allocation stalls matched to the concurrent GC phase running at the same GC ID — phases with 'Stall % of Phase' > 10% are causing application threads to block during concurrent work; this indicates concurrent phase throughput is insufficient.")
+                    .addAlternative(
+                    """
+                        CREATE VIEW "jvmlog-alloc-stall-gc-phase" AS
+                        SELECT gcId                                                            AS "GC ID",
+                               count(*)                                                       AS "Stall Count",
+                               round(sum(stallMs), 2)                                        AS "Total Stall (ms)"
+                        FROM jvmlog_alloc_stall
+                        GROUP BY gcId
+                        ORDER BY "Total Stall (ms)" DESC
+                        """,
+                    "jvmlog_alloc_stall"),
+
+                    new View(
+                    "jvmlog-zgc-capacity-trend", "jvmlog",
+                    "GC Log: ZGC Heap Capacity vs Usage at Mark Start", null,
+                    """
+                        CREATE VIEW "jvmlog-zgc-capacity-trend" AS
+                        WITH mark_start AS (
+                            SELECT gcId,
+                                   usedBytes
+                            FROM jvmlog_zgc_stats
+                            WHERE phase = 'Mark Start'
+                        ),
+                        gc_events AS (
+                            SELECT gcId,
+                                   max(pauseMs) AS maxPauseMs
+                            FROM jvmlog_gc_event
+                            GROUP BY gcId
+                        )
+                        SELECT m.gcId                                                               AS "GC ID",
+                               round(m.usedBytes / 1048576.0, 1)                                  AS "Used at Mark Start (MB)",
+                               round(regr_slope(m.usedBytes / 1048576.0, m.gcId)
+                                     OVER (ORDER BY m.gcId ROWS BETWEEN 9 PRECEDING AND CURRENT ROW), 2) AS "10-Cycle Growth (MB/cycle)",
+                               CASE WHEN m.usedBytes > LAG(m.usedBytes, 1) OVER (ORDER BY m.gcId)
+                                    THEN 'Growing' ELSE 'Stable' END                               AS "Trend"
+                        FROM mark_start m
+                        ORDER BY m.gcId
+                        """,
+                    "jvmlog_zgc_stats")
+                    .description("ZGC heap usage at Mark Start per cycle with 10-cycle growth slope — a positive slope means the live set is accumulating faster than ZGC can reclaim; watch for the 'Growing' trend persisting for more than 5 consecutive cycles."),
+
+                    new View(
+                    "jvmlog-gc-pause-sla-by-cause", "jvmlog",
+                    "GC Log: Pause SLA Compliance Broken Down by Cause", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-pause-sla-by-cause" AS
+                        SELECT cause                                                            AS "Cause",
+                               count(*)                                                        AS "Total",
+                               sum(CASE WHEN pauseMs <= 100  THEN 1 ELSE 0 END)              AS "<=100ms",
+                               sum(CASE WHEN pauseMs <= 200  THEN 1 ELSE 0 END)              AS "<=200ms",
+                               sum(CASE WHEN pauseMs <= 500  THEN 1 ELSE 0 END)              AS "<=500ms",
+                               round(sum(CASE WHEN pauseMs <= 200 THEN 1 ELSE 0 END) * 100.0 / count(*), 1) AS "200ms SLA %",
+                               round(max(pauseMs), 2)                                         AS "Max (ms)",
+                               round(approx_quantile(pauseMs, 0.99), 2)                      AS "P99 (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND cause IS NOT NULL
+                        GROUP BY cause
+                        ORDER BY "200ms SLA %" ASC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Pause SLA compliance per trigger cause — causes with the lowest '200ms SLA %' are the ones most likely to breach your latency budget; these are the highest-priority targets for GC tuning."),
             };
 
     public static List<View> getViews() {

@@ -3518,3 +3518,79 @@ SELECT * FROM "jvmlog-g1-eden-fill-rate"
 LINE(x="Uptime (s)", y="Fill Rate (regions/min)")
 ```
 
+---
+
+<!-- @cell name=gc-bottleneck-summary requires="has-jvmlog-gc" -->
+
+## GC Primary Bottleneck Identification
+
+Automated bottleneck classification — evaluates Full GC rate, pause overhead, P99 latency, GC frequency, and average pause to surface the single most impactful GC problem, similar to GCeasy's diagnostic summary.
+
+```sql
+SELECT * FROM "jvmlog-gc-bottleneck-summary"
+```
+
+---
+
+<!-- @cell name=pause-p99-rolling requires="has-jvmlog-gc" -->
+
+## Rolling P99 Pause Latency
+
+P99 pause over a rolling 50-GC window — a rising P99 with stable average pause signals outlier events becoming more frequent; use alongside `pause-worst-10` to identify the cause.
+
+```sql
+SELECT * FROM "jvmlog-pause-p99-rolling"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Rolling P99 (ms)")
+```
+
+---
+
+<!-- @cell name=alloc-stall-gc-phase requires="has-alloc-stall" -->
+
+## Allocation Stalls vs Concurrent GC Phase
+
+Allocation stalls correlated with the concurrent phase in progress — high stall percentage during a phase means GC cannot keep pace with allocation during that phase; consider reducing allocation rate or tuning phase concurrency.
+
+```sql
+SELECT * FROM "jvmlog-alloc-stall-gc-phase"
+```
+
+```plot
+BAR(x="Concurrent Phase", y="Stall % of Phase")
+```
+
+---
+
+<!-- @cell name=zgc-capacity-trend requires="has-zgc" -->
+
+## ZGC Heap Capacity Trend
+
+Heap usage at ZGC Mark Start over time with 10-cycle growth rate — a growing trend with positive MB/cycle growth rate indicates a heap leak or allocation surge; use to decide when to adjust `-Xmx`.
+
+```sql
+SELECT * FROM "jvmlog-zgc-capacity-trend"
+```
+
+```plot
+LINE(x="GC ID", y="Used at Mark Start (MB)")
+```
+
+---
+
+<!-- @cell name=gc-pause-sla-by-cause requires="has-jvmlog-gc" -->
+
+## GC Pause SLA Compliance by Cause
+
+Pause SLA compliance broken down by GC cause — shows what fraction of pauses for each trigger meet 100ms, 200ms, and 500ms thresholds; causes with low 200ms SLA % are candidates for allocation rate reduction or GC tuning.
+
+```sql
+SELECT * FROM "jvmlog-gc-pause-sla-by-cause"
+```
+
+```plot
+BAR(x="Cause", y="200ms SLA %")
+```
+
