@@ -6,11 +6,24 @@
 # gc_pause_event_no_cause and gc_pause_event → jvmlog_gc_event.
 
 # CMS heap sizes — tags [gc,heap]
-# e.g.: GC(0) CMS Old Gen: 256M->128M(512M)
+# JDK 11 format: "GC(0) CMS Old Gen: 256M(512M)->128M(512M)"
+# Capacity captured from (CAP) after ->
 - id: cms_old_gen_sizing
   tags: [gc, heap]
   level: info
-  pattern: 'GC\((\d+)\) CMS Old Gen: (\d+[KMG]?)->\d+[KMG]?\((\d+[KMG]?)\)'
+  pattern: 'GC\((\d+)\) CMS Old Gen: (\d+[KMG]?)(?:\(\d+[KMG]?\))?->\d+[KMG]?\((\d+[KMG]?)\)'
+  fields:
+    gcId: int
+    oldGenBytes: bytes
+    oldGenCapacity: bytes
+  table: jvmlog_parallel_sizing
+
+# JDK 8/legacy CMS format: "GC(0) CMS: 0K->0K(43712K)" (no "Old Gen" suffix)
+# Also handled by Java parallel_old_gen_sizing pattern which includes "CMS"
+- id: cms_old_gen_sizing_legacy
+  tags: [gc, heap]
+  level: info
+  pattern: 'GC\((\d+)\) CMS: (\d+[KMG]?)(?:\(\d+[KMG]?\))?->\d+[KMG]?\((\d+[KMG]?)\)'
   fields:
     gcId: int
     oldGenBytes: bytes

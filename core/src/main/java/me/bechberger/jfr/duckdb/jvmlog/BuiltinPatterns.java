@@ -2,6 +2,7 @@ package me.bechberger.jfr.duckdb.jvmlog;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public final class BuiltinPatterns {
@@ -435,11 +436,14 @@ public final class BuiltinPatterns {
                     FieldDef.constant("concurrent", FieldType.BOOLEAN, true)),
                 "jvmlog_zgc_phases"),
 
-            // jvmlog_parallel_sizing: Parallel/Serial GC heap generation sizes (tags: gc,heap)
-            // e.g.: GC(0) PSYoungGen: 128M->32M(192M)  /  GC(0) ParOldGen: 64M->72M(192M)
+            // jvmlog_parallel_sizing: Parallel/Serial/CMS GC heap generation sizes (tags: gc,heap)
+            // Two formats exist:
+            //   Parallel GC (JDK 17+): "GC(N) PSYoungGen: USED(CAP)->AFTER(CAP) Eden: ..."
+            //   CMS/older (JDK 8-11):  "GC(N) ParNew: USED->AFTER(CAP)"
+            // Capacity captured from the (CAP) after the -> in both cases
             new JavaLogPattern("parallel_young_gen_sizing",
                 List.of("gc", "heap"), LogLevel.INFO,
-                "^GC\\((\\d+)\\) (?:PSYoungGen|DefNew|ParNew|NewGen): (\\d+[KMG]?)->\\d+[KMG]?\\((\\d+[KMG]?)\\)$",
+                "^GC\\((\\d+)\\) (?:PSYoungGen|DefNew|ParNew|NewGen): (\\d+[KMG]?)(?:\\(\\d+[KMG]?\\))?->\\d+[KMG]?\\((\\d+[KMG]?)\\)",
                 List.of(
                     FieldDef.of("gcId", FieldType.INT),
                     FieldDef.of("youngGenBytes", FieldType.BYTES),
@@ -448,7 +452,7 @@ public final class BuiltinPatterns {
 
             new JavaLogPattern("parallel_old_gen_sizing",
                 List.of("gc", "heap"), LogLevel.INFO,
-                "^GC\\((\\d+)\\) (?:ParOldGen|Tenured|OldGen|PSOldGen): (\\d+[KMG]?)->\\d+[KMG]?\\((\\d+[KMG]?)\\)$",
+                "^GC\\((\\d+)\\) (?:ParOldGen|Tenured|OldGen|PSOldGen|CMS): (\\d+[KMG]?)(?:\\(\\d+[KMG]?\\))?->\\d+[KMG]?\\((\\d+[KMG]?)\\)",
                 List.of(
                     FieldDef.of("gcId", FieldType.INT),
                     FieldDef.of("oldGenBytes", FieldType.BYTES),
@@ -463,6 +467,82 @@ public final class BuiltinPatterns {
                     FieldDef.of("gcId", FieldType.INT),
                     FieldDef.of("throughputPct", FieldType.DOUBLE)),
                 "jvmlog_parallel_sizing"),
+
+            // jvmlog_gc_event: ZGC Generational (JDK 21+) collection summary with heap
+            // e.g.: "GC(0) Major Collection (Warmup) 26M(10%)->10M(4%) 0.003s"
+            // Duration is in seconds — scaled ×1000 to pauseMs
+            new JavaLogPattern("gc_zgc_generational_collection",
+                List.of("gc"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) (Major|Minor) Collection \\((.+?)\\)\\s+[\\d.]+[KMG]?\\(\\d+%\\)->[\\d.]+[KMG]?\\(\\d+%\\) ([\\d.]+)s$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("gcType", FieldType.STRING),
+                    FieldDef.of("cause", FieldType.STRING),
+                    FieldDef.of("pauseMs", FieldType.DOUBLE),
+                    FieldDef.nullable("uptimeSecs", FieldType.DOUBLE)),
+                "jvmlog_gc_event",
+                Map.of("pauseMs", 1000.0)),
+
+            // jvmlog_zgc_phases: ZGC Generational STW pauses (JDK 21+, tags: gc,phases)
+            // e.g.: "GC(0) Y: Pause Mark Start (Major) 0.008ms"  /  "GC(0) O: Pause Mark End 0.031ms"
+            new JavaLogPattern("zgc_gen_stw_pause_young",
+                List.of("gc", "phases"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Y: (Pause (?:Mark Start|Mark End|Relocate Start)) (?:\\([^)]+\\) )?([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("phaseName", FieldType.STRING),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.constant("generation", FieldType.STRING, "Young"),
+                    FieldDef.constant("concurrent", FieldType.BOOLEAN, false)),
+                "jvmlog_zgc_phases"),
+
+            new JavaLogPattern("zgc_gen_stw_pause_old",
+                List.of("gc", "phases"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) O: (Pause (?:Mark Start|Mark End|Relocate Start)) (?:\\([^)]+\\) )?([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("phaseName", FieldType.STRING),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.constant("generation", FieldType.STRING, "Old"),
+                    FieldDef.constant("concurrent", FieldType.BOOLEAN, false)),
+                "jvmlog_zgc_phases"),
+
+            // jvmlog_zgc_phases: ZGC Generational concurrent phases (JDK 21+, tags: gc,phases)
+            // e.g.: "GC(0) Y: Concurrent Mark 1.030ms"  /  "GC(0) O: Concurrent Process Non-Strong 0.208ms"
+            new JavaLogPattern("zgc_gen_concurrent_young",
+                List.of("gc", "phases"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) Y: (Concurrent .+?) ([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("phaseName", FieldType.STRING),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.constant("generation", FieldType.STRING, "Young"),
+                    FieldDef.constant("concurrent", FieldType.BOOLEAN, true)),
+                "jvmlog_zgc_phases"),
+
+            new JavaLogPattern("zgc_gen_concurrent_old",
+                List.of("gc", "phases"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) O: (Concurrent .+?) ([\\d.]+)ms$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("phaseName", FieldType.STRING),
+                    FieldDef.of("durationMs", FieldType.DOUBLE),
+                    FieldDef.constant("generation", FieldType.STRING, "Old"),
+                    FieldDef.constant("concurrent", FieldType.BOOLEAN, true)),
+                "jvmlog_zgc_phases"),
+
+            // jvmlog_heap_snapshot: ZGC Generational heap summary line with before/after
+            // e.g.: "GC(0) Y: Young Generation 26M(10%)->10M(4%) 0.002s"  (gc,phases tag)
+            new JavaLogPattern("zgc_gen_generation_summary",
+                List.of("gc", "phases"), LogLevel.INFO,
+                "^GC\\((\\d+)\\) [YO]: (?:Young|Old) Generation (\\d+[KMG]?)\\(\\d+%\\)->(\\d+[KMG]?)\\(\\d+%\\) [\\d.]+s$",
+                List.of(
+                    FieldDef.of("gcId", FieldType.INT),
+                    FieldDef.of("heapBefore", FieldType.BYTES),
+                    FieldDef.of("heapAfter", FieldType.BYTES),
+                    FieldDef.constant("heapCommittedBefore", FieldType.BYTES, 0L),
+                    FieldDef.constant("heapCommittedAfter", FieldType.BYTES, 0L)),
+                "jvmlog_heap_snapshot"),
 
             // jvmlog_zgc_director: ZGC director decisions (tags: gc,director)
             // e.g.: GC(0) Selection: Allocation Rate
