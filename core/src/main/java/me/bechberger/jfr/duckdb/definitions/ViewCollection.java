@@ -10489,6 +10489,180 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("Collector-specific diagnostics — auto-detects which GC collector is in use and provides targeted tuning focus with links to the most relevant views for that collector; use as the starting point for any GC log analysis session."),
+
+            // ── Batch 21: combined deep-dive views ──────────────────────────────────
+
+            new View(
+                    "jvmlog-gc-phase-hot-spot", "jvmlog",
+                    "GC Log: GC Phase Hot-Spot (Which Phase Dominates STW Time)", null,
+                    """
+                    CREATE VIEW "jvmlog-gc-phase-hot-spot" AS
+                    WITH phase_totals AS (
+                        SELECT phaseName,
+                               count(*)                              AS "Occurrences",
+                               round(sum(durationMs), 1)            AS "Total ms",
+                               round(avg(durationMs), 3)            AS "Avg ms",
+                               round(max(durationMs), 3)            AS "Max ms",
+                               round(approx_quantile(durationMs, 0.99), 3) AS "P99 ms"
+                        FROM jvmlog_gc_phase
+                        WHERE durationMs IS NOT NULL
+                        GROUP BY phaseName
+                    ),
+                    grand_total AS (SELECT sum("Total ms") AS total FROM phase_totals)
+                    SELECT phaseName              AS "Phase",
+                           "Occurrences",
+                           "Total ms",
+                           round("Total ms" / grand_total.total * 100.0, 1) AS "% of Total STW",
+                           "Avg ms",
+                           "Max ms",
+                           "P99 ms"
+                    FROM phase_totals, grand_total
+                    ORDER BY "Total ms" DESC
+                    """,
+                    "jvmlog_gc_phase")
+                    .description("Phase hot-spot analysis — ranks every GC phase by its total share of stop-the-world time; identifies which internal phase is the actual bottleneck and guides tuning (e.g., evacuation vs. marking vs. cleanup)."),
+
+            new View(
+                    "jvmlog-pause-recovery-time", "jvmlog",
+                    "GC Log: Pause Spike Recovery Time (How Long Until Pauses Normalise)", null,
+                    """
+                    CREATE VIEW "jvmlog-pause-recovery-time" AS
+                    WITH rolling AS (
+                        SELECT gcId,
+                               uptimeSecs,
+                               pauseMs,
+                               avg(pauseMs) OVER (ORDER BY uptimeSecs
+                                   ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS rollingAvg,
+                               stddev_pop(pauseMs) OVER (ORDER BY uptimeSecs
+                                   ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS rollingStd
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                    ),
+                    spikes AS (
+                        SELECT gcId,
+                               uptimeSecs   AS "Spike At (s)",
+                               round(pauseMs, 2) AS "Spike Pause (ms)",
+                               round(rollingAvg, 2) AS "Baseline Avg (ms)"
+                        FROM rolling
+                        WHERE rollingStd > 0
+                          AND pauseMs > rollingAvg + 3.0 * rollingStd
+                    ),
+                    recovery AS (
+                        SELECT s.*,
+                               (SELECT min(r2.uptimeSecs)
+                                FROM rolling r2
+                                WHERE r2.uptimeSecs > s."Spike At (s)"
+                                  AND r2.pauseMs <= s."Baseline Avg (ms)" * 1.5
+                               ) AS recoveredAt
+                        FROM spikes s
+                    )
+                    SELECT "Spike At (s)",
+                           "Spike Pause (ms)",
+                           "Baseline Avg (ms)",
+                           round(recoveredAt - "Spike At (s)", 3) AS "Recovery Time (s)",
+                           CASE
+                             WHEN recoveredAt IS NULL THEN 'No recovery observed'
+                             WHEN recoveredAt - "Spike At (s)" < 1.0 THEN 'Instant (<1s)'
+                             WHEN recoveredAt - "Spike At (s)" < 5.0 THEN 'Fast (1-5s)'
+                             WHEN recoveredAt - "Spike At (s)" < 30.0 THEN 'Slow (5-30s)'
+                             ELSE 'Very slow (>30s)'
+                           END AS "Recovery Category"
+                    FROM recovery
+                    ORDER BY "Spike At (s)"
+                    """,
+                    "jvmlog_gc_event")
+                    .description("Pause spike recovery analysis — identifies GC pause spikes (>3σ above rolling baseline) and measures how long it takes for pause times to normalise; useful for SRE alerting thresholds and understanding GC instability periods."),
+
+            new View(
+                    "jvmlog-safepoint-stw-breakdown", "jvmlog",
+                    "GC Log: Safepoint STW Time Breakdown (GC vs Non-GC)", null,
+                    """
+                    CREATE VIEW "jvmlog-safepoint-stw-breakdown" AS
+                    WITH categorised AS (
+                        SELECT operation,
+                               totalMs,
+                               CASE
+                                 WHEN operation LIKE '%Collect%' OR operation LIKE '%GC%'
+                                      OR operation LIKE '%Cleanup%' OR operation LIKE '%Mark%'
+                                      OR operation LIKE '%Evacuate%' OR operation LIKE '%Concurrent%'
+                                 THEN 'GC'
+                                 ELSE 'Non-GC'
+                               END AS category
+                        FROM jvmlog_safepoint
+                        WHERE totalMs IS NOT NULL
+                    ),
+                    totals AS (
+                        SELECT category,
+                               count(*)          AS "Count",
+                               round(sum(totalMs), 1) AS "Total ms",
+                               round(avg(totalMs), 3) AS "Avg ms",
+                               round(max(totalMs), 3) AS "Max ms"
+                        FROM categorised
+                        GROUP BY category
+                    ),
+                    grand AS (SELECT sum("Total ms") AS grandTotal FROM totals)
+                    SELECT t.category AS "Category",
+                           t."Count",
+                           t."Total ms",
+                           round(t."Total ms" / g.grandTotal * 100.0, 1) AS "% of All STW",
+                           t."Avg ms",
+                           t."Max ms"
+                    FROM totals t, grand g
+                    ORDER BY t."Total ms" DESC
+                    """,
+                    "jvmlog_safepoint")
+                    .description("Safepoint STW breakdown — splits total stop-the-world time between GC operations and non-GC JVM operations (e.g., deoptimisation, class redefinition); shows the true cost of non-GC STW which commercial tools like GCViewer do not surface."),
+
+            new View(
+                    "jvmlog-gc-worker-phase-efficiency", "jvmlog",
+                    "GC Log: GC Worker Utilisation per Phase (Parallelism Efficiency)", null,
+                    """
+                    CREATE VIEW "jvmlog-gc-worker-phase-efficiency" AS
+                    SELECT taskName                          AS "Phase / Task",
+                           count(*)                         AS "GC Events",
+                           round(avg(workersUsed), 1)       AS "Avg Workers Used",
+                           max(workersMax)                  AS "Max Workers",
+                           round(avg(workersUsed::DOUBLE / workersMax) * 100.0, 1) AS "Avg Utilisation %",
+                           min(workersUsed)                 AS "Min Workers Used",
+                           sum(CASE WHEN workersUsed < workersMax THEN 1 ELSE 0 END) AS "Under-utilised Events"
+                    FROM jvmlog_gc_workers
+                    WHERE workersMax > 0
+                    GROUP BY taskName
+                    ORDER BY "Avg Utilisation %" ASC
+                    """,
+                    "jvmlog_gc_workers")
+                    .description("GC worker parallelism efficiency — shows for each GC phase how many parallel worker threads were actually used vs available; phases with low utilisation indicate opportunities to reduce thread count or investigate GC phase bottlenecks."),
+
+            new View(
+                    "jvmlog-heap-live-data-ratio", "jvmlog",
+                    "GC Log: Heap Live-Data Ratio (Live Set vs Committed Heap)", null,
+                    """
+                    CREATE VIEW "jvmlog-heap-live-data-ratio" AS
+                    WITH snapshots AS (
+                        SELECT gcId,
+                               heapAfter     AS liveBytes,
+                               heapCommittedAfter AS committedBytes,
+                               heapAfter * 1.0 / NULLIF(heapCommittedAfter, 0) AS liveRatio
+                        FROM jvmlog_heap_snapshot
+                        WHERE heapAfter IS NOT NULL AND heapCommittedAfter IS NOT NULL
+                    )
+                    SELECT count(*)                                                    AS "Snapshots",
+                           round(avg(liveBytes   / 1048576.0), 1)                    AS "Avg Live (MB)",
+                           round(max(liveBytes   / 1048576.0), 1)                    AS "Peak Live (MB)",
+                           round(avg(committedBytes / 1048576.0), 1)                 AS "Avg Committed (MB)",
+                           round(max(committedBytes / 1048576.0), 1)                 AS "Peak Committed (MB)",
+                           round(avg(liveRatio) * 100.0, 1)                          AS "Avg Live/Committed %",
+                           round(max(liveRatio) * 100.0, 1)                          AS "Peak Live/Committed %",
+                           CASE
+                             WHEN avg(liveRatio) > 0.85 THEN 'CRITICAL — heap too small, live data >85% of committed'
+                             WHEN avg(liveRatio) > 0.70 THEN 'WARNING — heap under pressure, live data 70-85% of committed'
+                             WHEN avg(liveRatio) > 0.50 THEN 'OK — moderate occupancy (50-70%)'
+                             ELSE 'GOOD — heap has comfortable headroom (<50% occupied)'
+                           END AS "Sizing Status"
+                    FROM snapshots
+                    """,
+                    "jvmlog_heap_snapshot")
+                    .description("Heap live-data ratio — computes what fraction of committed heap is actual live data after GC; >85% means the heap is too small and GC will thrash, <50% means potential over-provisioning; essential for -Xmx tuning decisions."),
             };
 
     public static List<View> getViews() {

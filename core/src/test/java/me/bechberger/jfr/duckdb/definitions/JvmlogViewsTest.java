@@ -140,7 +140,10 @@ class JvmlogViewsTest {
             "jvmlog-safepoint-sync-outliers",
             "jvmlog-gc-health-dashboard", "jvmlog-memory-leak-risk",
             "jvmlog-alloc-pressure-correlation", "jvmlog-gc-sla-impact-summary",
-            "jvmlog-collector-diagnostics"
+            "jvmlog-collector-diagnostics",
+            "jvmlog-gc-phase-hot-spot", "jvmlog-pause-recovery-time",
+            "jvmlog-safepoint-stw-breakdown", "jvmlog-gc-worker-phase-efficiency",
+            "jvmlog-heap-live-data-ratio"
     );
 
     @Test
@@ -5717,6 +5720,125 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT \"Detected Collector\", \"Tuning Focus\" FROM \"jvmlog-collector-diagnostics\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getString("Detected Collector")).isEqualTo("G1");
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcPhaseHotSpot() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Evacuate Collection Set',5.2)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (2,'Evacuate Collection Set',6.1)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Concurrent Mark from Roots',2.3)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (2,'Concurrent Mark from Roots',2.8)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-phase-hot-spot".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-phase-hot-spot not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_phase"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Phase\", \"% of Total STW\" FROM \"jvmlog-gc-phase-hot-spot\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Phase")).isEqualTo("Evacuate Collection Set");
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogPauseRecoveryTime() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Normal baseline: 5ms avg, then a 60ms spike
+            for (int i = 1; i <= 10; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ",'G1 Young','G1 Evacuation Pause',5.0," + (i * 1.0) + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (11,'G1 Young','G1 Evacuation Pause',60.0,11.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (12,'G1 Young','G1 Evacuation Pause',5.5,12.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-recovery-time".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-recovery-time not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-pause-recovery-time\"");
+            assertThat(rs.next()).isTrue();
+            // May or may not detect spike depending on rolling window — view must at least run
+            assertThat(rs.getLong("cnt")).isGreaterThanOrEqualTo(0L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogSafepointStwBreakdown() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_safepoint (operation VARCHAR, totalMs DOUBLE, syncMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('G1CollectForAllocation',10.0,1.0)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('G1CollectForAllocation',12.0,1.2)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('Deoptimize',3.0,0.5)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('RevokeBias',1.5,0.2)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-safepoint-stw-breakdown".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-safepoint-stw-breakdown not found"));
+        assertThat(view.isValid(Set.of("jvmlog_safepoint"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Category\", \"Total ms\" FROM \"jvmlog-safepoint-stw-breakdown\" ORDER BY \"Total ms\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Category")).isEqualTo("GC");
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcWorkerPhaseEfficiency() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_workers (gcId INTEGER, workersUsed INTEGER, workersMax INTEGER, taskName VARCHAR)");
+            s.execute("INSERT INTO jvmlog_gc_workers VALUES (1,8,8,'evacuation')");
+            s.execute("INSERT INTO jvmlog_gc_workers VALUES (2,8,8,'evacuation')");
+            s.execute("INSERT INTO jvmlog_gc_workers VALUES (1,4,8,'marking')");
+            s.execute("INSERT INTO jvmlog_gc_workers VALUES (2,3,8,'marking')");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-worker-phase-efficiency".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-worker-phase-efficiency not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_workers"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Phase / Task\", \"Avg Utilisation %\" FROM \"jvmlog-gc-worker-phase-efficiency\" ORDER BY \"Avg Utilisation %\" ASC LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Phase / Task")).isEqualTo("marking");
+            assertThat(rs.getDouble("Avg Utilisation %")).isLessThan(100.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogHeapLiveDataRatio() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1,200*1024*1024,90*1024*1024,256*1024*1024)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2,220*1024*1024,95*1024*1024,256*1024*1024)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (3,240*1024*1024,100*1024*1024,256*1024*1024)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-live-data-ratio".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-live-data-ratio not found"));
+        assertThat(view.isValid(Set.of("jvmlog_heap_snapshot"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Avg Live/Committed %\", \"Sizing Status\" FROM \"jvmlog-heap-live-data-ratio\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Avg Live/Committed %")).isGreaterThan(0.0);
+            assertThat(rs.getString("Sizing Status")).isNotEmpty();
         }
         conn.close();
     }

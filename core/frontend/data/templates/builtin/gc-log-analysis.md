@@ -4051,3 +4051,79 @@ SELECT * FROM "jvmlog-safepoint-sync-outliers"
 BAR(x="Operation", y="Sync Time (ms)", color="Sync Category")
 ```
 
+---
+
+<!-- @cell name=gc-phase-hot-spot requires="has-gc-phase" -->
+
+## GC Phase Hot-Spot (Which Phase Dominates STW)
+
+Every GC phase ranked by its total share of stop-the-world time — use this as the first view when latency is high; the top phase is the bottleneck, not GC overhead overall; e.g. high evacuation time → tune region size or survivor ratios; high marking time → reduce live set or enable string deduplication.
+
+```sql
+SELECT * FROM "jvmlog-gc-phase-hot-spot"
+```
+
+```plot
+BAR(x="Phase", y="% of Total STW")
+```
+
+---
+
+<!-- @cell name=pause-recovery-time requires="has-jvmlog-gc" -->
+
+## Pause Spike Recovery Time
+
+GC pause spikes (>3σ above rolling baseline) with measured recovery time — how quickly pause times normalise after a spike characterises GC instability; spikes with "No recovery observed" or "Very slow" recovery indicate a structural memory pressure problem rather than a transient event.
+
+```sql
+SELECT * FROM "jvmlog-pause-recovery-time"
+```
+
+```plot
+BAR(x="Spike At (s)", y="Recovery Time (s)", color="Recovery Category")
+```
+
+---
+
+<!-- @cell name=safepoint-stw-breakdown requires="has-safepoint" -->
+
+## Safepoint STW Breakdown — GC vs Non-GC
+
+Total stop-the-world time split between GC and non-GC JVM operations — if non-GC operations account for >10% of STW, investigate deoptimisation, class unloading, or bias revocation as sources of application latency that GC tuning alone cannot fix.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-stw-breakdown"
+```
+
+```plot
+BAR(x="Category", y="% of All STW")
+```
+
+---
+
+<!-- @cell name=gc-worker-phase-efficiency requires="has-gc-workers" -->
+
+## GC Worker Parallelism Efficiency per Phase
+
+Average parallel worker utilisation per GC phase — phases below 80% utilisation are not using all available threads; common causes are insufficient work units (too few small regions) or task imbalance; consider reducing `-XX:ParallelGCThreads` for under-utilised phases to reduce OS scheduling overhead.
+
+```sql
+SELECT * FROM "jvmlog-gc-worker-phase-efficiency"
+```
+
+```plot
+BAR(x="Phase / Task", y="Avg Utilisation %")
+```
+
+---
+
+<!-- @cell name=heap-live-data-ratio requires="has-heap-snapshot" -->
+
+## Heap Live-Data Ratio (Live Set vs Committed Heap)
+
+Average and peak fraction of committed heap occupied by live objects after GC — the most direct heap-sizing metric; >85% is CRITICAL (GC will thrash), 70-85% is WARNING, <50% may be over-provisioned; adjust `-Xmx` so the live set ratio stays between 40-65% for healthy GC behaviour.
+
+```sql
+SELECT * FROM "jvmlog-heap-live-data-ratio"
+```
+
