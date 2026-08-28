@@ -83,6 +83,22 @@ TABLE()
 
 ---
 
+<!-- @cell name=gc-health-score -->
+
+## GC Health Score
+
+Traffic-light GC health assessment: throughput, P99 pause, Full GC count, and primary concern — the GCeasy-style diagnostic overview.
+
+```sql
+SELECT * FROM "jvmlog-gc-health-score"
+```
+
+```plot
+TABLE()
+```
+
+---
+
 <!-- @cell name=pause-summary -->
 
 ## Pause Summary
@@ -111,6 +127,22 @@ SELECT * FROM "jvmlog-gc-pause-by-type"
 
 ```plot
 BAR(x="Type", y="Avg (ms)")
+```
+
+---
+
+<!-- @cell name=gc-type-breakdown -->
+
+## GC Type Breakdown
+
+Events classified into Young GC, Full GC, Concurrent STW, and other categories — shows what fraction of time each category consumes.
+
+```sql
+SELECT * FROM "jvmlog-gc-type-breakdown"
+```
+
+```plot
+BAR(x="GC Category", y="% of Pause Time")
 ```
 
 ---
@@ -246,6 +278,22 @@ SCATTER(x="Uptime (s)", y="Pause (ms)", color="Error Type")
 
 ---
 
+<!-- @cell name=full-gc-analysis -->
+
+## Full GC Events
+
+Full GC and forced-collection events sorted by pause duration — these are the highest-latency events. Frequent Full GC with `Ergonomics` cause indicates the JVM can't recover with minor collections.
+
+```sql
+SELECT * FROM "jvmlog-full-gc-analysis"
+```
+
+```plot
+BAR(x="GC ID", y="Pause (ms)")
+```
+
+---
+
 <!-- @cell name=heap-timeline requires="has-heap-snapshot" -->
 
 ## Heap Before / After
@@ -274,6 +322,22 @@ SELECT * FROM "jvmlog-heap-efficiency"
 
 ```plot
 LINE(x="GC ID", y="Reclaim %")
+```
+
+---
+
+<!-- @cell name=allocation-rate requires="has-combined-timeline" -->
+
+## Allocation Rate
+
+Heap allocation between consecutive GC events — high allocation rate drives frequent GC cycles and can reveal allocation hotspots.
+
+```sql
+SELECT * FROM "jvmlog-allocation-rate"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Allocation Rate (MB/s)")
 ```
 
 ---
@@ -572,6 +636,22 @@ SCATTER(x="GC ID", y="Pause (ms)", color="Type")
 
 ---
 
+<!-- @cell name=g1-humongous requires="has-g1-regions" -->
+
+## G1: Humongous Object Analysis
+
+G1 cycles where humongous regions (objects > 50% of region size) are present — allocation of humongous objects bypasses Eden, triggers concurrent cycles early, and increases fragmentation risk.
+
+```sql
+SELECT * FROM "jvmlog-g1-humongous"
+```
+
+```plot
+BAR(x="GC ID", y="Humongous Before")
+```
+
+---
+
 <!-- @cell name=g1-ergonomics requires="has-g1-ergo" -->
 
 ## G1: Ergonomics Decisions
@@ -713,6 +793,22 @@ SELECT * FROM "jvmlog-parallel-sizing"
 
 ```plot
 LINE(x="GC ID", y="Throughput %")
+```
+
+---
+
+<!-- @cell name=parallel-gc-detail requires="has-parallel" -->
+
+## Parallel: Full Cycle Detail
+
+Per-cycle view combining pause duration, Young and Old generation sizes, and adaptive throughput percentage — the combined view for Parallel/CMS cycle analysis.
+
+```sql
+SELECT * FROM "jvmlog-parallel-gc-detail"
+```
+
+```plot
+SCATTER(x="GC ID", y="Pause (ms)", color="Type")
 ```
 
 ---

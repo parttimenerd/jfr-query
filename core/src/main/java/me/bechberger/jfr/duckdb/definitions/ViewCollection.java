@@ -4167,6 +4167,230 @@ public class ViewCollection {
                             """,
                         "jvmlog_heap_snapshot")
                     .description("Heap growth trend summary — positive growth rate with high R² suggests a memory leak."),
+                new View(
+                        "jvmlog-allocation-rate",
+                        "jvmlog",
+                        "GC Log: Allocation Rate",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-allocation-rate" AS
+                            WITH snapshots AS (
+                                SELECT gcId,
+                                       heapBefore / 1048576.0 AS heapBeforeMB,
+                                       heapAfter / 1048576.0 AS heapAfterMB
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapBefore DESC NULLS LAST) = 1
+                            ),
+                            events AS (
+                                SELECT gcId, uptimeSecs, pauseMs, gcType, cause
+                                FROM jvmlog_gc_event
+                                WHERE uptimeSecs IS NOT NULL
+                            ),
+                            joined AS (
+                                SELECT e.gcId,
+                                       e.uptimeSecs,
+                                       e.pauseMs,
+                                       e.gcType AS "Type",
+                                       e.cause AS "Cause",
+                                       s.heapBeforeMB AS "Heap Before (MB)",
+                                       s.heapAfterMB AS "Heap After (MB)",
+                                       s.heapBeforeMB - LAG(s.heapAfterMB) OVER (ORDER BY e.uptimeSecs) AS allocatedMB,
+                                       e.uptimeSecs - LAG(e.uptimeSecs) OVER (ORDER BY e.uptimeSecs) AS intervalSecs
+                                FROM events e
+                                JOIN snapshots s ON e.gcId = s.gcId
+                            )
+                            SELECT gcId AS "GC ID",
+                                   round(uptimeSecs, 3) AS "Uptime (s)",
+                                   "Type",
+                                   "Cause",
+                                   round("Heap Before (MB)", 2) AS "Heap Before (MB)",
+                                   round("Heap After (MB)", 2) AS "Heap After (MB)",
+                                   round(allocatedMB, 2) AS "Allocated Since Last GC (MB)",
+                                   round(intervalSecs, 3) AS "Interval (s)",
+                                   round(allocatedMB / nullif(intervalSecs, 0), 2) AS "Allocation Rate (MB/s)"
+                            FROM joined
+                            WHERE allocatedMB IS NOT NULL
+                            ORDER BY uptimeSecs
+                            """,
+                        "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Heap allocation rate between GC events — high rates cause frequent GC cycles."),
+                new View(
+                        "jvmlog-gc-type-breakdown",
+                        "jvmlog",
+                        "GC Log: GC Type Breakdown",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-type-breakdown" AS
+                            WITH categorized AS (
+                                SELECT gcId, pauseMs, gcType,
+                                       CASE
+                                           WHEN lower(gcType) LIKE '%full%' THEN 'Full GC'
+                                           WHEN lower(gcType) LIKE '%young%' OR lower(gcType) LIKE '%minor%' THEN 'Young GC'
+                                           WHEN lower(gcType) LIKE '%old%' OR lower(gcType) LIKE '%major%' THEN 'Old GC'
+                                           WHEN lower(gcType) IN ('remark', 'cleanup') THEN 'Concurrent STW'
+                                           WHEN lower(gcType) LIKE '%garbage collection%' OR gcType = 'Garbage Collection' THEN 'Garbage Collection'
+                                           ELSE 'Other'
+                                       END AS category
+                                FROM jvmlog_gc_event
+                                WHERE pauseMs IS NOT NULL
+                            ),
+                            total AS (SELECT count(*) AS n, sum(pauseMs) AS totalMs FROM categorized)
+                            SELECT category AS "GC Category",
+                                   count(*) AS "Count",
+                                   round(count(*) * 100.0 / nullif((SELECT n FROM total), 0), 1) AS "% of Events",
+                                   round(sum(pauseMs), 2) AS "Total Pause (ms)",
+                                   round(sum(pauseMs) * 100.0 / nullif((SELECT totalMs FROM total), 0), 1) AS "% of Pause Time",
+                                   round(avg(pauseMs), 2) AS "Avg Pause (ms)",
+                                   round(max(pauseMs), 2) AS "Max Pause (ms)",
+                                   round(approx_quantile(pauseMs, 0.99), 2) AS "P99 Pause (ms)"
+                            FROM categorized
+                            GROUP BY category
+                            ORDER BY count(*) DESC
+                            """,
+                        "jvmlog_gc_event")
+                    .description("GC events broken down by collection type — Full GC counts and pause share reveal GC health at a glance."),
+                new View(
+                        "jvmlog-full-gc-analysis",
+                        "jvmlog",
+                        "GC Log: Full GC Analysis",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-full-gc-analysis" AS
+                            WITH fullgc AS (
+                                SELECT gcId, uptimeSecs, pauseMs, cause
+                                FROM jvmlog_gc_event
+                                WHERE pauseMs IS NOT NULL
+                                  AND (lower(gcType) LIKE '%full%'
+                                       OR lower(cause) LIKE '%ergonomics%'
+                                       OR cause = 'System.gc()'
+                                       OR cause = 'Heap Dump Initiated GC'
+                                       OR cause = 'Diagnostic Command')
+                            )
+                            SELECT gcId AS "GC ID",
+                                   round(uptimeSecs, 3) AS "Uptime (s)",
+                                   round(pauseMs, 2) AS "Pause (ms)",
+                                   cause AS "Cause"
+                            FROM fullgc
+                            ORDER BY pauseMs DESC
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Full GC and forced-collection events sorted by pause — the highest-latency events in a GC log."),
+                new View(
+                        "jvmlog-g1-humongous",
+                        "jvmlog",
+                        "GC Log: G1 Humongous Object Analysis",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-g1-humongous" AS
+                            WITH deduped AS (
+                                SELECT gcId,
+                                       max(humongousBefore) AS humongousBefore,
+                                       max(humongousAfter) AS humongousAfter
+                                FROM jvmlog_g1_regions
+                                GROUP BY gcId
+                            )
+                            SELECT d.gcId AS "GC ID",
+                                   round(e.uptimeSecs, 3) AS "Uptime (s)",
+                                   e.gcType AS "Type",
+                                   e.cause AS "Cause",
+                                   d.humongousBefore AS "Humongous Before",
+                                   d.humongousAfter AS "Humongous After",
+                                   d.humongousBefore - d.humongousAfter AS "Humongous Freed",
+                                   round(e.pauseMs, 2) AS "Pause (ms)"
+                            FROM deduped d
+                            JOIN jvmlog_gc_event e ON d.gcId = e.gcId
+                            WHERE d.humongousBefore > 0 OR d.humongousAfter > 0
+                            ORDER BY d.gcId
+                            """,
+                        "jvmlog_gc_event", "jvmlog_g1_regions")
+                    .description("G1 humongous object region counts per GC cycle — non-zero humongous-after values may indicate allocation of large objects that bypass the normal Eden path."),
+                new View(
+                        "jvmlog-parallel-gc-detail",
+                        "jvmlog",
+                        "GC Log: Parallel GC Cycle Detail",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-parallel-gc-detail" AS
+                            WITH sizing AS (
+                                SELECT gcId,
+                                       max(youngGenBytes) AS youngGenBytes,
+                                       max(oldGenBytes) AS oldGenBytes,
+                                       max(youngGenCapacity) AS youngGenCapacity,
+                                       max(oldGenCapacity) AS oldGenCapacity,
+                                       max(throughputPercent) AS throughputPercent
+                                FROM jvmlog_parallel_sizing
+                                GROUP BY gcId
+                            )
+                            SELECT e.gcId AS "GC ID",
+                                   round(e.uptimeSecs, 3) AS "Uptime (s)",
+                                   e.gcType AS "Type",
+                                   e.cause AS "Cause",
+                                   round(e.pauseMs, 2) AS "Pause (ms)",
+                                   round(s.youngGenBytes / 1048576.0, 2) AS "Young Gen (MB)",
+                                   round(s.youngGenCapacity / 1048576.0, 2) AS "Young Capacity (MB)",
+                                   round(s.oldGenBytes / 1048576.0, 2) AS "Old Gen (MB)",
+                                   round(s.oldGenCapacity / 1048576.0, 2) AS "Old Capacity (MB)",
+                                   round(s.throughputPercent, 2) AS "Throughput %"
+                            FROM jvmlog_gc_event e
+                            JOIN sizing s ON e.gcId = s.gcId
+                            WHERE e.pauseMs IS NOT NULL
+                            ORDER BY e.gcId
+                            """,
+                        "jvmlog_gc_event", "jvmlog_parallel_sizing")
+                    .description("Parallel/CMS GC per-cycle detail combining event pauses with generation sizing data."),
+                new View(
+                        "jvmlog-gc-health-score",
+                        "jvmlog",
+                        "GC Log: GC Health Score",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-health-score" AS
+                            WITH stats AS (
+                                SELECT max(uptimeSecs) - min(uptimeSecs) AS totalUptimeSecs,
+                                       sum(pauseMs) / 1000.0 AS gcTimeSecs,
+                                       count(*) AS gcEventCount,
+                                       approx_quantile(pauseMs, 0.99) AS p99PauseMs,
+                                       max(pauseMs) AS maxPauseMs,
+                                       count(*) FILTER (WHERE lower(gcType) LIKE '%full%'
+                                                           OR cause = 'System.gc()'
+                                                           OR cause = 'Ergonomics') AS fullGcCount
+                                FROM jvmlog_gc_event
+                                WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                            ),
+                            derived AS (
+                                SELECT totalUptimeSecs,
+                                       gcTimeSecs,
+                                       gcEventCount,
+                                       p99PauseMs,
+                                       maxPauseMs,
+                                       fullGcCount,
+                                       round((1.0 - gcTimeSecs / nullif(totalUptimeSecs, 0)) * 100.0, 2) AS throughputPct,
+                                       round(gcEventCount * 1.0 / nullif(totalUptimeSecs, 0), 3) AS gcFreqHz
+                                FROM stats
+                            )
+                            SELECT round(throughputPct, 2) AS "Throughput %",
+                                   round(p99PauseMs, 2) AS "P99 Pause (ms)",
+                                   round(maxPauseMs, 2) AS "Max Pause (ms)",
+                                   gcEventCount AS "GC Events",
+                                   fullGcCount AS "Full GC Count",
+                                   round(gcFreqHz, 3) AS "GC Frequency (Hz)",
+                                   round(totalUptimeSecs, 1) AS "Uptime (s)",
+                                   CASE
+                                       WHEN throughputPct >= 99.0 AND p99PauseMs < 100 AND fullGcCount = 0 THEN 'Good'
+                                       WHEN throughputPct >= 95.0 AND p99PauseMs < 500 AND fullGcCount <= 2 THEN 'Warning'
+                                       ELSE 'Critical'
+                                   END AS "Health",
+                                   CASE
+                                       WHEN throughputPct < 95.0 THEN 'Low throughput — GC consuming > 5% of JVM time'
+                                       WHEN fullGcCount > 2 THEN 'Multiple Full GC events detected'
+                                       WHEN p99PauseMs >= 500 THEN 'P99 pause exceeds 500ms — check for Full GC or allocation spikes'
+                                       WHEN p99PauseMs >= 100 THEN 'P99 pause exceeds 100ms latency target'
+                                       ELSE 'No major GC issues detected'
+                                   END AS "Primary Concern"
+                            FROM derived
+                            """,
+                        "jvmlog_gc_event")
+                    .description("GC health score — composite diagnostic inspired by GCeasy. Throughput, P99, Full GC count, and a traffic-light rating with primary concern."),
             };
 
     public static List<View> getViews() {
