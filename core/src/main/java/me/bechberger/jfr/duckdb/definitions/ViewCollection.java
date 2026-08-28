@@ -9705,6 +9705,147 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("Per-GC type timeline with cumulative counts — as heap pressure builds, the cumulative Full GC line rises steeply; use to see the inflection point where the GC strategy shifted."),
+
+            // ── Batch 16 ──────────────────────────────────────────────────────────────
+
+            // GC event density by 10-second time window — JVM Mon-style heatmap source data
+            new View(
+                    "jvmlog-gc-event-density", "jvmlog",
+                    "GC Log: GC Event Density per 10-second Window", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-event-density" AS
+                        SELECT floor(uptimeSecs / 10) * 10                     AS "Window Start (s)",
+                               count(*)                                        AS "GC Count",
+                               sum(CASE WHEN gcType = 'Full' THEN 1 ELSE 0 END) AS "Full GC Count",
+                               round(sum(pauseMs), 2)                         AS "Total Pause (ms)",
+                               round(avg(pauseMs), 2)                         AS "Avg Pause (ms)",
+                               round(max(pauseMs), 2)                         AS "Max Pause (ms)",
+                               round(sum(pauseMs) / (10.0 * 1000) * 100, 2)  AS "GC Overhead % (window)"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 10) * 10
+                        ORDER BY "Window Start (s)"
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC event density in 10-second windows — JVM Mon-style time-series source; windows with GC overhead > 10% or multiple Full GCs are hot spots requiring immediate investigation."),
+
+            // Shenandoah uncommitted memory trend — how much memory Shenandoah is returning to OS over time
+            new View(
+                    "jvmlog-shenandoah-uncommit-trend", "jvmlog",
+                    "GC Log: Shenandoah Memory Uncommit Trend", null,
+                    """
+                        CREATE VIEW "jvmlog-shenandoah-uncommit-trend" AS
+                        SELECT gcId                                             AS "GC ID",
+                               round(freeBytes / 1048576.0, 1)                AS "Free (MB)",
+                               round(headroomBytes / 1048576.0, 1)            AS "Headroom (MB)",
+                               round(uncommittedBytes / 1048576.0, 1)         AS "Uncommitted (MB)",
+                               round(uncommittedBytes - LAG(uncommittedBytes, 1, uncommittedBytes) OVER (ORDER BY gcId), 0) / 1048576.0 AS "Delta Uncommitted (MB)"
+                        FROM jvmlog_shenandoah_free
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_shenandoah_free")
+                    .description("Shenandoah uncommit trend — positive delta uncommitted means Shenandoah is actively returning pages to the OS; if uncommitted stays at 0 across all cycles, the heap is under constant pressure and memory is never released."),
+
+            // ZGC MMU (Minimum Mutator Utilization) approximation — % of each 200ms slice that was NOT in GC
+            new View(
+                    "jvmlog-zgc-mmu-approximation", "jvmlog",
+                    "GC Log: ZGC Minimum Mutator Utilisation (Approximation)", null,
+                    """
+                        CREATE VIEW "jvmlog-zgc-mmu-approximation" AS
+                        WITH phase_windows AS (
+                            SELECT gcId,
+                                   sum(durationMs) AS totalPhaseDurationMs
+                            FROM jvmlog_gc_phase
+                            GROUP BY gcId
+                        ),
+                        gc_with_phase AS (
+                            SELECT e.gcId,
+                                   round(e.uptimeSecs, 1) AS uptimeSecs,
+                                   e.pauseMs,
+                                   p.totalPhaseDurationMs
+                            FROM jvmlog_gc_event e
+                            JOIN phase_windows p USING (gcId)
+                            WHERE e.uptimeSecs IS NOT NULL
+                        )
+                        SELECT gcId                                             AS "GC ID",
+                               uptimeSecs                                      AS "Uptime (s)",
+                               round(pauseMs, 2)                               AS "STW Pause (ms)",
+                               round(totalPhaseDurationMs, 2)                 AS "Concurrent Phase Total (ms)",
+                               round(greatest(0.0, 200.0 - coalesce(pauseMs, 0)) / 200.0 * 100, 1) AS "Approx MMU % (200ms window)"
+                        FROM gc_with_phase
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_gc_phase", "jvmlog_gc_event")
+                    .addAlternative(
+                        """
+                        SELECT gcId                                             AS "GC ID",
+                               round(uptimeSecs, 1)                           AS "Uptime (s)",
+                               round(pauseMs, 2)                               AS "STW Pause (ms)",
+                               round(greatest(0.0, 200.0 - coalesce(pauseMs, 0)) / 200.0 * 100, 1) AS "Approx MMU % (200ms window)"
+                        FROM jvmlog_gc_event
+                        WHERE uptimeSecs IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                        "jvmlog_gc_event")
+                    .description("ZGC MMU approximation — minimum mutator utilisation over a 200ms window; values below 95% mean the application was stalled for more than 10ms in a 200ms slice, violating typical low-latency SLOs."),
+
+            // Metaspace growth acceleration — second derivative of metaspace usage (change in growth rate)
+            new View(
+                    "jvmlog-metaspace-growth-acceleration", "jvmlog",
+                    "GC Log: Metaspace Growth Acceleration", null,
+                    """
+                        CREATE VIEW "jvmlog-metaspace-growth-acceleration" AS
+                        WITH base AS (
+                            SELECT gcId,
+                                   metaspaceAfter,
+                                   metaspaceCommitted,
+                                   metaspaceAfter - LAG(metaspaceAfter, 1) OVER (ORDER BY gcId) AS delta
+                            FROM jvmlog_metaspace
+                            WHERE metaspaceAfter IS NOT NULL
+                        )
+                        SELECT gcId                                             AS "GC ID",
+                               round(metaspaceAfter / 1048576.0, 2)           AS "Metaspace After (MB)",
+                               round(metaspaceCommitted / 1048576.0, 2)       AS "Committed (MB)",
+                               round(delta / 1024.0, 2)                       AS "Delta KB/cycle",
+                               round((delta - LAG(delta, 1) OVER (ORDER BY gcId)) / 1024.0, 2) AS "Accel KB/cycle²"
+                        FROM base
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_metaspace")
+                    .description("Metaspace growth acceleration — positive acceleration (KB/cycle²) means class loading is speeding up; sustained positive acceleration with rising committed size indicates a classloader leak."),
+
+            // Safepoint GC vs non-GC time breakdown — how much of total STW time is due to GC vs other operations
+            new View(
+                    "jvmlog-safepoint-gc-vs-nongc-stw", "jvmlog",
+                    "GC Log: Safepoint STW Time — GC vs Non-GC Breakdown", null,
+                    """
+                        CREATE VIEW "jvmlog-safepoint-gc-vs-nongc-stw" AS
+                        WITH sp AS (
+                            SELECT operation,
+                                   sum(totalMs) AS totalMs,
+                                   count(*) AS events,
+                                   CASE WHEN lower(operation) LIKE '%gc%'
+                                             OR lower(operation) LIKE '%cleanup%'
+                                             OR lower(operation) LIKE '%collect%'
+                                        THEN 'GC-related'
+                                        ELSE 'Non-GC'
+                                   END AS category
+                            FROM jvmlog_safepoint
+                            WHERE totalMs IS NOT NULL
+                            GROUP BY operation
+                        )
+                        SELECT category                                         AS "Category",
+                               count(DISTINCT operation)                       AS "Distinct Operations",
+                               sum(events)                                     AS "Total Events",
+                               round(sum(totalMs), 2)                         AS "Total STW (ms)",
+                               round(sum(totalMs) * 100.0 / sum(sum(totalMs)) OVER (), 1) AS "% of All STW",
+                               round(avg(totalMs / events), 2)                AS "Avg per Event (ms)"
+                        FROM sp
+                        GROUP BY category
+                        ORDER BY "Total STW (ms)" DESC
+                        """,
+                    "jvmlog_safepoint")
+                    .description("Safepoint STW breakdown — shows what fraction of total stop-the-world time is caused by GC versus other JVM operations (deoptimisation, class loading, biased lock revocation); high non-GC STW often points to deopt storms."),
             };
 
     public static List<View> getViews() {

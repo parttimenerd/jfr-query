@@ -3670,3 +3670,83 @@ SELECT * FROM "jvmlog-gc-type-timeline"
 LINE(x="Uptime (s)", y="Cumulative Count", color="GC Type")
 ```
 
+---
+
+<!-- @cell name=gc-event-density requires="has-jvmlog-gc" -->
+
+## GC Event Density per 10-Second Window
+
+GC events and overhead per 10-second time window — JVM Mon-style density view; windows with GC overhead above 10% or multiple Full GCs are hot spots indicating the application was under severe memory pressure during that interval.
+
+```sql
+SELECT * FROM "jvmlog-gc-event-density"
+```
+
+```plot
+BAR(x="Window Start (s)", y="GC Overhead % (window)")
+```
+
+---
+
+<!-- @cell name=shenandoah-uncommit-trend requires="has-shenandoah" -->
+
+## Shenandoah Memory Uncommit Trend
+
+How much memory Shenandoah is returning to the OS per cycle — positive "Delta Uncommitted" means the GC is successfully releasing pages; if this column is always zero, the heap is under constant pressure and the JVM is holding onto all committed memory.
+
+```sql
+SELECT * FROM "jvmlog-shenandoah-uncommit-trend"
+```
+
+```plot
+LINE(x="GC ID", y="Uncommitted (MB)")
+```
+
+---
+
+<!-- @cell name=zgc-mmu-approximation requires="has-jvmlog-gc" -->
+
+## ZGC Minimum Mutator Utilisation (Approximation)
+
+Approximate MMU over a 200ms window — values below 95% mean the application was paused for more than 10ms in a 200ms slice, violating typical low-latency SLOs. ZGC targets 99%+ MMU; consistently lower values indicate the heap is too small or allocation rate too high.
+
+```sql
+SELECT * FROM "jvmlog-zgc-mmu-approximation"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Approx MMU % (200ms window)")
+```
+
+---
+
+<!-- @cell name=metaspace-growth-acceleration requires="has-metaspace" -->
+
+## Metaspace Growth Acceleration
+
+Second derivative of metaspace usage — "Delta KB/cycle" shows growth per cycle; "Accel KB/cycle²" is the change in growth rate. Sustained positive acceleration with rising committed size indicates a classloader leak; immediately check for frameworks creating new classloaders per request.
+
+```sql
+SELECT * FROM "jvmlog-metaspace-growth-acceleration"
+```
+
+```plot
+LINE(x="GC ID", y="Delta KB/cycle")
+```
+
+---
+
+<!-- @cell name=safepoint-gc-vs-nongc-stw requires="has-safepoint" -->
+
+## Safepoint STW — GC vs Non-GC Breakdown
+
+What fraction of total stop-the-world time is caused by GC versus other JVM operations (deoptimisation, class loading, biased lock revocation) — if non-GC STW is > 20% of total, investigate deoptimisation storms with `-XX:+PrintCompilation` or async-profiler's wall-clock mode.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-gc-vs-nongc-stw"
+```
+
+```plot
+BAR(x="Category", y="Total STW (ms)")
+```
+
