@@ -4419,3 +4419,75 @@ What data types and detail levels are present in this GC log — MINIMAL logs (o
 SELECT * FROM "jvmlog-gc-log-completeness"
 ```
 
+---
+
+<!-- @cell name=throughput-window-analysis requires="has-jvmlog-gc" -->
+
+## Application Throughput by 30s Window
+
+Percentage of each 30-second window spent outside GC pauses — CRITICAL windows (>20% in GC) directly correlate with user-visible latency spikes; scan for consecutive DEGRADED windows as they indicate a sustained throughput regression rather than a transient burst.
+
+```sql
+SELECT * FROM "jvmlog-throughput-window-analysis"
+```
+
+```plot
+LINE(x="Window Start (s)", y="Throughput %", color="Throughput Status")
+```
+
+---
+
+<!-- @cell name=gc-cause-timing-stats requires="has-jvmlog-gc" -->
+
+## GC Cause × Latency Statistics
+
+Full percentile breakdown (median/P95/P99/Max) for every GC trigger cause — PROBLEMATIC causes (P99 > 500ms) are the primary tuning targets; causes with high Max but low Median have occasional outliers worth investigating; causes with uniformly high P50 indicate structural issues rather than transient spikes.
+
+```sql
+SELECT * FROM "jvmlog-gc-cause-timing-stats"
+```
+
+```plot
+BAR(x="Cause", y="P99 (ms)", color="Latency Assessment")
+```
+
+---
+
+<!-- @cell name=heap-before-gc-distribution requires="has-heap-snapshot" -->
+
+## Heap Fill Distribution at GC Trigger
+
+Heap fill % when each GC type fires — HIGH trigger zone (>80%) means Eden is large and GC runs late, leading to unpredictable pauses; LOW trigger zone (<40%) means GC runs too eagerly; the optimal Young GC trigger zone for most workloads is 60-75%.
+
+```sql
+SELECT * FROM "jvmlog-heap-before-gc-distribution"
+```
+
+---
+
+<!-- @cell name=pause-by-time-of-day requires="has-jvmlog-gc" -->
+
+## GC Pause Summary by Type
+
+Aggregate GC pause statistics per type with P99 and total STW — use when the timeline views show no obvious temporal patterns; identifies which GC type (young/full/mixed) contributes the most total latency and worst tail latency.
+
+```sql
+SELECT * FROM "jvmlog-pause-by-time-of-day"
+```
+
+```plot
+BAR(x="GC Type", y="Total Pause (s)")
+```
+
+---
+
+<!-- @cell name=gc-memory-pressure-index requires="has-jvmlog-gc" -->
+
+## GC Memory Pressure Composite Index
+
+Single composite score (0-100) combining avg pause, GC overhead%, full GC count, and avg heap fill% — CRITICAL (>=75) requires immediate attention; designed for dashboards and alerts where a single number is needed; compare this score before/after configuration changes to validate improvements.
+
+```sql
+SELECT * FROM "jvmlog-gc-memory-pressure-index"
+```
+

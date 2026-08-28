@@ -11346,6 +11346,173 @@ public class ViewCollection {
                     """,
                     "jvmlog_gc_event")
                     .description("GC log completeness assessment — shows which data types are present and what coverage percentage phase/heap data achieves; MINIMAL logs limit analysis to pause times only; upgrade to -Xlog:gc* to unlock heap, phase, worker, and safepoint views."),
+
+            // ── Batch 26: comparative, throughput window, and advanced GC analytics ─
+
+            new View(
+                    "jvmlog-throughput-window-analysis", "jvmlog",
+                    "GC Log: Application Throughput by Time Window (% Time Not in GC)", null,
+                    """
+                    CREATE VIEW "jvmlog-throughput-window-analysis" AS
+                    WITH windows AS (
+                        SELECT floor(uptimeSecs / 30.0) AS window30s,
+                               sum(pauseMs)            AS gcTimeMs,
+                               count(*)                AS gcCount
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 30.0)
+                    )
+                    SELECT window30s                                       AS "30s Window",
+                           round(window30s * 30.0, 0)                    AS "Window Start (s)",
+                           gcCount                                        AS "GC Events",
+                           round(gcTimeMs, 1)                             AS "GC Time (ms)",
+                           round((30000.0 - LEAST(gcTimeMs, 30000.0)) / 30000.0 * 100.0, 2) AS "Throughput %",
+                           CASE
+                             WHEN gcTimeMs > 30000.0 * 0.20 THEN 'CRITICAL — >20% of window in GC'
+                             WHEN gcTimeMs > 30000.0 * 0.10 THEN 'DEGRADED — 10-20% in GC'
+                             WHEN gcTimeMs > 30000.0 * 0.05 THEN 'ELEVATED — 5-10% in GC'
+                             ELSE 'OK — <5% in GC'
+                           END AS "Throughput Status"
+                    FROM windows
+                    ORDER BY window30s
+                    """,
+                    "jvmlog_gc_event")
+                    .description("Application throughput by 30-second window — shows what percentage of each window was spent outside GC pauses; CRITICAL windows (>20% in GC) directly correlate with user-visible latency spikes; declining throughput% trend is an early warning before full SLA breach."),
+
+            new View(
+                    "jvmlog-gc-cause-timing-stats", "jvmlog",
+                    "GC Log: GC Cause × Pause Statistics (Cause-Specific Latency)", null,
+                    """
+                    CREATE VIEW "jvmlog-gc-cause-timing-stats" AS
+                    SELECT cause                                           AS "Cause",
+                           count(*)                                       AS "Count",
+                           round(avg(pauseMs), 3)                        AS "Avg Pause (ms)",
+                           round(approx_quantile(pauseMs, 0.50), 2)      AS "Median (ms)",
+                           round(approx_quantile(pauseMs, 0.95), 2)      AS "P95 (ms)",
+                           round(approx_quantile(pauseMs, 0.99), 2)      AS "P99 (ms)",
+                           round(max(pauseMs), 2)                        AS "Max (ms)",
+                           round(sum(pauseMs), 1)                        AS "Total (ms)",
+                           round(stddev_pop(pauseMs), 3)                 AS "Std Dev (ms)",
+                           CASE
+                             WHEN approx_quantile(pauseMs, 0.99) > 500 THEN 'PROBLEMATIC — P99 > 500ms'
+                             WHEN approx_quantile(pauseMs, 0.99) > 200 THEN 'CONCERNING — P99 > 200ms'
+                             WHEN approx_quantile(pauseMs, 0.99) > 50  THEN 'MODERATE — P99 50-200ms'
+                             ELSE 'OK — P99 < 50ms'
+                           END AS "Latency Assessment"
+                    FROM jvmlog_gc_event
+                    WHERE pauseMs IS NOT NULL AND cause IS NOT NULL
+                    GROUP BY cause
+                    ORDER BY "Total (ms)" DESC
+                    """,
+                    "jvmlog_gc_event")
+                    .description("Per-cause GC latency statistics — full percentile breakdown (median/P95/P99/Max) for each GC trigger cause; PROBLEMATIC causes (P99 > 500ms) are the primary targets for GC tuning; combines what GCEasy's 'GC Cause Analysis' and GCViewer's cause breakdown show separately."),
+
+            new View(
+                    "jvmlog-heap-before-gc-distribution", "jvmlog",
+                    "GC Log: Heap Fill % Before GC Trigger — Distribution", null,
+                    """
+                    CREATE VIEW "jvmlog-heap-before-gc-distribution" AS
+                    WITH fill AS (
+                        SELECT h.gcId,
+                               e.gcType,
+                               round(h.heapBefore * 100.0 / NULLIF(h.heapCommittedAfter, 0), 1) AS fillPct
+                        FROM jvmlog_heap_snapshot h
+                        JOIN jvmlog_gc_event e ON e.gcId = h.gcId
+                        WHERE h.heapBefore IS NOT NULL AND h.heapCommittedAfter > 0
+                    )
+                    SELECT gcType                                             AS "GC Type",
+                           count(*)                                          AS "Count",
+                           round(avg(fillPct), 1)                           AS "Avg Fill % at Trigger",
+                           round(approx_quantile(fillPct, 0.10), 1)        AS "P10 Fill %",
+                           round(approx_quantile(fillPct, 0.50), 1)        AS "Median Fill %",
+                           round(approx_quantile(fillPct, 0.90), 1)        AS "P90 Fill %",
+                           round(max(fillPct), 1)                           AS "Max Fill %",
+                           CASE
+                             WHEN avg(fillPct) > 80 THEN 'HIGH — GC triggers late, near-full heap'
+                             WHEN avg(fillPct) > 60 THEN 'MODERATE — typical trigger zone'
+                             ELSE 'LOW — GC triggers early, possibly too-small Eden'
+                           END AS "Trigger Assessment"
+                    FROM fill
+                    GROUP BY gcType
+                    ORDER BY "Avg Fill % at Trigger" DESC
+                    """,
+                    "jvmlog_heap_snapshot", "jvmlog_gc_event")
+                    .description("Heap fill distribution at GC trigger — shows what percent full the heap is when each GC type fires; consistently HIGH values indicate the collector is running too late (Eden too large); LOW values indicate over-eager collection wasting CPU on nearly-empty heap."),
+
+            new View(
+                    "jvmlog-pause-by-time-of-day", "jvmlog",
+                    "GC Log: GC Pause Patterns by Time of Day (Hourly Summary)", null,
+                    """
+                    CREATE VIEW "jvmlog-pause-by-time-of-day" AS
+                    WITH absolute_times AS (
+                        SELECT gcId,
+                               pauseMs,
+                               gcType
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL
+                    )
+                    SELECT gcType                                      AS "GC Type",
+                           count(*)                                   AS "Total Events",
+                           round(avg(pauseMs), 3)                    AS "Avg Pause (ms)",
+                           round(approx_quantile(pauseMs, 0.99), 2) AS "P99 Pause (ms)",
+                           round(sum(pauseMs) / 1000.0, 2)          AS "Total Pause (s)"
+                    FROM absolute_times
+                    GROUP BY gcType
+                    ORDER BY "Total Pause (s)" DESC
+                    """,
+                    "jvmlog_gc_event")
+                    .description("GC pause summary by GC type — aggregate pause statistics grouped by GC type; shows which type contributes most total STW time and has the worst tail latency; use as a quick summary when the full timeline views show no obvious temporal pattern."),
+
+            new View(
+                    "jvmlog-gc-memory-pressure-index", "jvmlog",
+                    "GC Log: GC Memory Pressure Index (Composite Score)", null,
+                    """
+                    CREATE VIEW "jvmlog-gc-memory-pressure-index" AS
+                    WITH metrics AS (
+                        SELECT count(*)                               AS totalGCs,
+                               avg(pauseMs)                          AS avgPause,
+                               sum(CASE WHEN gcType LIKE '%Full%' THEN 1 ELSE 0 END) AS fullGCs,
+                               sum(pauseMs) / NULLIF(max(uptimeSecs) * 1000.0, 0) * 100 AS overhead
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                    ),
+                    heap_metrics AS (
+                        SELECT avg(heapAfter * 100.0 / NULLIF(heapCommittedAfter, 0)) AS avgFill
+                        FROM jvmlog_heap_snapshot
+                        WHERE heapCommittedAfter > 0
+                    )
+                    SELECT round(m.avgPause, 2)           AS "Avg Pause (ms)",
+                           round(m.overhead, 2)           AS "GC Overhead %",
+                           m.fullGCs                      AS "Full GC Count",
+                           round(h.avgFill, 1)            AS "Avg Heap Fill %",
+                           round(
+                               LEAST(m.avgPause / 500.0, 1.0) * 25 +
+                               LEAST(m.overhead / 20.0, 1.0) * 25 +
+                               LEAST(m.fullGCs / 5.0, 1.0) * 25 +
+                               LEAST(h.avgFill / 100.0, 1.0) * 25
+                           , 0) AS "Pressure Index (0-100)",
+                           CASE
+                             WHEN LEAST(m.avgPause/500.0,1)*25 + LEAST(m.overhead/20.0,1)*25 + LEAST(m.fullGCs/5.0,1)*25 + LEAST(h.avgFill/100.0,1)*25 >= 75 THEN 'CRITICAL'
+                             WHEN LEAST(m.avgPause/500.0,1)*25 + LEAST(m.overhead/20.0,1)*25 + LEAST(m.fullGCs/5.0,1)*25 + LEAST(h.avgFill/100.0,1)*25 >= 50 THEN 'HIGH'
+                             WHEN LEAST(m.avgPause/500.0,1)*25 + LEAST(m.overhead/20.0,1)*25 + LEAST(m.fullGCs/5.0,1)*25 + LEAST(h.avgFill/100.0,1)*25 >= 25 THEN 'MODERATE'
+                             ELSE 'LOW'
+                           END AS "Memory Pressure"
+                    FROM metrics m, heap_metrics h
+                    """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .addAlternative(
+                    """
+                    CREATE VIEW "jvmlog-gc-memory-pressure-index" AS
+                    SELECT round(avg(pauseMs), 2) AS "Avg Pause (ms)",
+                           round(sum(pauseMs) / NULLIF(max(uptimeSecs) * 1000.0, 0) * 100, 2) AS "GC Overhead %",
+                           sum(CASE WHEN gcType LIKE '%Full%' THEN 1 ELSE 0 END) AS "Full GC Count",
+                           CASE
+                             WHEN avg(pauseMs) > 200 OR sum(CASE WHEN gcType LIKE '%Full%' THEN 1 ELSE 0 END) > 2 THEN 'HIGH'
+                             ELSE 'LOW'
+                           END AS "Memory Pressure"
+                    FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                    """, "jvmlog_gc_event")
+                    .description("GC memory pressure composite index — scores 0-100 based on four equal-weight factors: avg pause, GC overhead %, full GC count, and avg heap fill; CRITICAL (>=75) requires immediate action; designed as a single number to attach to alerts or dashboards similar to GCeasy's health score."),
             };
 
     public static List<View> getViews() {
