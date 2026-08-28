@@ -107,7 +107,10 @@ class JvmlogViewsTest {
             "jvmlog-safepoint-operation-mix",
             "jvmlog-heap-usage-histogram", "jvmlog-young-gen-gc-rate",
             "jvmlog-alloc-stall-distribution", "jvmlog-gc-wall-vs-concurrent",
-            "jvmlog-full-gc-interval"
+            "jvmlog-full-gc-interval",
+            "jvmlog-gc-start-of-trouble", "jvmlog-safepoint-gc-split",
+            "jvmlog-metaspace-oom-proximity", "jvmlog-gc-cause-first-last",
+            "jvmlog-zgc-allocation-rate-trend"
     );
 
     @Test
@@ -4436,6 +4439,118 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS intervals FROM \"jvmlog-full-gc-interval\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("intervals")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcStartOfTrouble() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',20.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',22.0,25.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Full','Ergonomics',500.0,100.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-start-of-trouble".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-start-of-trouble not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS causes FROM \"jvmlog-gc-start-of-trouble\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("causes")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogSafepointGcSplit() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_safepoint (gcId INTEGER, operation VARCHAR, totalMs DOUBLE, syncMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (1,'G1CollectForAllocation',15.0,2.5)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (2,'G1CollectForAllocation',12.0,1.8)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (3,'RevokeBias',5.0,0.3)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (4,'Deoptimize',8.0,1.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-safepoint-gc-split".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-safepoint-gc-split not found"));
+        assertThat(view.isValid(Set.of("jvmlog_safepoint"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS cats FROM \"jvmlog-safepoint-gc-split\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cats")).isGreaterThanOrEqualTo(1L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogMetaspaceOomProximity() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_metaspace (gcId INTEGER, metaspaceBefore LONG, metaspaceAfter LONG, metaspaceCommitted LONG)");
+            s.execute("INSERT INTO jvmlog_metaspace VALUES (1,104857600,105000000,134217728)");
+            s.execute("INSERT INTO jvmlog_metaspace VALUES (2,105000000,106000000,134217728)");
+            s.execute("INSERT INTO jvmlog_metaspace VALUES (3,106000000,107000000,134217728)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-metaspace-oom-proximity".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-metaspace-oom-proximity not found"));
+        assertThat(view.isValid(Set.of("jvmlog_metaspace"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Status\" FROM \"jvmlog-metaspace-oom-proximity\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Status")).isNotBlank();
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcCauseFirstLast() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',20.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',25.0,50.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Full','Ergonomics',500.0,100.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-cause-first-last".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-cause-first-last not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS causes FROM \"jvmlog-gc-cause-first-last\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("causes")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogZgcAllocationRateTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_load (gcId INTEGER, load1s DOUBLE, load5s DOUBLE, load15s DOUBLE, allocRateMbps DOUBLE, allocStalls INTEGER)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (1,1.2,1.1,1.0,45.5,0)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (2,1.5,1.2,1.1,220.0,2)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (3,2.0,1.5,1.2,580.0,5)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-allocation-rate-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-allocation-rate-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_load"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows, count(DISTINCT \"Pressure\") AS levels FROM \"jvmlog-zgc-allocation-rate-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(3L);
+            assertThat(rs.getLong("levels")).isEqualTo(3L);
         }
         conn.close();
     }

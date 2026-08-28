@@ -8948,6 +8948,120 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("Time between consecutive Full GC events — a decreasing interval means Full GC is happening more and more frequently, which is a precursor to OutOfMemoryError; use this to set a baseline and alert when interval drops below your threshold."),
+
+                    // Batch 10
+                    new View(
+                    "jvmlog-gc-start-of-trouble", "jvmlog",
+                    "GC Log: First Occurrence of Each GC Cause", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-start-of-trouble" AS
+                        SELECT cause                                                AS "Cause",
+                               min(uptimeSecs)                                     AS "First Seen (s)",
+                               round(min(uptimeSecs) / 60.0, 2)                   AS "First Seen (min)",
+                               count(*)                                            AS "Total Events",
+                               round(max(pauseMs), 2)                             AS "Worst Pause (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE cause IS NOT NULL
+                        GROUP BY cause
+                        ORDER BY "First Seen (s)"
+                        """,
+                    "jvmlog_gc_event")
+                    .description("First GC event per cause with total event count and worst pause — the 'First Seen' column shows when each GC cause first appeared in the log; a cause that first appears late in the run indicates a state transition (e.g., heap growth, class loading spike)."),
+
+                    new View(
+                    "jvmlog-safepoint-gc-split", "jvmlog",
+                    "GC Log: Safepoint STW Time — GC vs Non-GC Operations", null,
+                    """
+                        CREATE VIEW "jvmlog-safepoint-gc-split" AS
+                        SELECT CASE WHEN lower(operation) LIKE '%collect%'
+                                      OR lower(operation) LIKE '%gc%'
+                                      OR lower(operation) LIKE '%evacuation%'
+                                      OR lower(operation) LIKE '%concurrent%mark%'
+                                    THEN 'GC-triggered'
+                                    ELSE 'Non-GC' END                              AS "Category",
+                               count(*)                                            AS "Count",
+                               round(sum(totalMs), 1)                             AS "Total STW (ms)",
+                               round(avg(totalMs), 2)                             AS "Avg STW (ms)",
+                               round(max(totalMs), 2)                             AS "Max STW (ms)"
+                        FROM jvmlog_safepoint
+                        WHERE operation IS NOT NULL
+                        GROUP BY 1
+                        ORDER BY "Total STW (ms)" DESC
+                        """,
+                    "jvmlog_safepoint")
+                    .description("STW time attributed to GC-triggered vs non-GC safepoints — high Non-GC STW time means class unloading, deoptimization, or JIT-related operations are competing with GC for stop-the-world time."),
+
+                    new View(
+                    "jvmlog-metaspace-oom-proximity", "jvmlog",
+                    "GC Log: Metaspace OOM Proximity (% of committed vs limit)", null,
+                    """
+                        CREATE VIEW "jvmlog-metaspace-oom-proximity" AS
+                        WITH latest AS (
+                            SELECT gcId,
+                                   metaspaceAfter,
+                                   metaspaceCommitted,
+                                   ROW_NUMBER() OVER (ORDER BY gcId DESC) AS rn
+                            FROM jvmlog_metaspace
+                            WHERE metaspaceAfter IS NOT NULL
+                        ),
+                        trend AS (
+                            SELECT avg(metaspaceAfter) FILTER (WHERE rn <= 5)   AS recentAvg,
+                                   avg(metaspaceAfter) FILTER (WHERE rn > 5)    AS earlierAvg,
+                                   max(metaspaceCommitted)                       AS maxCommitted,
+                                   max(metaspaceAfter)                           AS peakUsed
+                            FROM latest
+                        )
+                        SELECT round(peakUsed / 1048576.0, 1)                          AS "Peak Used (MB)",
+                               round(maxCommitted / 1048576.0, 1)                      AS "Max Committed (MB)",
+                               round(peakUsed * 100.0 / nullif(maxCommitted, 0), 1)    AS "Peak Used % of Committed",
+                               round(recentAvg / 1048576.0, 1)                         AS "Recent Avg (MB)",
+                               round((recentAvg - earlierAvg) / 1048576.0, 2)          AS "Growth Trend (MB)",
+                               CASE WHEN peakUsed * 100.0 / nullif(maxCommitted, 0) > 90 THEN 'Critical'
+                                    WHEN peakUsed * 100.0 / nullif(maxCommitted, 0) > 75 THEN 'Warning'
+                                    ELSE 'OK' END                                       AS "Status"
+                        FROM trend
+                        """,
+                    "jvmlog_metaspace")
+                    .description("Metaspace usage proximity to committed limit — Critical (>90%) means the next class loading spike may trigger Metaspace OOM; growth trend > 0 means ongoing class loading is consuming metaspace."),
+
+                    new View(
+                    "jvmlog-gc-cause-first-last", "jvmlog",
+                    "GC Log: GC Cause Timeline — First, Last, Count per Cause", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-cause-first-last" AS
+                        SELECT cause                                                AS "Cause",
+                               count(*)                                            AS "Count",
+                               round(min(uptimeSecs), 1)                          AS "First (s)",
+                               round(max(uptimeSecs), 1)                          AS "Last (s)",
+                               round(max(uptimeSecs) - min(uptimeSecs), 1)        AS "Active Window (s)",
+                               round(avg(pauseMs), 2)                             AS "Avg Pause (ms)",
+                               round(max(pauseMs), 2)                             AS "Max Pause (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE cause IS NOT NULL AND pauseMs IS NOT NULL
+                        GROUP BY cause
+                        ORDER BY "Count" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Per-cause GC summary with temporal extent — 'Active Window' shows how long a cause was actively triggering GC; causes with short windows and high counts indicate burst patterns."),
+
+                    new View(
+                    "jvmlog-zgc-allocation-rate-trend", "jvmlog",
+                    "GC Log: ZGC Allocation Rate Trend Over Time", null,
+                    """
+                        CREATE VIEW "jvmlog-zgc-allocation-rate-trend" AS
+                        SELECT gcId                                                    AS "GC ID",
+                               round(allocRateMbps, 2)                                AS "Alloc Rate (MB/s)",
+                               round(load1s, 2)                                       AS "Load 1s",
+                               allocStalls                                            AS "Alloc Stalls",
+                               CASE WHEN allocRateMbps > 500 THEN 'Critical'
+                                    WHEN allocRateMbps > 200 THEN 'High'
+                                    WHEN allocRateMbps > 50  THEN 'Moderate'
+                                    ELSE 'Low' END                                    AS "Pressure"
+                        FROM jvmlog_zgc_load
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_zgc_load")
+                    .description("ZGC allocation rate per cycle with system load — Critical (>500 MB/s) allocation rate means ZGC cannot collect fast enough; correlate with alloc stall count to confirm backpressure."),
             };
 
     public static List<View> getViews() {

@@ -3222,3 +3222,76 @@ SELECT * FROM "jvmlog-full-gc-interval"
 LINE(x="Uptime (s)", y="Since Last Full GC (s)")
 ```
 
+
+---
+
+<!-- @cell name=gc-start-of-trouble requires="has-jvmlog-gc" -->
+
+## GC Cause First Occurrence Timeline
+
+When each GC cause first appeared in the log — causes that appear late in the run indicate state transitions (heap growth, class loading spikes, load pattern changes); worst pause per cause identifies the most impactful triggers.
+
+```sql
+SELECT * FROM "jvmlog-gc-start-of-trouble"
+```
+
+---
+
+<!-- @cell name=safepoint-gc-split requires="has-safepoint" -->
+
+## Safepoint Time: GC-Triggered vs Non-GC
+
+STW time attributed to GC operations vs non-GC safepoints (deoptimization, class unloading, etc.) — high Non-GC STW indicates JIT deoptimization or class loading storms competing with GC for stop-the-world time.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-gc-split"
+```
+
+```plot
+BAR(x="Category", y="Total STW (ms)")
+```
+
+---
+
+<!-- @cell name=metaspace-oom-proximity requires="has-metaspace" -->
+
+## Metaspace OOM Proximity
+
+Metaspace usage as a percentage of committed space with status classification — Critical (>90%) means the next class loading spike may trigger a Metaspace OutOfMemoryError; growth trend > 0 means ongoing class loading is consuming the space.
+
+```sql
+SELECT * FROM "jvmlog-metaspace-oom-proximity"
+```
+
+---
+
+<!-- @cell name=gc-cause-first-last requires="has-jvmlog-gc" -->
+
+## GC Cause Timeline — Activity Window per Cause
+
+Per-cause GC summary with temporal extent — 'Active Window' shows how long a cause was triggering GC; causes with a short window and many events are burst patterns that may respond to tuning or rate-limiting.
+
+```sql
+SELECT * FROM "jvmlog-gc-cause-first-last"
+```
+
+```plot
+BAR(x="Cause", y="Count")
+```
+
+---
+
+<!-- @cell name=zgc-allocation-rate-trend requires="has-zgc-load" -->
+
+## ZGC Allocation Rate Trend
+
+ZGC allocation rate per cycle with pressure classification — Critical (>500 MB/s) means the allocator is faster than the collector; rising allocStalls confirms the application is blocked waiting for the collector to keep up.
+
+```sql
+SELECT * FROM "jvmlog-zgc-allocation-rate-trend"
+```
+
+```plot
+LINE(x="GC ID", y="Alloc Rate (MB/s)")
+```
+
