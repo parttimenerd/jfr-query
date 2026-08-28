@@ -122,7 +122,10 @@ class JvmlogViewsTest {
             "jvmlog-g1-eden-fill-rate",
             "jvmlog-gc-bottleneck-summary", "jvmlog-pause-p99-rolling",
             "jvmlog-alloc-stall-gc-phase", "jvmlog-zgc-capacity-trend",
-            "jvmlog-gc-pause-sla-by-cause"
+            "jvmlog-gc-pause-sla-by-cause",
+            "jvmlog-heap-footprint-report", "jvmlog-pause-distribution-histogram",
+            "jvmlog-alloc-stall-thread-hotspots", "jvmlog-pause-consistency-by-type",
+            "jvmlog-gc-type-timeline"
     );
 
     @Test
@@ -5011,6 +5014,116 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS causes FROM \"jvmlog-gc-pause-sla-by-cause\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("causes")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogHeapFootprintReport() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1, 524288000, 262144000, 1073741824, 1073741824)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2, 400000000, 200000000, 1073741824, 1073741824)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (3, 600000000, 300000000, 1073741824, 1073741824)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-footprint-report".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-footprint-report not found"));
+        assertThat(view.isValid(Set.of("jvmlog_heap_snapshot"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Min After-GC Heap (MB)\", \"Max After-GC Heap (MB)\" FROM \"jvmlog-heap-footprint-report\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Min After-GC Heap (MB)")).isLessThan(rs.getDouble("Max After-GC Heap (MB)"));
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogPauseDistributionHistogram() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',5.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',30.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Full','Ergonomics',750.0,30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-distribution-histogram".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-distribution-histogram not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS buckets FROM \"jvmlog-pause-distribution-histogram\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("buckets")).isEqualTo(3L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogAllocStallThreadHotspots() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_alloc_stall (gcId INTEGER, threadName VARCHAR, stallMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES (1,'worker-1',120.0)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES (2,'worker-1',80.0)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES (3,'worker-2',200.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-alloc-stall-thread-hotspots".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-alloc-stall-thread-hotspots not found"));
+        assertThat(view.isValid(Set.of("jvmlog_alloc_stall"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS threads FROM \"jvmlog-alloc-stall-thread-hotspots\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("threads")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogPauseConsistencyByType() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',50.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',60.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Full','Ergonomics',800.0,30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-consistency-by-type".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-consistency-by-type not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS types FROM \"jvmlog-pause-consistency-by-type\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("types")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcTypeTimeline() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',50.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',60.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Full','Ergonomics',800.0,30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-type-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-type-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-gc-type-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(3L);
         }
         conn.close();
     }

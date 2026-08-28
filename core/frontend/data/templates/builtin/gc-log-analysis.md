@@ -3594,3 +3594,79 @@ SELECT * FROM "jvmlog-gc-pause-sla-by-cause"
 BAR(x="Cause", y="200ms SLA %")
 ```
 
+---
+
+<!-- @cell name=heap-footprint-report requires="has-heap-snapshot" -->
+
+## Heap Footprint Report
+
+GCViewer-style heap footprint summary — min, max, and average heap before and after collection, committed range, and average bytes reclaimed per GC cycle. High "Max Before" relative to "Max After" indicates healthy reclaim; a small gap indicates a growing live data set.
+
+```sql
+SELECT * FROM "jvmlog-heap-footprint-report"
+```
+
+---
+
+<!-- @cell name=pause-distribution-histogram requires="has-jvmlog-gc" -->
+
+## Pause Duration Distribution Histogram
+
+GC pauses bucketed by latency band — a healthy application has the vast majority of events in the 0–50ms buckets with zero entries in 500ms+. Any entries in the 200–500ms or 500ms+ buckets breach typical cloud SLOs.
+
+```sql
+SELECT * FROM "jvmlog-pause-distribution-histogram"
+```
+
+```plot
+BAR(x="Pause Bucket", y="Count")
+```
+
+---
+
+<!-- @cell name=alloc-stall-thread-hotspots requires="has-alloc-stall" -->
+
+## Allocation Stall Hotspot Threads
+
+Application threads ranked by total allocation stall time — these are the threads being most harmed by GC backpressure; profile their allocation sites with `-XX:+UnlockDiagnosticVMOptions -XX:+PrintCompilation` or async-profiler to find the hot allocators.
+
+```sql
+SELECT * FROM "jvmlog-alloc-stall-thread-hotspots"
+```
+
+```plot
+BAR(x="Thread", y="Total Stall (ms)")
+```
+
+---
+
+<!-- @cell name=pause-consistency-by-type requires="has-jvmlog-gc" -->
+
+## GC Pause Consistency by Type
+
+Coefficient of variation (CV%) per GC type — low CV% (< 30%) means predictable pauses that are easy to SLA-bound; high CV% means highly variable pauses with outliers; P25/P75/P99 columns show the spread.
+
+```sql
+SELECT * FROM "jvmlog-pause-consistency-by-type"
+```
+
+```plot
+BAR(x="GC Type", y="CV %")
+```
+
+---
+
+<!-- @cell name=gc-type-timeline requires="has-jvmlog-gc" -->
+
+## GC Type Mix Timeline
+
+Per-GC type timeline with cumulative counts — use the "Cumulative Count" column to see when the Full GC line starts to rise steeply, which marks the inflection point where heap pressure exceeded the collector's capacity.
+
+```sql
+SELECT * FROM "jvmlog-gc-type-timeline"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Cumulative Count", color="GC Type")
+```
+

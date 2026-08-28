@@ -9588,6 +9588,123 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("Pause SLA compliance per trigger cause — causes with the lowest '200ms SLA %' are the ones most likely to breach your latency budget; these are the highest-priority targets for GC tuning."),
+
+            // ── Batch 15 ──────────────────────────────────────────────────────────────
+
+            // GCViewer-style: heap footprint report — min/max/avg heap after GC, committed range
+            new View(
+                    "jvmlog-heap-footprint-report", "jvmlog",
+                    "GC Log: Heap Footprint Report (GCViewer-style)", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-footprint-report" AS
+                        SELECT round(min(heapAfter)  / 1048576.0, 1)            AS "Min After-GC Heap (MB)",
+                               round(max(heapAfter)  / 1048576.0, 1)            AS "Max After-GC Heap (MB)",
+                               round(avg(heapAfter)  / 1048576.0, 1)            AS "Avg After-GC Heap (MB)",
+                               round(min(heapBefore) / 1048576.0, 1)            AS "Min Before-GC Heap (MB)",
+                               round(max(heapBefore) / 1048576.0, 1)            AS "Max Before-GC Heap (MB)",
+                               round(avg(heapBefore) / 1048576.0, 1)            AS "Avg Before-GC Heap (MB)",
+                               round(min(heapCommittedAfter) / 1048576.0, 1)    AS "Min Committed (MB)",
+                               round(max(heapCommittedAfter) / 1048576.0, 1)    AS "Max Committed (MB)",
+                               round(avg(heapBefore - heapAfter) / 1048576.0, 1) AS "Avg Reclaimed per GC (MB)"
+                        FROM jvmlog_heap_snapshot
+                        WHERE heapAfter IS NOT NULL AND heapBefore IS NOT NULL
+                        """,
+                    "jvmlog_heap_snapshot")
+                    .description("GCViewer-style heap footprint summary — min/max/avg heap before and after collection, committed range, and average reclaimed per cycle."),
+
+            // Pause distribution histogram — bucket pause times into 0-10ms, 10-50ms, 50-100ms, 100-200ms, 200-500ms, 500ms+
+            new View(
+                    "jvmlog-pause-distribution-histogram", "jvmlog",
+                    "GC Log: Pause Duration Distribution Histogram", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-distribution-histogram" AS
+                        SELECT bucket                                            AS "Pause Bucket",
+                               count(*)                                         AS "Count",
+                               round(count(*) * 100.0 / sum(count(*)) OVER (), 1) AS "% of Total",
+                               round(avg(pauseMs), 2)                          AS "Avg in Bucket (ms)",
+                               round(max(pauseMs), 2)                          AS "Max in Bucket (ms)"
+                        FROM (
+                            SELECT pauseMs,
+                                   CASE WHEN pauseMs <  10  THEN '1: 0–10 ms'
+                                        WHEN pauseMs <  50  THEN '2: 10–50 ms'
+                                        WHEN pauseMs <  100 THEN '3: 50–100 ms'
+                                        WHEN pauseMs <  200 THEN '4: 100–200 ms'
+                                        WHEN pauseMs <  500 THEN '5: 200–500 ms'
+                                        ELSE                     '6: 500+ ms'
+                                   END AS bucket
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                        ) t
+                        GROUP BY bucket
+                        ORDER BY bucket
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Pause duration distribution as a histogram — shows how many GCs land in each latency band; the 500ms+ bucket should be empty for well-tuned applications."),
+
+            // Allocation stall thread hotspots — which application threads are stalling most
+            new View(
+                    "jvmlog-alloc-stall-thread-hotspots", "jvmlog",
+                    "GC Log: Allocation Stall Hotspot Threads", null,
+                    """
+                        CREATE VIEW "jvmlog-alloc-stall-thread-hotspots" AS
+                        SELECT threadName                                        AS "Thread",
+                               count(*)                                         AS "Stall Events",
+                               round(sum(stallMs), 2)                          AS "Total Stall (ms)",
+                               round(avg(stallMs), 2)                          AS "Avg Stall (ms)",
+                               round(max(stallMs), 2)                          AS "Max Stall (ms)",
+                               round(sum(stallMs) * 100.0 /
+                                     sum(sum(stallMs)) OVER (), 1)             AS "% of All Stalls"
+                        FROM jvmlog_alloc_stall
+                        WHERE stallMs IS NOT NULL
+                        GROUP BY threadName
+                        ORDER BY "Total Stall (ms)" DESC
+                        """,
+                    "jvmlog_alloc_stall")
+                    .description("Application threads ranked by total allocation stall time — the top threads are the most impacted by GC backpressure; they are prime candidates for allocation profiling."),
+
+            // GC pause coefficient of variation by GC type — consistency metric
+            new View(
+                    "jvmlog-pause-consistency-by-type", "jvmlog",
+                    "GC Log: GC Pause Consistency (Coefficient of Variation) by Type", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-consistency-by-type" AS
+                        SELECT gcType                                            AS "GC Type",
+                               count(*)                                         AS "Events",
+                               round(avg(pauseMs), 2)                          AS "Avg Pause (ms)",
+                               round(stddev_pop(pauseMs), 2)                   AS "StdDev (ms)",
+                               round(stddev_pop(pauseMs) / nullif(avg(pauseMs), 0) * 100, 1) AS "CV %",
+                               round(approx_quantile(pauseMs, 0.25), 2)        AS "P25 (ms)",
+                               round(approx_quantile(pauseMs, 0.75), 2)        AS "P75 (ms)",
+                               round(approx_quantile(pauseMs, 0.99), 2)        AS "P99 (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND gcType IS NOT NULL
+                        GROUP BY gcType
+                        ORDER BY "CV %" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Pause consistency per GC type — coefficient of variation (CV%) measures predictability; high CV% means highly variable pauses that are hard to SLA-bound; low CV% means consistent, predictable pauses."),
+
+            // GC type mix over time — shows how Young/Mixed/Full ratio shifts as heap pressure rises
+            new View(
+                    "jvmlog-gc-type-timeline", "jvmlog",
+                    "GC Log: GC Type Mix Timeline", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-type-timeline" AS
+                        SELECT gcId                                              AS "GC ID",
+                               round(uptimeSecs, 1)                            AS "Uptime (s)",
+                               gcType                                          AS "GC Type",
+                               round(pauseMs, 2)                               AS "Pause (ms)",
+                               count(gcType) OVER (
+                                   PARTITION BY gcType
+                                   ORDER BY gcId
+                                   ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                               )                                               AS "Cumulative Count"
+                        FROM jvmlog_gc_event
+                        WHERE gcType IS NOT NULL AND uptimeSecs IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Per-GC type timeline with cumulative counts — as heap pressure builds, the cumulative Full GC line rises steeply; use to see the inflection point where the GC strategy shifted."),
             };
 
     public static List<View> getViews() {
