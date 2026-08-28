@@ -6913,6 +6913,188 @@ public class ViewCollection {
                             WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
                             """,
                         "jvmlog_gc_event"),
+
+            // -----------------------------------------------------------------------
+            // Pause vs heap fill correlation analysis
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-pause-heap-correlation", "jvmlog",
+                    "GC Log: Pause Duration vs Heap Fill Correlation", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-heap-correlation" AS
+                        WITH base AS (
+                            SELECT gcType,
+                                   100.0 * heapBefore / NULLIF(heapMax, 0) AS heapFillPct,
+                                   pauseMs
+                            FROM jvmlog_gc_event
+                            WHERE heapBefore IS NOT NULL AND heapMax IS NOT NULL
+                              AND pauseMs IS NOT NULL AND gcType IS NOT NULL
+                        )
+                        SELECT gcType                                              AS "GC Type",
+                               count(*)                                            AS "Events",
+                               round(corr(pauseMs, heapFillPct), 4)               AS "Correlation (r)",
+                               round(regr_slope(pauseMs, heapFillPct), 4)         AS "Slope (ms/%)",
+                               round(regr_r2(pauseMs, heapFillPct), 4)            AS "R²",
+                               CASE
+                                 WHEN abs(corr(pauseMs, heapFillPct)) > 0.7
+                                 THEN 'Strong correlation — heap fill drives pause duration'
+                                 WHEN abs(corr(pauseMs, heapFillPct)) > 0.4
+                                 THEN 'Moderate correlation'
+                                 ELSE 'Weak / no correlation'
+                               END                                                AS "Interpretation"
+                        FROM base
+                        GROUP BY gcType
+                        ORDER BY abs(corr(pauseMs, heapFillPct)) DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Correlation between heap fill % at GC trigger and pause duration per GC type — strong correlation means heap pressure directly drives longer pauses."),
+
+            // -----------------------------------------------------------------------
+            // Throughput overhead per GC type
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-overhead-by-type", "jvmlog",
+                    "GC Log: Pause Overhead Contribution per GC Type", null,
+                    """
+                        CREATE VIEW "jvmlog-overhead-by-type" AS
+                        WITH totals AS (
+                            SELECT gcType,
+                                   sum(pauseMs)  AS typePause,
+                                   count(*)      AS typeCount
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL AND gcType IS NOT NULL
+                            GROUP BY gcType
+                        ),
+                        wall AS (
+                            SELECT max(uptimeSecs) - min(uptimeSecs) AS wallSecs
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL
+                        )
+                        SELECT t.gcType                                             AS "GC Type",
+                               t.typeCount                                          AS "Count",
+                               round(t.typePause, 1)                               AS "Total Pause (ms)",
+                               round(100.0 * t.typePause / sum(t.typePause) OVER (), 1)
+                                                                                   AS "% of All Pause",
+                               round(100.0 * t.typePause / NULLIF(w.wallSecs * 1000.0, 0), 2)
+                                                                                   AS "Overhead %",
+                               round(t.typePause / NULLIF(t.typeCount, 0), 2)     AS "Avg Pause (ms)"
+                        FROM totals t, wall w
+                        ORDER BY t.typePause DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Pause overhead contribution per GC type: which types consume the most wall-clock time? Full GC typically accounts for a disproportionate share relative to its count."),
+
+            // -----------------------------------------------------------------------
+            // G1 mixed GC promotion tracking (Old region delta per cycle)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-g1-old-gen-tracking", "jvmlog",
+                    "GC Log: G1 Old Generation Size Tracking", null,
+                    """
+                        CREATE VIEW "jvmlog-g1-old-gen-tracking" AS
+                        WITH old_regions AS (
+                            SELECT r.gcId,
+                                   e.gcType,
+                                   r.oldBefore,
+                                   r.oldAfter,
+                                   r.oldAfter - LAG(r.oldAfter) OVER (ORDER BY r.gcId) AS deltaOld
+                            FROM jvmlog_g1_regions r
+                            JOIN jvmlog_gc_event   e USING (gcId)
+                            WHERE r.oldBefore IS NOT NULL OR r.oldAfter IS NOT NULL
+                        )
+                        SELECT gcType                                              AS "GC Type",
+                               count(*)                                            AS "Cycles",
+                               round(avg(oldBefore), 1)                           AS "Avg Old Before (regions)",
+                               round(avg(oldAfter), 1)                            AS "Avg Old After (regions)",
+                               round(avg(oldAfter - oldBefore), 2)                AS "Avg Old Region Change",
+                               round(max(oldAfter), 0)                            AS "Max Old (regions)",
+                               round(avg(deltaOld), 2)                            AS "Avg Δ vs Previous GC"
+                        FROM old_regions
+                        GROUP BY gcType
+                        ORDER BY "Avg Δ vs Previous GC" DESC
+                        """,
+                    "jvmlog_g1_regions", "jvmlog_gc_event")
+                    .description("G1 Old generation region count tracking per GC type — mixed GCs should reduce Old region count; if average delta is positive, the Old gen is growing despite GC.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-g1-old-gen-tracking" AS
+                            WITH old_regions AS (
+                                SELECT gcId,
+                                       oldBefore,
+                                       oldAfter,
+                                       oldAfter - LAG(oldAfter) OVER (ORDER BY gcId) AS deltaOld
+                                FROM jvmlog_g1_regions
+                                WHERE oldBefore IS NOT NULL OR oldAfter IS NOT NULL
+                            )
+                            SELECT count(*)                                            AS "Cycles",
+                                   round(avg(oldBefore), 1)                           AS "Avg Old Before (regions)",
+                                   round(avg(oldAfter), 1)                            AS "Avg Old After (regions)",
+                                   round(avg(oldAfter - oldBefore), 2)                AS "Avg Old Region Change",
+                                   round(max(oldAfter), 0)                            AS "Max Old (regions)",
+                                   round(avg(deltaOld), 2)                            AS "Avg Δ vs Previous GC"
+                            FROM old_regions
+                            """,
+                        "jvmlog_g1_regions"),
+
+            // -----------------------------------------------------------------------
+            // Phase timing heatmap (phase × GC type average duration)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-phase-by-gc-type", "jvmlog",
+                    "GC Log: Phase Duration by GC Type", null,
+                    """
+                        CREATE VIEW "jvmlog-phase-by-gc-type" AS
+                        SELECT e.gcType                                            AS "GC Type",
+                               p.phaseName                                         AS "Phase",
+                               count(*)                                            AS "Occurrences",
+                               round(avg(p.durationMs), 2)                        AS "Avg (ms)",
+                               round(max(p.durationMs), 2)                        AS "Max (ms)",
+                               round(approx_quantile(p.durationMs, 0.95), 2)      AS "p95 (ms)",
+                               round(sum(p.durationMs), 1)                        AS "Total (ms)"
+                        FROM jvmlog_gc_phase p
+                        JOIN jvmlog_gc_event  e USING (gcId)
+                        WHERE p.durationMs IS NOT NULL AND e.gcType IS NOT NULL
+                        GROUP BY e.gcType, p.phaseName
+                        ORDER BY e.gcType, "Total (ms)" DESC
+                        """,
+                    "jvmlog_gc_phase", "jvmlog_gc_event")
+                    .description("Phase duration aggregated by GC type — shows which phases dominate within each collection type and highlights cross-type differences in phase timing."),
+
+            // -----------------------------------------------------------------------
+            // ZGC minor vs major cycle comparison (generational ZGC)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-zgc-minor-vs-major", "jvmlog",
+                    "GC Log: ZGC Minor vs Major Cycle Comparison", null,
+                    """
+                        CREATE VIEW "jvmlog-zgc-minor-vs-major" AS
+                        WITH cycle_summary AS (
+                            SELECT gcId,
+                                   generation,
+                                   CASE
+                                     WHEN generation IN ('Young', 'young')         THEN 'Minor (Young)'
+                                     WHEN generation IN ('Old', 'old', 'N/A', null) THEN 'Major (Old/Full)'
+                                     ELSE generation
+                                   END AS cycleType,
+                                   sum(durationMs)  AS totalDurationMs,
+                                   sum(CASE WHEN NOT concurrent THEN durationMs ELSE 0 END) AS totalPauseMs
+                            FROM jvmlog_zgc_phases
+                            WHERE durationMs IS NOT NULL
+                            GROUP BY gcId, generation
+                        )
+                        SELECT cycleType                                           AS "Cycle Type",
+                               count(*)                                            AS "Cycles",
+                               round(sum(totalDurationMs), 1)                     AS "Total Duration (ms)",
+                               round(avg(totalDurationMs), 1)                     AS "Avg Duration (ms)",
+                               round(max(totalDurationMs), 1)                     AS "Max Duration (ms)",
+                               round(sum(totalPauseMs), 1)                        AS "Total Pause (ms)",
+                               round(avg(totalPauseMs), 2)                        AS "Avg Pause (ms)"
+                        FROM cycle_summary
+                        GROUP BY cycleType
+                        ORDER BY cycleType
+                        """,
+                    "jvmlog_zgc_phases")
+                    .description("ZGC generational minor vs major cycle comparison — minor cycles (Young gen) should be fast; high minor/major frequency ratio or growing major duration indicates old gen pressure."),
             };
 
     public static List<View> getViews() {

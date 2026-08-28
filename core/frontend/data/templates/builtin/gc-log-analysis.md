@@ -1988,3 +1988,88 @@ SELECT * FROM "jvmlog-gc-cpu-estimate"
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=pause-heap-correlation -->
+
+## Pause Duration vs Heap Fill Correlation
+
+Pearson correlation and regression between heap fill % at GC trigger and pause duration per GC type — strong correlation means heap pressure directly drives longer pauses.
+
+```sql
+SELECT * FROM "jvmlog-pause-heap-correlation"
+ORDER BY "Correlation (r)" DESC
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=overhead-by-type -->
+
+## Pause Overhead Contribution per GC Type
+
+Which GC types account for the most total pause time? Full GC typically dominates despite being rare; this view separates each type's share of total overhead.
+
+```sql
+SELECT * FROM "jvmlog-overhead-by-type"
+ORDER BY "Total Pause (ms)" DESC
+```
+
+```plot
+BAR(x="GC Type", y="% of All Pause", color="GC Type")
+```
+
+---
+
+<!-- @cell name=g1-old-gen-tracking requires="has-g1-regions" -->
+
+## G1 Old Generation Region Tracking
+
+Old region count before/after per GC type — mixed GCs should reduce Old region count; positive average delta means the Old gen is growing despite GC effort.
+
+```sql
+SELECT * FROM "jvmlog-g1-old-gen-tracking"
+ORDER BY "Avg Δ vs Previous GC" DESC
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=phase-by-gc-type requires="has-phases" -->
+
+## Phase Duration by GC Type
+
+Average, max, and p95 phase durations broken down by GC type — highlights which phases dominate within each collection type and cross-type timing differences.
+
+```sql
+SELECT * FROM "jvmlog-phase-by-gc-type"
+ORDER BY "GC Type", "Total (ms)" DESC
+LIMIT 40
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=zgc-minor-vs-major requires="has-zgc-phases" -->
+
+## ZGC Minor vs Major Cycle Comparison
+
+Young (minor) vs Old/Full (major) ZGC cycle counts and timing — high major frequency or growing major duration indicates old generation pressure in generational ZGC.
+
+```sql
+SELECT * FROM "jvmlog-zgc-minor-vs-major"
+```
+
+```plot
+BAR(x="Cycle Type", y="Avg Duration (ms)", color="Cycle Type")
+```

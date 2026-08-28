@@ -73,7 +73,10 @@ class JvmlogViewsTest {
             "jvmlog-heap-headroom-timeline", "jvmlog-concurrent-mode-failure",
             "jvmlog-metaspace-pressure",
             "jvmlog-pause-histogram-by-type", "jvmlog-alloc-reclaim-balance",
-            "jvmlog-cause-categories", "jvmlog-gc-cpu-estimate"
+            "jvmlog-cause-categories", "jvmlog-gc-cpu-estimate",
+            "jvmlog-pause-heap-correlation", "jvmlog-overhead-by-type",
+            "jvmlog-g1-old-gen-tracking", "jvmlog-phase-by-gc-type",
+            "jvmlog-zgc-minor-vs-major"
     );
 
     @Test
@@ -2928,6 +2931,133 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("GC Events")).isEqualTo(10);
             assertThat(rs.getDouble("STW Overhead %")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void pauseHeapCorrelationViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            long maxHeap = 512L * 1048576;
+            for (int i = 0; i < 10; i++) {
+                long before = (100L + i * 30) * 1048576;
+                double pause = 5.0 + i * 2.0; // pause increases with heap fill
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', " +
+                        before + ", " + (before / 2) + ", " + maxHeap + ", " + pause + ", " + (i * 4.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-heap-correlation".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-heap-correlation not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC Type\", \"Correlation (r)\" FROM \"jvmlog-pause-heap-correlation\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Correlation (r)")).isGreaterThan(0.5);
+        }
+        conn.close();
+    }
+
+    @Test
+    void overheadByTypeViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 8; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 10.0, " + (i * 10.0) + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (10, 'Full', 'System.gc()', 0, 0, 0, 400.0, 100.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-overhead-by-type".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-overhead-by-type not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC Type\", \"% of All Pause\" FROM \"jvmlog-overhead-by-type\" ORDER BY \"Total Pause (ms)\" DESC");
+            assertThat(rs.next()).isTrue();
+            // Full GC has 400ms vs Young 80ms total — Full dominates
+            assertThat(rs.getString("GC Type")).isEqualTo("Full");
+        }
+        conn.close();
+    }
+
+    @Test
+    void g1OldGenTrackingViewFallbackWithRegionsOnly() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, survivorMax INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER, edenBefore INTEGER, edenAfter INTEGER, edenMax INTEGER, regionSizeBytes BIGINT)");
+            // Old regions reducing in mixed GC
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_g1_regions VALUES (" + i + ", 2, 2, 4, " + (100 - i * 5) + ", " + (95 - i * 5) + ", 0, 0, 50, 30, 60, 1048576)");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-old-gen-tracking".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-old-gen-tracking not found"));
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_g1_regions"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Cycles\", \"Avg Old After (regions)\" FROM \"jvmlog-g1-old-gen-tracking\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Cycles")).isEqualTo(5);
+        }
+        conn.close();
+    }
+
+    @Test
+    void phaseByGcTypeViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 5.0, " + (i * 5.0) + ")");
+                s.execute("INSERT INTO jvmlog_gc_phase VALUES (" + i + ", 'Evacuate Collection Set', " + (8.0 + i) + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (10, 'Full', 'System.gc()', 0, 0, 0, 300.0, 100.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (10, 'Mark', 120.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-phase-by-gc-type".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-phase-by-gc-type not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_phase", "jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(DISTINCT \"GC Type\") AS types FROM \"jvmlog-phase-by-gc-type\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("types")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void zgcMinorVsMajorViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_phases (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE, concurrent BOOLEAN, generation VARCHAR)");
+            // Minor cycles
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_zgc_phases VALUES (" + i + ", 'Concurrent Mark', " + (20.0 + i) + ", true, 'Young')");
+                s.execute("INSERT INTO jvmlog_zgc_phases VALUES (" + i + ", 'Pause Mark Start', 0.5, false, 'Young')");
+            }
+            // Major cycles
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (10, 'Concurrent Mark', 80.0, true, 'Old')");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (10, 'Pause Mark Start', 1.2, false, 'Old')");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-minor-vs-major".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-minor-vs-major not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_phases"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS types FROM \"jvmlog-zgc-minor-vs-major\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("types")).isEqualTo(2);
         }
         conn.close();
     }
