@@ -80,7 +80,9 @@ class JvmlogViewsTest {
             "jvmlog-pause-spike-frequency", "jvmlog-app-vs-gc-time",
             "jvmlog-metaspace-expansions", "jvmlog-gc-pressure-index",
             "jvmlog-long-concurrent-phases", "jvmlog-eden-fill-at-trigger",
-            "jvmlog-trend-summary", "jvmlog-safepoint-ttr-outliers"
+            "jvmlog-trend-summary", "jvmlog-safepoint-ttr-outliers",
+            "jvmlog-survivor-occupancy-timeline", "jvmlog-stringdedup-rate-timeline",
+            "jvmlog-full-gc-recovery", "jvmlog-dominant-cause-timeline"
     );
 
     @Test
@@ -3271,6 +3273,106 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getInt("GC ID")).isEqualTo(99);
             assertThat(rs.getDouble("Z-Score")).isGreaterThan(2.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void survivorOccupancyTimelineFallbackWithRegionsOnly() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, survivorMax INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER, edenBefore INTEGER, edenAfter INTEGER, edenMax INTEGER, regionSizeBytes BIGINT)");
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_g1_regions VALUES (" + i + ", 3, 4, 8, 50, 45, 0, 0, 55, 5, 60, 1048576)");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-survivor-occupancy-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-survivor-occupancy-timeline not found"));
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_g1_regions"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-survivor-occupancy-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(5);
+        }
+        conn.close();
+    }
+
+    @Test
+    void stringdedupRateTimelineFallbackWithDedupOnly() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_stringdedup (gcId INTEGER, savedBytes BIGINT, objectCount BIGINT, deduplicatedObjects BIGINT, durationMs DOUBLE)");
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_stringdedup VALUES (" + i + ", " + (i * 1048576L) + ", " + (i * 100L) + ", " + (i * 50L) + ", " + (1.0 + i * 0.2) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-stringdedup-rate-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-stringdedup-rate-timeline not found"));
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_stringdedup"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-stringdedup-rate-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void fullGcRecoveryViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Full GCs
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (5, 'Full', 'System.gc()', " +
+                    (480L * 1048576) + ", " + (200L * 1048576) + ", " + (512L * 1048576) + ", 350.0, 120.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (12, 'Full', 'Allocation Failure', " +
+                    (510L * 1048576) + ", " + (180L * 1048576) + ", " + (512L * 1048576) + ", 420.0, 240.0)");
+            // Young (should not appear)
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, 10.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-full-gc-recovery".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-full-gc-recovery not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS fullGcs FROM \"jvmlog-full-gc-recovery\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("fullGcs")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void dominantCauseTimelineViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Window 0: G1 Evacuation Pause dominates
+            for (int i = 0; i < 8; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, " + (i * 20.0) + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (9, 'Full', 'System.gc()', 0, 0, 0, 300.0, 200.0)");
+            // Window 1: Allocation Failure dominates
+            for (int i = 0; i < 10; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + (i + 10) + ", 'Young', 'Allocation Failure', 0, 0, 0, 20.0, " + (300.0 + i * 5.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-dominant-cause-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-dominant-cause-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS windows FROM \"jvmlog-dominant-cause-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("windows")).isGreaterThan(0);
         }
         conn.close();
     }

@@ -2205,3 +2205,69 @@ ORDER BY "Z-Score" DESC
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=survivor-occupancy-timeline requires="has-g1-regions" -->
+
+## G1 Survivor Region Occupancy Timeline
+
+Survivor region fill % per GC event — consistently high survivor fill indicates objects surviving too many collections and being promoted to the Old gen prematurely.
+
+```sql
+SELECT * FROM "jvmlog-survivor-occupancy-timeline"
+LIMIT 200
+```
+
+```plot
+LINE(x="Uptime (s)", y="Survivor Fill %")
+```
+
+---
+
+<!-- @cell name=stringdedup-rate-timeline requires="has-stringdedup" -->
+
+## String Dedup Savings Rate Timeline
+
+String deduplication savings per 1-minute window — declining savings rate over time may indicate reduced dedup effectiveness or changing string allocation patterns.
+
+```sql
+SELECT * FROM "jvmlog-stringdedup-rate-timeline"
+```
+
+```plot
+LINE(x="Minute", y="Bytes Saved (MB)")
+```
+
+---
+
+<!-- @cell name=full-gc-recovery -->
+
+## Full GC Recovery Analysis
+
+Per-Full-GC detail: heap fill before/after, bytes reclaimed, reclaim %, and MB/ms efficiency — low reclaim % after a Full GC indicates a very high live data set.
+
+```sql
+SELECT * FROM "jvmlog-full-gc-recovery"
+ORDER BY "Uptime (s)"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=dominant-cause-timeline -->
+
+## Dominant GC Cause per 5-Minute Window
+
+The most frequent GC cause per 5-minute window — cause transitions (e.g., from Evacuation to Allocation Failure) indicate escalating heap pressure.
+
+```sql
+SELECT * FROM "jvmlog-dominant-cause-timeline"
+```
+
+```plot
+TABLE()
+```

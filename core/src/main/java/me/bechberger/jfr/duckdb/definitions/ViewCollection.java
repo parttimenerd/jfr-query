@@ -7405,6 +7405,153 @@ public class ViewCollection {
                         """,
                     "jvmlog_safepoint")
                     .description("Safepoint time-to-reach outliers (Z-score > 2.0) — unusually long TTR indicates a thread was slow to reach the safepoint, often caused by JNI, compiled loops without safepoint polls, or OS scheduling delays."),
+
+            // -----------------------------------------------------------------------
+            // Survivor region occupancy over time (G1 promotion pressure)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-survivor-occupancy-timeline", "jvmlog",
+                    "GC Log: G1 Survivor Region Occupancy Timeline", null,
+                    """
+                        CREATE VIEW "jvmlog-survivor-occupancy-timeline" AS
+                        SELECT r.gcId                                              AS "GC ID",
+                               round(e.uptimeSecs, 3)                             AS "Uptime (s)",
+                               r.survivorBefore                                   AS "Survivor Before",
+                               r.survivorAfter                                    AS "Survivor After",
+                               r.survivorMax                                      AS "Survivor Max",
+                               round(100.0 * r.survivorAfter / NULLIF(r.survivorMax, 0), 1)
+                                                                                  AS "Survivor Fill %",
+                               (r.survivorAfter - r.survivorBefore)               AS "Survivor Δ (regions)"
+                        FROM jvmlog_g1_regions r
+                        JOIN jvmlog_gc_event    e USING (gcId)
+                        WHERE r.survivorAfter IS NOT NULL AND r.survivorMax IS NOT NULL
+                          AND r.survivorMax > 0
+                        ORDER BY e.uptimeSecs
+                        """,
+                    "jvmlog_g1_regions", "jvmlog_gc_event")
+                    .description("G1 survivor region occupancy per GC event — consistently high survivor fill % indicates objects surviving too many collections and aging into the Old gen prematurely.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-survivor-occupancy-timeline" AS
+                            SELECT gcId                                                AS "GC ID",
+                                   survivorBefore                                      AS "Survivor Before",
+                                   survivorAfter                                       AS "Survivor After",
+                                   survivorMax                                         AS "Survivor Max",
+                                   round(100.0 * survivorAfter / NULLIF(survivorMax, 0), 1)
+                                                                                      AS "Survivor Fill %"
+                            FROM jvmlog_g1_regions
+                            WHERE survivorAfter IS NOT NULL AND survivorMax IS NOT NULL AND survivorMax > 0
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_g1_regions"),
+
+            // -----------------------------------------------------------------------
+            // String dedup savings rate over time
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-stringdedup-rate-timeline", "jvmlog",
+                    "GC Log: String Dedup Savings Rate Timeline", null,
+                    """
+                        CREATE VIEW "jvmlog-stringdedup-rate-timeline" AS
+                        WITH sd AS (
+                            SELECT d.gcId,
+                                   e.uptimeSecs,
+                                   d.savedBytes,
+                                   d.objectCount,
+                                   d.deduplicatedObjects,
+                                   d.durationMs
+                            FROM jvmlog_stringdedup d
+                            JOIN jvmlog_gc_event     e USING (gcId)
+                            WHERE d.savedBytes IS NOT NULL OR d.deduplicatedObjects IS NOT NULL
+                        )
+                        SELECT floor(uptimeSecs / 60.0)::BIGINT                   AS "Minute",
+                               count(*)                                            AS "Dedup Events",
+                               round(sum(savedBytes) / 1048576.0, 2)              AS "Bytes Saved (MB)",
+                               round(sum(deduplicatedObjects), 0)                 AS "Objects Deduped",
+                               round(avg(durationMs), 2)                          AS "Avg Duration (ms)"
+                        FROM sd
+                        GROUP BY floor(uptimeSecs / 60.0)::BIGINT
+                        ORDER BY 1
+                        """,
+                    "jvmlog_stringdedup", "jvmlog_gc_event")
+                    .description("String deduplication savings per 1-minute window — tracks how much memory is being saved by dedup and whether it's consistent or declining over time.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-stringdedup-rate-timeline" AS
+                            SELECT gcId                                                AS "GC ID",
+                                   savedBytes                                          AS "Bytes Saved",
+                                   objectCount                                         AS "Objects",
+                                   deduplicatedObjects                                 AS "Deduped Objects",
+                                   durationMs                                          AS "Duration (ms)"
+                            FROM jvmlog_stringdedup
+                            WHERE savedBytes IS NOT NULL OR deduplicatedObjects IS NOT NULL
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_stringdedup"),
+
+            // -----------------------------------------------------------------------
+            // Full GC recovery analysis (efficiency of each Full GC)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-full-gc-recovery", "jvmlog",
+                    "GC Log: Full GC Recovery Analysis", null,
+                    """
+                        CREATE VIEW "jvmlog-full-gc-recovery" AS
+                        SELECT gcId                                                   AS "GC ID",
+                               gcCause                                                AS "Cause",
+                               round(uptimeSecs, 3)                                  AS "Uptime (s)",
+                               round(heapBefore / 1048576.0, 1)                      AS "Heap Before (MB)",
+                               round(heapAfter / 1048576.0, 1)                       AS "Heap After (MB)",
+                               round(heapMax / 1048576.0, 1)                         AS "Heap Max (MB)",
+                               round((heapBefore - heapAfter) / 1048576.0, 1)        AS "Reclaimed (MB)",
+                               round(100.0 * (heapBefore - heapAfter)
+                                     / NULLIF(heapBefore, 0), 1)                     AS "Reclaim %",
+                               round(100.0 * heapBefore / NULLIF(heapMax, 0), 1)     AS "Fill Before %",
+                               round(100.0 * heapAfter  / NULLIF(heapMax, 0), 1)     AS "Fill After %",
+                               round(pauseMs, 1)                                     AS "Pause (ms)",
+                               round((heapBefore - heapAfter) / 1048576.0
+                                     / NULLIF(pauseMs, 0), 3)                        AS "Efficiency (MB/ms)"
+                        FROM jvmlog_gc_event
+                        WHERE gcType IN ('Full', 'Degenerated', 'GarbageFirst (Full)')
+                          AND heapBefore IS NOT NULL AND pauseMs IS NOT NULL
+                        ORDER BY uptimeSecs
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Per-Full-GC recovery analysis: heap fill before/after, bytes reclaimed, reclaim %, and MB/ms efficiency — identifies which Full GCs were productive and which indicated a high live data set."),
+
+            // -----------------------------------------------------------------------
+            // GC cause dominant window transitions
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-dominant-cause-timeline", "jvmlog",
+                    "GC Log: Dominant GC Cause per 5-Minute Window", null,
+                    """
+                        CREATE VIEW "jvmlog-dominant-cause-timeline" AS
+                        WITH window_counts AS (
+                            SELECT floor(uptimeSecs / 300.0)::BIGINT    AS window5m,
+                                   round(min(uptimeSecs), 0)             AS windowStart,
+                                   gcCause,
+                                   count(*)                               AS gcCount,
+                                   round(sum(pauseMs), 1)                AS totalPause,
+                                   RANK() OVER (
+                                       PARTITION BY floor(uptimeSecs / 300.0)::BIGINT
+                                       ORDER BY count(*) DESC
+                                   ) AS rnk
+                            FROM jvmlog_gc_event
+                            WHERE gcCause IS NOT NULL AND uptimeSecs IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 300.0)::BIGINT, gcCause
+                        )
+                        SELECT window5m                                             AS "5-Min Window",
+                               windowStart                                          AS "Window Start (s)",
+                               gcCause                                             AS "Dominant Cause",
+                               gcCount                                             AS "Count",
+                               totalPause                                           AS "Total Pause (ms)"
+                        FROM window_counts
+                        WHERE rnk = 1
+                        ORDER BY window5m
+                        """,
+                    "jvmlog_gc_event")
+                    .description("The dominant GC cause (by count) per 5-minute window — shows how the trigger mix evolves: transitioning from Evacuation to Allocation Failure to System.gc() indicates escalating heap pressure."),
             };
 
     public static List<View> getViews() {
