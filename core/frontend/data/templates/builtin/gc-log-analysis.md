@@ -2721,3 +2721,329 @@ SELECT * FROM "jvmlog-shenandoah-summary"
 ```plot
 BAR(x="STW Phase", y="Avg Pause (ms)")
 ```
+
+---
+
+<!-- @cell name=gc-summary requires="has-jvmlog-gc" -->
+
+## GC Pause Summary by Cause
+
+GC event counts, total pause, and percentiles grouped by cause — the highest "Total ms" cause is your primary optimization target; repeated "Allocation Failure" triggers indicate the heap is too small or allocation rate too high.
+
+```sql
+SELECT * FROM "jvmlog-gc-summary"
+```
+
+```plot
+BAR(x="Cause", y="Total ms")
+```
+
+---
+
+<!-- @cell name=gc-pause-by-type requires="has-jvmlog-gc" -->
+
+## GC Pause by Collector Type
+
+Average and maximum pause grouped by GC type (Young, Mixed, Full) — Full GC pauses orders-of-magnitude higher than Young GC indicates a problem with the tenured generation.
+
+```sql
+SELECT * FROM "jvmlog-gc-pause-by-type"
+```
+
+```plot
+BAR(x="Type", y="Avg (ms)")
+```
+
+---
+
+<!-- @cell name=gc-cumulative-pause requires="has-jvmlog-gc" -->
+
+## Cumulative GC Pause Over Time
+
+Running total of STW pause time — a steep slope means GC is consuming an increasing fraction of runtime; a flat region indicates a period of low GC activity.
+
+```sql
+SELECT * FROM "jvmlog-gc-cumulative-pause"
+```
+
+```plot
+LINE(x="GC ID", y="Cumulative (ms)")
+```
+
+---
+
+<!-- @cell name=pause-percentiles-by-cause requires="has-jvmlog-gc" -->
+
+## Pause Percentiles by Cause
+
+P50/P95/P99/Max breakdown per trigger cause — compare P99 to your SLA target; causes with high P99 relative to median indicate occasional very long pauses that will breach latency budgets.
+
+```sql
+SELECT * FROM "jvmlog-pause-percentiles-by-cause"
+```
+
+```plot
+BAR(x="Cause", y="P99 (ms)")
+```
+
+---
+
+<!-- @cell name=gc-phase-breakdown requires="has-gc-phases" -->
+
+## GC Phase Breakdown (Sub-Phase Timing)
+
+Time spent per internal GC phase across all GCs — the slowest phase is the bottleneck; phases with high max/avg ratios indicate occasional stragglers.
+
+```sql
+SELECT * FROM "jvmlog-gc-phase-breakdown"
+```
+
+```plot
+BAR(x="Phase", y="Avg (ms)")
+```
+
+---
+
+<!-- @cell name=gc-init-summary requires="has-jvmlog-gc" -->
+
+## JVM GC Initialisation Summary
+
+GC algorithm, JDK version, heap sizing, and thread counts recorded at startup — verify that Xmx, initial heap, and worker counts match your deployment configuration.
+
+```sql
+SELECT * FROM "jvmlog-gc-init-summary"
+```
+
+---
+
+<!-- @cell name=heap-snapshot-raw requires="has-heap-snapshot" -->
+
+## Raw Heap Snapshot per GC
+
+Per-GC before/after heap and committed sizes — use this as the raw data source for custom heap analysis; committed growing over time without dropping indicates heap fragmentation.
+
+```sql
+SELECT * FROM "jvmlog-heap-snapshot-raw"
+```
+
+```plot
+LINE(x="GC ID", y="Heap After (MB)")
+```
+
+---
+
+<!-- @cell name=zgc-cycle requires="has-zgc-stats" -->
+
+## ZGC Cycle — Concurrent vs Pause Time
+
+Per-cycle split between concurrent phase time and STW pause time — ZGC should spend < 1ms in STW; rising STW time signals a load spike or insufficient concurrent threads.
+
+```sql
+SELECT * FROM "jvmlog-zgc-cycle"
+```
+
+```plot
+BAR(x="GC ID", y="Pause ms")
+```
+
+---
+
+<!-- @cell name=zgc-director-summary requires="has-zgc-stats" -->
+
+## ZGC Director Decision Summary
+
+ZGC director's per-cycle rule triggers, allocation rate, free heap %, and time-to-OOM estimates — watch for low "Time to OOM" values which indicate the allocator is racing against GC.
+
+```sql
+SELECT * FROM "jvmlog-zgc-director-summary"
+```
+
+---
+
+<!-- @cell name=stringdedup-summary requires="has-jvmlog-gc" -->
+
+## String Deduplication Summary
+
+Per-GC string deduplication statistics — bytes saved and objects deduplicated; if savings are near zero, deduplication is not reducing footprint and may be disabled.
+
+```sql
+SELECT * FROM "jvmlog-stringdedup-summary"
+```
+
+```plot
+BAR(x="GC ID", y="Bytes Saved")
+```
+
+---
+
+<!-- @cell name=gc-error-summary requires="has-gc-errors" -->
+
+## GC Error and Failure Summary
+
+Counts and average durations for GC error types (Concurrent Mode Failure, Evacuation Failure, etc.) — any non-zero count warrants immediate investigation.
+
+```sql
+SELECT * FROM "jvmlog-gc-error-summary"
+```
+
+```plot
+BAR(x="Error Type", y="Count")
+```
+
+---
+
+<!-- @cell name=gc-interval requires="has-jvmlog-gc" -->
+
+## GC Interval Between Collections
+
+Time elapsed between consecutive GC events — very short intervals (< 1s) indicate the allocator is always triggering GC; increasing intervals with stable pause time means load is reducing.
+
+```sql
+SELECT * FROM "jvmlog-gc-interval"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Interval (s)")
+```
+
+---
+
+<!-- @cell name=gc-pause-summary requires="has-jvmlog-gc" -->
+
+## GC Pause Raw Summary Table
+
+Per-GC pause, duration, type, and cause in chronological order — useful for spotting individual outlier events that skew averages in aggregate views.
+
+```sql
+SELECT * FROM "jvmlog-gc-pause-summary"
+```
+
+---
+
+<!-- @cell name=unknown-summary requires="has-jvmlog-gc" -->
+
+## Unknown GC Cause Summary
+
+GC events where the cause could not be determined — a large count indicates log parsing gaps or a GC algorithm that does not log cause; investigate with `-Xlog:gc*:file` for full output.
+
+```sql
+SELECT * FROM "jvmlog-unknown-summary"
+```
+
+---
+
+<!-- @cell name=g1-heap-expansion requires="has-jvmlog-gc" -->
+
+## G1 Heap Expansion Events
+
+G1 GC heap expansion decisions: requested and actual expansion sizes — frequent expansions indicate Xms is set too low; the JVM is growing the heap reactively under allocation pressure.
+
+```sql
+SELECT * FROM "jvmlog-g1-heap-expansion"
+```
+
+---
+
+<!-- @cell name=g1-mixed-gc requires="has-g1-mixed" -->
+
+## G1 Mixed GC Decision Log
+
+G1 mixed GC triggering decisions including reclaimable percentage and threshold — when reclaimable% stays above threshold without triggering mixed GC, tune `-XX:G1MixedGCCountTarget`.
+
+```sql
+SELECT * FROM "jvmlog-g1-mixed-gc"
+```
+
+---
+
+<!-- @cell name=g1-mixed-gc-summary requires="has-g1-mixed" -->
+
+## G1 Mixed GC Summary
+
+Aggregated statistics for G1 mixed GC decisions: how often the decision was triggered and average reclaimable fraction — low reclaimable% at trigger time means old gen is not accumulating garbage efficiently.
+
+```sql
+SELECT * FROM "jvmlog-g1-mixed-gc-summary"
+```
+
+
+---
+
+<!-- @cell name=safepoint-sync-hotspot requires="has-safepoint" -->
+
+## Safepoint Operations — Thread Sync Hotspots
+
+Safepoint operations ranked by maximum thread rendezvous time — high sync time (> 10ms) means threads are slow to reach a safe state; common culprits are JNI critical sections, unrolled counted loops, and high thread counts.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-sync-hotspot"
+```
+
+```plot
+BAR(x="Operation", y="Max Sync (ms)")
+```
+
+---
+
+<!-- @cell name=zgc-liveness-trend requires="has-zgc-stats" -->
+
+## ZGC Live Set Trend at Relocate Start
+
+Live and garbage fractions per ZGC cycle at the moment relocation begins — growing live% indicates long-lived object accumulation; garbage% below 30% suggests ZGC is over-triggering.
+
+```sql
+SELECT * FROM "jvmlog-zgc-liveness-trend"
+```
+
+```plot
+LINE(x="GC ID", y="Live %")
+```
+
+---
+
+<!-- @cell name=shenandoah-concurrent-efficiency requires="has-gc-phases" -->
+
+## Shenandoah Concurrent-to-STW Efficiency
+
+Per-cycle ratio of concurrent phase time to total cycle time — STW fraction above 10% means concurrent phases are not finishing before the heap fills, leading to degenerated or full GC fallbacks.
+
+```sql
+SELECT * FROM "jvmlog-shenandoah-concurrent-efficiency"
+```
+
+```plot
+LINE(x="GC ID", y="STW Fraction (%)")
+```
+
+---
+
+<!-- @cell name=heap-before-after-delta requires="has-heap-snapshot" -->
+
+## Heap Before/After Delta per GC
+
+Per-GC heap reclaim in MB and as a fraction of pre-GC heap — reclaim% below 50% for Young GC indicates oversized survivor regions or too-low tenuring threshold.
+
+```sql
+SELECT * FROM "jvmlog-heap-before-after-delta"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Reclaimed (MB)")
+```
+
+---
+
+<!-- @cell name=gc-overhead-trend requires="has-jvmlog-gc" -->
+
+## GC Overhead Trend Over Time
+
+Percentage of application time spent in GC per 5-minute window with severity label — Critical (≥10%) is an OutOfMemoryError risk; High (5-10%) will degrade p99 latency.
+
+```sql
+SELECT * FROM "jvmlog-gc-overhead-trend"
+```
+
+```plot
+LINE(x="Uptime (min)", y="GC Overhead %")
+```
+

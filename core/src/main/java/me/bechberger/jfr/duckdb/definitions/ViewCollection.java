@@ -8532,6 +8532,154 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("Shenandoah STW pause breakdown by phase — Init/Final Mark and Init/Final Update Refs should be short (< 10ms); long Final Mark means concurrent marking didn't finish; Degenerated means Shenandoah fell back to full STW collection."),
+
+                    // Batch 7
+                    new View(
+                    "jvmlog-safepoint-sync-hotspot", "jvmlog",
+                    "GC Log: Safepoint Operations with Longest Thread-Sync Time", null,
+                    """
+                        CREATE VIEW "jvmlog-safepoint-sync-hotspot" AS
+                        SELECT operation                                              AS "Operation",
+                               count(*)                                              AS "Count",
+                               round(avg(totalMs), 2)                               AS "Avg Total (ms)",
+                               round(avg(syncMs), 2)                                AS "Avg Sync (ms)",
+                               round(max(syncMs), 2)                                AS "Max Sync (ms)",
+                               round(avg(syncMs) / nullif(avg(totalMs), 0) * 100, 1) AS "Sync % of Total"
+                        FROM jvmlog_safepoint
+                        WHERE syncMs IS NOT NULL
+                        GROUP BY operation
+                        ORDER BY "Max Sync (ms)" DESC
+                        """,
+                    "jvmlog_safepoint")
+                    .description("Safepoint operations ranked by max thread-sync time. High sync time (> 10ms) means threads took long to reach a safepoint — diagnose with -XX:+PrintSafepointStatistics; common culprits are JNI frames, counted loops, or too many threads."),
+
+                    new View(
+                    "jvmlog-zgc-liveness-trend", "jvmlog",
+                    "GC Log: ZGC Live Set Trend at Relocate Start", null,
+                    """
+                        CREATE VIEW "jvmlog-zgc-liveness-trend" AS
+                        SELECT gcId                                                    AS "GC ID",
+                               round(liveBytes / 1048576.0, 1)                        AS "Live (MB)",
+                               round(garbageBytes / 1048576.0, 1)                     AS "Garbage (MB)",
+                               round(liveBytes * 100.0 / nullif(liveBytes + garbageBytes, 0), 1) AS "Live %",
+                               round(garbageBytes * 100.0 / nullif(liveBytes + garbageBytes, 0), 1) AS "Garbage %"
+                        FROM jvmlog_zgc_stats
+                        WHERE phase = 'Relocate Start'
+                          AND liveBytes IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_zgc_stats")
+                    .description("ZGC live set and garbage fractions measured at Relocate Start — a growing live fraction means long-lived data is accumulating; garbage fraction below 30% means ZGC is triggering too eagerly (tune -XX:ZCollectionInterval)."),
+
+                    new View(
+                    "jvmlog-shenandoah-concurrent-efficiency", "jvmlog",
+                    "GC Log: Shenandoah Concurrent-to-STW Efficiency per Cycle", null,
+                    """
+                        CREATE VIEW "jvmlog-shenandoah-concurrent-efficiency" AS
+                        WITH concurrent AS (
+                            SELECT gcId,
+                                   sum(durationMs) AS concurrentMs
+                            FROM jvmlog_gc_phase
+                            WHERE phaseName IN ('Concurrent marking', 'Concurrent evacuation',
+                                                'Concurrent update references', 'Concurrent cleanup',
+                                                'Concurrent reset bitmaps')
+                            GROUP BY gcId
+                        ),
+                        pauses AS (
+                            SELECT gcId,
+                                   sum(pauseMs) AS stwMs
+                            FROM jvmlog_gc_event
+                            WHERE gcType IN ('Init Mark', 'Final Mark',
+                                             'Init Update Refs', 'Final Update Refs')
+                              AND pauseMs IS NOT NULL
+                            GROUP BY gcId
+                        )
+                        SELECT c.gcId                                                             AS "GC ID",
+                               round(c.concurrentMs, 1)                                          AS "Concurrent (ms)",
+                               round(p.stwMs, 2)                                                 AS "STW (ms)",
+                               round(c.concurrentMs + p.stwMs, 1)                               AS "Total (ms)",
+                               round(p.stwMs / nullif(c.concurrentMs + p.stwMs, 0) * 100, 2)    AS "STW Fraction (%)"
+                        FROM concurrent c
+                        JOIN pauses p USING (gcId)
+                        ORDER BY c.gcId
+                        """,
+                    "jvmlog_gc_phase", "jvmlog_gc_event")
+                    .description("Per-cycle Shenandoah efficiency: STW fraction of total cycle time. STW fraction above 10% means the concurrent phase did not finish before space ran out — consider increasing heap size or reducing allocation rate.")
+                    .addAlternative(
+                    """
+                        CREATE VIEW "jvmlog-shenandoah-concurrent-efficiency" AS
+                        SELECT gcId                                                   AS "GC ID",
+                               round(sum(durationMs), 1)                             AS "Concurrent (ms)"
+                        FROM jvmlog_gc_phase
+                        WHERE phaseName IN ('Concurrent marking', 'Concurrent evacuation',
+                                            'Concurrent update references', 'Concurrent cleanup',
+                                            'Concurrent reset bitmaps')
+                        GROUP BY gcId
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_gc_phase"),
+
+                    new View(
+                    "jvmlog-heap-before-after-delta", "jvmlog",
+                    "GC Log: Heap Before/After Delta per GC (Reclaim Effectiveness)", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-before-after-delta" AS
+                        SELECT e.gcId                                                             AS "GC ID",
+                               e.gcType                                                           AS "GC Type",
+                               round(e.uptimeSecs, 1)                                             AS "Uptime (s)",
+                               round(h.heapBefore / 1048576.0, 1)                                AS "Before (MB)",
+                               round(h.heapAfter / 1048576.0, 1)                                 AS "After (MB)",
+                               round((h.heapBefore - h.heapAfter) / 1048576.0, 1)               AS "Reclaimed (MB)",
+                               round((h.heapBefore - h.heapAfter) * 100.0 / nullif(h.heapBefore, 0), 1) AS "Reclaim %"
+                        FROM jvmlog_gc_event e
+                        JOIN (
+                            SELECT gcId,
+                                   first(heapBefore) AS heapBefore,
+                                   first(heapAfter)  AS heapAfter
+                            FROM jvmlog_heap_snapshot
+                            GROUP BY gcId
+                        ) h USING (gcId)
+                        ORDER BY e.gcId
+                        """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Per-GC heap reclaim: bytes freed and reclaim % of heap-before. Reclaim% consistently below 50% for Young GC means survivor regions are too large or tenuring threshold is too low.")
+                    .addAlternative(
+                    """
+                        CREATE VIEW "jvmlog-heap-before-after-delta" AS
+                        SELECT gcId                                                   AS "GC ID",
+                               gcType                                                 AS "GC Type",
+                               round(uptimeSecs, 1)                                   AS "Uptime (s)"
+                        FROM jvmlog_gc_event
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_gc_event"),
+
+                    new View(
+                    "jvmlog-gc-overhead-trend", "jvmlog",
+                    "GC Log: GC Overhead Trend (% time in GC per 5-min window)", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-overhead-trend" AS
+                        WITH buckets AS (
+                            SELECT floor(uptimeSecs / 300) * 300        AS bucketSecs,
+                                   sum(pauseMs)                         AS totalPauseMs,
+                                   count(*)                             AS gcCount
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                            GROUP BY 1
+                        )
+                        SELECT round(bucketSecs / 60.0, 1)                              AS "Uptime (min)",
+                               gcCount                                                   AS "GC Count",
+                               round(totalPauseMs / 1000.0, 2)                          AS "Pause Secs",
+                               round(totalPauseMs / 3000.0, 2)                          AS "GC Overhead %",
+                               CASE WHEN totalPauseMs / 3000.0 >= 10 THEN 'Critical'
+                                    WHEN totalPauseMs / 3000.0 >= 5  THEN 'High'
+                                    WHEN totalPauseMs / 3000.0 >= 1  THEN 'Moderate'
+                                    ELSE 'Low' END                                       AS "Severity"
+                        FROM buckets
+                        ORDER BY bucketSecs
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC overhead % per 5-minute window with severity classification. Critical (≥10%) indicates OutOfMemoryError risk; High (5-10%) will degrade p99 latency; Moderate (1-5%) is acceptable for most workloads."),
             };
 
     public static List<View> getViews() {

@@ -98,7 +98,10 @@ class JvmlogViewsTest {
             "jvmlog-gc-duration-vs-pause",
             "jvmlog-zgc-load-timeline", "jvmlog-gc-worker-utilisation",
             "jvmlog-gc-pause-by-hour", "jvmlog-old-gen-growth",
-            "jvmlog-shenandoah-summary"
+            "jvmlog-shenandoah-summary",
+            "jvmlog-safepoint-sync-hotspot", "jvmlog-zgc-liveness-trend",
+            "jvmlog-shenandoah-concurrent-efficiency", "jvmlog-heap-before-after-delta",
+            "jvmlog-gc-overhead-trend"
     );
 
     @Test
@@ -4090,6 +4093,120 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS phases FROM \"jvmlog-shenandoah-summary\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("phases")).isEqualTo(4L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogSafepointSyncHotspot() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_safepoint (gcId INTEGER, operation VARCHAR, totalMs DOUBLE, syncMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (1,'G1CollectForAllocation',15.0,2.5)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (2,'G1CollectForAllocation',12.0,1.8)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (3,'RevokeBias',5.0,0.3)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-safepoint-sync-hotspot".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-safepoint-sync-hotspot not found"));
+        assertThat(view.isValid(Set.of("jvmlog_safepoint"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS ops FROM \"jvmlog-safepoint-sync-hotspot\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("ops")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogZgcLivenessTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_stats (gcId INTEGER, phase VARCHAR, usedBytes LONG, liveBytes LONG, garbageBytes LONG)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (1,'Relocate Start',536870912,268435456,157286400)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (2,'Relocate Start',600000000,300000000,180000000)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (3,'Mark Start',400000000,NULL,NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-liveness-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-liveness-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_stats"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS cycles FROM \"jvmlog-zgc-liveness-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cycles")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogShenandoahConcurrentEfficiency() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Concurrent marking',50.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Concurrent evacuation',30.0)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Init Mark',NULL,1.2,5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Final Mark',NULL,2.5,5.1)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-shenandoah-concurrent-efficiency".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-shenandoah-concurrent-efficiency not found"));
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_phase", "jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cycles FROM \"jvmlog-shenandoah-concurrent-efficiency\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cycles")).isEqualTo(1L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogHeapBeforeAfterDelta() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young',NULL,20.0,5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young',NULL,18.0,10.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore LONG, heapAfter LONG, heapCommittedBefore LONG, heapCommittedAfter LONG)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1,536870912,268435456,1073741824,1073741824)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2,400000000,200000000,1073741824,1073741824)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-before-after-delta".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-before-after-delta not found"));
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-heap-before-after-delta\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcOverheadTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young',NULL,100.0,30.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young',NULL,80.0,90.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Full',NULL,2000.0,200.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-overhead-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-overhead-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS buckets FROM \"jvmlog-gc-overhead-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("buckets")).isGreaterThanOrEqualTo(1L);
         }
         conn.close();
     }
