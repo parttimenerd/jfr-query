@@ -2495,3 +2495,69 @@ SELECT * FROM "jvmlog-phase-worst-by-type"
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=promotion-rate requires="has-heap-snapshot" -->
+
+## Object Promotion Rate to Old Gen
+
+Estimated heap growth between consecutive Young GCs per minute — a proxy for object promotion rate; sustained high values mean survivor spaces are overflowing into Old gen, raising Full GC risk.
+
+```sql
+SELECT * FROM "jvmlog-promotion-rate"
+```
+
+```plot
+LINE(x="Minute", y="Total Promoted (MB)")
+```
+
+---
+
+<!-- @cell name=metaspace-gc-trigger requires="has-metaspace" -->
+
+## Metaspace-Triggered GC Events
+
+GC events caused by Metadata GC Threshold or Last Ditch Collection — repeated metaspace-triggered GCs indicate class loading pressure or classloader leaks.
+
+```sql
+SELECT * FROM "jvmlog-metaspace-gc-trigger"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=g1-mixed-trigger-analysis requires="has-g1-mixed" -->
+
+## G1 Mixed GC Trigger Analysis
+
+G1 ergonomics decisions to start or skip mixed GC cycles, with reclaimable% vs threshold% — if "Skip Mixed GC" dominates, G1 is abandoning cycles because too little Old gen is reclaimable.
+
+```sql
+SELECT * FROM "jvmlog-g1-mixed-trigger-analysis"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=concurrent-phase-efficiency requires="has-gc-phase" -->
+
+## Concurrent Phase Efficiency
+
+Ratio of STW pause to preceding concurrent work per GC event — a high Pause/Concurrent% means the concurrent collector fell behind, forcing more STW work during the final pause.
+
+```sql
+SELECT * FROM "jvmlog-concurrent-phase-efficiency"
+ORDER BY "Pause / Concurrent %" DESC
+LIMIT 50
+```
+
+```plot
+TABLE()
+```

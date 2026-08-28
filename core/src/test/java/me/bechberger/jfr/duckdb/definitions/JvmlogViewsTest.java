@@ -90,7 +90,9 @@ class JvmlogViewsTest {
             "jvmlog-concurrent-stall-timeline",
             "jvmlog-heap-reclaim-efficiency", "jvmlog-safepoint-non-gc",
             "jvmlog-young-gen-sizing-trend", "jvmlog-gc-interval-histogram",
-            "jvmlog-phase-worst-by-type"
+            "jvmlog-phase-worst-by-type",
+            "jvmlog-promotion-rate", "jvmlog-metaspace-gc-trigger",
+            "jvmlog-g1-mixed-trigger-analysis", "jvmlog-concurrent-phase-efficiency"
     );
 
     @Test
@@ -3729,6 +3731,108 @@ class JvmlogViewsTest {
         try (Statement s = conn.createStatement()) {
             s.execute(query);
             var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-phase-worst-by-type\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testPromotionRate() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',10.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',12.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Young','Allocation Failure',11.0,70.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1, 300000000, 200000000, 512000000, 512000000)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2, 400000000, 215000000, 512000000, 512000000)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (3, 420000000, 220000000, 512000000, 512000000)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-promotion-rate".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-promotion-rate not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS minutes FROM \"jvmlog-promotion-rate\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("minutes")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testMetaspaceGcTrigger() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Full','Metadata GC Threshold',50.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',10.0,20.0)");
+            s.execute("CREATE TABLE jvmlog_metaspace (gcId INTEGER, metaspaceBefore BIGINT, metaspaceAfter BIGINT, metaspaceCommitted BIGINT)");
+            s.execute("INSERT INTO jvmlog_metaspace VALUES (1, 52428800, 50000000, 67108864)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-metaspace-gc-trigger".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-metaspace-gc-trigger not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_metaspace"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_metaspace"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-metaspace-gc-trigger\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(1L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testG1MixedTriggerAnalysis() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_mixed_gc (gcId INTEGER, reclaimablePct DOUBLE, thresholdPct DOUBLE, decision VARCHAR)");
+            s.execute("INSERT INTO jvmlog_g1_mixed_gc VALUES (1, 15.2, 10.0, 'Do Mixed GC')");
+            s.execute("INSERT INTO jvmlog_g1_mixed_gc VALUES (2, 8.1, 10.0, 'Skip Mixed GC')");
+            s.execute("INSERT INTO jvmlog_g1_mixed_gc VALUES (3, 12.0, 10.0, 'Do Mixed GC')");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-mixed-trigger-analysis".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-mixed-trigger-analysis not found"));
+        assertThat(view.isValid(Set.of("jvmlog_g1_mixed_gc"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS decisions FROM \"jvmlog-g1-mixed-trigger-analysis\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("decisions")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testConcurrentPhaseEfficiency() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','G1 Evacuation Pause',10.0,50.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','G1 Evacuation Pause',15.0,100.0)");
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Concurrent Mark from Roots',35.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Concurrent Cycle',42.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (2,'Concurrent Rebuild Remembered Sets',20.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-concurrent-phase-efficiency".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-concurrent-phase-efficiency not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_phase", "jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_phase", "jvmlog_gc_event"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-concurrent-phase-efficiency\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("rows")).isGreaterThan(0);
         }

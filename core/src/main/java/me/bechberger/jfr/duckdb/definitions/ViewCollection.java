@@ -8074,6 +8074,153 @@ public class ViewCollection {
                         LIMIT 20
                         """,
                         "jvmlog_gc_phase"),
+
+            // -----------------------------------------------------------------------
+            // Promotion rate: bytes promoted to old gen per GC interval
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-promotion-rate", "jvmlog",
+                    "GC Log: Object Promotion Rate to Old Gen", null,
+                    """
+                        CREATE VIEW "jvmlog-promotion-rate" AS
+                        WITH heap AS (
+                            SELECT gcId, heapAfter
+                            FROM jvmlog_heap_snapshot
+                            QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                        ),
+                        young_gcs AS (
+                            SELECT e.gcId, e.uptimeSecs, h.heapAfter,
+                                   LAG(h.heapAfter) OVER (ORDER BY e.uptimeSecs) AS prevAfter,
+                                   LAG(e.gcType)    OVER (ORDER BY e.uptimeSecs) AS prevType
+                            FROM jvmlog_gc_event e
+                            JOIN heap h USING (gcId)
+                            WHERE e.gcType NOT IN ('Full', 'GarbageFirst (Full)', 'PSMarkSweep')
+                              AND e.uptimeSecs IS NOT NULL
+                        )
+                        SELECT floor(uptimeSecs / 60.0)::BIGINT                      AS "Minute",
+                               count(*)                                               AS "Young GCs",
+                               round(avg(GREATEST(heapAfter - prevAfter, 0)) / 1048576.0, 1)
+                                                                                     AS "Avg Promoted (MB)",
+                               round(sum(GREATEST(heapAfter - prevAfter, 0)) / 1048576.0, 1)
+                                                                                     AS "Total Promoted (MB)"
+                        FROM young_gcs
+                        WHERE prevAfter IS NOT NULL AND prevType NOT IN ('Full', 'GarbageFirst (Full)')
+                        GROUP BY floor(uptimeSecs / 60.0)::BIGINT
+                        ORDER BY "Minute"
+                        """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Estimated object promotion rate to Old generation per minute — computed as heap growth between consecutive Young GC events; sustained high promotion means survivor spaces are overflowing into Old gen, rising Full GC risk.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-promotion-rate" AS
+                        SELECT floor(uptimeSecs / 60.0)::BIGINT AS "Minute", count(*) AS "Young GCs"
+                        FROM jvmlog_gc_event
+                        WHERE gcType NOT IN ('Full', 'GarbageFirst (Full)', 'PSMarkSweep')
+                          AND uptimeSecs IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 60.0)::BIGINT
+                        ORDER BY "Minute"
+                        """,
+                        "jvmlog_gc_event"),
+
+            // -----------------------------------------------------------------------
+            // Metaspace-triggered GC analysis
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-metaspace-gc-trigger", "jvmlog",
+                    "GC Log: Metaspace-Triggered GC Events", null,
+                    """
+                        CREATE VIEW "jvmlog-metaspace-gc-trigger" AS
+                        SELECT e.gcId                                                   AS "GC ID",
+                               round(e.uptimeSecs, 3)                                  AS "Uptime (s)",
+                               e.gcType                                                 AS "GC Type",
+                               round(e.pauseMs, 2)                                     AS "Pause (ms)",
+                               round(m.metaspaceBefore / 1048576.0, 1)                 AS "Meta Before (MB)",
+                               round(m.metaspaceAfter  / 1048576.0, 1)                 AS "Meta After (MB)",
+                               round(m.metaspaceCommitted / 1048576.0, 1)              AS "Meta Committed (MB)"
+                        FROM jvmlog_gc_event e
+                        JOIN jvmlog_metaspace m USING (gcId)
+                        WHERE e.cause IN ('Metadata GC Threshold',
+                                          'Last ditch collection',
+                                          'Ergonomics',
+                                          'GCLocker Initiated GC')
+                          AND e.uptimeSecs IS NOT NULL
+                        ORDER BY e.uptimeSecs
+                        """,
+                    "jvmlog_gc_event", "jvmlog_metaspace")
+                    .description("GC events triggered by metaspace pressure — repeated Metadata GC Threshold events indicate class loading pressure or classloader leaks; Last Ditch Collection means metaspace expansion is exhausted.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-metaspace-gc-trigger" AS
+                        SELECT gcId AS "GC ID", round(uptimeSecs, 3) AS "Uptime (s)",
+                               gcType AS "GC Type", round(pauseMs, 2) AS "Pause (ms)",
+                               cause AS "Cause"
+                        FROM jvmlog_gc_event
+                        WHERE cause IN ('Metadata GC Threshold', 'Last ditch collection',
+                                        'GCLocker Initiated GC')
+                          AND uptimeSecs IS NOT NULL
+                        ORDER BY uptimeSecs
+                        """,
+                        "jvmlog_gc_event"),
+
+            // -----------------------------------------------------------------------
+            // G1 mixed GC trigger analysis (ergonomics decisions)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-g1-mixed-trigger-analysis", "jvmlog",
+                    "GC Log: G1 Mixed GC Trigger Analysis", null,
+                    """
+                        CREATE VIEW "jvmlog-g1-mixed-trigger-analysis" AS
+                        SELECT decision                                            AS "Decision",
+                               count(*)                                            AS "Count",
+                               round(avg(reclaimablePct), 1)                      AS "Avg Reclaimable %",
+                               round(avg(thresholdPct), 1)                        AS "Avg Threshold %",
+                               round(min(reclaimablePct), 1)                      AS "Min Reclaimable %",
+                               round(max(reclaimablePct), 1)                      AS "Max Reclaimable %"
+                        FROM jvmlog_g1_mixed_gc
+                        GROUP BY decision
+                        ORDER BY "Count" DESC
+                        """,
+                    "jvmlog_g1_mixed_gc")
+                    .description("G1 mixed GC ergonomics decisions: Continue vs Do Not Continue, with reclaimable% vs threshold% — if 'Do Not Continue' dominates, G1 is abandoning mixed cycles early, likely because Old gen live data is too high."),
+
+            // -----------------------------------------------------------------------
+            // Concurrent phase efficiency (concurrent time vs subsequent pause time)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-concurrent-phase-efficiency", "jvmlog",
+                    "GC Log: Concurrent Phase Efficiency", null,
+                    """
+                        CREATE VIEW "jvmlog-concurrent-phase-efficiency" AS
+                        WITH concPhases AS (
+                            SELECT gcId,
+                                   sum(durationMs) AS concurrentMs
+                            FROM jvmlog_gc_phase
+                            WHERE phaseName LIKE 'Concurrent%'
+                              AND durationMs IS NOT NULL
+                            GROUP BY gcId
+                        )
+                        SELECT p.gcId                                                    AS "GC ID",
+                               round(p.concurrentMs, 1)                                  AS "Concurrent Work (ms)",
+                               round(e.pauseMs, 2)                                       AS "Subsequent Pause (ms)",
+                               round(100.0 * e.pauseMs / NULLIF(p.concurrentMs, 0), 1)  AS "Pause / Concurrent %"
+                        FROM concPhases p
+                        JOIN jvmlog_gc_event e USING (gcId)
+                        WHERE e.pauseMs IS NOT NULL
+                        ORDER BY "Pause / Concurrent %" DESC
+                        """,
+                    "jvmlog_gc_phase", "jvmlog_gc_event")
+                    .description("Ratio of STW pause to preceding concurrent work per GC event — a high Pause/Concurrent% means the concurrent phase did little useful work, so the subsequent STW had to do more, indicating the concurrent collector is falling behind.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-concurrent-phase-efficiency" AS
+                        SELECT gcId AS "GC ID",
+                               round(sum(durationMs), 1) AS "Concurrent Work (ms)"
+                        FROM jvmlog_gc_phase
+                        WHERE phaseName LIKE 'Concurrent%' AND durationMs IS NOT NULL
+                        GROUP BY gcId
+                        ORDER BY gcId
+                        """,
+                        "jvmlog_gc_phase"),
             };
 
     public static List<View> getViews() {
