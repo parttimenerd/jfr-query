@@ -2176,7 +2176,7 @@ class JvmlogViewsTest {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
             s.execute("CREATE TABLE jvmlog_gc_errors (gcId INTEGER, errorType VARCHAR, durationMs DOUBLE, errorDetail VARCHAR)");
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // Evacuation failure at GC 3
             s.execute("INSERT INTO jvmlog_gc_errors VALUES (3, 'Evacuation Failure', 1.5, NULL)");
             s.execute("INSERT INTO jvmlog_gc_errors VALUES (7, 'To-space exhausted', NULL, NULL)");
@@ -2225,7 +2225,7 @@ class JvmlogViewsTest {
     void logTimeRangeViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 10; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', " +
                         (300L * 1048576) + ", " + (150L * 1048576) + ", " + (512L * 1048576) + ", " +
@@ -2280,7 +2280,7 @@ class JvmlogViewsTest {
     void causePauseStatsViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 8; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', " +
                         (300L * 1048576) + ", " + (150L * 1048576) + ", " + (512L * 1048576) + ", " +
@@ -2309,7 +2309,7 @@ class JvmlogViewsTest {
     void pauseByMinuteViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // GCs in minute 0 (0-59s)
             for (int i = 0; i < 5; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 10.0, " + (i * 10.0) + ")");
@@ -2336,7 +2336,7 @@ class JvmlogViewsTest {
     void allocationRateTrendViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 10; i++) {
                 long before = (200L + i * 30) * 1048576;
                 long after  = 100L * 1048576;
@@ -2385,7 +2385,7 @@ class JvmlogViewsTest {
     void fullGcFrequencyViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // Full GCs
             s.execute("INSERT INTO jvmlog_gc_event VALUES (5, 'Full', 'System.gc()', " + (450L * 1048576) + ", " + (200L * 1048576) + ", " + (512L * 1048576) + ", 350.0, 120.0)");
             s.execute("INSERT INTO jvmlog_gc_event VALUES (12, 'Full', 'Allocation Failure', " + (500L * 1048576) + ", " + (180L * 1048576) + ", " + (512L * 1048576) + ", 420.0, 240.0)");
@@ -2412,7 +2412,7 @@ class JvmlogViewsTest {
     void gcTypePerMinuteViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 6; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, " + (i * 8.0) + ")");
             }
@@ -2435,7 +2435,7 @@ class JvmlogViewsTest {
     void memoryReclaimedViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 5; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', " +
                         (300L * 1048576) + ", " + (100L * 1048576) + ", " + (512L * 1048576) + ", 5.0, " + (i * 5.0) + ")");
@@ -2460,7 +2460,7 @@ class JvmlogViewsTest {
     void pauseOutliersViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // Normal GCs: ~10ms
             for (int i = 0; i < 20; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, " + (10.0 + i * 0.1) + ", " + (i * 3.0) + ")");
@@ -2486,7 +2486,7 @@ class JvmlogViewsTest {
     void heapAfterTrendViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 10; i++) {
                 // Steadily rising post-GC heap
                 long after = (100L + i * 15) * 1048576;
@@ -2512,7 +2512,7 @@ class JvmlogViewsTest {
     void allocPressureTimelineViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 5; i++) {
                 long after  = 100L * 1048576;
                 long before = (100L + 50L) * 1048576; // 50MB allocated each interval
@@ -2537,7 +2537,7 @@ class JvmlogViewsTest {
     void slaBreachByCauseViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // 5 normal pauses, 2 breaches
             for (int i = 0; i < 5; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 15.0, " + (i * 5.0) + ")");
@@ -2563,7 +2563,7 @@ class JvmlogViewsTest {
     void pauseBurstWindowsViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // Burst of 3 high-pause GCs
             s.execute("INSERT INTO jvmlog_gc_event VALUES (5, 'Full', 'System.gc()', 0, 0, 0, 350.0, 50.0)");
             s.execute("INSERT INTO jvmlog_gc_event VALUES (6, 'Full', 'System.gc()', 0, 0, 0, 400.0, 55.0)");
@@ -2588,7 +2588,7 @@ class JvmlogViewsTest {
     void healthTimelineViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // Minute 0: healthy GCs
             for (int i = 0; i < 5; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, " + (i * 10.0) + ")");
@@ -2618,7 +2618,7 @@ class JvmlogViewsTest {
     void heapEfficiencyByTypeViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // Young GC: small pause, modest reclaim
             for (int i = 0; i < 5; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', " +
@@ -2646,7 +2646,7 @@ class JvmlogViewsTest {
     void gcCauseHeatmapViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 10; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, " + (i * 20.0) + ")");
             }
@@ -2670,7 +2670,7 @@ class JvmlogViewsTest {
     void intervalDistributionViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // GCs 0.5s apart (0.5-1s bucket)
             for (int i = 0; i < 5; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 5.0, " + (i * 0.7) + ")");
@@ -2695,7 +2695,7 @@ class JvmlogViewsTest {
     void liveDataEstimateViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             long maxHeap = 512L * 1048576;
             for (int i = 0; i < 10; i++) {
                 long after = (80L + i * 5) * 1048576; // slowly increasing post-GC heap
@@ -2720,7 +2720,7 @@ class JvmlogViewsTest {
     void youngGcFrequencyViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // 8 Young GCs in minute 0
             for (int i = 0; i < 8; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, " + (i * 7.0) + ")");
@@ -2745,7 +2745,7 @@ class JvmlogViewsTest {
     void allocationSurgesViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // Baseline GCs: ~10 MB/s allocation
             for (int i = 0; i < 15; i++) {
                 long after  = 100L * 1048576;
@@ -2824,7 +2824,7 @@ class JvmlogViewsTest {
     void throughputConsistencyViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // Consistent ~2% overhead
             for (int i = 0; i < 20; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 12.0, " + (i * 3.0) + ")");
@@ -2847,7 +2847,7 @@ class JvmlogViewsTest {
     void heapHeadroomTimelineViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 5; i++) {
                 long after = (150L + i * 20) * 1048576;
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', " +
@@ -2873,7 +2873,7 @@ class JvmlogViewsTest {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
             s.execute("CREATE TABLE jvmlog_gc_errors (gcId INTEGER, errorType VARCHAR, durationMs DOUBLE, errorDetail VARCHAR)");
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             s.execute("INSERT INTO jvmlog_gc_errors VALUES (3, 'Evacuation Failure', 1.2, NULL)");
             s.execute("INSERT INTO jvmlog_gc_errors VALUES (5, 'To-space exhausted', NULL, NULL)");
             s.execute("INSERT INTO jvmlog_gc_errors VALUES (7, 'Evacuation Failure', 2.5, NULL)");
@@ -2924,7 +2924,7 @@ class JvmlogViewsTest {
     void pauseHistogramByTypeViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 8; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, " + (5.0 + i * 3) + ", " + (i * 5.0) + ")");
             }
@@ -2947,7 +2947,7 @@ class JvmlogViewsTest {
     void allocReclaimBalanceViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 5; i++) {
                 long after  = 100L * 1048576;
                 long before = (100L + 50L) * 1048576;
@@ -2972,7 +2972,7 @@ class JvmlogViewsTest {
     void causeCategoriesViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 8; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, " + (i * 5.0) + ")");
             }
@@ -2996,7 +2996,7 @@ class JvmlogViewsTest {
     void gcCpuEstimateViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 10; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 10.0, " + (i * 5.0) + ")");
             }
@@ -3021,7 +3021,7 @@ class JvmlogViewsTest {
     void pauseHeapCorrelationViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             long maxHeap = 512L * 1048576;
             for (int i = 0; i < 10; i++) {
                 long before = (100L + i * 30) * 1048576;
@@ -3047,7 +3047,7 @@ class JvmlogViewsTest {
     void overheadByTypeViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 8; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 10.0, " + (i * 10.0) + ")");
             }
@@ -3096,7 +3096,7 @@ class JvmlogViewsTest {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
             s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 5; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 5.0, " + (i * 5.0) + ")");
                 s.execute("INSERT INTO jvmlog_gc_phase VALUES (" + i + ", 'Evacuate Collection Set', " + (8.0 + i) + ")");
@@ -3148,7 +3148,7 @@ class JvmlogViewsTest {
     void pauseSpikeFrequencyViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 5; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 5.0, " + (i * 10.0) + ")");
             }
@@ -3176,7 +3176,7 @@ class JvmlogViewsTest {
     void appVsGcTimeViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 5; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 10.0, " + (i * 5.0) + ")");
             }
@@ -3224,7 +3224,7 @@ class JvmlogViewsTest {
     void gcPressureIndexViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // Low-pressure minute
             for (int i = 0; i < 5; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', " +
@@ -3304,7 +3304,7 @@ class JvmlogViewsTest {
     void trendSummaryViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             for (int i = 0; i < 10; i++) {
                 // Rising pause and heap trend
                 double pause = 5.0 + i * 2.0;
@@ -3403,7 +3403,7 @@ class JvmlogViewsTest {
     void fullGcRecoveryViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // Full GCs
             s.execute("INSERT INTO jvmlog_gc_event VALUES (5, 'Full', 'System.gc()', " +
                     (480L * 1048576) + ", " + (200L * 1048576) + ", " + (512L * 1048576) + ", 350.0, 120.0)");
@@ -3429,7 +3429,7 @@ class JvmlogViewsTest {
     void dominantCauseTimelineViewExecutesWithData() throws Exception {
         DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
         try (Statement s = conn.createStatement()) {
-            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             // Window 0: G1 Evacuation Pause dominates
             for (int i = 0; i < 8; i++) {
                 s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, " + (i * 20.0) + ")");

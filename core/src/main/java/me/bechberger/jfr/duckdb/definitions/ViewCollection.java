@@ -5747,13 +5747,13 @@ public class ViewCollection {
                                    err.errorType,
                                    err.durationMs  AS failDurationMs,
                                    e.gcType,
-                                   e.gcCause,
+                                   e.cause,
                                    e.heapBefore,
                                    e.heapAfter,
-                                   e.heapMax,
+                                   e.heapCommittedAfter,
                                    e.pauseMs,
                                    e.uptimeSecs,
-                                   100.0 * e.heapBefore / NULLIF(e.heapMax, 0) AS heapFillPct
+                                   100.0 * e.heapBefore / NULLIF(e.heapCommittedAfter, 0) AS heapFillPct
                             FROM jvmlog_gc_errors err
                             JOIN jvmlog_gc_event  e USING (gcId)
                             WHERE err.errorType IN ('To-space exhausted', 'Evacuation Failure',
@@ -5762,11 +5762,11 @@ public class ViewCollection {
                         SELECT gcId                                          AS "GC ID",
                                errorType                                     AS "Error Type",
                                gcType                                        AS "GC Type",
-                               gcCause                                       AS "Cause",
+                               cause                                       AS "Cause",
                                round(uptimeSecs, 3)                         AS "Uptime (s)",
                                heapBefore                                   AS "Heap Before",
                                heapAfter                                    AS "Heap After",
-                               heapMax                                      AS "Heap Max",
+                               heapCommittedAfter                                      AS "Heap Committed After",
                                round(heapFillPct, 1)                        AS "Heap Fill %",
                                round(pauseMs, 2)                            AS "Pause (ms)",
                                round(failDurationMs, 2)                     AS "Fail Duration (ms)"
@@ -5868,7 +5868,7 @@ public class ViewCollection {
                     "GC Log: Pause Statistics per GC Cause", null,
                     """
                         CREATE VIEW "jvmlog-cause-pause-stats" AS
-                        SELECT gcCause                                             AS "GC Cause",
+                        SELECT cause                                             AS "GC Cause",
                                count(*)                                            AS "Count",
                                round(sum(pauseMs), 1)                             AS "Total Pause (ms)",
                                round(avg(pauseMs), 2)                             AS "Avg Pause (ms)",
@@ -5880,8 +5880,8 @@ public class ViewCollection {
                                round(stddev_pop(pauseMs), 2)                     AS "StdDev (ms)",
                                round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS "% of GCs"
                         FROM jvmlog_gc_event
-                        WHERE pauseMs IS NOT NULL AND gcCause IS NOT NULL
-                        GROUP BY gcCause
+                        WHERE pauseMs IS NOT NULL AND cause IS NOT NULL
+                        GROUP BY cause
                         ORDER BY "Total Pause (ms)" DESC
                         """,
                     "jvmlog_gc_event")
@@ -6001,7 +6001,7 @@ public class ViewCollection {
                     """
                         CREATE VIEW "jvmlog-full-gc-frequency" AS
                         WITH full_gcs AS (
-                            SELECT gcId, uptimeSecs, gcCause, pauseMs, heapBefore, heapAfter, heapMax,
+                            SELECT gcId, uptimeSecs, cause, pauseMs, heapBefore, heapAfter, heapCommittedAfter,
                                    LAG(uptimeSecs) OVER (ORDER BY uptimeSecs) AS prevUptime
                             FROM jvmlog_gc_event
                             WHERE gcType IN ('Full', 'Degenerated', 'GarbageFirst (Full)')
@@ -6013,7 +6013,7 @@ public class ViewCollection {
                                round(sum(pauseMs) / 1000.0, 2)                     AS "Total Pause (s)",
                                round(avg(uptimeSecs - prevUptime), 1)              AS "Avg Interval (s)",
                                round(min(uptimeSecs - prevUptime), 1)              AS "Min Interval (s)",
-                               round(avg(100.0 * heapBefore / NULLIF(heapMax,0)), 1) AS "Avg Heap Fill % at Trigger",
+                               round(avg(100.0 * heapBefore / NULLIF(heapCommittedAfter,0)), 1) AS "Avg Heap Fill % at Trigger",
                                round(avg(100.0 * (heapBefore - heapAfter) / NULLIF(heapBefore,0)), 1)
                                                                                     AS "Avg Reclaim %",
                                round(1.0 * count(*) /
@@ -6057,10 +6057,10 @@ public class ViewCollection {
                         WITH reclaim AS (
                             SELECT gcId,
                                    gcType,
-                                   gcCause,
+                                   cause,
                                    heapBefore - heapAfter                    AS reclaimedBytes,
                                    heapBefore,
-                                   heapMax
+                                   heapCommittedAfter
                             FROM jvmlog_gc_event
                             WHERE heapBefore IS NOT NULL AND heapAfter IS NOT NULL
                               AND heapBefore >= heapAfter
@@ -6100,25 +6100,25 @@ public class ViewCollection {
                         scored AS (
                             SELECT e.gcId,
                                    e.gcType,
-                                   e.gcCause,
+                                   e.cause,
                                    e.pauseMs,
                                    e.uptimeSecs,
                                    e.heapBefore,
                                    e.heapAfter,
-                                   e.heapMax,
+                                   e.heapCommittedAfter,
                                    (e.pauseMs - s.meanMs) / NULLIF(s.stdMs, 0) AS zScore
                             FROM jvmlog_gc_event e, stats s
                             WHERE e.pauseMs IS NOT NULL
                         )
                         SELECT gcId                                              AS "GC ID",
                                gcType                                            AS "GC Type",
-                               gcCause                                           AS "Cause",
+                               cause                                           AS "Cause",
                                round(uptimeSecs, 3)                             AS "Uptime (s)",
                                round(pauseMs, 2)                                AS "Pause (ms)",
                                round(zScore, 2)                                 AS "Z-Score",
                                heapBefore                                       AS "Heap Before",
                                heapAfter                                        AS "Heap After",
-                               heapMax                                          AS "Heap Max"
+                               heapCommittedAfter                                          AS "Heap Committed After"
                         FROM scored
                         WHERE abs(zScore) > 2.0
                         ORDER BY zScore DESC
@@ -6138,8 +6138,8 @@ public class ViewCollection {
                             SELECT gcId,
                                    uptimeSecs,
                                    heapAfter,
-                                   heapMax,
-                                   100.0 * heapAfter / NULLIF(heapMax, 0) AS heapAfterPct,
+                                   heapCommittedAfter,
+                                   100.0 * heapAfter / NULLIF(heapCommittedAfter, 0) AS heapAfterPct,
                                    gcType
                             FROM jvmlog_gc_event
                             WHERE heapAfter IS NOT NULL AND uptimeSecs IS NOT NULL
@@ -6204,7 +6204,7 @@ public class ViewCollection {
                     "GC Log: SLA Breach Rate per GC Cause", null,
                     """
                         CREATE VIEW "jvmlog-sla-breach-by-cause" AS
-                        SELECT gcCause                                             AS "GC Cause",
+                        SELECT cause                                             AS "GC Cause",
                                count(*)                                            AS "Total GCs",
                                count(*) FILTER (WHERE pauseMs > 200)              AS "Breaches >200ms",
                                count(*) FILTER (WHERE pauseMs > 500)              AS "Breaches >500ms",
@@ -6213,8 +6213,8 @@ public class ViewCollection {
                                      / NULLIF(count(*), 0), 1)                    AS "Breach % (>200ms)",
                                round(max(pauseMs), 1)                             AS "Worst Pause (ms)"
                         FROM jvmlog_gc_event
-                        WHERE pauseMs IS NOT NULL AND gcCause IS NOT NULL
-                        GROUP BY gcCause
+                        WHERE pauseMs IS NOT NULL AND cause IS NOT NULL
+                        GROUP BY cause
                         ORDER BY "Breaches >200ms" DESC
                         """,
                     "jvmlog_gc_event")
@@ -6232,7 +6232,7 @@ public class ViewCollection {
                             SELECT gcId,
                                    uptimeSecs,
                                    gcType,
-                                   gcCause,
+                                   cause,
                                    pauseMs,
                                    pauseMs > 200 AS isHigh
                             FROM jvmlog_gc_event
@@ -6250,7 +6250,7 @@ public class ViewCollection {
                                round(max(uptimeSecs) - min(uptimeSecs), 3)      AS "Burst Duration (s)",
                                round(sum(pauseMs), 1)                           AS "Total Pause (ms)",
                                round(max(pauseMs), 1)                           AS "Peak Pause (ms)",
-                               string_agg(DISTINCT gcCause, ', ')               AS "Causes"
+                               string_agg(DISTINCT cause, ', ')               AS "Causes"
                         FROM grouped
                         GROUP BY grp
                         HAVING count(*) >= 2
@@ -6333,13 +6333,13 @@ public class ViewCollection {
                         CREATE VIEW "jvmlog-gc-cause-heatmap" AS
                         SELECT floor(uptimeSecs / 300.0)::BIGINT           AS "5-Min Window",
                                round(min(uptimeSecs), 0)                   AS "Window Start (s)",
-                               gcCause                                      AS "GC Cause",
+                               cause                                      AS "GC Cause",
                                count(*)                                     AS "Count",
                                round(sum(pauseMs), 1)                      AS "Total Pause (ms)",
                                round(max(pauseMs), 1)                      AS "Max Pause (ms)"
                         FROM jvmlog_gc_event
-                        WHERE gcCause IS NOT NULL AND uptimeSecs IS NOT NULL
-                        GROUP BY floor(uptimeSecs / 300.0)::BIGINT, gcCause
+                        WHERE cause IS NOT NULL AND uptimeSecs IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 300.0)::BIGINT, cause
                         ORDER BY 1, "Total Pause (ms)" DESC
                         """,
                     "jvmlog_gc_event")
@@ -6404,8 +6404,8 @@ public class ViewCollection {
                             SELECT gcId,
                                    uptimeSecs,
                                    heapAfter,
-                                   heapMax,
-                                   100.0 * heapAfter / NULLIF(heapMax, 0) AS afterPct,
+                                   heapCommittedAfter,
+                                   100.0 * heapAfter / NULLIF(heapCommittedAfter, 0) AS afterPct,
                                    gcType
                             FROM jvmlog_gc_event
                             WHERE heapAfter IS NOT NULL AND gcType NOT IN ('Concurrent', 'Pause Initial Mark')
@@ -6425,10 +6425,10 @@ public class ViewCollection {
                                                                                      AS "p10 Post-GC Heap (MB)",
                                round(approx_quantile(heapAfter, 0.25) / 1048576.0, 1)
                                                                                      AS "p25 Post-GC Heap (MB)",
-                               round(max(heapMax) / 1048576.0, 1)                   AS "Max Heap (MB)",
-                               round(min(heapAfter) * 100.0 / NULLIF(max(heapMax), 0), 1)
+                               round(max(heapCommittedAfter) / 1048576.0, 1)                   AS "Max Heap (MB)",
+                               round(min(heapAfter) * 100.0 / NULLIF(max(heapCommittedAfter), 0), 1)
                                                                                      AS "Min Post-GC Heap %",
-                               round(approx_quantile(heapAfter, 0.10) * 100.0 / NULLIF(max(heapMax), 0), 1)
+                               round(approx_quantile(heapAfter, 0.10) * 100.0 / NULLIF(max(heapCommittedAfter), 0), 1)
                                                                                      AS "p10 Post-GC Heap %"
                         FROM post_gc
                         """,
@@ -6628,13 +6628,13 @@ public class ViewCollection {
                         SELECT gcId                                                   AS "GC ID",
                                round(uptimeSecs, 3)                                  AS "Uptime (s)",
                                gcType                                                 AS "GC Type",
-                               round(heapMax / 1048576.0, 1)                        AS "Heap Max (MB)",
+                               round(heapCommittedAfter / 1048576.0, 1)                        AS "Heap Committed After (MB)",
                                round(heapAfter / 1048576.0, 1)                      AS "Heap After (MB)",
-                               round((heapMax - heapAfter) / 1048576.0, 1)          AS "Headroom (MB)",
-                               round(100.0 * (heapMax - heapAfter)
-                                     / NULLIF(heapMax, 0), 1)                        AS "Headroom %"
+                               round((heapCommittedAfter - heapAfter) / 1048576.0, 1)          AS "Headroom (MB)",
+                               round(100.0 * (heapCommittedAfter - heapAfter)
+                                     / NULLIF(heapCommittedAfter, 0), 1)                        AS "Headroom %"
                         FROM jvmlog_gc_event
-                        WHERE heapMax IS NOT NULL AND heapAfter IS NOT NULL
+                        WHERE heapCommittedAfter IS NOT NULL AND heapAfter IS NOT NULL
                           AND uptimeSecs IS NOT NULL
                         ORDER BY uptimeSecs
                         """,
@@ -6822,33 +6822,33 @@ public class ViewCollection {
                         CREATE VIEW "jvmlog-cause-categories" AS
                         WITH categorized AS (
                             SELECT gcId,
-                                   gcCause,
+                                   cause,
                                    pauseMs,
                                    CASE
-                                     WHEN gcCause LIKE '%Evacuation%' OR gcCause LIKE '%G1%'
+                                     WHEN cause LIKE '%Evacuation%' OR cause LIKE '%G1%'
                                      THEN 'Young-Gen Evacuation'
-                                     WHEN gcCause IN ('Allocation Failure', 'Allocation Stall')
+                                     WHEN cause IN ('Allocation Failure', 'Allocation Stall')
                                      THEN 'Allocation Pressure'
-                                     WHEN gcCause LIKE '%Humongous%'
+                                     WHEN cause LIKE '%Humongous%'
                                      THEN 'Humongous Allocation'
-                                     WHEN gcCause IN ('System.gc()', 'Heap Inspection Initiated GC',
+                                     WHEN cause IN ('System.gc()', 'Heap Inspection Initiated GC',
                                                       'Heap Dump Initiated GC', 'WhiteBox Initiated Young GC')
                                      THEN 'Explicit / Diagnostic'
-                                     WHEN gcCause IN ('GCLocker Initiated GC', 'JNI Critical')
+                                     WHEN cause IN ('GCLocker Initiated GC', 'JNI Critical')
                                      THEN 'JNI / GCLocker'
-                                     WHEN gcCause LIKE '%Ergonomic%' OR gcCause LIKE '%Threshold%'
+                                     WHEN cause LIKE '%Ergonomic%' OR cause LIKE '%Threshold%'
                                      THEN 'Ergonomics / Threshold'
-                                     WHEN gcCause LIKE '%Metadata%' OR gcCause LIKE '%Metaspace%'
+                                     WHEN cause LIKE '%Metadata%' OR cause LIKE '%Metaspace%'
                                      THEN 'Metaspace Pressure'
-                                     WHEN gcCause LIKE '%Concurrent%' OR gcCause LIKE '%Proactive%'
+                                     WHEN cause LIKE '%Concurrent%' OR cause LIKE '%Proactive%'
                                      THEN 'Concurrent / Proactive'
                                      ELSE 'Other'
                                    END AS category
                             FROM jvmlog_gc_event
-                            WHERE gcCause IS NOT NULL AND pauseMs IS NOT NULL
+                            WHERE cause IS NOT NULL AND pauseMs IS NOT NULL
                         )
                         SELECT category                                              AS "Category",
-                               count(DISTINCT gcCause)                              AS "Distinct Causes",
+                               count(DISTINCT cause)                              AS "Distinct Causes",
                                count(*)                                              AS "Total GCs",
                                round(sum(pauseMs), 1)                               AS "Total Pause (ms)",
                                round(avg(pauseMs), 2)                               AS "Avg Pause (ms)",
@@ -6924,10 +6924,10 @@ public class ViewCollection {
                         CREATE VIEW "jvmlog-pause-heap-correlation" AS
                         WITH base AS (
                             SELECT gcType,
-                                   100.0 * heapBefore / NULLIF(heapMax, 0) AS heapFillPct,
+                                   100.0 * heapBefore / NULLIF(heapCommittedAfter, 0) AS heapFillPct,
                                    pauseMs
                             FROM jvmlog_gc_event
-                            WHERE heapBefore IS NOT NULL AND heapMax IS NOT NULL
+                            WHERE heapBefore IS NOT NULL AND heapCommittedAfter IS NOT NULL
                               AND pauseMs IS NOT NULL AND gcType IS NOT NULL
                         )
                         SELECT gcType                                              AS "GC Type",
@@ -7221,7 +7221,7 @@ public class ViewCollection {
                                    count(*)                           AS gcCount,
                                    sum(pauseMs)                       AS totalPauseMs,
                                    max(pauseMs)                       AS maxPauseMs,
-                                   avg(100.0 * heapBefore / NULLIF(heapMax, 0)) AS avgHeapFillPct,
+                                   avg(100.0 * heapBefore / NULLIF(heapCommittedAfter, 0)) AS avgHeapFillPct,
                                    count(*) FILTER (WHERE gcType IN ('Full', 'Degenerated')) AS fullGcs,
                                    count(*) FILTER (WHERE pauseMs > 200) AS spikeCount
                             FROM jvmlog_gc_event
@@ -7295,7 +7295,7 @@ public class ViewCollection {
                         WITH ef AS (
                             SELECT r.gcId,
                                    e.gcType,
-                                   e.gcCause,
+                                   e.cause,
                                    100.0 * r.edenBefore / NULLIF(r.edenMax, 0) AS edenFillPct
                             FROM jvmlog_g1_regions r
                             JOIN jvmlog_gc_event   e USING (gcId)
@@ -7339,9 +7339,9 @@ public class ViewCollection {
                                    pauseMs,
                                    heapBefore,
                                    heapAfter,
-                                   heapMax,
-                                   100.0 * heapBefore / NULLIF(heapMax, 0) AS heapFillPct,
-                                   100.0 * heapAfter  / NULLIF(heapMax, 0) AS heapAfterPct
+                                   heapCommittedAfter,
+                                   100.0 * heapBefore / NULLIF(heapCommittedAfter, 0) AS heapFillPct,
+                                   100.0 * heapAfter  / NULLIF(heapCommittedAfter, 0) AS heapAfterPct
                             FROM jvmlog_gc_event
                             WHERE uptimeSecs IS NOT NULL AND pauseMs IS NOT NULL
                         )
@@ -7498,16 +7498,16 @@ public class ViewCollection {
                     """
                         CREATE VIEW "jvmlog-full-gc-recovery" AS
                         SELECT gcId                                                   AS "GC ID",
-                               gcCause                                                AS "Cause",
+                               cause                                                AS "Cause",
                                round(uptimeSecs, 3)                                  AS "Uptime (s)",
                                round(heapBefore / 1048576.0, 1)                      AS "Heap Before (MB)",
                                round(heapAfter / 1048576.0, 1)                       AS "Heap After (MB)",
-                               round(heapMax / 1048576.0, 1)                         AS "Heap Max (MB)",
+                               round(heapCommittedAfter / 1048576.0, 1)                         AS "Heap Committed After (MB)",
                                round((heapBefore - heapAfter) / 1048576.0, 1)        AS "Reclaimed (MB)",
                                round(100.0 * (heapBefore - heapAfter)
                                      / NULLIF(heapBefore, 0), 1)                     AS "Reclaim %",
-                               round(100.0 * heapBefore / NULLIF(heapMax, 0), 1)     AS "Fill Before %",
-                               round(100.0 * heapAfter  / NULLIF(heapMax, 0), 1)     AS "Fill After %",
+                               round(100.0 * heapBefore / NULLIF(heapCommittedAfter, 0), 1)     AS "Fill Before %",
+                               round(100.0 * heapAfter  / NULLIF(heapCommittedAfter, 0), 1)     AS "Fill After %",
                                round(pauseMs, 1)                                     AS "Pause (ms)",
                                round((heapBefore - heapAfter) / 1048576.0
                                      / NULLIF(pauseMs, 0), 3)                        AS "Efficiency (MB/ms)"
@@ -7530,7 +7530,7 @@ public class ViewCollection {
                         WITH window_counts AS (
                             SELECT floor(uptimeSecs / 300.0)::BIGINT    AS window5m,
                                    round(min(uptimeSecs), 0)             AS windowStart,
-                                   gcCause,
+                                   cause,
                                    count(*)                               AS gcCount,
                                    round(sum(pauseMs), 1)                AS totalPause,
                                    RANK() OVER (
@@ -7538,12 +7538,12 @@ public class ViewCollection {
                                        ORDER BY count(*) DESC
                                    ) AS rnk
                             FROM jvmlog_gc_event
-                            WHERE gcCause IS NOT NULL AND uptimeSecs IS NOT NULL
-                            GROUP BY floor(uptimeSecs / 300.0)::BIGINT, gcCause
+                            WHERE cause IS NOT NULL AND uptimeSecs IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 300.0)::BIGINT, cause
                         )
                         SELECT window5m                                             AS "5-Min Window",
                                windowStart                                          AS "Window Start (s)",
-                               gcCause                                             AS "Dominant Cause",
+                               cause                                             AS "Dominant Cause",
                                gcCount                                             AS "Count",
                                totalPause                                           AS "Total Pause (ms)"
                         FROM window_counts
