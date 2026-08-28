@@ -5555,6 +5555,184 @@ public class ViewCollection {
                             """,
                         "jvmlog_gc_phase")
                     .description("Phase count and total phase time per GC cycle — GC cycles with unusually few phases (< average) may have been aborted; cycles with more phases indicate deeper work phases activated."),
+
+                // ---------------------------------------------------------------
+                // ZGC garbage ratio per cycle: live vs garbage from zgc_stats
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-zgc-garbage-ratio",
+                        "jvmlog",
+                        "GC Log: ZGC Garbage Ratio per Cycle",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-zgc-garbage-ratio" AS
+                            WITH rs AS (
+                                SELECT gcId,
+                                       max(CASE WHEN phase = 'Relocate Start' THEN liveBytes END)    AS liveBytes,
+                                       max(CASE WHEN phase = 'Relocate Start' THEN garbageBytes END) AS garbageBytes,
+                                       max(CASE WHEN phase = 'Mark Start'     THEN usedBytes END)    AS usedAtMarkStart,
+                                       max(CASE WHEN phase = 'Relocate End'   THEN usedBytes END)    AS usedAtRelocEnd
+                                FROM jvmlog_zgc_stats
+                                GROUP BY gcId
+                                HAVING max(CASE WHEN phase = 'Relocate Start' THEN liveBytes END) IS NOT NULL
+                            )
+                            SELECT count(*)                                                                 AS "Cycles",
+                                   round(avg(liveBytes / 1048576.0), 1)                                    AS "Avg Live (MB)",
+                                   round(avg(garbageBytes / 1048576.0), 1)                                 AS "Avg Garbage (MB)",
+                                   round(avg(100.0 * garbageBytes / NULLIF(liveBytes + garbageBytes, 0)), 1) AS "Avg Garbage %",
+                                   round(max(100.0 * garbageBytes / NULLIF(liveBytes + garbageBytes, 0)), 1) AS "Max Garbage %",
+                                   round(min(100.0 * garbageBytes / NULLIF(liveBytes + garbageBytes, 0)), 1) AS "Min Garbage %",
+                                   round(avg((usedAtMarkStart - usedAtRelocEnd) / 1048576.0), 1)            AS "Avg Reclaimed (MB)"
+                            FROM rs
+                            """,
+                        "jvmlog_zgc_stats")
+                    .description("ZGC live-vs-garbage ratio at Relocate Start — high average garbage % (> 60%) means effective GC; low garbage % means mostly live objects and GC is doing expensive work for little reclaim."),
+
+                // ---------------------------------------------------------------
+                // Shenandoah headroom trend: free headroom declining = degradation risk
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-shenandoah-headroom",
+                        "jvmlog",
+                        "GC Log: Shenandoah Free Headroom Analysis",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-shenandoah-headroom" AS
+                            WITH hdr AS (
+                                SELECT s.gcId,
+                                       e.uptimeSecs,
+                                       s.freeBytes     / 1048576.0 AS freeMB,
+                                       s.headroomBytes / 1048576.0 AS headroomMB,
+                                       s.freeRegions
+                                FROM jvmlog_shenandoah_free s
+                                JOIN jvmlog_gc_event e USING (gcId)
+                                WHERE s.headroomBytes IS NOT NULL
+                                  AND e.uptimeSecs IS NOT NULL
+                            )
+                            SELECT count(*)                                                    AS "Cycles",
+                                   round(min(headroomMB), 2)                                  AS "Min Headroom (MB)",
+                                   round(avg(headroomMB), 2)                                  AS "Avg Headroom (MB)",
+                                   round(max(headroomMB), 2)                                  AS "Max Headroom (MB)",
+                                   round(regr_slope(headroomMB, uptimeSecs), 4)               AS "Headroom Trend (MB/s)",
+                                   round(regr_r2(headroomMB, uptimeSecs), 4)                  AS "R²",
+                                   CASE
+                                     WHEN min(headroomMB) < 10
+                                     THEN 'Critical — headroom near zero, Degenerated GC risk'
+                                     WHEN regr_r2(headroomMB, uptimeSecs) > 0.5
+                                          AND regr_slope(headroomMB, uptimeSecs) < 0
+                                     THEN 'Declining — headroom shrinking, watch for degraded GC'
+                                     ELSE 'OK'
+                                   END                                                        AS "Assessment"
+                            FROM hdr
+                            """,
+                        "jvmlog_shenandoah_free", "jvmlog_gc_event")
+                    .description("Shenandoah free headroom trend — declining headroom with high R² indicates Shenandoah will soon exhaust its concurrency margin and trigger Degenerated GC.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-shenandoah-headroom" AS
+                            WITH hdr AS (
+                                SELECT gcId * 1.0          AS uptimeSecs,
+                                       freeBytes    / 1048576.0 AS freeMB,
+                                       headroomBytes / 1048576.0 AS headroomMB,
+                                       freeRegions
+                                FROM jvmlog_shenandoah_free
+                                WHERE headroomBytes IS NOT NULL
+                            )
+                            SELECT count(*)                                                    AS "Cycles",
+                                   round(min(headroomMB), 2)                                  AS "Min Headroom (MB)",
+                                   round(avg(headroomMB), 2)                                  AS "Avg Headroom (MB)",
+                                   round(max(headroomMB), 2)                                  AS "Max Headroom (MB)",
+                                   round(regr_slope(headroomMB, uptimeSecs), 4)               AS "Headroom Trend (MB/s)",
+                                   round(regr_r2(headroomMB, uptimeSecs), 4)                  AS "R²",
+                                   CASE
+                                     WHEN min(headroomMB) < 10
+                                     THEN 'Critical — headroom near zero, Degenerated GC risk'
+                                     WHEN regr_r2(headroomMB, uptimeSecs) > 0.5
+                                          AND regr_slope(headroomMB, uptimeSecs) < 0
+                                     THEN 'Declining — headroom shrinking, watch for degraded GC'
+                                     ELSE 'OK'
+                                   END                                                        AS "Assessment"
+                            FROM hdr
+                            """,
+                        "jvmlog_shenandoah_free"),
+
+                // ---------------------------------------------------------------
+                // GC worker efficiency trend: are workers decreasing over time?
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-gc-worker-efficiency-trend",
+                        "jvmlog",
+                        "GC Log: GC Worker Efficiency Trend",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-worker-efficiency-trend" AS
+                            WITH wt AS (
+                                SELECT w.gcId,
+                                       w.taskName,
+                                       w.workersUsed,
+                                       w.workersMax,
+                                       100.0 * w.workersUsed / NULLIF(w.workersMax, 0) AS utilPct,
+                                       e.uptimeSecs
+                                FROM jvmlog_gc_workers w
+                                JOIN jvmlog_gc_event e USING (gcId)
+                                WHERE w.workersMax > 0
+                                  AND e.uptimeSecs IS NOT NULL
+                            )
+                            SELECT taskName AS "Task",
+                                   count(*)                                              AS "Events",
+                                   round(avg(workersUsed), 1)                           AS "Avg Workers Used",
+                                   round(min(workersUsed), 0)                           AS "Min Workers Used",
+                                   round(max(workersMax), 0)                            AS "Max Workers",
+                                   round(avg(utilPct), 1)                               AS "Avg Utilisation %",
+                                   round(regr_slope(utilPct, uptimeSecs), 6)            AS "Util Trend (%/s)",
+                                   round(regr_r2(utilPct, uptimeSecs), 4)               AS "R²",
+                                   CASE
+                                     WHEN regr_r2(utilPct, uptimeSecs) > 0.5
+                                          AND regr_slope(utilPct, uptimeSecs) < 0
+                                     THEN 'Declining — adaptive parallelism reducing workers over time'
+                                     WHEN avg(utilPct) < 80
+                                     THEN 'Under-utilised — GC not using all available worker threads'
+                                     ELSE 'Stable'
+                                   END                                                  AS "Assessment"
+                            FROM wt
+                            GROUP BY taskName
+                            ORDER BY "Avg Utilisation %" ASC
+                            """,
+                        "jvmlog_gc_workers", "jvmlog_gc_event")
+                    .description("GC worker thread utilization trend per task — declining utilization over time indicates adaptive parallelism is reducing thread counts, possibly due to low GC pressure.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-gc-worker-efficiency-trend" AS
+                            WITH wt AS (
+                                SELECT gcId * 1.0 AS uptimeSecs,
+                                       taskName,
+                                       workersUsed,
+                                       workersMax,
+                                       100.0 * workersUsed / NULLIF(workersMax, 0) AS utilPct
+                                FROM jvmlog_gc_workers
+                                WHERE workersMax > 0
+                            )
+                            SELECT taskName AS "Task",
+                                   count(*)                                              AS "Events",
+                                   round(avg(workersUsed), 1)                           AS "Avg Workers Used",
+                                   round(min(workersUsed), 0)                           AS "Min Workers Used",
+                                   round(max(workersMax), 0)                            AS "Max Workers",
+                                   round(avg(utilPct), 1)                               AS "Avg Utilisation %",
+                                   round(regr_slope(utilPct, uptimeSecs), 6)            AS "Util Trend (%/s)",
+                                   round(regr_r2(utilPct, uptimeSecs), 4)               AS "R²",
+                                   CASE
+                                     WHEN regr_r2(utilPct, uptimeSecs) > 0.5
+                                          AND regr_slope(utilPct, uptimeSecs) < 0
+                                     THEN 'Declining — adaptive parallelism reducing workers over time'
+                                     WHEN avg(utilPct) < 80
+                                     THEN 'Under-utilised — GC not using all available worker threads'
+                                     ELSE 'Stable'
+                                   END                                                  AS "Assessment"
+                            FROM wt
+                            GROUP BY taskName
+                            ORDER BY "Avg Utilisation %" ASC
+                            """,
+                        "jvmlog_gc_workers"),
             };
 
     public static List<View> getViews() {

@@ -843,6 +843,22 @@ BAR(x="Task", y="Utilisation %")
 
 ---
 
+<!-- @cell name=gc-worker-efficiency-trend requires="has-gc-workers" -->
+
+## GC Worker Efficiency Trend
+
+Worker thread utilization regression per task — a declining trend indicates adaptive parallelism is reducing GC thread counts over the JVM run, which can limit throughput recovery under load spikes.
+
+```sql
+SELECT * FROM "jvmlog-gc-worker-efficiency-trend"
+```
+
+```plot
+TABLE()
+```
+
+---
+
 <!-- @cell name=gc-worker-timeline requires="has-gc-workers" -->
 
 ## GC Worker Usage Timeline
@@ -1133,6 +1149,22 @@ LINE(x="GC ID", y="Live (MB)")
 
 ---
 
+<!-- @cell name=zgc-garbage-ratio requires="has-zgc-stats" -->
+
+## ZGC: Garbage Ratio per Cycle
+
+Average and range of garbage % at Relocate Start — the fraction of heap that is garbage. High garbage % (> 60%) means efficient work; low garbage % means ZGC is running too often or the heap is dominated by live objects.
+
+```sql
+SELECT * FROM "jvmlog-zgc-garbage-ratio"
+```
+
+```plot
+TABLE()
+```
+
+---
+
 <!-- @cell name=parallel-sizing requires="has-parallel" -->
 
 ## Parallel: Generation Sizing
@@ -1353,6 +1385,22 @@ SELECT * FROM "jvmlog-shenandoah-mode-analysis"
 
 ```plot
 BAR(x="Mode", y="Count")
+```
+
+---
+
+<!-- @cell name=shenandoah-headroom requires="has-shenandoah" -->
+
+## Shenandoah: Free Headroom Analysis
+
+Free headroom (space available before triggering Degenerated GC) with trend. Declining headroom means Shenandoah's concurrency margin is shrinking — when it hits zero, degenerated or full GC fires.
+
+```sql
+SELECT * FROM "jvmlog-shenandoah-headroom"
+```
+
+```plot
+TABLE()
 ```
 
 ---

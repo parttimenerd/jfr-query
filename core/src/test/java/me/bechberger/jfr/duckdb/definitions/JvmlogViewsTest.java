@@ -52,7 +52,9 @@ class JvmlogViewsTest {
             "jvmlog-pause-variance", "jvmlog-cause-first-occurrence",
             "jvmlog-young-vs-old-time",
             "jvmlog-heap-fill-at-trigger", "jvmlog-alloc-stall-rate-timeline",
-            "jvmlog-phases-per-gc"
+            "jvmlog-phases-per-gc",
+            "jvmlog-zgc-garbage-ratio", "jvmlog-shenandoah-headroom",
+            "jvmlog-gc-worker-efficiency-trend"
     );
 
     @Test
@@ -1975,6 +1977,92 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("GC Cycles")).isEqualTo(2);
             assertThat(rs.getDouble("Avg Phases/GC")).isCloseTo(2.5, within(0.1));
+        }
+        conn.close();
+    }
+
+    @Test
+    void zgcGarbageRatioViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_stats (gcId INTEGER, phase VARCHAR, usedBytes BIGINT, liveBytes BIGINT, garbageBytes BIGINT)");
+            // Cycle 1
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (1, 'Mark Start', 524288000, NULL, NULL)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (1, 'Relocate Start', NULL, 209715200, 314572800)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (1, 'Relocate End', 157286400, NULL, NULL)");
+            // Cycle 2
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (2, 'Mark Start', 600000000, NULL, NULL)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (2, 'Relocate Start', NULL, 250000000, 350000000)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (2, 'Relocate End', 180000000, NULL, NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-garbage-ratio".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-garbage-ratio not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_stats"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_zgc_stats"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Cycles\", \"Avg Garbage %\" FROM \"jvmlog-zgc-garbage-ratio\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Cycles")).isEqualTo(2);
+            assertThat(rs.getDouble("Avg Garbage %")).isGreaterThan(50.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void shenandoahHeadroomViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_shenandoah_free (gcId INTEGER, freeBytes BIGINT, freeRegions INTEGER, headroomBytes BIGINT, uncommittedBytes BIGINT)");
+            // Declining headroom: 128MB, 96MB, 64MB, 32MB, 8MB
+            for (int i = 0; i < 5; i++) {
+                long headroom = (128L - i * 30) * 1048576L;
+                long free = headroom + 52428800L;
+                s.execute("INSERT INTO jvmlog_shenandoah_free VALUES (" + i + ", " + free + ", " + (50 - i * 10) + ", " + headroom + ", NULL)");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-shenandoah-headroom".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-shenandoah-headroom not found"));
+        // primary needs shenandoah_free + gc_event; fallback works with shenandoah_free only
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_shenandoah_free"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Cycles\", \"Headroom Trend (MB/s)\", \"Assessment\" FROM \"jvmlog-shenandoah-headroom\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Cycles")).isEqualTo(5);
+            assertThat(rs.getDouble("Headroom Trend (MB/s)")).isLessThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcWorkerEfficiencyTrendViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_workers (gcId INTEGER, workersUsed INTEGER, workersMax INTEGER, taskName VARCHAR)");
+            for (int i = 0; i < 5; i++) {
+                int used = 8 - i; // declining workers
+                s.execute("INSERT INTO jvmlog_gc_workers VALUES (" + i + ", " + used + ", 8, 'Evacuate Collection Set')");
+            }
+            // Stable task
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_workers VALUES (" + (i + 5) + ", 4, 4, 'Pre Evacuate Collection Set')");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-worker-efficiency-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-worker-efficiency-trend not found"));
+        // primary needs gc_workers + gc_event; fallback works with gc_workers only
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_workers"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-gc-worker-efficiency-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(2);
         }
         conn.close();
     }
