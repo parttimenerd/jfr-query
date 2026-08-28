@@ -2073,3 +2073,69 @@ SELECT * FROM "jvmlog-zgc-minor-vs-major"
 ```plot
 BAR(x="Cycle Type", y="Avg Duration (ms)", color="Cycle Type")
 ```
+
+---
+
+<!-- @cell name=pause-spike-frequency -->
+
+## Pause Spike Frequency Over Time
+
+High-pause event count per 1-minute window at 100ms/200ms/500ms/1s thresholds — identifies which periods had the most latency violations and whether they're isolated or recurring.
+
+```sql
+SELECT * FROM "jvmlog-pause-spike-frequency"
+```
+
+```plot
+LINE(x="Minute", y="Spikes >200ms")
+```
+
+---
+
+<!-- @cell name=app-vs-gc-time -->
+
+## Application vs GC Time Running Totals
+
+Cumulative GC time and running throughput % per GC event — shows whether GC overhead is accelerating, decelerating, or steady across the full log duration.
+
+```sql
+SELECT * FROM "jvmlog-app-vs-gc-time"
+ORDER BY "Uptime (s)"
+LIMIT 200
+```
+
+```plot
+LINE(x="Uptime (s)", y="Running GC Overhead %")
+```
+
+---
+
+<!-- @cell name=metaspace-expansions requires="has-metaspace" -->
+
+## Metaspace Expansion Events
+
+GC events where metaspace usage grew by >1MB since the previous GC — repeated expansions indicate steady class loading or a classloader leak.
+
+```sql
+SELECT * FROM "jvmlog-metaspace-expansions"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=gc-pressure-index -->
+
+## GC Pressure Index Over Time
+
+Composite pressure score (0-100) per 1-minute window combining overhead, max pause, heap fill, full GC count, and spike count — a single number to quickly spot the most problematic periods.
+
+```sql
+SELECT * FROM "jvmlog-gc-pressure-index"
+```
+
+```plot
+LINE(x="Minute", y="Pressure Index")
+```

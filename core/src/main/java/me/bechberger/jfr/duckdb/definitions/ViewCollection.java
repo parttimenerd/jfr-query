@@ -7095,6 +7095,160 @@ public class ViewCollection {
                         """,
                     "jvmlog_zgc_phases")
                     .description("ZGC generational minor vs major cycle comparison — minor cycles (Young gen) should be fast; high minor/major frequency ratio or growing major duration indicates old gen pressure."),
+
+            // -----------------------------------------------------------------------
+            // Pause spike frequency per time window
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-pause-spike-frequency", "jvmlog",
+                    "GC Log: Pause Spike Frequency Over Time", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-spike-frequency" AS
+                        SELECT floor(uptimeSecs / 60.0)::BIGINT                   AS "Minute",
+                               count(*) FILTER (WHERE pauseMs > 100)              AS "Spikes >100ms",
+                               count(*) FILTER (WHERE pauseMs > 200)              AS "Spikes >200ms",
+                               count(*) FILTER (WHERE pauseMs > 500)              AS "Spikes >500ms",
+                               count(*) FILTER (WHERE pauseMs > 1000)             AS "Spikes >1s",
+                               count(*)                                            AS "Total GCs",
+                               round(max(pauseMs), 1)                             AS "Worst Pause (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 60.0)::BIGINT
+                        ORDER BY 1
+                        """,
+                    "jvmlog_gc_event")
+                    .description("High-pause event count per 1-minute window at 100ms/200ms/500ms/1s thresholds — identifies which time periods had the most latency violations."),
+
+            // -----------------------------------------------------------------------
+            // Application run time vs GC stop time ratio (running totals)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-app-vs-gc-time", "jvmlog",
+                    "GC Log: Application vs GC Time Running Totals", null,
+                    """
+                        CREATE VIEW "jvmlog-app-vs-gc-time" AS
+                        WITH cumulative AS (
+                            SELECT gcId,
+                                   round(uptimeSecs, 3)                           AS uptimeSecs,
+                                   pauseMs,
+                                   sum(pauseMs) OVER (ORDER BY uptimeSecs ROWS UNBOUNDED PRECEDING)
+                                       AS cumulativePauseMs
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        )
+                        SELECT gcId                                                AS "GC ID",
+                               uptimeSecs                                          AS "Uptime (s)",
+                               round(pauseMs, 2)                                  AS "Pause (ms)",
+                               round(cumulativePauseMs, 1)                        AS "Cumulative GC Time (ms)",
+                               round(cumulativePauseMs / NULLIF(uptimeSecs * 1000.0, 0) * 100.0, 2)
+                                                                                  AS "Running GC Overhead %",
+                               round(100.0 - cumulativePauseMs
+                                     / NULLIF(uptimeSecs * 1000.0, 0) * 100.0, 2)
+                                                                                  AS "Running Throughput %"
+                        FROM cumulative
+                        ORDER BY uptimeSecs
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Running cumulative GC overhead and throughput % — shows how application availability evolves over the log duration, not just the snapshot at the end."),
+
+            // -----------------------------------------------------------------------
+            // Metaspace expansion events
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-metaspace-expansions", "jvmlog",
+                    "GC Log: Metaspace Expansion Events", null,
+                    """
+                        CREATE VIEW "jvmlog-metaspace-expansions" AS
+                        WITH ordered AS (
+                            SELECT m.gcId,
+                                   e.uptimeSecs,
+                                   m.metaspaceAfter,
+                                   m.metaspaceCommitted,
+                                   LAG(m.metaspaceAfter)     OVER (ORDER BY m.gcId) AS prevAfter,
+                                   LAG(m.metaspaceCommitted) OVER (ORDER BY m.gcId) AS prevCommitted
+                            FROM jvmlog_metaspace m
+                            JOIN jvmlog_gc_event   e USING (gcId)
+                            WHERE m.metaspaceAfter IS NOT NULL
+                        )
+                        SELECT gcId                                                AS "GC ID",
+                               round(uptimeSecs, 3)                               AS "Uptime (s)",
+                               round(metaspaceAfter / 1048576.0, 1)               AS "Used (MB)",
+                               round(prevAfter / 1048576.0, 1)                    AS "Prev Used (MB)",
+                               round((metaspaceAfter - prevAfter) / 1048576.0, 2) AS "Growth (MB)",
+                               round(metaspaceCommitted / 1048576.0, 1)           AS "Committed (MB)",
+                               round((metaspaceCommitted - prevCommitted) / 1048576.0, 2)
+                                                                                  AS "Committed Δ (MB)"
+                        FROM ordered
+                        WHERE prevAfter IS NOT NULL
+                          AND (metaspaceAfter - prevAfter) > 1048576  -- only show >1MB growth events
+                        ORDER BY uptimeSecs
+                        """,
+                    "jvmlog_metaspace", "jvmlog_gc_event")
+                    .description("Metaspace expansion events where usage grew by >1MB between consecutive GCs — repeated expansions indicate steady class loading growth or a classloader leak.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-metaspace-expansions" AS
+                            WITH ordered AS (
+                                SELECT gcId,
+                                       metaspaceAfter,
+                                       metaspaceCommitted,
+                                       LAG(metaspaceAfter)     OVER (ORDER BY gcId) AS prevAfter,
+                                       LAG(metaspaceCommitted) OVER (ORDER BY gcId) AS prevCommitted
+                                FROM jvmlog_metaspace
+                                WHERE metaspaceAfter IS NOT NULL
+                            )
+                            SELECT gcId                                                AS "GC ID",
+                                   round(metaspaceAfter / 1048576.0, 1)               AS "Used (MB)",
+                                   round(prevAfter / 1048576.0, 1)                    AS "Prev Used (MB)",
+                                   round((metaspaceAfter - prevAfter) / 1048576.0, 2) AS "Growth (MB)"
+                            FROM ordered
+                            WHERE prevAfter IS NOT NULL
+                              AND (metaspaceAfter - prevAfter) > 1048576
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_metaspace"),
+
+            // -----------------------------------------------------------------------
+            // GC pressure index (composite pressure metric)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-pressure-index", "jvmlog",
+                    "GC Log: GC Pressure Index", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-pressure-index" AS
+                        WITH windows AS (
+                            SELECT floor(uptimeSecs / 60.0)::BIGINT AS minute,
+                                   count(*)                           AS gcCount,
+                                   sum(pauseMs)                       AS totalPauseMs,
+                                   max(pauseMs)                       AS maxPauseMs,
+                                   avg(100.0 * heapBefore / NULLIF(heapMax, 0)) AS avgHeapFillPct,
+                                   count(*) FILTER (WHERE gcType IN ('Full', 'Degenerated')) AS fullGcs,
+                                   count(*) FILTER (WHERE pauseMs > 200) AS spikeCount
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL AND pauseMs IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 60.0)::BIGINT
+                        )
+                        SELECT minute                                              AS "Minute",
+                               gcCount                                             AS "GC Count",
+                               round(totalPauseMs, 1)                             AS "Total Pause (ms)",
+                               round(maxPauseMs, 1)                               AS "Max Pause (ms)",
+                               round(avgHeapFillPct, 1)                           AS "Avg Heap Fill %",
+                               fullGcs                                             AS "Full GCs",
+                               spikeCount                                          AS "Spikes >200ms",
+                               round(
+                                   LEAST(100,
+                                       (totalPauseMs / 60000.0 * 40)     -- overhead weight
+                                       + (LEAST(maxPauseMs, 2000) / 2000.0 * 30) -- max pause weight
+                                       + (avgHeapFillPct / 100.0 * 20)    -- heap fill weight
+                                       + (fullGcs * 5)                     -- full GC penalty
+                                       + (spikeCount * 2)                  -- spike penalty (capped at 10)
+                                   )
+                               , 1)                                                AS "Pressure Index"
+                        FROM windows
+                        ORDER BY minute
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Composite GC pressure index per minute (0-100) combining overhead%, max pause, heap fill%, full GC count, and spike count — a single number to spot the most problematic periods."),
             };
 
     public static List<View> getViews() {

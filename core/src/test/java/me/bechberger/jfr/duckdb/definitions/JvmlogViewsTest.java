@@ -76,7 +76,9 @@ class JvmlogViewsTest {
             "jvmlog-cause-categories", "jvmlog-gc-cpu-estimate",
             "jvmlog-pause-heap-correlation", "jvmlog-overhead-by-type",
             "jvmlog-g1-old-gen-tracking", "jvmlog-phase-by-gc-type",
-            "jvmlog-zgc-minor-vs-major"
+            "jvmlog-zgc-minor-vs-major",
+            "jvmlog-pause-spike-frequency", "jvmlog-app-vs-gc-time",
+            "jvmlog-metaspace-expansions", "jvmlog-gc-pressure-index"
     );
 
     @Test
@@ -3058,6 +3060,114 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS types FROM \"jvmlog-zgc-minor-vs-major\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("types")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void pauseSpikeFrequencyViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 5.0, " + (i * 10.0) + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (10, 'Full', 'System.gc()', 0, 0, 0, 350.0, 60.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (11, 'Full', 'System.gc()', 0, 0, 0, 600.0, 70.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-spike-frequency".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-spike-frequency not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Minute\", \"Spikes >200ms\" FROM \"jvmlog-pause-spike-frequency\" ORDER BY \"Minute\"");
+            // minute 0 (normal GCs), minute 1 (spikes)
+            boolean found200msSpikes = false;
+            while (rs.next()) {
+                if (rs.getLong("Spikes >200ms") > 0) found200msSpikes = true;
+            }
+            assertThat(found200msSpikes).isTrue();
+        }
+        conn.close();
+    }
+
+    @Test
+    void appVsGcTimeViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 10.0, " + (i * 5.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-app-vs-gc-time".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-app-vs-gc-time not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows, max(\"Cumulative GC Time (ms)\") AS maxCum FROM \"jvmlog-app-vs-gc-time\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(5);
+            assertThat(rs.getDouble("maxCum")).isCloseTo(50.0, within(0.1));
+        }
+        conn.close();
+    }
+
+    @Test
+    void metaspaceExpansionsViewFallbackWithMetaspaceOnly() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_metaspace (gcId INTEGER, metaspaceBefore BIGINT, metaspaceAfter BIGINT, metaspaceCommitted BIGINT, classSpaceBefore BIGINT, classSpaceAfter BIGINT, classSpaceCommitted BIGINT)");
+            // Significant growth events
+            s.execute("INSERT INTO jvmlog_metaspace VALUES (0, 50000000, 50000000, 60000000, 0, 0, 0)");
+            s.execute("INSERT INTO jvmlog_metaspace VALUES (1, 50000000, 52000000, 62000000, 0, 0, 0)"); // +2MB
+            s.execute("INSERT INTO jvmlog_metaspace VALUES (2, 52000000, 52000000, 62000000, 0, 0, 0)"); // no change
+            s.execute("INSERT INTO jvmlog_metaspace VALUES (3, 52000000, 55000000, 65000000, 0, 0, 0)"); // +3MB
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-metaspace-expansions".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-metaspace-expansions not found"));
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_metaspace"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS events FROM \"jvmlog-metaspace-expansions\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("events")).isEqualTo(2); // GC 1 and 3 expanded by >1MB
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcPressureIndexViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Low-pressure minute
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', " +
+                        (100L * 1048576) + ", " + (50L * 1048576) + ", " + (512L * 1048576) + ", 5.0, " + (i * 10.0) + ")");
+            }
+            // High-pressure minute (minute 1)
+            for (int i = 0; i < 20; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + (i + 10) + ", 'Full', 'Allocation Failure', " +
+                        (500L * 1048576) + ", " + (200L * 1048576) + ", " + (512L * 1048576) + ", 500.0, " + (60.0 + i * 0.5) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-pressure-index".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-pressure-index not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Minute\", \"Pressure Index\" FROM \"jvmlog-gc-pressure-index\" ORDER BY \"Minute\"");
+            assertThat(rs.next()).isTrue();
+            long lowPressure = rs.getLong("Pressure Index");
+            assertThat(rs.next()).isTrue();
+            long highPressure = rs.getLong("Pressure Index");
+            assertThat(highPressure).isGreaterThan(lowPressure);
         }
         conn.close();
     }
