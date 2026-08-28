@@ -4759,6 +4759,266 @@ public class ViewCollection {
                             """,
                         "jvmlog_gc_phase")
                     .description("Top 5 slowest executions per GC phase — identifies outlier phase durations that cause the occasional long pause."),
+
+                // ---------------------------------------------------------------
+                // GC efficiency by cause: heap reclaimed per ms of pause
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-gc-efficiency-by-cause",
+                        "jvmlog",
+                        "GC Log: GC Efficiency by Cause",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-efficiency-by-cause" AS
+                            SELECT e.cause AS "Cause",
+                                   count(*)                                         AS "Events",
+                                   round(sum(h.heapBefore - h.heapAfter) / 1048576.0, 1)    AS "Total Reclaimed (MB)",
+                                   round(sum(e.pauseMs), 1)                         AS "Total Pause (ms)",
+                                   round(
+                                       CASE WHEN sum(e.pauseMs) > 0
+                                            THEN sum(h.heapBefore - h.heapAfter) / 1048576.0 / sum(e.pauseMs)
+                                            ELSE NULL END,
+                                       4)                                            AS "MB Reclaimed/ms",
+                                   round(avg(h.heapBefore - h.heapAfter) / 1048576.0, 2) AS "Avg Reclaimed/GC (MB)"
+                            FROM jvmlog_gc_event e
+                            JOIN jvmlog_heap_snapshot h USING (gcId)
+                            WHERE e.pauseMs IS NOT NULL
+                              AND h.heapBefore IS NOT NULL AND h.heapAfter IS NOT NULL
+                            GROUP BY e.cause
+                            ORDER BY "MB Reclaimed/ms" DESC NULLS LAST
+                            """,
+                        "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Heap reclaimed per millisecond of pause per GC cause — low efficiency causes are wasting stop-the-world budget."),
+
+                // ---------------------------------------------------------------
+                // Metaspace growth trend: linear regression to detect class loader leaks
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-metaspace-growth-trend",
+                        "jvmlog",
+                        "GC Log: Metaspace Growth Trend",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-metaspace-growth-trend" AS
+                            WITH ms AS (
+                                SELECT m.gcId,
+                                       e.uptimeSecs                                  AS uptimeSecs,
+                                       m.metaspaceAfter / 1048576.0                  AS metaspaceAfterMB,
+                                       m.classSpaceAfter / 1048576.0                 AS classSpaceAfterMB
+                                FROM jvmlog_metaspace m
+                                JOIN jvmlog_gc_event e USING (gcId)
+                                WHERE m.metaspaceAfter IS NOT NULL
+                                  AND e.uptimeSecs IS NOT NULL
+                            )
+                            SELECT count(*)                                                         AS "Samples",
+                                   round(min(metaspaceAfterMB), 2)                                 AS "Min Metaspace (MB)",
+                                   round(max(metaspaceAfterMB), 2)                                 AS "Max Metaspace (MB)",
+                                   round(regr_slope(metaspaceAfterMB, uptimeSecs), 6)              AS "Metaspace Growth (MB/s)",
+                                   round(regr_r2(metaspaceAfterMB, uptimeSecs), 4)                 AS "R²",
+                                   round(regr_slope(classSpaceAfterMB, uptimeSecs), 6)             AS "Class Space Growth (MB/s)",
+                                   CASE
+                                     WHEN regr_r2(metaspaceAfterMB, uptimeSecs) > 0.8
+                                          AND regr_slope(metaspaceAfterMB, uptimeSecs) > 0.001
+                                     THEN 'Likely class loader leak'
+                                     WHEN regr_slope(metaspaceAfterMB, uptimeSecs) > 0
+                                     THEN 'Slow growth — monitor'
+                                     ELSE 'Stable'
+                                   END                                                             AS "Assessment"
+                            FROM ms
+                            """,
+                        "jvmlog_metaspace", "jvmlog_gc_event")
+                    .description("Linear regression on metaspace-after-GC values — high R² with positive slope indicates a class loader leak.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-metaspace-growth-trend" AS
+                            WITH ms AS (
+                                SELECT gcId * 1.0                      AS uptimeSecs,
+                                       metaspaceAfter / 1048576.0      AS metaspaceAfterMB,
+                                       classSpaceAfter / 1048576.0     AS classSpaceAfterMB
+                                FROM jvmlog_metaspace
+                                WHERE metaspaceAfter IS NOT NULL
+                            )
+                            SELECT count(*)                                                         AS "Samples",
+                                   round(min(metaspaceAfterMB), 2)                                 AS "Min Metaspace (MB)",
+                                   round(max(metaspaceAfterMB), 2)                                 AS "Max Metaspace (MB)",
+                                   round(regr_slope(metaspaceAfterMB, uptimeSecs), 6)              AS "Metaspace Growth (MB/s)",
+                                   round(regr_r2(metaspaceAfterMB, uptimeSecs), 4)                 AS "R²",
+                                   round(regr_slope(classSpaceAfterMB, uptimeSecs), 6)             AS "Class Space Growth (MB/s)",
+                                   CASE
+                                     WHEN regr_r2(metaspaceAfterMB, uptimeSecs) > 0.8
+                                          AND regr_slope(metaspaceAfterMB, uptimeSecs) > 0.001
+                                     THEN 'Likely class loader leak'
+                                     WHEN regr_slope(metaspaceAfterMB, uptimeSecs) > 0
+                                     THEN 'Slow growth — monitor'
+                                     ELSE 'Stable'
+                                   END                                                             AS "Assessment"
+                            FROM ms
+                            """,
+                        "jvmlog_metaspace"),
+
+                // ---------------------------------------------------------------
+                // OOM risk estimate: extrapolate heap growth rate to time-to-OOM
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-oom-risk-estimate",
+                        "jvmlog",
+                        "GC Log: OOM Risk Estimate",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-oom-risk-estimate" AS
+                            WITH snap AS (
+                                SELECT h.gcId,
+                                       e.uptimeSecs                      AS uptimeSecs,
+                                       h.heapAfter  / 1048576.0          AS heapAfterMB,
+                                       h.heapCommittedAfter / 1048576.0  AS heapCommittedMB
+                                FROM jvmlog_heap_snapshot h
+                                JOIN jvmlog_gc_event e USING (gcId)
+                                WHERE h.heapAfter IS NOT NULL
+                                  AND e.uptimeSecs IS NOT NULL
+                            ),
+                            stats AS (
+                                SELECT count(*)                                               AS n,
+                                       max(uptimeSecs)                                        AS lastUptimeSecs,
+                                       max(heapCommittedMB)                                   AS maxCommittedMB,
+                                       regr_slope(heapAfterMB, uptimeSecs)                    AS slopeMBperSec,
+                                       regr_r2(heapAfterMB, uptimeSecs)                       AS r2,
+                                       regr_intercept(heapAfterMB, uptimeSecs)                AS intercept,
+                                       max(heapAfterMB)                                       AS currentHeapMB
+                                FROM snap
+                            )
+                            SELECT n                                                            AS "Samples",
+                                   round(currentHeapMB, 1)                                     AS "Current Live Heap (MB)",
+                                   round(maxCommittedMB, 1)                                    AS "Max Heap (MB)",
+                                   round(maxCommittedMB - currentHeapMB, 1)                    AS "Headroom (MB)",
+                                   round(slopeMBperSec * 1000, 4)                              AS "Growth Rate (MB/s)",
+                                   round(r2, 4)                                                AS "R²",
+                                   CASE
+                                     WHEN slopeMBperSec <= 0 OR r2 < 0.5
+                                     THEN 'No clear growth trend'
+                                     ELSE round(
+                                             (maxCommittedMB - (intercept + slopeMBperSec * lastUptimeSecs))
+                                             / slopeMBperSec / 60.0,
+                                             1)
+                                   END                                                         AS "Est. Time-to-OOM (min)",
+                                   CASE
+                                     WHEN slopeMBperSec <= 0 OR r2 < 0.5 THEN 'Low — no significant growth'
+                                     WHEN (maxCommittedMB - currentHeapMB) / slopeMBperSec < 300 THEN 'Critical — OOM imminent'
+                                     WHEN (maxCommittedMB - currentHeapMB) / slopeMBperSec < 3600 THEN 'High — hours until OOM'
+                                     ELSE 'Moderate — days until potential OOM'
+                                   END                                                         AS "Risk Level"
+                            FROM stats
+                            """,
+                        "jvmlog_heap_snapshot", "jvmlog_gc_event")
+                    .description("Extrapolates current heap growth rate (linear regression) to estimate time-to-OOM — only meaningful when R² > 0.5 indicating consistent leak.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-oom-risk-estimate" AS
+                            WITH snap AS (
+                                SELECT gcId * 1.0 AS uptimeSecs,
+                                       heapAfter  / 1048576.0 AS heapAfterMB,
+                                       heapCommittedAfter / 1048576.0 AS heapCommittedMB
+                                FROM jvmlog_heap_snapshot
+                                WHERE heapAfter IS NOT NULL
+                            ),
+                            stats AS (
+                                SELECT count(*) AS n,
+                                       max(uptimeSecs) AS lastUptimeSecs,
+                                       max(heapCommittedMB) AS maxCommittedMB,
+                                       regr_slope(heapAfterMB, uptimeSecs) AS slopeMBperSec,
+                                       regr_r2(heapAfterMB, uptimeSecs) AS r2,
+                                       regr_intercept(heapAfterMB, uptimeSecs) AS intercept,
+                                       max(heapAfterMB) AS currentHeapMB
+                                FROM snap
+                            )
+                            SELECT n AS "Samples",
+                                   round(currentHeapMB, 1) AS "Current Live Heap (MB)",
+                                   round(maxCommittedMB, 1) AS "Max Heap (MB)",
+                                   round(maxCommittedMB - currentHeapMB, 1) AS "Headroom (MB)",
+                                   round(slopeMBperSec * 1000, 4) AS "Growth Rate (MB/s)",
+                                   round(r2, 4) AS "R²",
+                                   CASE
+                                     WHEN slopeMBperSec <= 0 OR r2 < 0.5 THEN 'No clear growth trend'
+                                     ELSE round((maxCommittedMB - (intercept + slopeMBperSec * lastUptimeSecs)) / slopeMBperSec / 60.0, 1)
+                                   END AS "Est. Time-to-OOM (min)",
+                                   CASE
+                                     WHEN slopeMBperSec <= 0 OR r2 < 0.5 THEN 'Low — no significant growth'
+                                     WHEN (maxCommittedMB - currentHeapMB) / slopeMBperSec < 300 THEN 'Critical — OOM imminent'
+                                     WHEN (maxCommittedMB - currentHeapMB) / slopeMBperSec < 3600 THEN 'High — hours until OOM'
+                                     ELSE 'Moderate — days until potential OOM'
+                                   END AS "Risk Level"
+                            FROM stats
+                            """,
+                        "jvmlog_heap_snapshot"),
+
+                // ---------------------------------------------------------------
+                // G1 concurrent mark duration trend: is marking getting slower?
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-g1-mark-trend",
+                        "jvmlog",
+                        "GC Log: G1 Concurrent Mark Duration Trend",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-g1-mark-trend" AS
+                            WITH marks AS (
+                                SELECT p.gcId,
+                                       e.uptimeSecs     AS uptimeSecs,
+                                       p.durationMs
+                                FROM jvmlog_gc_phase p
+                                JOIN jvmlog_gc_event e USING (gcId)
+                                WHERE lower(p.phaseName) LIKE '%concurrent mark%'
+                                  AND p.durationMs IS NOT NULL
+                                  AND e.uptimeSecs IS NOT NULL
+                            )
+                            SELECT count(*)                                           AS "Mark Events",
+                                   round(min(durationMs), 1)                         AS "Min (ms)",
+                                   round(avg(durationMs), 1)                         AS "Avg (ms)",
+                                   round(max(durationMs), 1)                         AS "Max (ms)",
+                                   round(approx_quantile(durationMs, 0.99), 1)       AS "P99 (ms)",
+                                   round(regr_slope(durationMs, uptimeSecs), 4)      AS "Trend (ms/s)",
+                                   round(regr_r2(durationMs, uptimeSecs), 4)         AS "R²",
+                                   CASE
+                                     WHEN regr_r2(durationMs, uptimeSecs) > 0.6
+                                          AND regr_slope(durationMs, uptimeSecs) > 0
+                                     THEN 'Degrading — concurrent mark getting slower'
+                                     WHEN regr_r2(durationMs, uptimeSecs) > 0.6
+                                          AND regr_slope(durationMs, uptimeSecs) < 0
+                                     THEN 'Improving — concurrent mark getting faster'
+                                     ELSE 'Stable'
+                                   END                                               AS "Trend Assessment"
+                            FROM marks
+                            """,
+                        "jvmlog_gc_phase", "jvmlog_gc_event")
+                    .description("Linear regression on G1 concurrent mark durations — a degrading trend (positive slope, high R²) indicates increasing live set or reduced CPU for marking.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-g1-mark-trend" AS
+                            WITH marks AS (
+                                SELECT gcId * 1.0 AS uptimeSecs,
+                                       durationMs
+                                FROM jvmlog_gc_phase
+                                WHERE lower(phaseName) LIKE '%concurrent mark%'
+                                  AND durationMs IS NOT NULL
+                            )
+                            SELECT count(*)                                           AS "Mark Events",
+                                   round(min(durationMs), 1)                         AS "Min (ms)",
+                                   round(avg(durationMs), 1)                         AS "Avg (ms)",
+                                   round(max(durationMs), 1)                         AS "Max (ms)",
+                                   round(approx_quantile(durationMs, 0.99), 1)       AS "P99 (ms)",
+                                   round(regr_slope(durationMs, uptimeSecs), 4)      AS "Trend (ms/s)",
+                                   round(regr_r2(durationMs, uptimeSecs), 4)         AS "R²",
+                                   CASE
+                                     WHEN regr_r2(durationMs, uptimeSecs) > 0.6
+                                          AND regr_slope(durationMs, uptimeSecs) > 0
+                                     THEN 'Degrading — concurrent mark getting slower'
+                                     WHEN regr_r2(durationMs, uptimeSecs) > 0.6
+                                          AND regr_slope(durationMs, uptimeSecs) < 0
+                                     THEN 'Improving — concurrent mark getting faster'
+                                     ELSE 'Stable'
+                                   END                                               AS "Trend Assessment"
+                            FROM marks
+                            """,
+                        "jvmlog_gc_phase"),
             };
 
     public static List<View> getViews() {

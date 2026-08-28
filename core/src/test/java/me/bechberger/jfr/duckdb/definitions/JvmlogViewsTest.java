@@ -42,7 +42,9 @@ class JvmlogViewsTest {
             "jvmlog-heap-resize-summary", "jvmlog-allocation-rate-timeline",
             "jvmlog-pause-regression", "jvmlog-zgc-allocation-rate",
             "jvmlog-top-pauses-by-cause", "jvmlog-shenandoah-mode-analysis",
-            "jvmlog-phase-top-slow"
+            "jvmlog-phase-top-slow",
+            "jvmlog-gc-efficiency-by-cause", "jvmlog-metaspace-growth-trend",
+            "jvmlog-oom-risk-estimate", "jvmlog-g1-mark-trend"
     );
 
     @Test
@@ -1487,6 +1489,119 @@ class JvmlogViewsTest {
             rs = s.executeQuery("SELECT \"Duration (ms)\" FROM \"jvmlog-phase-top-slow\" WHERE \"Phase\" = 'Pre Evacuate Collection Set' LIMIT 1");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getDouble("Duration (ms)")).isCloseTo(3.6, within(0.01));
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcEfficiencyByCauseViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'G1 Young', 'Allocation Failure', 12.5, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'G1 Young', 'Allocation Failure', 15.0, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3, 'G1 Full', 'System.gc()', 800.0, 3.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1, 209715200, 104857600, 268435456, 268435456)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2, 209715200, 104857600, 268435456, 268435456)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (3, 524288000, 52428800, 536870912, 536870912)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-efficiency-by-cause".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-efficiency-by-cause not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-gc-efficiency-by-cause\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(2);
+            // System.gc() reclaims 457 MB in 800ms vs Allocation Failure 100MB in 27.5ms
+            // System.gc() MB/ms ≈ 0.571, Allocation Failure ≈ 3.636 → ordered desc
+            rs = s.executeQuery("SELECT \"Cause\" FROM \"jvmlog-gc-efficiency-by-cause\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Cause")).isEqualTo("Allocation Failure");
+        }
+        conn.close();
+    }
+
+    @Test
+    void metaspaceGrowthTrendViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_metaspace (gcId INTEGER, metaspaceBefore BIGINT, metaspaceAfter BIGINT, metaspaceCommitted BIGINT, classSpaceBefore BIGINT, classSpaceAfter BIGINT, classSpaceCommitted BIGINT)");
+            for (int i = 0; i < 5; i++) {
+                long meta = (50 + i * 2) * 1048576L;
+                long cls  = (6 + i) * 1048576L;
+                s.execute("INSERT INTO jvmlog_metaspace VALUES (" + i + ", " + meta + ", " + meta + ", " + (meta + 16777216) + ", " + cls + ", " + cls + ", " + (cls + 2097152) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-metaspace-growth-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-metaspace-growth-trend not found"));
+        // primary needs both metaspace + gc_event; fallback works with metaspace only
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_metaspace"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Samples\", \"Metaspace Growth (MB/s)\", \"Assessment\" FROM \"jvmlog-metaspace-growth-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Samples")).isEqualTo(5);
+            assertThat(rs.getDouble("Metaspace Growth (MB/s)")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void oomRiskEstimateViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            for (int i = 0; i < 6; i++) {
+                long after     = (100 + i * 20) * 1048576L;
+                long committed = 1024 * 1048576L;
+                s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (" + i + ", " + (after + 10485760) + ", " + after + ", " + committed + ", " + committed + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-oom-risk-estimate".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-oom-risk-estimate not found"));
+        // primary needs both heap_snapshot + gc_event; fallback works with heap_snapshot only
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_heap_snapshot"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Samples\", \"Risk Level\" FROM \"jvmlog-oom-risk-estimate\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Samples")).isEqualTo(6);
+            assertThat(rs.getString("Risk Level")).isNotNull();
+        }
+        conn.close();
+    }
+
+    @Test
+    void g1MarkTrendViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 6; i++) {
+                double dur = 50.0 + i * 5.0;
+                s.execute("INSERT INTO jvmlog_gc_phase VALUES (" + i + ", 'Concurrent Mark from Roots', " + dur + ", " + (i * 10.0) + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (6, 'Pre Evacuate Collection Set', 3.0, 60.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-mark-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-mark-trend not found"));
+        // primary needs both gc_phase + gc_event; fallback works with gc_phase only
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_phase"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Mark Events\", \"Trend (ms/s)\", \"Trend Assessment\" FROM \"jvmlog-g1-mark-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Mark Events")).isEqualTo(6);
+            assertThat(rs.getDouble("Trend (ms/s)")).isGreaterThan(0);
         }
         conn.close();
     }

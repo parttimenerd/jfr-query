@@ -390,6 +390,22 @@ TABLE()
 
 ---
 
+<!-- @cell name=oom-risk-estimate requires="has-heap-snapshot" -->
+
+## OOM Risk Estimate
+
+Extrapolates the current heap growth rate (linear regression) to estimate time-to-OOM. Only meaningful when R² > 0.5 indicating a consistent growth trend. If the JVM is not leaking, this will report "No clear growth trend".
+
+```sql
+SELECT * FROM "jvmlog-oom-risk-estimate"
+```
+
+```plot
+TABLE()
+```
+
+---
+
 <!-- @cell name=heap-growth-trend requires="has-combined-timeline" -->
 
 ## Heap Growth Trend
@@ -600,6 +616,22 @@ LINE(x="GC ID", y="Metaspace After (MB)")
 
 ---
 
+<!-- @cell name=metaspace-growth-trend requires="has-metaspace" -->
+
+## Metaspace Growth Trend
+
+Linear regression on metaspace-after-GC values — high R² combined with positive growth rate strongly indicates a class loader leak. Class Space growth is a secondary signal.
+
+```sql
+SELECT * FROM "jvmlog-metaspace-growth-trend"
+```
+
+```plot
+TABLE()
+```
+
+---
+
 <!-- @cell name=phase-breakdown requires="has-gc-phase" -->
 
 ## Phase Breakdown
@@ -613,6 +645,22 @@ ORDER BY "Avg ms" DESC
 
 ```plot
 BAR(x="Phase", y="Avg ms")
+```
+
+---
+
+<!-- @cell name=g1-mark-trend requires="has-gc-phase" -->
+
+## G1: Concurrent Mark Duration Trend
+
+Linear regression on concurrent mark durations over time — a degrading trend (positive slope, high R²) indicates an increasing live set or reduced CPU availability for concurrent marking, often a precursor to concurrent mark failures and Full GC.
+
+```sql
+SELECT * FROM "jvmlog-g1-mark-trend"
+```
+
+```plot
+TABLE()
 ```
 
 ---
@@ -985,6 +1033,22 @@ SELECT * FROM "jvmlog-safepoint-timeline"
 
 ```plot
 SCATTER(x="#", y="Total (ms)", color="Operation")
+```
+
+---
+
+<!-- @cell name=gc-efficiency-by-cause -->
+
+## GC Efficiency by Cause
+
+Heap reclaimed per millisecond of pause per GC cause — causes with low MB/ms are wasting stop-the-world budget and may benefit from tuning (e.g., `-XX:+ExplicitGCInvokesConcurrent` to handle `System.gc()` concurrently).
+
+```sql
+SELECT * FROM "jvmlog-gc-efficiency-by-cause"
+```
+
+```plot
+BAR(x="Cause", y="MB Reclaimed/ms")
 ```
 
 ---
