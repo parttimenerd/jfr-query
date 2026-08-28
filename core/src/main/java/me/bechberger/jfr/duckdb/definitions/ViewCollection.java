@@ -6523,6 +6523,209 @@ public class ViewCollection {
                         """,
                     "jvmlog_safepoint")
                     .description("Safepoint operation frequency per 1-minute window — shows which operations dominate STW time each minute and whether problematic operations cluster in time."),
+
+            // -----------------------------------------------------------------------
+            // Metaspace class space growth trend (leak detection)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-class-space-trend", "jvmlog",
+                    "GC Log: Class Space Growth Trend", null,
+                    """
+                        CREATE VIEW "jvmlog-class-space-trend" AS
+                        WITH cs AS (
+                            SELECT e.uptimeSecs,
+                                   m.classSpaceAfter,
+                                   m.classSpaceCommitted
+                            FROM jvmlog_metaspace m
+                            JOIN jvmlog_gc_event  e USING (gcId)
+                            WHERE m.classSpaceAfter IS NOT NULL AND e.uptimeSecs IS NOT NULL
+                        )
+                        SELECT count(*)                                                AS "Data Points",
+                               round(min(classSpaceAfter) / 1048576.0, 1)             AS "Min Class Space (MB)",
+                               round(max(classSpaceAfter) / 1048576.0, 1)             AS "Max Class Space (MB)",
+                               round(avg(classSpaceAfter) / 1048576.0, 1)             AS "Avg Class Space (MB)",
+                               round(max(classSpaceCommitted) / 1048576.0, 1)         AS "Max Committed (MB)",
+                               round(regr_slope(classSpaceAfter, uptimeSecs), 2)      AS "Growth Rate (bytes/s)",
+                               round(regr_r2(classSpaceAfter, uptimeSecs), 4)         AS "R²",
+                               CASE
+                                 WHEN regr_r2(classSpaceAfter, uptimeSecs) > 0.7
+                                      AND regr_slope(classSpaceAfter, uptimeSecs) > 1024
+                                 THEN 'Warning — class space growing steadily, possible classloader leak'
+                                 WHEN regr_r2(classSpaceAfter, uptimeSecs) > 0.5
+                                      AND regr_slope(classSpaceAfter, uptimeSecs) > 0
+                                 THEN 'Mild growth — monitor for classloader accumulation'
+                                 ELSE 'Stable'
+                               END                                                    AS "Assessment"
+                        FROM cs
+                        """,
+                    "jvmlog_metaspace", "jvmlog_gc_event")
+                    .description("Class space growth trend from metaspace data — linear regression on class space usage detects classloader leaks before they cause OutOfMemoryError: Metaspace.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-class-space-trend" AS
+                            SELECT count(*)                                                AS "Data Points",
+                                   round(min(classSpaceAfter) / 1048576.0, 1)             AS "Min Class Space (MB)",
+                                   round(max(classSpaceAfter) / 1048576.0, 1)             AS "Max Class Space (MB)",
+                                   round(avg(classSpaceAfter) / 1048576.0, 1)             AS "Avg Class Space (MB)",
+                                   round(max(classSpaceCommitted) / 1048576.0, 1)         AS "Max Committed (MB)",
+                                   round(regr_slope(classSpaceAfter, gcId * 1.0), 2)      AS "Growth Rate (bytes/GC)",
+                                   round(regr_r2(classSpaceAfter, gcId * 1.0), 4)         AS "R²",
+                                   CASE
+                                     WHEN regr_r2(classSpaceAfter, gcId * 1.0) > 0.7
+                                          AND regr_slope(classSpaceAfter, gcId * 1.0) > 0
+                                     THEN 'Warning — class space growing, possible classloader leak'
+                                     ELSE 'Stable'
+                                   END                                                    AS "Assessment"
+                            FROM jvmlog_metaspace
+                            WHERE classSpaceAfter IS NOT NULL
+                            """,
+                        "jvmlog_metaspace"),
+
+            // -----------------------------------------------------------------------
+            // GC throughput consistency (rolling coefficient of variation)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-throughput-consistency", "jvmlog",
+                    "GC Log: GC Throughput Consistency", null,
+                    """
+                        CREATE VIEW "jvmlog-throughput-consistency" AS
+                        WITH windows AS (
+                            SELECT floor(uptimeSecs / 60.0)::BIGINT AS minute,
+                                   100.0 * (1.0 - sum(pauseMs) / 60000.0) AS throughputPct
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL AND pauseMs IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 60.0)::BIGINT
+                        )
+                        SELECT count(*)                                              AS "Minutes Observed",
+                               round(avg(throughputPct), 2)                         AS "Avg Throughput %",
+                               round(min(throughputPct), 2)                         AS "Min Throughput %",
+                               round(max(throughputPct), 2)                         AS "Max Throughput %",
+                               round(stddev_pop(throughputPct), 2)                  AS "StdDev %",
+                               round(100.0 * stddev_pop(throughputPct)
+                                     / NULLIF(avg(throughputPct), 0), 2)            AS "CV % (Consistency)",
+                               CASE
+                                 WHEN 100.0 * stddev_pop(throughputPct)
+                                      / NULLIF(avg(throughputPct), 0) < 5
+                                 THEN 'Consistent — GC overhead stable across minutes'
+                                 WHEN 100.0 * stddev_pop(throughputPct)
+                                      / NULLIF(avg(throughputPct), 0) < 15
+                                 THEN 'Moderate variance — some GC pressure spikes'
+                                 ELSE 'High variance — GC overhead highly irregular'
+                               END                                                  AS "Consistency Assessment"
+                        FROM windows
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC throughput consistency across 1-minute windows: coefficient of variation (CV%) measures how steady the overhead is — high CV% means erratic GC spikes."),
+
+            // -----------------------------------------------------------------------
+            // Heap fragmentation timeline (headroom trend)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-heap-headroom-timeline", "jvmlog",
+                    "GC Log: Heap Headroom Over Time", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-headroom-timeline" AS
+                        SELECT gcId                                                   AS "GC ID",
+                               round(uptimeSecs, 3)                                  AS "Uptime (s)",
+                               gcType                                                 AS "GC Type",
+                               round(heapMax / 1048576.0, 1)                        AS "Heap Max (MB)",
+                               round(heapAfter / 1048576.0, 1)                      AS "Heap After (MB)",
+                               round((heapMax - heapAfter) / 1048576.0, 1)          AS "Headroom (MB)",
+                               round(100.0 * (heapMax - heapAfter)
+                                     / NULLIF(heapMax, 0), 1)                        AS "Headroom %"
+                        FROM jvmlog_gc_event
+                        WHERE heapMax IS NOT NULL AND heapAfter IS NOT NULL
+                          AND uptimeSecs IS NOT NULL
+                        ORDER BY uptimeSecs
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Post-GC heap headroom (free capacity) per GC event over time — declining headroom trend means the JVM is approaching the heap ceiling and Full GCs are likely imminent."),
+
+            // -----------------------------------------------------------------------
+            // Concurrent mode failure rate (G1/CMS/Shenandoah error pattern)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-concurrent-mode-failure", "jvmlog",
+                    "GC Log: Concurrent Mode Failure Analysis", null,
+                    """
+                        CREATE VIEW "jvmlog-concurrent-mode-failure" AS
+                        WITH all_errors AS (
+                            SELECT gcId, errorType, durationMs
+                            FROM jvmlog_gc_errors
+                            WHERE errorType IN ('To-space exhausted', 'Evacuation Failure',
+                                                'Degenerated GC', 'Out Of Memory')
+                        )
+                        SELECT errorType                                              AS "Failure Type",
+                               count(*)                                               AS "Count",
+                               round(sum(durationMs), 1)                             AS "Total Duration (ms)",
+                               round(avg(durationMs), 2)                             AS "Avg Duration (ms)",
+                               round(max(durationMs), 2)                             AS "Max Duration (ms)",
+                               round(100.0 * count(*) / (
+                                   SELECT count(*) FROM jvmlog_gc_event
+                               ), 2)                                                 AS "% of All GCs"
+                        FROM all_errors
+                        GROUP BY errorType
+                        ORDER BY "Count" DESC
+                        """,
+                    "jvmlog_gc_errors")
+                    .description("Concurrent mode failure rates: evacuation failures, to-space exhaustion, degenerated GCs, and OOM events — these indicate the concurrent collector cannot keep up with allocation pressure."),
+
+            // -----------------------------------------------------------------------
+            // Metaspace pressure assessment
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-metaspace-pressure", "jvmlog",
+                    "GC Log: Metaspace Pressure Assessment", null,
+                    """
+                        CREATE VIEW "jvmlog-metaspace-pressure" AS
+                        WITH ms AS (
+                            SELECT e.gcId,
+                                   e.uptimeSecs,
+                                   m.metaspaceAfter,
+                                   m.metaspaceCommitted,
+                                   m.metaspaceAfter * 100.0 / NULLIF(m.metaspaceCommitted, 0) AS usePct
+                            FROM jvmlog_metaspace m
+                            JOIN jvmlog_gc_event   e USING (gcId)
+                            WHERE m.metaspaceAfter IS NOT NULL AND m.metaspaceCommitted IS NOT NULL
+                        )
+                        SELECT count(*)                                                AS "Samples",
+                               round(min(metaspaceAfter) / 1048576.0, 1)              AS "Min Used (MB)",
+                               round(max(metaspaceAfter) / 1048576.0, 1)              AS "Max Used (MB)",
+                               round(avg(metaspaceAfter) / 1048576.0, 1)              AS "Avg Used (MB)",
+                               round(max(metaspaceCommitted) / 1048576.0, 1)          AS "Max Committed (MB)",
+                               round(avg(usePct), 1)                                  AS "Avg Use %",
+                               round(max(usePct), 1)                                  AS "Peak Use %",
+                               round(regr_slope(metaspaceAfter, uptimeSecs) / 1024.0, 2)
+                                                                                      AS "Growth (KB/s)",
+                               CASE
+                                 WHEN max(usePct) > 90
+                                 THEN 'Critical — metaspace nearly full, OOM risk high'
+                                 WHEN max(usePct) > 75
+                                 THEN 'Warning — metaspace use elevated, monitor closely'
+                                 WHEN regr_slope(metaspaceAfter, uptimeSecs) > 102400
+                                 THEN 'Growing — steady metaspace growth detected'
+                                 ELSE 'Healthy'
+                               END                                                    AS "Assessment"
+                        FROM ms
+                        """,
+                    "jvmlog_metaspace", "jvmlog_gc_event")
+                    .description("Metaspace pressure assessment: current usage vs committed, growth rate, peak fill %, and a health assessment — identifies OOM: Metaspace risk before it occurs.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-metaspace-pressure" AS
+                            SELECT count(*)                                                AS "Samples",
+                                   round(min(metaspaceAfter) / 1048576.0, 1)              AS "Min Used (MB)",
+                                   round(max(metaspaceAfter) / 1048576.0, 1)              AS "Max Used (MB)",
+                                   round(avg(metaspaceAfter) / 1048576.0, 1)              AS "Avg Used (MB)",
+                                   round(max(metaspaceCommitted) / 1048576.0, 1)          AS "Max Committed (MB)",
+                                   round(avg(metaspaceAfter * 100.0 / NULLIF(metaspaceCommitted, 0)), 1)
+                                                                                          AS "Avg Use %",
+                                   round(max(metaspaceAfter * 100.0 / NULLIF(metaspaceCommitted, 0)), 1)
+                                                                                          AS "Peak Use %"
+                            FROM jvmlog_metaspace
+                            WHERE metaspaceAfter IS NOT NULL AND metaspaceCommitted IS NOT NULL
+                            """,
+                        "jvmlog_metaspace"),
             };
 
     public static List<View> getViews() {

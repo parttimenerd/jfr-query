@@ -1841,3 +1841,84 @@ ORDER BY "Minute", "Total STW (ms)" DESC
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=class-space-trend requires="has-metaspace" -->
+
+## Class Space Growth Trend
+
+Linear regression on class space after each GC — steadily growing class space indicates classloader accumulation, a common source of `OutOfMemoryError: Metaspace`.
+
+```sql
+SELECT * FROM "jvmlog-class-space-trend"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=throughput-consistency -->
+
+## GC Throughput Consistency
+
+Coefficient of variation (CV%) of per-minute GC overhead — low CV% means steady overhead; high CV% means erratic GC spikes that cause unpredictable latency.
+
+```sql
+SELECT * FROM "jvmlog-throughput-consistency"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=heap-headroom-timeline -->
+
+## Heap Headroom Over Time
+
+Post-GC headroom (free capacity) per GC event — declining headroom means the JVM is approaching the heap ceiling and Full GCs are increasingly likely.
+
+```sql
+SELECT * FROM "jvmlog-heap-headroom-timeline"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Headroom %")
+```
+
+---
+
+<!-- @cell name=concurrent-mode-failure requires="has-gc-errors" -->
+
+## Concurrent Mode Failure Analysis
+
+Rates of evacuation failures, to-space exhaustion, degenerated GCs, and OOM events — these indicate the concurrent collector cannot keep pace with allocation pressure.
+
+```sql
+SELECT * FROM "jvmlog-concurrent-mode-failure"
+ORDER BY "Count" DESC
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=metaspace-pressure requires="has-metaspace" -->
+
+## Metaspace Pressure Assessment
+
+Metaspace usage vs committed, peak fill %, growth rate, and health assessment — detects `OutOfMemoryError: Metaspace` risk before it occurs.
+
+```sql
+SELECT * FROM "jvmlog-metaspace-pressure"
+```
+
+```plot
+TABLE()
+```

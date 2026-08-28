@@ -68,7 +68,10 @@ class JvmlogViewsTest {
             "jvmlog-gc-cause-heatmap",
             "jvmlog-interval-distribution", "jvmlog-live-data-estimate",
             "jvmlog-young-gc-frequency", "jvmlog-allocation-surges",
-            "jvmlog-safepoint-heatmap"
+            "jvmlog-safepoint-heatmap",
+            "jvmlog-class-space-trend", "jvmlog-throughput-consistency",
+            "jvmlog-heap-headroom-timeline", "jvmlog-concurrent-mode-failure",
+            "jvmlog-metaspace-pressure"
     );
 
     @Test
@@ -2699,6 +2702,133 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-safepoint-heatmap\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("rows")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void classSpaceTrendViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_metaspace (gcId INTEGER, metaspaceBefore BIGINT, metaspaceAfter BIGINT, metaspaceCommitted BIGINT, classSpaceBefore BIGINT, classSpaceAfter BIGINT, classSpaceCommitted BIGINT)");
+            for (int i = 0; i < 5; i++) {
+                long cs = (20L + i * 2) * 1048576;
+                s.execute("INSERT INTO jvmlog_metaspace VALUES (" + i + ", " + (cs + 10 * 1048576) + ", " +
+                        (cs + 10 * 1048576) + ", " + (cs + 20 * 1048576) + ", " + cs + ", " + cs + ", " +
+                        (cs + 10 * 1048576) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-class-space-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-class-space-trend not found"));
+        // fallback with metaspace only
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_metaspace"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Data Points\", \"Max Class Space (MB)\" FROM \"jvmlog-class-space-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Data Points")).isEqualTo(5);
+        }
+        conn.close();
+    }
+
+    @Test
+    void throughputConsistencyViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Consistent ~2% overhead
+            for (int i = 0; i < 20; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 12.0, " + (i * 3.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-throughput-consistency".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-throughput-consistency not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Avg Throughput %\" FROM \"jvmlog-throughput-consistency\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Avg Throughput %")).isGreaterThan(90.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void heapHeadroomTimelineViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 5; i++) {
+                long after = (150L + i * 20) * 1048576;
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', " +
+                        (after + 50 * 1048576L) + ", " + after + ", " + (512L * 1048576) + ", 5.0, " + (i * 5.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-headroom-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-headroom-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows, max(\"Headroom %\") AS maxHR FROM \"jvmlog-heap-headroom-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(5);
+            assertThat(rs.getDouble("maxHR")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void concurrentModeFailureViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_errors (gcId INTEGER, errorType VARCHAR, durationMs DOUBLE, errorDetail VARCHAR)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (3, 'Evacuation Failure', 1.2, NULL)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (5, 'To-space exhausted', NULL, NULL)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (7, 'Evacuation Failure', 2.5, NULL)");
+            for (int i = 0; i < 10; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 5.0, " + (i * 3.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-concurrent-mode-failure".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-concurrent-mode-failure not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_errors"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Failure Type\", \"Count\" FROM \"jvmlog-concurrent-mode-failure\" ORDER BY \"Count\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Failure Type")).isEqualTo("Evacuation Failure");
+            assertThat(rs.getLong("Count")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void metaspacePressureViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_metaspace (gcId INTEGER, metaspaceBefore BIGINT, metaspaceAfter BIGINT, metaspaceCommitted BIGINT, classSpaceBefore BIGINT, classSpaceAfter BIGINT, classSpaceCommitted BIGINT)");
+            for (int i = 0; i < 5; i++) {
+                long used = (60L + i * 2) * 1048576;
+                long committed = 80L * 1048576;
+                s.execute("INSERT INTO jvmlog_metaspace VALUES (" + i + ", " + used + ", " + used + ", " + committed + ", 0, 0, 0)");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-metaspace-pressure".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-metaspace-pressure not found"));
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_metaspace"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Peak Use %\" FROM \"jvmlog-metaspace-pressure\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Peak Use %")).isGreaterThan(0);
         }
         conn.close();
     }
