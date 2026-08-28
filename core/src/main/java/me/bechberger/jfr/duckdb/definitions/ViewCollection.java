@@ -4517,6 +4517,71 @@ public class ViewCollection {
                             """,
                         "jvmlog_zgc_phases")
                     .description("ZGC generational collection breakdown (JDK 21+) — Young vs Old generation cycle counts, concurrent time, and pause time."),
+                new View(
+                        "jvmlog-concurrent-overhead",
+                        "jvmlog",
+                        "GC Log: Concurrent GC Overhead",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-concurrent-overhead" AS
+                            WITH phase_totals AS (
+                                SELECT sum(durationMs) AS totalConcurrentMs,
+                                       count(DISTINCT gcId) AS cycleCount
+                                FROM jvmlog_gc_phase
+                                WHERE durationMs IS NOT NULL
+                            ),
+                            uptime AS (
+                                SELECT max(uptimeSecs) - min(uptimeSecs) AS totalUptimeSecs
+                                FROM jvmlog_gc_event
+                                WHERE uptimeSecs IS NOT NULL
+                            )
+                            SELECT round(p.totalConcurrentMs, 2) AS "Total Concurrent Phase Time (ms)",
+                                   round(u.totalUptimeSecs * 1000, 2) AS "Total Uptime (ms)",
+                                   round(p.totalConcurrentMs / nullif(u.totalUptimeSecs * 1000, 0) * 100.0, 2) AS "Concurrent Overhead %",
+                                   p.cycleCount AS "Cycles with Phase Data"
+                            FROM phase_totals p
+                            CROSS JOIN uptime u
+                            """,
+                        "jvmlog_gc_event", "jvmlog_gc_phase")
+                    .description("Total concurrent GC phase time as a percentage of JVM uptime — measures the background GC work overhead for concurrent collectors (G1, ZGC, Shenandoah)."),
+                new View(
+                        "jvmlog-gc-log-quality",
+                        "jvmlog",
+                        "GC Log: Log Quality Diagnostic",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-log-quality" AS
+                            WITH events AS (
+                                SELECT count(*) AS totalEvents,
+                                       count(*) FILTER (WHERE pauseMs IS NOT NULL) AS eventsWithPause,
+                                       count(*) FILTER (WHERE uptimeSecs IS NOT NULL) AS eventsWithUptime,
+                                       min(gcId) AS minGcId,
+                                       max(gcId) AS maxGcId,
+                                       count(DISTINCT gcId) AS distinctGcIds,
+                                       min(uptimeSecs) AS firstEventSecs,
+                                       max(uptimeSecs) AS lastEventSecs
+                                FROM jvmlog_gc_event
+                            ),
+                            unknown AS (
+                                SELECT sum(count) AS unknownLineCount
+                                FROM jvmlog_unknown_lines
+                            )
+                            SELECT e.totalEvents AS "Total GC Events",
+                                   e.eventsWithPause AS "Events with Pause",
+                                   e.eventsWithUptime AS "Events with Uptime",
+                                   e.minGcId AS "First GC ID",
+                                   e.maxGcId AS "Last GC ID",
+                                   e.distinctGcIds AS "Distinct GC IDs",
+                                   (e.maxGcId - e.minGcId + 1 - e.distinctGcIds) AS "Missing GC IDs",
+                                   round(e.firstEventSecs, 3) AS "First Event Uptime (s)",
+                                   round(e.lastEventSecs, 3) AS "Last Event Uptime (s)",
+                                   round(e.lastEventSecs - e.firstEventSecs, 3) AS "Log Duration (s)",
+                                   coalesce(u.unknownLineCount, 0) AS "Unmatched Lines"
+                            FROM events e
+                            CROSS JOIN unknown u
+                            """,
+                        "jvmlog_gc_event", "jvmlog_unknown_lines")
+                    .description("GC log quality diagnostics — checks for missing GC IDs (truncated/rotated logs), uptime coverage, and unmatched lines."),
             };
 
     public static List<View> getViews() {

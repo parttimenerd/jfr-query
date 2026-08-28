@@ -37,7 +37,8 @@ class JvmlogViewsTest {
             "jvmlog-heap-growth-trend", "jvmlog-heap-growth-summary",
             "jvmlog-allocation-rate", "jvmlog-gc-type-breakdown", "jvmlog-full-gc-analysis",
             "jvmlog-g1-humongous", "jvmlog-parallel-gc-detail", "jvmlog-gc-health-score",
-            "jvmlog-gc-recommendations", "jvmlog-zgc-generational"
+            "jvmlog-gc-recommendations", "jvmlog-zgc-generational",
+            "jvmlog-concurrent-overhead", "jvmlog-gc-log-quality"
     );
 
     @Test
@@ -1225,6 +1226,62 @@ class JvmlogViewsTest {
             assertThat(rs.getString("Generation")).isEqualTo("Young");
             assertThat(rs.getLong("Cycles")).isEqualTo(2);
             assertThat(rs.getDouble("Total Concurrent (ms)")).isCloseTo(83.8, within(0.1));
+        }
+        conn.close();
+    }
+
+    @Test
+    void concurrentOverheadViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 5.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 4.0, 11.0)");
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (0, 'Concurrent Cycle', 100.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1, 'Concurrent Cycle', 90.0, 11.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-concurrent-overhead".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-concurrent-overhead not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_gc_phase"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_gc_phase"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Total Concurrent Phase Time (ms)\", \"Concurrent Overhead %\", \"Cycles with Phase Data\" FROM \"jvmlog-concurrent-overhead\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Total Concurrent Phase Time (ms)")).isCloseTo(190.0, within(0.1));
+            assertThat(rs.getLong("Cycles with Phase Data")).isEqualTo(2);
+            assertThat(rs.getDouble("Concurrent Overhead %")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcLogQualityViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 5.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 4.0, 3.0)");
+            // GC ID 2 is missing — gap of 1
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3, 'Young', 'G1 Evacuation Pause', 6.0, 7.0)");
+            s.execute("CREATE TABLE jvmlog_unknown_lines (tags VARCHAR, level VARCHAR, messagePrefix VARCHAR, count BIGINT)");
+            s.execute("INSERT INTO jvmlog_unknown_lines VALUES ('[gc,unknown]', 'info', 'Some unexpected line', 5)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-log-quality".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-log-quality not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_unknown_lines"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_unknown_lines"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Total GC Events\", \"Missing GC IDs\", \"Unmatched Lines\", \"Log Duration (s)\" FROM \"jvmlog-gc-log-quality\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Total GC Events")).isEqualTo(3);
+            assertThat(rs.getLong("Missing GC IDs")).isEqualTo(1); // GC ID 2 is missing
+            assertThat(rs.getLong("Unmatched Lines")).isEqualTo(5);
+            assertThat(rs.getDouble("Log Duration (s)")).isCloseTo(6.0, within(0.1));
         }
         conn.close();
     }

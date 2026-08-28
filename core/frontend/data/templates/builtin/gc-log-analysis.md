@@ -406,6 +406,22 @@ BAR(x="Window Start (s)", y="GC Overhead %")
 
 ---
 
+<!-- @cell name=concurrent-overhead requires="has-gc-phase" -->
+
+## Concurrent GC Overhead
+
+Total time spent in concurrent GC phases as a percentage of JVM uptime — measures the background work overhead for G1/ZGC/Shenandoah. High values (> 20%) with low STW is normal for these collectors.
+
+```sql
+SELECT * FROM "jvmlog-concurrent-overhead"
+```
+
+```plot
+TABLE()
+```
+
+---
+
 <!-- @cell name=throughput-timeline -->
 
 ## Throughput Over Time
@@ -998,6 +1014,22 @@ Log lines that did not match any known pattern.
 
 ```sql
 SELECT * FROM "jvmlog-unknown-summary"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=gc-log-quality -->
+
+## GC Log Quality Diagnostic
+
+Log completeness check — missing GC IDs indicate log rotation or truncation, unmatched lines suggest new or non-standard patterns.
+
+```sql
+SELECT * FROM "jvmlog-gc-log-quality"
 ```
 
 ```plot
