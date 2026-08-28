@@ -13,7 +13,7 @@ cellConditions:
   has-zgc: "SELECT count(*) > 0 FROM jvmlog_zgc_phases"
   has-zgc-director: "SELECT count(*) > 0 FROM jvmlog_zgc_director"
   has-zgc-load: "SELECT count(*) > 0 FROM jvmlog_zgc_load"
-  has-parallel: "SELECT count(*) > 0 FROM jvmlog_parallel_sizing"
+  has-parallel: "SELECT count(*) > 0 FROM jvmlog_gc_init WHERE algorithm LIKE 'Parallel%' OR algorithm LIKE 'Serial%'"
   has-stringdedup: "SELECT count(*) > 0 FROM jvmlog_stringdedup"
   has-metaspace: "SELECT count(*) > 0 FROM jvmlog_metaspace"
   has-gc-workers: "SELECT count(*) > 0 FROM jvmlog_gc_workers"
@@ -22,15 +22,15 @@ cellConditions:
   has-alloc-stall: "SELECT count(*) > 0 FROM jvmlog_alloc_stall"
   has-gc-errors: "SELECT count(*) > 0 FROM jvmlog_gc_errors"
   has-combined-timeline: "SELECT count(*) > 0 FROM jvmlog_heap_snapshot"
-  has-shenandoah: "SELECT count(*) > 0 FROM jvmlog_shenandoah_free"
+  has-shenandoah: "SELECT count(*) > 0 FROM jvmlog_gc_init WHERE algorithm = 'Shenandoah'"
   has-zgc-stats: "SELECT count(*) > 0 FROM jvmlog_zgc_stats"
   has-zgc-phases: "SELECT count(*) > 0 FROM jvmlog_zgc_phases"
   has-gc-phases: "SELECT count(*) > 0 FROM jvmlog_gc_phase"
   has-phases: "SELECT count(*) > 0 FROM jvmlog_gc_phase"
   has-gc-init: "SELECT count(*) > 0 FROM jvmlog_gc_init"
   has-safepoints: "SELECT count(*) > 0 FROM jvmlog_safepoint"
-  has-parallel-sizing: "SELECT count(*) > 0 FROM jvmlog_parallel_sizing"
-  has-shenandoah-ergo: "SELECT count(*) > 0 FROM jvmlog_shenandoah_free"
+  has-parallel-sizing: "SELECT count(*) > 0 FROM jvmlog_gc_init WHERE algorithm LIKE 'Parallel%' OR algorithm LIKE 'Serial%'"
+  has-shenandoah-ergo: "SELECT count(*) > 0 FROM jvmlog_gc_init WHERE algorithm = 'Shenandoah'"
 ---
 
 <!-- @cell name=intro -->
