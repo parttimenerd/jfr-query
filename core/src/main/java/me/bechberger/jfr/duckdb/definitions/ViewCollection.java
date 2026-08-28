@@ -6344,6 +6344,185 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("GC cause activity per 5-minute window — a cross-tabulation of time vs cause showing when specific causes dominate and how the cause mix evolves across the log."),
+
+            // -----------------------------------------------------------------------
+            // Inter-GC interval distribution (histogram of time between GCs)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-interval-distribution", "jvmlog",
+                    "GC Log: Inter-GC Interval Distribution", null,
+                    """
+                        CREATE VIEW "jvmlog-interval-distribution" AS
+                        WITH intervals AS (
+                            SELECT uptimeSecs - LAG(uptimeSecs) OVER (ORDER BY uptimeSecs) AS gapSecs
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL
+                        ),
+                        bucketed AS (
+                            SELECT CASE
+                                     WHEN gapSecs < 0.1  THEN '<0.1s'
+                                     WHEN gapSecs < 0.5  THEN '0.1-0.5s'
+                                     WHEN gapSecs < 1.0  THEN '0.5-1s'
+                                     WHEN gapSecs < 2.0  THEN '1-2s'
+                                     WHEN gapSecs < 5.0  THEN '2-5s'
+                                     WHEN gapSecs < 10.0 THEN '5-10s'
+                                     WHEN gapSecs < 30.0 THEN '10-30s'
+                                     ELSE '30s+'
+                                   END AS bucket,
+                                   CASE
+                                     WHEN gapSecs < 0.1  THEN 0
+                                     WHEN gapSecs < 0.5  THEN 1
+                                     WHEN gapSecs < 1.0  THEN 2
+                                     WHEN gapSecs < 2.0  THEN 3
+                                     WHEN gapSecs < 5.0  THEN 4
+                                     WHEN gapSecs < 10.0 THEN 5
+                                     WHEN gapSecs < 30.0 THEN 6
+                                     ELSE 7
+                                   END AS sortKey
+                            FROM intervals
+                            WHERE gapSecs IS NOT NULL
+                        )
+                        SELECT bucket                                              AS "Interval Bucket",
+                               count(*)                                            AS "Count",
+                               round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS "% of Intervals"
+                        FROM bucketed
+                        GROUP BY bucket, sortKey
+                        ORDER BY sortKey
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Distribution of time between consecutive GC events — frequent very-short intervals (<0.1s) indicate high GC pressure; long intervals indicate the heap is under-pressure."),
+
+            // -----------------------------------------------------------------------
+            // Live data set estimate (post-GC heap floor)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-live-data-estimate", "jvmlog",
+                    "GC Log: Live Data Set Estimate", null,
+                    """
+                        CREATE VIEW "jvmlog-live-data-estimate" AS
+                        WITH post_gc AS (
+                            SELECT gcId,
+                                   uptimeSecs,
+                                   heapAfter,
+                                   heapMax,
+                                   100.0 * heapAfter / NULLIF(heapMax, 0) AS afterPct,
+                                   gcType
+                            FROM jvmlog_gc_event
+                            WHERE heapAfter IS NOT NULL AND gcType NOT IN ('Concurrent', 'Pause Initial Mark')
+                        ),
+                        windows AS (
+                            SELECT floor(uptimeSecs / 300.0)::BIGINT AS w,
+                                   min(heapAfter)                     AS minAfter,
+                                   avg(heapAfter)                     AS avgAfter,
+                                   max(heapAfter)                     AS maxAfter
+                            FROM post_gc
+                            GROUP BY floor(uptimeSecs / 300.0)::BIGINT
+                        )
+                        SELECT count(*)                                               AS "GC Events",
+                               round(min(heapAfter) / 1048576.0, 1)                  AS "Min Post-GC Heap (MB)",
+                               round(avg(heapAfter) / 1048576.0, 1)                  AS "Avg Post-GC Heap (MB)",
+                               round(approx_quantile(heapAfter, 0.10) / 1048576.0, 1)
+                                                                                     AS "p10 Post-GC Heap (MB)",
+                               round(approx_quantile(heapAfter, 0.25) / 1048576.0, 1)
+                                                                                     AS "p25 Post-GC Heap (MB)",
+                               round(max(heapMax) / 1048576.0, 1)                   AS "Max Heap (MB)",
+                               round(min(heapAfter) * 100.0 / NULLIF(max(heapMax), 0), 1)
+                                                                                     AS "Min Post-GC Heap %",
+                               round(approx_quantile(heapAfter, 0.10) * 100.0 / NULLIF(max(heapMax), 0), 1)
+                                                                                     AS "p10 Post-GC Heap %"
+                        FROM post_gc
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Live data set estimate from post-GC heap levels — the minimum and p10 post-GC heap size approximates the live data set: data that cannot be reclaimed by any GC."),
+
+            // -----------------------------------------------------------------------
+            // Young GC frequency over time
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-young-gc-frequency", "jvmlog",
+                    "GC Log: Young GC Frequency Over Time", null,
+                    """
+                        CREATE VIEW "jvmlog-young-gc-frequency" AS
+                        WITH young AS (
+                            SELECT floor(uptimeSecs / 60.0)::BIGINT AS minute,
+                                   count(*)                           AS youngCount,
+                                   round(sum(pauseMs), 1)             AS totalPauseMs,
+                                   round(avg(pauseMs), 2)             AS avgPauseMs
+                            FROM jvmlog_gc_event
+                            WHERE gcType IN ('Young', 'GarbageFirst (young)', 'Pause Young')
+                              AND uptimeSecs IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 60.0)::BIGINT
+                        )
+                        SELECT minute                                              AS "Minute",
+                               youngCount                                          AS "Young GC Count",
+                               totalPauseMs                                        AS "Total Pause (ms)",
+                               avgPauseMs                                          AS "Avg Pause (ms)",
+                               round(1.0 * youngCount / 60.0, 3)                  AS "Rate (GCs/s)"
+                        FROM young
+                        ORDER BY minute
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Young GC frequency per 1-minute window — rising Young GC rate indicates increasing allocation pressure; constant high rate suggests Young gen is undersized."),
+
+            // -----------------------------------------------------------------------
+            // Allocation surge detection (sudden spikes vs rolling baseline)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-allocation-surges", "jvmlog",
+                    "GC Log: Allocation Rate Surges", null,
+                    """
+                        CREATE VIEW "jvmlog-allocation-surges" AS
+                        WITH intervals AS (
+                            SELECT gcId,
+                                   uptimeSecs,
+                                   (heapBefore - LAG(heapAfter) OVER (ORDER BY uptimeSecs))
+                                       / NULLIF(uptimeSecs - LAG(uptimeSecs) OVER (ORDER BY uptimeSecs), 0)
+                                       AS allocBytesPerSec,
+                                   LAG(uptimeSecs) OVER (ORDER BY uptimeSecs) AS prevUptime
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL AND heapBefore IS NOT NULL
+                        ),
+                        stats AS (
+                            SELECT avg(allocBytesPerSec)    AS mean,
+                                   stddev_pop(allocBytesPerSec) AS std
+                            FROM intervals
+                            WHERE allocBytesPerSec > 0
+                        )
+                        SELECT i.gcId                                                AS "GC ID",
+                               round(i.uptimeSecs, 3)                               AS "Uptime (s)",
+                               round(i.allocBytesPerSec / 1048576.0, 1)             AS "Alloc Rate (MB/s)",
+                               round(s.mean / 1048576.0, 1)                         AS "Baseline (MB/s)",
+                               round((i.allocBytesPerSec - s.mean) / NULLIF(s.std, 0), 2)
+                                                                                    AS "Z-Score",
+                               round(i.uptimeSecs - i.prevUptime, 3)               AS "Interval (s)"
+                        FROM intervals i, stats s
+                        WHERE i.allocBytesPerSec > 0
+                          AND (i.allocBytesPerSec - s.mean) / NULLIF(s.std, 0) > 2.0
+                        ORDER BY "Z-Score" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GCs where the preceding allocation rate was a statistical outlier (Z-score > 2.0) — these sudden spikes indicate burst allocation events that may trigger emergency GCs."),
+
+            // -----------------------------------------------------------------------
+            // Safepoint operation heatmap (operation × time window)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-safepoint-heatmap", "jvmlog",
+                    "GC Log: Safepoint Operation Frequency Heatmap", null,
+                    """
+                        CREATE VIEW "jvmlog-safepoint-heatmap" AS
+                        SELECT floor(uptimeSecs / 60.0)::BIGINT               AS "Minute",
+                               operation                                        AS "Operation",
+                               count(*)                                         AS "Count",
+                               round(sum(durationMs), 1)                       AS "Total STW (ms)",
+                               round(max(durationMs), 1)                       AS "Max STW (ms)"
+                        FROM jvmlog_safepoint
+                        WHERE uptimeSecs IS NOT NULL AND operation IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 60.0)::BIGINT, operation
+                        ORDER BY 1, "Total STW (ms)" DESC
+                        """,
+                    "jvmlog_safepoint")
+                    .description("Safepoint operation frequency per 1-minute window — shows which operations dominate STW time each minute and whether problematic operations cluster in time."),
             };
 
     public static List<View> getViews() {

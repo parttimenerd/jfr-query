@@ -65,7 +65,10 @@ class JvmlogViewsTest {
             "jvmlog-alloc-pressure-timeline",
             "jvmlog-sla-breach-by-cause", "jvmlog-pause-burst-windows",
             "jvmlog-health-timeline", "jvmlog-heap-efficiency-by-type",
-            "jvmlog-gc-cause-heatmap"
+            "jvmlog-gc-cause-heatmap",
+            "jvmlog-interval-distribution", "jvmlog-live-data-estimate",
+            "jvmlog-young-gc-frequency", "jvmlog-allocation-surges",
+            "jvmlog-safepoint-heatmap"
     );
 
     @Test
@@ -2567,6 +2570,133 @@ class JvmlogViewsTest {
         try (Statement s = conn.createStatement()) {
             s.execute(view.definition());
             var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-gc-cause-heatmap\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void intervalDistributionViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // GCs 0.5s apart (0.5-1s bucket)
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 5.0, " + (i * 0.7) + ")");
+            }
+            // GC with 15s interval
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (10, 'Young', 'Cause', 0, 0, 0, 5.0, 20.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-interval-distribution".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-interval-distribution not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS buckets FROM \"jvmlog-interval-distribution\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("buckets")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void liveDataEstimateViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            long maxHeap = 512L * 1048576;
+            for (int i = 0; i < 10; i++) {
+                long after = (80L + i * 5) * 1048576; // slowly increasing post-GC heap
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', " +
+                        (after + 50L * 1048576) + ", " + after + ", " + maxHeap + ", 5.0, " + (i * 5.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-live-data-estimate".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-live-data-estimate not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Min Post-GC Heap (MB)\", \"Avg Post-GC Heap (MB)\" FROM \"jvmlog-live-data-estimate\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Min Post-GC Heap (MB)")).isCloseTo(80.0, within(1.0));
+        }
+        conn.close();
+    }
+
+    @Test
+    void youngGcFrequencyViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // 8 Young GCs in minute 0
+            for (int i = 0; i < 8; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, " + (i * 7.0) + ")");
+            }
+            // Full GC (should not be counted)
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (20, 'Full', 'System.gc()', 0, 0, 0, 300.0, 180.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-young-gc-frequency".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-young-gc-frequency not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Minute\", \"Young GC Count\" FROM \"jvmlog-young-gc-frequency\" ORDER BY \"Minute\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Young GC Count")).isEqualTo(8);
+        }
+        conn.close();
+    }
+
+    @Test
+    void allocationSurgesViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Baseline GCs: ~10 MB/s allocation
+            for (int i = 0; i < 15; i++) {
+                long after  = 100L * 1048576;
+                long before = (100L + 10) * 1048576; // 10MB in 1s = 10 MB/s
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', " +
+                        before + ", " + after + ", " + (512L * 1048576) + ", 5.0, " + (i * 1.0) + ")");
+            }
+            // Surge: 500 MB in 1s = 500 MB/s (huge outlier)
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (99, 'Young', 'Allocation Failure', " +
+                    (600L * 1048576) + ", " + (100L * 1048576) + ", " + (512L * 1048576) + ", 15.0, 20.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-allocation-surges".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-allocation-surges not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Z-Score\" FROM \"jvmlog-allocation-surges\" ORDER BY \"Z-Score\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(99);
+        }
+        conn.close();
+    }
+
+    @Test
+    void safepointHeatmapViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_safepoint (gcId INTEGER, uptimeSecs DOUBLE, operation VARCHAR, durationMs DOUBLE, ttrMs DOUBLE)");
+            for (int i = 0; i < 6; i++) {
+                s.execute("INSERT INTO jvmlog_safepoint VALUES (" + i + ", " + (i * 8.0) + ", 'G1CollectForAllocation', " + (15.0 + i) + ", 0.5)");
+            }
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (10, 70.0, 'Deoptimize', 2.0, 0.1)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-safepoint-heatmap".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-safepoint-heatmap not found"));
+        assertThat(view.isValid(Set.of("jvmlog_safepoint"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-safepoint-heatmap\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("rows")).isGreaterThan(0);
         }

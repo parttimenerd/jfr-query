@@ -1759,3 +1759,85 @@ ORDER BY "5-Min Window", "Total Pause (ms)" DESC
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=interval-distribution -->
+
+## Inter-GC Interval Distribution
+
+Histogram of time between consecutive GC events — frequent very-short intervals (<0.1s) indicate extreme GC pressure; long intervals (10s+) indicate a healthy, lightly-loaded heap.
+
+```sql
+SELECT * FROM "jvmlog-interval-distribution"
+```
+
+```plot
+BAR(x="Interval Bucket", y="Count")
+```
+
+---
+
+<!-- @cell name=live-data-estimate -->
+
+## Live Data Set Estimate
+
+Minimum and p10 post-GC heap levels approximate the live data set — the floor of memory the JVM cannot reclaim regardless of GC effort. Compare against heap max to check head room.
+
+```sql
+SELECT * FROM "jvmlog-live-data-estimate"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=young-gc-frequency -->
+
+## Young GC Frequency Over Time
+
+Young GC count and pause time per 1-minute window — a rising rate indicates increasing allocation pressure; consistently high rates suggest the Young gen is undersized.
+
+```sql
+SELECT * FROM "jvmlog-young-gc-frequency"
+```
+
+```plot
+LINE(x="Minute", y="Young GC Count")
+```
+
+---
+
+<!-- @cell name=allocation-surges -->
+
+## Allocation Rate Surges
+
+GCs where the preceding allocation rate was a statistical outlier (Z-score > 2.0) — burst allocation spikes often trigger emergency or back-to-back GCs.
+
+```sql
+SELECT * FROM "jvmlog-allocation-surges"
+ORDER BY "Z-Score" DESC
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=safepoint-heatmap requires="has-safepoints" -->
+
+## Safepoint Operation Frequency Heatmap
+
+Safepoint operation count and STW time per 1-minute window — shows which operations dominate in each period and whether problematic operations cluster at a particular time.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-heatmap"
+ORDER BY "Minute", "Total STW (ms)" DESC
+```
+
+```plot
+TABLE()
+```
