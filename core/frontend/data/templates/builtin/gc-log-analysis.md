@@ -4275,3 +4275,75 @@ SELECT * FROM "jvmlog-gc-efficiency-trend"
 LINE(x="Uptime (s)", y="Rolling Avg Efficiency (MB/ms)", color="Efficiency Rating")
 ```
 
+---
+
+<!-- @cell name=g1-region-composition requires="has-g1-regions" -->
+
+## G1 Region Composition per GC
+
+Per-cycle breakdown of Eden/Survivor/Old/Humongous region counts — sustained old region growth each cycle means promotion rate exceeds old gen capacity; watch for Eden Used % approaching 100% (triggers GC) and growing Humongous counts (large allocations causing frequent young GC cycles).
+
+```sql
+SELECT * FROM "jvmlog-g1-region-composition"
+```
+
+---
+
+<!-- @cell name=zgc-live-vs-garbage requires="has-zgc-stats" -->
+
+## ZGC Live Set vs Garbage per Cycle
+
+Live set and garbage percentage at ZGC relocation start — <20% garbage means GC runs too frequently for small gains (heap may be undersized); >70% garbage indicates very productive cycles; use this alongside the ZGC capacity trend to determine if heap sizing changes are warranted.
+
+```sql
+SELECT * FROM "jvmlog-zgc-live-vs-garbage"
+```
+
+```plot
+LINE(x="GC ID", y="Garbage %", color="Garbage Assessment")
+```
+
+---
+
+<!-- @cell name=stringdedup-roi requires="has-stringdedup" -->
+
+## String Deduplication ROI
+
+Memory savings per millisecond of CPU time spent on string deduplication — LOW ROI suggests disabling `-XX:+UseStringDeduplication` to reclaim the CPU overhead; HIGH ROI confirms the feature pays for itself for this workload's string allocation patterns.
+
+```sql
+SELECT * FROM "jvmlog-stringdedup-roi"
+```
+
+---
+
+<!-- @cell name=gc-pause-percentile-timeline requires="has-jvmlog-gc" -->
+
+## GC Pause Percentile Timeline (P50/P90/P99 per Minute)
+
+P50, P90, P95, P99, and Max GC pause times bucketed per minute — growing P99 with stable P50 identifies tail-latency regressions from occasional full GCs; growing P99-P50 spread indicates increasing pause variance that affects SLA compliance even when median latency looks fine.
+
+```sql
+SELECT * FROM "jvmlog-gc-pause-percentile-timeline"
+```
+
+```plot
+LINE(x="Minute", y="P99 (ms)")
+```
+
+---
+
+<!-- @cell name=concurrent-vs-stw-work requires="has-gc-phase" -->
+
+## Concurrent Work vs STW Pause Time per GC Type
+
+Concurrent background work time vs stop-the-world pause time ratio — for ZGC and Shenandoah, Concurrent/STW > 10 is expected; falling ratio indicates the collector can't finish concurrent work before the application allocates faster than GC can process, leading to stalls and degenerated GC modes.
+
+```sql
+SELECT * FROM "jvmlog-concurrent-vs-stw-work"
+```
+
+```plot
+BAR(x="GC Type", y="Concurrent/STW Ratio")
+```
+

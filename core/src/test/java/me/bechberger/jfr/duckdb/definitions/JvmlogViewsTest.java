@@ -149,7 +149,10 @@ class JvmlogViewsTest {
             "jvmlog-gc-overhead-forecast",
             "jvmlog-gc-error-frequency", "jvmlog-safepoint-dominant-ops",
             "jvmlog-phase-heap-pressure", "jvmlog-young-vs-full-pause-trend",
-            "jvmlog-gc-efficiency-trend"
+            "jvmlog-gc-efficiency-trend",
+            "jvmlog-g1-region-composition", "jvmlog-zgc-live-vs-garbage",
+            "jvmlog-stringdedup-roi", "jvmlog-gc-pause-percentile-timeline",
+            "jvmlog-concurrent-vs-stw-work"
     );
 
     @Test
@@ -6108,6 +6111,120 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT \"Efficiency (MB/ms)\", \"Efficiency Rating\" FROM \"jvmlog-gc-efficiency-trend\" LIMIT 1");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getDouble("Efficiency (MB/ms)")).isGreaterThan(0.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogG1RegionComposition() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, edenBefore INTEGER, edenAfter INTEGER, edenMax INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, survivorMax INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER, archiveBefore INTEGER, archiveAfter INTEGER)");
+            s.execute("INSERT INTO jvmlog_g1_regions VALUES (1,20,2,24,3,4,6,8,9,1,1,0,0)");
+            s.execute("INSERT INTO jvmlog_g1_regions VALUES (2,22,2,24,4,5,6,9,10,0,0,0,0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-region-composition".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-region-composition not found"));
+        assertThat(view.isValid(Set.of("jvmlog_g1_regions"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Eden Before\", \"Has Humongous\" FROM \"jvmlog-g1-region-composition\" ORDER BY \"GC ID\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("Eden Before")).isEqualTo(20);
+            assertThat(rs.getString("Has Humongous")).isEqualTo("Yes");
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogZgcLiveVsGarbage() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_stats (gcId INTEGER, phase VARCHAR, usedBytes BIGINT, liveBytes BIGINT, garbageBytes BIGINT)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (1,'Relocate Start',500*1024*1024,300*1024*1024,200*1024*1024)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (2,'Relocate Start',600*1024*1024,350*1024*1024,250*1024*1024)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (1,'Mark Start',400*1024*1024,NULL,NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-live-vs-garbage".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-live-vs-garbage not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_stats"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Garbage %\" FROM \"jvmlog-zgc-live-vs-garbage\" ORDER BY \"GC ID\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Garbage %")).isGreaterThan(0.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogStringdedupRoi() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_stringdedup (gcId INTEGER, savedBytes BIGINT, objectCount BIGINT, deduplicatedObjects BIGINT, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_stringdedup VALUES (1,1024*1024,5000,4000,10.0)");
+            s.execute("INSERT INTO jvmlog_stringdedup VALUES (2,2*1024*1024,8000,7000,15.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-stringdedup-roi".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-stringdedup-roi not found"));
+        assertThat(view.isValid(Set.of("jvmlog_stringdedup"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Total Saved (MB)\", \"Dedup ROI\" FROM \"jvmlog-stringdedup-roi\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Total Saved (MB)")).isGreaterThan(0.0);
+            assertThat(rs.getString("Dedup ROI")).isNotEmpty();
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcPausePercentileTimeline() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 1; i <= 20; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ",'G1 Young','G1 Evacuation Pause'," + (i * 1.5) + "," + (i * 3.0) + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (21,'G1 Full','Allocation Failure',250.0,63.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-pause-percentile-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-pause-percentile-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-gc-pause-percentile-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isGreaterThan(0L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogConcurrentVsStwWork() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'ZGC','Allocation Rate',3.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'ZGC','Allocation Rate',4.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Concurrent Mark',80.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (2,'Concurrent Mark',90.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Concurrent Relocate',20.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-concurrent-vs-stw-work".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-concurrent-vs-stw-work not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_gc_phase"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC Type\", \"Concurrent/STW Ratio\" FROM \"jvmlog-concurrent-vs-stw-work\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Concurrent/STW Ratio")).isGreaterThan(1.0);
         }
         conn.close();
     }

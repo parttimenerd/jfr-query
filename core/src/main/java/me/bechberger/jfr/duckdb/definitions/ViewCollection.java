@@ -11026,6 +11026,174 @@ public class ViewCollection {
                     WHERE e.pauseMs > 0
                     """, "jvmlog_heap_snapshot", "jvmlog_gc_event")
                     .description("GC efficiency trend — measures and tracks MB reclaimed per millisecond of GC pause over time; declining efficiency (less reclaim per pause) is a leading indicator of heap fragmentation or live data growth that GC must work harder to navigate."),
+
+            // ── Batch 24: region composition, ZGC live/garbage, dedup ROI, percentile timeline ──
+
+            new View(
+                    "jvmlog-g1-region-composition", "jvmlog",
+                    "GC Log: G1 Region Composition per GC (Eden/Survivor/Old/Humongous)", null,
+                    """
+                    CREATE VIEW "jvmlog-g1-region-composition" AS
+                    SELECT gcId                                             AS "GC ID",
+                           edenBefore                                      AS "Eden Before",
+                           edenAfter                                       AS "Eden After",
+                           edenMax                                         AS "Eden Max",
+                           survivorBefore                                  AS "Survivor Before",
+                           survivorAfter                                   AS "Survivor After",
+                           oldBefore                                       AS "Old Before",
+                           oldAfter                                        AS "Old After",
+                           humongousBefore                                 AS "Humongous Before",
+                           humongousAfter                                  AS "Humongous After",
+                           round(edenAfter * 100.0 / NULLIF(edenMax, 0), 1) AS "Eden Used %",
+                           (survivorAfter - survivorBefore)               AS "Survivor Growth",
+                           (oldAfter - oldBefore)                         AS "Old Growth",
+                           CASE
+                             WHEN humongousAfter > 0 THEN 'Yes'
+                             ELSE 'No'
+                           END AS "Has Humongous"
+                    FROM jvmlog_g1_regions
+                    ORDER BY gcId
+                    """,
+                    "jvmlog_g1_regions")
+                    .description("G1 region composition per GC cycle — shows the before/after breakdown of Eden, Survivor, Old, and Humongous region counts; sustained old growth with each cycle indicates promotion rate exceeds old gen capacity and may cause premature Full GC."),
+
+            new View(
+                    "jvmlog-zgc-live-vs-garbage", "jvmlog",
+                    "GC Log: ZGC Live Set vs Garbage per Cycle", null,
+                    """
+                    CREATE VIEW "jvmlog-zgc-live-vs-garbage" AS
+                    WITH relocate AS (
+                        SELECT gcId,
+                               liveBytes,
+                               garbageBytes,
+                               liveBytes + garbageBytes AS totalBytes
+                        FROM jvmlog_zgc_stats
+                        WHERE phase = 'Relocate Start'
+                          AND liveBytes IS NOT NULL AND garbageBytes IS NOT NULL
+                    )
+                    SELECT gcId                                                   AS "GC ID",
+                           round(liveBytes    / 1048576.0, 1)                   AS "Live Set (MB)",
+                           round(garbageBytes / 1048576.0, 1)                   AS "Garbage (MB)",
+                           round(totalBytes   / 1048576.0, 1)                   AS "Total Used (MB)",
+                           round(garbageBytes * 100.0 / NULLIF(totalBytes, 0), 1) AS "Garbage %",
+                           round(liveBytes    * 100.0 / NULLIF(totalBytes, 0), 1) AS "Live %",
+                           CASE
+                             WHEN garbageBytes * 100.0 / NULLIF(totalBytes, 0) < 20.0 THEN 'LOW — heap may be undersized (little to reclaim)'
+                             WHEN garbageBytes * 100.0 / NULLIF(totalBytes, 0) > 70.0 THEN 'HIGH — very productive GC cycle'
+                             ELSE 'NORMAL — typical garbage ratio'
+                           END AS "Garbage Assessment"
+                    FROM relocate
+                    ORDER BY gcId
+                    """,
+                    "jvmlog_zgc_stats")
+                    .description("ZGC live set vs garbage per relocation cycle — low garbage% (<20%) means GC runs too frequently with too little to collect; consider increasing heap size or ZGC collection interval; high garbage% (>70%) indicates efficient GC cycles."),
+
+            new View(
+                    "jvmlog-stringdedup-roi", "jvmlog",
+                    "GC Log: String Deduplication ROI (Savings per Dedup ms)", null,
+                    """
+                    CREATE VIEW "jvmlog-stringdedup-roi" AS
+                    WITH combined AS (
+                        SELECT gcId,
+                               savedBytes,
+                               objectCount,
+                               deduplicatedObjects,
+                               durationMs
+                        FROM jvmlog_stringdedup
+                        WHERE savedBytes IS NOT NULL AND durationMs IS NOT NULL AND durationMs > 0
+                    )
+                    SELECT count(*)                                               AS "GC Events",
+                           round(sum(savedBytes)    / 1048576.0, 2)             AS "Total Saved (MB)",
+                           round(sum(durationMs), 1)                            AS "Total Dedup Time (ms)",
+                           round(sum(savedBytes) / 1048576.0
+                                 / NULLIF(sum(durationMs), 0), 3)               AS "Savings per Dedup ms (MB/ms)",
+                           round(avg(savedBytes / durationMs / 1024.0), 2)     AS "Avg KB saved/ms",
+                           round(avg(objectCount * 1.0 / NULLIF(deduplicatedObjects, 1)), 1) AS "Avg Objects per Dedup Event",
+                           CASE
+                             WHEN sum(savedBytes) / 1048576.0 / NULLIF(sum(durationMs), 0) > 0.1
+                               THEN 'HIGH ROI — deduplication very cost-effective'
+                             WHEN sum(savedBytes) / 1048576.0 / NULLIF(sum(durationMs), 0) > 0.01
+                               THEN 'MODERATE ROI — deduplication providing measurable benefit'
+                             ELSE 'LOW ROI — consider disabling -XX:+UseStringDeduplication'
+                           END AS "Dedup ROI"
+                    FROM combined
+                    """,
+                    "jvmlog_stringdedup")
+                    .description("String deduplication ROI — measures memory savings per CPU millisecond spent on deduplication; LOW ROI suggests disabling UseStringDeduplication to reclaim CPU; HIGH ROI confirms the feature is justified for string-heavy workloads."),
+
+            new View(
+                    "jvmlog-gc-pause-percentile-timeline", "jvmlog",
+                    "GC Log: Rolling GC Pause Percentiles per Minute (P50/P90/P99)", null,
+                    """
+                    CREATE VIEW "jvmlog-gc-pause-percentile-timeline" AS
+                    SELECT floor(uptimeSecs / 60.0)                               AS "Minute",
+                           count(*)                                               AS "GC Count",
+                           round(approx_quantile(pauseMs, 0.50), 2)              AS "P50 (ms)",
+                           round(approx_quantile(pauseMs, 0.90), 2)              AS "P90 (ms)",
+                           round(approx_quantile(pauseMs, 0.95), 2)              AS "P95 (ms)",
+                           round(approx_quantile(pauseMs, 0.99), 2)              AS "P99 (ms)",
+                           round(max(pauseMs), 2)                                AS "Max (ms)",
+                           round(approx_quantile(pauseMs, 0.99) -
+                                 approx_quantile(pauseMs, 0.50), 2)              AS "P99-P50 Spread (ms)"
+                    FROM jvmlog_gc_event
+                    WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                    GROUP BY floor(uptimeSecs / 60.0)
+                    ORDER BY "Minute"
+                    """,
+                    "jvmlog_gc_event")
+                    .description("Rolling pause percentile timeline — P50/P90/P95/P99 GC pause times bucketed per minute; growing P99 with stable P50 indicates tail-latency regression from occasional full GCs or memory pressure; growing P99-P50 spread signals increasing pause variance."),
+
+            new View(
+                    "jvmlog-concurrent-vs-stw-work", "jvmlog",
+                    "GC Log: Concurrent Work vs STW Pause Time per GC Type", null,
+                    """
+                    CREATE VIEW "jvmlog-concurrent-vs-stw-work" AS
+                    WITH stw AS (
+                        SELECT gcType,
+                               avg(pauseMs)   AS avgPauseMs,
+                               sum(pauseMs)   AS totalPauseMs,
+                               count(*)       AS gcCount
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL
+                        GROUP BY gcType
+                    ),
+                    concurrent AS (
+                        SELECT gcId,
+                               sum(durationMs) AS concurrentMs
+                        FROM jvmlog_gc_phase
+                        WHERE phaseName LIKE '%Concurrent%' AND durationMs IS NOT NULL
+                        GROUP BY gcId
+                    ),
+                    gc_concurrent AS (
+                        SELECT e.gcType,
+                               avg(c.concurrentMs) AS avgConcurrentMs
+                        FROM jvmlog_gc_event e
+                        JOIN concurrent c ON c.gcId = e.gcId
+                        GROUP BY e.gcType
+                    )
+                    SELECT s.gcType                                AS "GC Type",
+                           s.gcCount                             AS "Count",
+                           round(s.avgPauseMs, 3)               AS "Avg Pause (ms)",
+                           round(gc_concurrent.avgConcurrentMs, 1) AS "Avg Concurrent Work (ms)",
+                           round(gc_concurrent.avgConcurrentMs / NULLIF(s.avgPauseMs, 0), 1) AS "Concurrent/STW Ratio"
+                    FROM stw s
+                    LEFT JOIN gc_concurrent ON gc_concurrent.gcType = s.gcType
+                    ORDER BY s.totalPauseMs DESC
+                    """,
+                    "jvmlog_gc_event", "jvmlog_gc_phase")
+                    .addAlternative(
+                    """
+                    CREATE VIEW "jvmlog-concurrent-vs-stw-work" AS
+                    SELECT gcType                  AS "GC Type",
+                           count(*)               AS "Count",
+                           round(avg(pauseMs), 3) AS "Avg Pause (ms)",
+                           round(sum(pauseMs), 1) AS "Total Pause (ms)"
+                    FROM jvmlog_gc_event
+                    WHERE pauseMs IS NOT NULL
+                    GROUP BY gcType
+                    ORDER BY "Total Pause (ms)" DESC
+                    """, "jvmlog_gc_event")
+                    .description("Concurrent vs STW work ratio — for each GC type, compares the amount of concurrent background work to the actual stop-the-world pause time; low Concurrent/STW ratio on ZGC or Shenandoah indicates the collector is struggling to finish concurrent work before the application outpaces it."),
             };
 
     public static List<View> getViews() {
