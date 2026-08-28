@@ -5361,6 +5361,108 @@ public class ViewCollection {
                             """,
                         "jvmlog_zgc_phases")
                     .description("ZGC phase breakdown by STW vs concurrent and by work category (mark/relocate/reference) — shows which phase categories dominate cycle time."),
+
+                // ---------------------------------------------------------------
+                // GC pause variance per cause: high stddev = unpredictable latency
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-pause-variance",
+                        "jvmlog",
+                        "GC Log: Pause Time Variance by Cause",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-pause-variance" AS
+                            SELECT cause AS "Cause",
+                                   count(*)                                           AS "Events",
+                                   round(avg(pauseMs), 2)                             AS "Avg (ms)",
+                                   round(stddev_pop(pauseMs), 2)                      AS "StdDev (ms)",
+                                   round(approx_quantile(pauseMs, 0.99), 2)           AS "P99 (ms)",
+                                   round(max(pauseMs), 2)                             AS "Max (ms)",
+                                   round(stddev_pop(pauseMs) / NULLIF(avg(pauseMs), 0) * 100, 1) AS "CV %",
+                                   CASE
+                                     WHEN stddev_pop(pauseMs) / NULLIF(avg(pauseMs), 0) > 1.0
+                                     THEN 'High variance — very unpredictable pause times'
+                                     WHEN stddev_pop(pauseMs) / NULLIF(avg(pauseMs), 0) > 0.5
+                                     THEN 'Moderate variance — some latency unpredictability'
+                                     ELSE 'Low variance — consistent pause times'
+                                   END                                                AS "Assessment"
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                            GROUP BY cause
+                            ORDER BY "CV %" DESC NULLS LAST
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Coefficient of variation (StdDev/Mean) for pause times per GC cause — high CV indicates unpredictable latency spikes even if average is low."),
+
+                // ---------------------------------------------------------------
+                // GC cause first occurrence timeline: when did each cause first appear?
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-cause-first-occurrence",
+                        "jvmlog",
+                        "GC Log: GC Cause First Occurrence",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-cause-first-occurrence" AS
+                            SELECT cause AS "Cause",
+                                   round(min(uptimeSecs), 3)    AS "First Occurrence (s)",
+                                   round(max(uptimeSecs), 3)    AS "Last Occurrence (s)",
+                                   count(*)                     AS "Total Events",
+                                   round(min(pauseMs), 2)       AS "Min Pause (ms)",
+                                   round(max(pauseMs), 2)       AS "Max Pause (ms)"
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL
+                            GROUP BY cause
+                            ORDER BY "First Occurrence (s)"
+                            """,
+                        "jvmlog_gc_event")
+                    .description("When each GC cause first appeared during the JVM run — late-appearing causes (e.g., Metadata GCThreshold, Heap Dump Initiated) indicate evolving class loading or triggered operations."),
+
+                // ---------------------------------------------------------------
+                // Young vs Old generation GC time split
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-young-vs-old-time",
+                        "jvmlog",
+                        "GC Log: Young vs Old Generation GC Time",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-young-vs-old-time" AS
+                            WITH classified AS (
+                                SELECT CASE
+                                         WHEN lower(gcType) LIKE '%young%'
+                                              OR lower(gcType) LIKE '%minor%'
+                                              OR lower(cause)  LIKE '%allocation%'
+                                              AND lower(gcType) NOT LIKE '%full%'
+                                              AND lower(gcType) NOT LIKE '%mixed%'
+                                         THEN 'Young GC'
+                                         WHEN lower(gcType) LIKE '%full%'
+                                              OR lower(gcType) LIKE '%major%'
+                                              OR lower(cause)  IN ('System.gc()', 'Heap Inspection Initiated GC',
+                                                                    'Heap Dump Initiated GC')
+                                         THEN 'Full / Major GC'
+                                         WHEN lower(gcType) LIKE '%mixed%'
+                                         THEN 'Mixed GC'
+                                         WHEN lower(gcType) LIKE '%concurrent%'
+                                         THEN 'Concurrent STW'
+                                         ELSE 'Other'
+                                       END AS generationType,
+                                       pauseMs
+                                FROM jvmlog_gc_event
+                                WHERE pauseMs IS NOT NULL
+                            )
+                            SELECT generationType AS "Generation Type",
+                                   count(*)                               AS "Events",
+                                   round(sum(pauseMs), 1)                 AS "Total Pause (ms)",
+                                   round(avg(pauseMs), 2)                 AS "Avg Pause (ms)",
+                                   round(max(pauseMs), 2)                 AS "Max Pause (ms)",
+                                   round(100.0 * sum(pauseMs) / sum(sum(pauseMs)) OVER (), 1) AS "% of Total Pause"
+                            FROM classified
+                            GROUP BY generationType
+                            ORDER BY "Total Pause (ms)" DESC
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Stop-the-world time split between Young GC, Mixed GC, Full GC, and concurrent STW phases — shows which generation is responsible for the most pause time."),
             };
 
     public static List<View> getViews() {

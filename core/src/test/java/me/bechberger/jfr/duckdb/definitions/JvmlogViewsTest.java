@@ -48,7 +48,9 @@ class JvmlogViewsTest {
             "jvmlog-heap-fragmentation", "jvmlog-heap-reclaim-ratio",
             "jvmlog-throughput-degradation", "jvmlog-g1-old-region-trend",
             "jvmlog-safepoint-ttr-stats", "jvmlog-g1-survivor-trend",
-            "jvmlog-zgc-phase-breakdown"
+            "jvmlog-zgc-phase-breakdown",
+            "jvmlog-pause-variance", "jvmlog-cause-first-occurrence",
+            "jvmlog-young-vs-old-time"
     );
 
     @Test
@@ -1796,6 +1798,93 @@ class JvmlogViewsTest {
             rs = s.executeQuery("SELECT \"Type\" FROM \"jvmlog-zgc-phase-breakdown\" WHERE \"Phase\" = 'Pause Mark Start' LIMIT 1");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getString("Type")).isEqualTo("STW");
+        }
+        conn.close();
+    }
+
+    @Test
+    void pauseVarianceViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Allocation Failure: high variance (10ms and 500ms)
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'G1 Young', 'Allocation Failure', 10.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'G1 Young', 'Allocation Failure', 500.0, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3, 'G1 Young', 'Allocation Failure', 15.0, 3.0)");
+            // System.gc(): consistent (all ~800ms)
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (4, 'G1 Full', 'System.gc()', 800.0, 4.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (5, 'G1 Full', 'System.gc()', 810.0, 5.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-variance".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-variance not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-pause-variance\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(2);
+            // Allocation Failure has higher CV so it should appear first (ordered by CV DESC)
+            rs = s.executeQuery("SELECT \"Cause\" FROM \"jvmlog-pause-variance\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Cause")).isEqualTo("Allocation Failure");
+        }
+        conn.close();
+    }
+
+    @Test
+    void causeFirstOccurrenceViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'G1 Young', 'Allocation Failure', 12.0, 5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'G1 Young', 'Allocation Failure', 15.0, 15.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3, 'G1 Full', 'Metadata GCThreshold', 400.0, 300.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-cause-first-occurrence".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-cause-first-occurrence not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-cause-first-occurrence\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(2);
+            // Allocation Failure appears first (at 5s), Metadata GCThreshold at 300s
+            rs = s.executeQuery("SELECT \"Cause\", \"First Occurrence (s)\" FROM \"jvmlog-cause-first-occurrence\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Cause")).isEqualTo("Allocation Failure");
+            assertThat(rs.getDouble("First Occurrence (s)")).isCloseTo(5.0, within(0.01));
+        }
+        conn.close();
+    }
+
+    @Test
+    void youngVsOldTimeViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'G1 Young', 'Allocation Failure', 10.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'G1 Young', 'Allocation Failure', 12.0, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3, 'G1 Mixed', 'G1 Evacuation Pause', 20.0, 3.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (4, 'G1 Full GC', 'System.gc()', 800.0, 4.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-young-vs-old-time".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-young-vs-old-time not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-young-vs-old-time\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isGreaterThan(0);
+            // Full GC has 800ms, should be top row
+            rs = s.executeQuery("SELECT \"Generation Type\", \"Total Pause (ms)\" FROM \"jvmlog-young-vs-old-time\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Generation Type")).isEqualTo("Full / Major GC");
         }
         conn.close();
     }

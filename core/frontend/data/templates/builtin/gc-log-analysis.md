@@ -163,6 +163,22 @@ BAR(x="GC Category", y="% of Pause Time")
 
 ---
 
+<!-- @cell name=young-vs-old-time -->
+
+## Young vs Old Generation GC Time
+
+STW time split between Young-only, Mixed, Full/Major, and concurrent-STW collections — a high Full GC share is a red flag; high Mixed GC share is normal for G1 managing Old gen.
+
+```sql
+SELECT * FROM "jvmlog-young-vs-old-time"
+```
+
+```plot
+BAR(x="Generation Type", y="Total Pause (ms)")
+```
+
+---
+
 <!-- @cell name=pause-percentiles -->
 
 ## Pause Percentiles
@@ -175,6 +191,22 @@ SELECT * FROM "jvmlog-pause-percentiles-by-cause"
 
 ```plot
 BAR(x="Cause", y="P99 (ms)")
+```
+
+---
+
+<!-- @cell name=pause-variance -->
+
+## Pause Time Variance by Cause
+
+Standard deviation and coefficient of variation (CV) per GC cause — high CV (> 100%) means pause times are wildly inconsistent even if the average looks acceptable, causing unpredictable latency.
+
+```sql
+SELECT * FROM "jvmlog-pause-variance"
+```
+
+```plot
+BAR(x="Cause", y="CV %")
 ```
 
 ---
@@ -578,6 +610,22 @@ SELECT * FROM "jvmlog-cause-distribution"
 
 ```plot
 BAR(x="Cause", y="Count")
+```
+
+---
+
+<!-- @cell name=cause-first-occurrence -->
+
+## GC Cause First Occurrence
+
+When each GC cause first appeared during the JVM run — late-appearing causes (e.g., `Metadata GCThreshold` appearing at 300s) indicate class loading bursts or triggered operations that started well into the run.
+
+```sql
+SELECT * FROM "jvmlog-cause-first-occurrence"
+```
+
+```plot
+BAR(x="Cause", y="First Occurrence (s)")
 ```
 
 ---
