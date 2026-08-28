@@ -7249,6 +7249,162 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("Composite GC pressure index per minute (0-100) combining overhead%, max pause, heap fill%, full GC count, and spike count — a single number to spot the most problematic periods."),
+
+            // -----------------------------------------------------------------------
+            // Long concurrent phase detection
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-long-concurrent-phases", "jvmlog",
+                    "GC Log: Long Concurrent Phase Detection", null,
+                    """
+                        CREATE VIEW "jvmlog-long-concurrent-phases" AS
+                        WITH stats AS (
+                            SELECT phaseName,
+                                   avg(durationMs)      AS mean,
+                                   stddev_pop(durationMs) AS std
+                            FROM jvmlog_gc_phase
+                            WHERE lower(phaseName) LIKE '%concurrent%' AND durationMs IS NOT NULL
+                            GROUP BY phaseName
+                        )
+                        SELECT p.gcId                                              AS "GC ID",
+                               p.phaseName                                         AS "Phase",
+                               round(p.durationMs, 1)                             AS "Duration (ms)",
+                               round(s.mean, 1)                                   AS "Avg (ms)",
+                               round((p.durationMs - s.mean) / NULLIF(s.std, 0), 2)
+                                                                                  AS "Z-Score",
+                               round(p.durationMs / NULLIF(s.mean, 0), 2)        AS "Ratio to Avg"
+                        FROM jvmlog_gc_phase p
+                        JOIN stats s USING (phaseName)
+                        WHERE lower(p.phaseName) LIKE '%concurrent%'
+                          AND p.durationMs IS NOT NULL
+                          AND (p.durationMs - s.mean) / NULLIF(s.std, 0) > 2.0
+                        ORDER BY "Z-Score" DESC
+                        LIMIT 50
+                        """,
+                    "jvmlog_gc_phase")
+                    .description("Concurrent phases with duration more than 2 standard deviations above their mean — abnormally long concurrent phases can delay the next pause and indicate heap pressure or OS interference."),
+
+            // -----------------------------------------------------------------------
+            // G1 Eden fill before GC (Young generation saturation)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-eden-fill-at-trigger", "jvmlog",
+                    "GC Log: Eden Region Fill at GC Trigger", null,
+                    """
+                        CREATE VIEW "jvmlog-eden-fill-at-trigger" AS
+                        WITH ef AS (
+                            SELECT r.gcId,
+                                   e.gcType,
+                                   e.gcCause,
+                                   100.0 * r.edenBefore / NULLIF(r.edenMax, 0) AS edenFillPct
+                            FROM jvmlog_g1_regions r
+                            JOIN jvmlog_gc_event   e USING (gcId)
+                            WHERE r.edenBefore IS NOT NULL AND r.edenMax IS NOT NULL AND r.edenMax > 0
+                        )
+                        SELECT gcType                                              AS "GC Type",
+                               count(*)                                            AS "Events",
+                               round(avg(edenFillPct), 1)                         AS "Avg Eden Fill %",
+                               round(min(edenFillPct), 1)                         AS "Min Eden Fill %",
+                               round(max(edenFillPct), 1)                         AS "Max Eden Fill %",
+                               round(approx_quantile(edenFillPct, 0.50), 1)       AS "p50 Eden Fill %",
+                               round(approx_quantile(edenFillPct, 0.10), 1)       AS "p10 Eden Fill %"
+                        FROM ef
+                        GROUP BY gcType
+                        ORDER BY "Avg Eden Fill %" DESC
+                        """,
+                    "jvmlog_g1_regions", "jvmlog_gc_event")
+                    .description("Eden region fill % at GC trigger per GC type — consistently low fill indicates G1 is over-triggering Young GCs; consistently 100% indicates Eden is too small for the allocation rate.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-eden-fill-at-trigger" AS
+                            SELECT count(*)                                            AS "Events",
+                                   round(avg(100.0 * edenBefore / NULLIF(edenMax, 0)), 1) AS "Avg Eden Fill %",
+                                   round(min(100.0 * edenBefore / NULLIF(edenMax, 0)), 1) AS "Min Eden Fill %",
+                                   round(max(100.0 * edenBefore / NULLIF(edenMax, 0)), 1) AS "Max Eden Fill %"
+                            FROM jvmlog_g1_regions
+                            WHERE edenBefore IS NOT NULL AND edenMax IS NOT NULL AND edenMax > 0
+                            """,
+                        "jvmlog_g1_regions"),
+
+            // -----------------------------------------------------------------------
+            // GC multi-metric trend summary (all key trends in one view)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-trend-summary", "jvmlog",
+                    "GC Log: Multi-Metric Trend Summary", null,
+                    """
+                        CREATE VIEW "jvmlog-trend-summary" AS
+                        WITH base AS (
+                            SELECT uptimeSecs,
+                                   pauseMs,
+                                   heapBefore,
+                                   heapAfter,
+                                   heapMax,
+                                   100.0 * heapBefore / NULLIF(heapMax, 0) AS heapFillPct,
+                                   100.0 * heapAfter  / NULLIF(heapMax, 0) AS heapAfterPct
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL AND pauseMs IS NOT NULL
+                        )
+                        SELECT 'Pause Duration'      AS "Metric",
+                               round(regr_slope(pauseMs, uptimeSecs), 4)        AS "Trend (per sec)",
+                               round(regr_r2(pauseMs, uptimeSecs), 3)           AS "R²",
+                               CASE WHEN regr_r2(pauseMs, uptimeSecs) > 0.4
+                                    THEN CASE WHEN regr_slope(pauseMs, uptimeSecs) > 0
+                                              THEN 'Degrading' ELSE 'Improving' END
+                                    ELSE 'Stable' END                           AS "Direction"
+                        FROM base
+                        UNION ALL
+                        SELECT 'Heap Fill at Trigger',
+                               round(regr_slope(heapFillPct, uptimeSecs), 4),
+                               round(regr_r2(heapFillPct, uptimeSecs), 3),
+                               CASE WHEN regr_r2(heapFillPct, uptimeSecs) > 0.4
+                                    THEN CASE WHEN regr_slope(heapFillPct, uptimeSecs) > 0
+                                              THEN 'Rising' ELSE 'Falling' END
+                                    ELSE 'Stable' END
+                        FROM base
+                        UNION ALL
+                        SELECT 'Post-GC Heap Level',
+                               round(regr_slope(heapAfterPct, uptimeSecs), 4),
+                               round(regr_r2(heapAfterPct, uptimeSecs), 3),
+                               CASE WHEN regr_r2(heapAfterPct, uptimeSecs) > 0.4
+                                    THEN CASE WHEN regr_slope(heapAfterPct, uptimeSecs) > 0
+                                              THEN 'Rising (possible leak)' ELSE 'Falling' END
+                                    ELSE 'Stable' END
+                        FROM base
+                        ORDER BY "Metric"
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Multi-metric trend summary — pause duration, heap fill at trigger, and post-GC heap level trends in a single view, each with slope, R², and a plain-text direction assessment."),
+
+            // -----------------------------------------------------------------------
+            // Safepoint TTR outliers (operations with unusually long time-to-reach)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-safepoint-ttr-outliers", "jvmlog",
+                    "GC Log: Safepoint Time-to-Reach Outliers", null,
+                    """
+                        CREATE VIEW "jvmlog-safepoint-ttr-outliers" AS
+                        WITH stats AS (
+                            SELECT avg(ttrMs)      AS mean,
+                                   stddev_pop(ttrMs) AS std
+                            FROM jvmlog_safepoint
+                            WHERE ttrMs IS NOT NULL
+                        )
+                        SELECT s.gcId                                              AS "GC ID",
+                               s.operation                                         AS "Operation",
+                               round(s.uptimeSecs, 3)                             AS "Uptime (s)",
+                               round(s.ttrMs, 3)                                  AS "TTR (ms)",
+                               round(s.durationMs, 2)                             AS "STW Duration (ms)",
+                               round((s.ttrMs - st.mean) / NULLIF(st.std, 0), 2) AS "Z-Score",
+                               round(s.ttrMs / NULLIF(st.mean, 0), 1)            AS "Ratio to Mean TTR"
+                        FROM jvmlog_safepoint s, stats st
+                        WHERE s.ttrMs IS NOT NULL
+                          AND (s.ttrMs - st.mean) / NULLIF(st.std, 0) > 2.0
+                        ORDER BY "Z-Score" DESC
+                        LIMIT 30
+                        """,
+                    "jvmlog_safepoint")
+                    .description("Safepoint time-to-reach outliers (Z-score > 2.0) — unusually long TTR indicates a thread was slow to reach the safepoint, often caused by JNI, compiled loops without safepoint polls, or OS scheduling delays."),
             };
 
     public static List<View> getViews() {

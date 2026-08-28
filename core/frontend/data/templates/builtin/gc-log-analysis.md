@@ -2139,3 +2139,69 @@ SELECT * FROM "jvmlog-gc-pressure-index"
 ```plot
 LINE(x="Minute", y="Pressure Index")
 ```
+
+---
+
+<!-- @cell name=long-concurrent-phases requires="has-phases" -->
+
+## Long Concurrent Phase Detection
+
+Concurrent phases with duration more than 2 standard deviations above their mean — unusually long concurrent marks can delay the next pause and indicate heap pressure or OS interference.
+
+```sql
+SELECT * FROM "jvmlog-long-concurrent-phases"
+ORDER BY "Z-Score" DESC
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=eden-fill-at-trigger requires="has-g1-regions" -->
+
+## Eden Region Fill at GC Trigger
+
+Eden fill % at GC trigger per GC type — consistently low fill means G1 is over-triggering; consistently 100% means Eden is too small for the allocation rate.
+
+```sql
+SELECT * FROM "jvmlog-eden-fill-at-trigger"
+```
+
+```plot
+BAR(x="GC Type", y="Avg Eden Fill %", color="GC Type")
+```
+
+---
+
+<!-- @cell name=trend-summary -->
+
+## Multi-Metric Trend Summary
+
+Pause duration, heap fill at trigger, and post-GC heap level trends in a single view — each with slope, R², and a plain-language direction assessment.
+
+```sql
+SELECT * FROM "jvmlog-trend-summary"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=safepoint-ttr-outliers requires="has-safepoints" -->
+
+## Safepoint Time-to-Reach Outliers
+
+Safepoints where time-to-reach was more than 2 standard deviations above the mean — often caused by JNI, compiled loops without safepoint polls, or OS scheduling delays.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-ttr-outliers"
+ORDER BY "Z-Score" DESC
+```
+
+```plot
+TABLE()
+```

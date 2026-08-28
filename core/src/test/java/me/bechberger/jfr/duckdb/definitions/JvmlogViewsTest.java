@@ -78,7 +78,9 @@ class JvmlogViewsTest {
             "jvmlog-g1-old-gen-tracking", "jvmlog-phase-by-gc-type",
             "jvmlog-zgc-minor-vs-major",
             "jvmlog-pause-spike-frequency", "jvmlog-app-vs-gc-time",
-            "jvmlog-metaspace-expansions", "jvmlog-gc-pressure-index"
+            "jvmlog-metaspace-expansions", "jvmlog-gc-pressure-index",
+            "jvmlog-long-concurrent-phases", "jvmlog-eden-fill-at-trigger",
+            "jvmlog-trend-summary", "jvmlog-safepoint-ttr-outliers"
     );
 
     @Test
@@ -3168,6 +3170,107 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             long highPressure = rs.getLong("Pressure Index");
             assertThat(highPressure).isGreaterThan(lowPressure);
+        }
+        conn.close();
+    }
+
+    @Test
+    void longConcurrentPhasesViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            // Normal concurrent marks: ~30ms
+            for (int i = 0; i < 15; i++) {
+                s.execute("INSERT INTO jvmlog_gc_phase VALUES (" + i + ", 'Concurrent Mark', " + (28.0 + i * 0.5) + ")");
+            }
+            // Outlier: 500ms
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (99, 'Concurrent Mark', 500.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-long-concurrent-phases".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-long-concurrent-phases not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_phase"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Z-Score\" FROM \"jvmlog-long-concurrent-phases\" ORDER BY \"Z-Score\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(99);
+        }
+        conn.close();
+    }
+
+    @Test
+    void edenFillAtTriggerViewFallbackWithRegionsOnly() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, survivorMax INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER, edenBefore INTEGER, edenAfter INTEGER, edenMax INTEGER, regionSizeBytes BIGINT)");
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_g1_regions VALUES (" + i + ", 2, 2, 4, 50, 45, 0, 0, 55, 5, 60, 1048576)");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-eden-fill-at-trigger".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-eden-fill-at-trigger not found"));
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_g1_regions"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Avg Eden Fill %\" FROM \"jvmlog-eden-fill-at-trigger\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Avg Eden Fill %")).isCloseTo(91.7, within(1.0));
+        }
+        conn.close();
+    }
+
+    @Test
+    void trendSummaryViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 10; i++) {
+                // Rising pause and heap trend
+                double pause = 5.0 + i * 2.0;
+                long before = (150L + i * 20) * 1048576;
+                long after  = (80L + i * 5) * 1048576;
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', " +
+                        before + ", " + after + ", " + (512L * 1048576) + ", " + pause + ", " + (i * 5.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-trend-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-trend-summary not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS metrics FROM \"jvmlog-trend-summary\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("metrics")).isEqualTo(3);
+        }
+        conn.close();
+    }
+
+    @Test
+    void safepointTtrOutliersViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_safepoint (gcId INTEGER, uptimeSecs DOUBLE, operation VARCHAR, durationMs DOUBLE, ttrMs DOUBLE)");
+            // Normal TTR ~0.5ms
+            for (int i = 0; i < 20; i++) {
+                s.execute("INSERT INTO jvmlog_safepoint VALUES (" + i + ", " + (i * 2.0) + ", 'G1CollectForAllocation', 10.0, " + (0.4 + i * 0.02) + ")");
+            }
+            // Outlier: 50ms TTR
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (99, 100.0, 'G1CollectForAllocation', 12.0, 50.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-safepoint-ttr-outliers".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-safepoint-ttr-outliers not found"));
+        assertThat(view.isValid(Set.of("jvmlog_safepoint"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Z-Score\" FROM \"jvmlog-safepoint-ttr-outliers\" ORDER BY \"Z-Score\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(99);
+            assertThat(rs.getDouble("Z-Score")).isGreaterThan(2.0);
         }
         conn.close();
     }
