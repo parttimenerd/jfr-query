@@ -8680,6 +8680,135 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("GC overhead % per 5-minute window with severity classification. Critical (≥10%) indicates OutOfMemoryError risk; High (5-10%) will degrade p99 latency; Moderate (1-5%) is acceptable for most workloads."),
+
+                    // Batch 8
+                    new View(
+                    "jvmlog-gc-pause-regression", "jvmlog",
+                    "GC Log: GC Pause Linear Regression (Degradation Trend)", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-pause-regression" AS
+                        WITH data AS (
+                            SELECT uptimeSecs AS x, pauseMs AS y
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        ),
+                        stats AS (
+                            SELECT count(*)                         AS n,
+                                   avg(x)                          AS avgX,
+                                   avg(y)                          AS avgY,
+                                   regr_slope(y, x)                AS slope,
+                                   regr_intercept(y, x)            AS intercept,
+                                   round(regr_r2(y, x), 4)         AS r2
+                            FROM data
+                        )
+                        SELECT n                                                          AS "Sample Count",
+                               round(avgY, 2)                                            AS "Mean Pause (ms)",
+                               round(slope, 4)                                           AS "Slope (ms/s)",
+                               round(intercept, 2)                                       AS "Intercept (ms)",
+                               r2                                                        AS "R²",
+                               CASE WHEN slope > 0.01  THEN 'Degrading'
+                                    WHEN slope < -0.01 THEN 'Improving'
+                                    ELSE 'Stable' END                                    AS "Trend",
+                               round(slope * 3600, 1)                                   AS "Projected +1h Change (ms)"
+                        FROM stats
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Linear regression of GC pause over runtime: slope > 0 means pauses are growing; R² near 1.0 indicates a strong trend. 'Projected +1h Change' shows how much the average pause is expected to grow per hour if the trend continues."),
+
+                    new View(
+                    "jvmlog-alloc-stall-by-gc", "jvmlog",
+                    "GC Log: Allocation Stalls per GC Cycle", null,
+                    """
+                        CREATE VIEW "jvmlog-alloc-stall-by-gc" AS
+                        SELECT gcId                                                    AS "GC ID",
+                               count(*)                                               AS "Stall Count",
+                               count(DISTINCT threadName)                             AS "Affected Threads",
+                               round(sum(stallMs), 2)                                AS "Total Stall (ms)",
+                               round(max(stallMs), 2)                                AS "Max Stall (ms)"
+                        FROM jvmlog_alloc_stall
+                        GROUP BY gcId
+                        ORDER BY "Total Stall (ms)" DESC
+                        LIMIT 50
+                        """,
+                    "jvmlog_alloc_stall")
+                    .description("GC cycles that caused the most allocation stalls — the worst GC IDs here are the ones that held up application threads the longest. Cross-reference with jvmlog-gc-pause-summary to see if those GCs were also the longest pauses."),
+
+                    new View(
+                    "jvmlog-zgc-reloc-pressure", "jvmlog",
+                    "GC Log: ZGC Relocation Pressure (Heap Used Delta Mark→Relocate)", null,
+                    """
+                        CREATE VIEW "jvmlog-zgc-reloc-pressure" AS
+                        WITH mark_start AS (
+                            SELECT gcId, usedBytes AS usedAtMarkStart
+                            FROM jvmlog_zgc_stats
+                            WHERE phase = 'Mark Start'
+                        ),
+                        reloc_start AS (
+                            SELECT gcId, usedBytes AS usedAtRelocStart
+                            FROM jvmlog_zgc_stats
+                            WHERE phase = 'Relocate Start'
+                        ),
+                        reloc_end AS (
+                            SELECT gcId, usedBytes AS usedAtRelocEnd
+                            FROM jvmlog_zgc_stats
+                            WHERE phase = 'Relocate End'
+                        )
+                        SELECT m.gcId                                                              AS "GC ID",
+                               round(m.usedAtMarkStart  / 1048576.0, 1)                          AS "Used at Mark Start (MB)",
+                               round(r.usedAtRelocStart / 1048576.0, 1)                          AS "Used at Reloc Start (MB)",
+                               round(e.usedAtRelocEnd   / 1048576.0, 1)                          AS "Used at Reloc End (MB)",
+                               round((r.usedAtRelocStart - m.usedAtMarkStart) / 1048576.0, 1)    AS "Allocated During Mark (MB)",
+                               round((r.usedAtRelocStart - e.usedAtRelocEnd) / 1048576.0, 1)     AS "Freed by Reloc (MB)"
+                        FROM mark_start m
+                        JOIN reloc_start r USING (gcId)
+                        JOIN reloc_end   e USING (gcId)
+                        ORDER BY m.gcId
+                        """,
+                    "jvmlog_zgc_stats")
+                    .description("ZGC allocation pressure during concurrent phases: 'Allocated During Mark' shows how fast the application allocated while ZGC was marking; if this exceeds freed-by-reloc, allocation is outpacing collection."),
+
+                    new View(
+                    "jvmlog-phase-timing-matrix", "jvmlog",
+                    "GC Log: Phase Timing Matrix (avg ms per phase, by GC type)", null,
+                    """
+                        CREATE VIEW "jvmlog-phase-timing-matrix" AS
+                        SELECT p.phaseName                                        AS "Phase",
+                               count(*)                                           AS "Invocations",
+                               round(avg(p.durationMs), 2)                       AS "Avg (ms)",
+                               round(approx_quantile(p.durationMs, 0.5), 2)     AS "P50 (ms)",
+                               round(approx_quantile(p.durationMs, 0.95), 2)    AS "P95 (ms)",
+                               round(max(p.durationMs), 2)                      AS "Max (ms)",
+                               round(sum(p.durationMs), 1)                      AS "Total (ms)"
+                        FROM jvmlog_gc_phase p
+                        GROUP BY p.phaseName
+                        ORDER BY "Total (ms)" DESC
+                        """,
+                    "jvmlog_gc_phase")
+                    .description("Aggregated timing matrix for all internal GC phases — phases with high Total time are the primary bottlenecks; phases with high Max/Avg ratios have occasional stragglers (possibly due to CPU saturation or memory pressure during that phase)."),
+
+                    new View(
+                    "jvmlog-safepoint-operation-mix", "jvmlog",
+                    "GC Log: Safepoint Operation Mix Over Time (10-min buckets)", null,
+                    """
+                        CREATE VIEW "jvmlog-safepoint-operation-mix" AS
+                        WITH safe AS (
+                            SELECT rowid,
+                                   floor(rowid * 1.0 / greatest(1, (SELECT count(*) FROM jvmlog_safepoint)) * 6) AS bucket,
+                                   operation,
+                                   totalMs
+                            FROM jvmlog_safepoint
+                        )
+                        SELECT bucket                                                            AS "Bucket",
+                               count(*)                                                         AS "Safepoints",
+                               count(DISTINCT operation)                                        AS "Distinct Ops",
+                               round(sum(totalMs), 1)                                           AS "Total STW (ms)",
+                               round(avg(totalMs), 2)                                           AS "Avg STW (ms)"
+                        FROM safe
+                        GROUP BY bucket
+                        ORDER BY bucket
+                        """,
+                    "jvmlog_safepoint")
+                    .description("Safepoint activity aggregated into 6 equal-time buckets — rising 'Total STW' across buckets means safepoint pressure is increasing over time; rising 'Distinct Ops' means more types of operations are triggering safepoints."),
             };
 
     public static List<View> getViews() {

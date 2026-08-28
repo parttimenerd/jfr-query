@@ -3047,3 +3047,97 @@ SELECT * FROM "jvmlog-gc-overhead-trend"
 LINE(x="Uptime (min)", y="GC Overhead %")
 ```
 
+
+---
+
+<!-- @cell name=alloc-stall-summary requires="has-alloc-stall" -->
+
+## Allocation Stall Summary by Thread
+
+Per-thread allocation stall statistics — threads with high total stall time are the primary victims of GC pressure; cross-reference with the allocation rate view to identify the producer threads.
+
+```sql
+SELECT * FROM "jvmlog-alloc-stall-summary"
+```
+
+```plot
+BAR(x="Thread", y="Total Stall (ms)")
+```
+
+
+---
+
+<!-- @cell name=gc-pause-regression requires="has-jvmlog-gc" -->
+
+## GC Pause Degradation Trend (Linear Regression)
+
+Linear regression of pause time over JVM uptime — a positive slope means GC is getting slower over time; "Projected +1h Change" shows expected additional milliseconds of pause per GC after one hour at the current trend.
+
+```sql
+SELECT * FROM "jvmlog-gc-pause-regression"
+```
+
+---
+
+<!-- @cell name=alloc-stall-by-gc requires="has-alloc-stall" -->
+
+## Allocation Stalls per GC Cycle
+
+GC cycles ranked by total allocation stall time they caused — the top entries here held up application threads the longest; cross-reference GC ID with the pause summary to confirm whether the stall-causing GC was also the longest STW event.
+
+```sql
+SELECT * FROM "jvmlog-alloc-stall-by-gc"
+```
+
+```plot
+BAR(x="GC ID", y="Total Stall (ms)")
+```
+
+---
+
+<!-- @cell name=zgc-reloc-pressure requires="has-zgc-stats" -->
+
+## ZGC Relocation Pressure
+
+Per-cycle ZGC heap usage at Mark Start, Relocate Start, and Relocate End — "Allocated During Mark" quantifies how much the application allocated while ZGC was marking concurrently; if this exceeds "Freed by Reloc", allocation is outpacing the collector.
+
+```sql
+SELECT * FROM "jvmlog-zgc-reloc-pressure"
+```
+
+```plot
+LINE(x="GC ID", y="Allocated During Mark (MB)")
+```
+
+---
+
+<!-- @cell name=phase-timing-matrix requires="has-gc-phases" -->
+
+## GC Phase Timing Matrix
+
+All internal GC phases ranked by total time — the highest "Total (ms)" phase is the throughput bottleneck; phases with Max/Avg ratios > 5x have occasional stragglers that inflate tail latency.
+
+```sql
+SELECT * FROM "jvmlog-phase-timing-matrix"
+```
+
+```plot
+BAR(x="Phase", y="Total (ms)")
+```
+
+---
+
+<!-- @cell name=safepoint-operation-mix requires="has-safepoint" -->
+
+## Safepoint Operation Mix Over Time
+
+Safepoint activity in 6 equal time buckets — rising "Total STW" across buckets indicates increasing safepoint pressure; growing "Distinct Ops" means more types of operations are triggering stop-the-world events over time.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-operation-mix"
+```
+
+```plot
+LINE(x="Bucket", y="Total STW (ms)")
+```
+

@@ -101,7 +101,10 @@ class JvmlogViewsTest {
             "jvmlog-shenandoah-summary",
             "jvmlog-safepoint-sync-hotspot", "jvmlog-zgc-liveness-trend",
             "jvmlog-shenandoah-concurrent-efficiency", "jvmlog-heap-before-after-delta",
-            "jvmlog-gc-overhead-trend"
+            "jvmlog-gc-overhead-trend",
+            "jvmlog-gc-pause-regression", "jvmlog-alloc-stall-by-gc",
+            "jvmlog-zgc-reloc-pressure", "jvmlog-phase-timing-matrix",
+            "jvmlog-safepoint-operation-mix"
     );
 
     @Test
@@ -4205,6 +4208,118 @@ class JvmlogViewsTest {
         try (Statement s = conn.createStatement()) {
             s.execute(view.definition());
             var rs = s.executeQuery("SELECT count(*) AS buckets FROM \"jvmlog-gc-overhead-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("buckets")).isGreaterThanOrEqualTo(1L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcPauseRegression() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young',NULL,20.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young',NULL,25.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Young',NULL,30.0,30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-pause-regression".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-pause-regression not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Trend\", \"Slope (ms/s)\" FROM \"jvmlog-gc-pause-regression\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Trend")).isEqualTo("Degrading");
+            assertThat(rs.getDouble("Slope (ms/s)")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogAllocStallByGc() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_alloc_stall (gcId INTEGER, threadName VARCHAR, stallMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES (1,'main',50.0)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES (1,'worker-1',30.0)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES (2,'main',80.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-alloc-stall-by-gc".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-alloc-stall-by-gc not found"));
+        assertThat(view.isValid(Set.of("jvmlog_alloc_stall"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS gcCount FROM \"jvmlog-alloc-stall-by-gc\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("gcCount")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogZgcRelocPressure() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_stats (gcId INTEGER, phase VARCHAR, usedBytes LONG, liveBytes LONG, garbageBytes LONG)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (1,'Mark Start',   536870912, NULL, NULL)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (1,'Relocate Start',600000000, 268435456, 157286400)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (1,'Relocate End',  150000000, NULL, NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-reloc-pressure".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-reloc-pressure not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_stats"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS cycles FROM \"jvmlog-zgc-reloc-pressure\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cycles")).isEqualTo(1L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogPhaseTimingMatrix() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Evacuate Collection Set',10.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (2,'Evacuate Collection Set',12.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Update RS',5.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (2,'Update RS',4.5)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-phase-timing-matrix".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-phase-timing-matrix not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_phase"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS phases FROM \"jvmlog-phase-timing-matrix\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("phases")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogSafepointOperationMix() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_safepoint (gcId INTEGER, operation VARCHAR, totalMs DOUBLE, syncMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (1,'G1CollectForAllocation',15.0,2.5)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (2,'G1CollectForAllocation',12.0,1.8)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (3,'RevokeBias',5.0,0.3)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-safepoint-operation-mix".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-safepoint-operation-mix not found"));
+        assertThat(view.isValid(Set.of("jvmlog_safepoint"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS buckets FROM \"jvmlog-safepoint-operation-mix\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("buckets")).isGreaterThanOrEqualTo(1L);
         }
