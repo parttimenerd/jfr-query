@@ -4643,6 +4643,51 @@ public class ViewCollection {
                             """,
                         "jvmlog_gc_event", "jvmlog_heap_snapshot")
                     .description("Windowed allocation rate — average and peak MB/s per 10-second window. Spikes correlate with allocation bursts that cause GC pressure."),
+                new View(
+                        "jvmlog-pause-regression",
+                        "jvmlog",
+                        "GC Log: Pause Time Regression",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-pause-regression" AS
+                            WITH windowed AS (
+                                SELECT gcId,
+                                       uptimeSecs,
+                                       pauseMs,
+                                       floor(uptimeSecs / 30) * 30 AS windowStart
+                                FROM jvmlog_gc_event
+                                WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                            )
+                            SELECT round(windowStart, 1) AS "Window Start (s)",
+                                   count(*) AS "GC Count",
+                                   round(avg(pauseMs), 2) AS "Avg Pause (ms)",
+                                   round(approx_quantile(pauseMs, 0.95), 2) AS "P95 Pause (ms)",
+                                   round(approx_quantile(pauseMs, 0.99), 2) AS "P99 Pause (ms)",
+                                   round(max(pauseMs), 2) AS "Max Pause (ms)"
+                            FROM windowed
+                            GROUP BY windowStart
+                            ORDER BY windowStart
+                            """,
+                        "jvmlog_gc_event")
+                    .description("P95 and P99 pause time per 30-second window — rising P99 over time indicates GC regression (memory pressure, fragmentation, or heap leak)."),
+                new View(
+                        "jvmlog-zgc-allocation-rate",
+                        "jvmlog",
+                        "GC Log: ZGC Allocation Rate",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-zgc-allocation-rate" AS
+                            SELECT gcId AS "GC ID",
+                                   round(allocRateMbps, 2) AS "Alloc Rate (MB/s)",
+                                   load1s AS "Load (1s)",
+                                   load5s AS "Load (5s)",
+                                   allocStalls AS "Alloc Stalls"
+                            FROM jvmlog_zgc_load
+                            WHERE allocRateMbps IS NOT NULL
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_zgc_load")
+                    .description("ZGC allocation rate per cycle from [gc,load] tag — high allocation rates with stalls indicate the application is outpacing the GC."),
             };
 
     public static List<View> getViews() {

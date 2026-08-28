@@ -39,7 +39,8 @@ class JvmlogViewsTest {
             "jvmlog-g1-humongous", "jvmlog-parallel-gc-detail", "jvmlog-gc-health-score",
             "jvmlog-gc-recommendations", "jvmlog-zgc-generational",
             "jvmlog-concurrent-overhead", "jvmlog-gc-log-quality",
-            "jvmlog-heap-resize-summary", "jvmlog-allocation-rate-timeline"
+            "jvmlog-heap-resize-summary", "jvmlog-allocation-rate-timeline",
+            "jvmlog-pause-regression", "jvmlog-zgc-allocation-rate"
     );
 
     @Test
@@ -1339,6 +1340,66 @@ class JvmlogViewsTest {
             rs = s.executeQuery("SELECT \"Avg Alloc Rate (MB/s)\" FROM \"jvmlog-allocation-rate-timeline\" ORDER BY \"Window Start (s)\" LIMIT 1");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getDouble("Avg Alloc Rate (MB/s)")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void pauseRegressionViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // First window [0-30s]: small pauses
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 5.0, 5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 8.0, 15.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Young', 'G1 Evacuation Pause', 6.0, 25.0)");
+            // Second window [30-60s]: larger pauses — regression
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3, 'Young', 'G1 Evacuation Pause', 50.0, 35.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (4, 'Young', 'G1 Evacuation Pause', 80.0, 50.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-regression".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-regression not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Window Start (s)\", \"P99 Pause (ms)\", \"GC Count\" FROM \"jvmlog-pause-regression\" ORDER BY \"Window Start (s)\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Window Start (s)")).isEqualTo(0.0);
+            assertThat(rs.getLong("GC Count")).isEqualTo(3);
+            double firstWindowP99 = rs.getDouble("P99 Pause (ms)");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Window Start (s)")).isEqualTo(30.0);
+            // Second window has higher P99 — regression
+            assertThat(rs.getDouble("P99 Pause (ms)")).isGreaterThan(firstWindowP99);
+        }
+        conn.close();
+    }
+
+    @Test
+    void zgcAllocationRateViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_load (gcId INTEGER, load1s DOUBLE, load5s DOUBLE, load15s DOUBLE, allocRateMbps DOUBLE, allocStalls INTEGER)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (0, 2.5, 2.3, 2.1, 512.0, 0)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (1, 3.1, 2.8, 2.5, 768.0, 2)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-allocation-rate".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-allocation-rate not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_load"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_zgc_load"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Alloc Rate (MB/s)\", \"Alloc Stalls\" FROM \"jvmlog-zgc-allocation-rate\" ORDER BY \"GC ID\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getDouble("Alloc Rate (MB/s)")).isEqualTo(512.0);
+            assertThat(rs.getLong("Alloc Stalls")).isEqualTo(0);
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(1);
+            assertThat(rs.getLong("Alloc Stalls")).isEqualTo(2);
         }
         conn.close();
     }

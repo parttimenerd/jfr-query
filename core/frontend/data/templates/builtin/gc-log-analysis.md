@@ -454,6 +454,22 @@ LINE(x="Window Start (s)", y="Throughput %")
 
 ---
 
+<!-- @cell name=pause-regression -->
+
+## Pause Time Regression
+
+P95 and P99 pause time per 30-second window — a rising P99 over time reveals GC degradation from memory pressure, fragmentation, or heap growth.
+
+```sql
+SELECT * FROM "jvmlog-pause-regression"
+```
+
+```plot
+LINE(x="Window Start (s)", y="P99 Pause (ms)")
+```
+
+---
+
 <!-- @cell name=gc-frequency -->
 
 ## GC Frequency Over Time
@@ -841,6 +857,22 @@ SELECT * FROM "jvmlog-zgc-load"
 
 ```plot
 LINE(x="GC ID", y="Load 1s")
+```
+
+---
+
+<!-- @cell name=zgc-allocation-rate requires="has-zgc-load" -->
+
+## ZGC: Allocation Rate per Cycle
+
+Per-GC-cycle allocation rate (MB/s) from the `[gc,load]` tag — spikes show when the application momentarily outpaces the GC and allocation stalls begin.
+
+```sql
+SELECT * FROM "jvmlog-zgc-allocation-rate"
+```
+
+```plot
+LINE(x="GC ID", y="Alloc Rate (MB/s)")
 ```
 
 ---
