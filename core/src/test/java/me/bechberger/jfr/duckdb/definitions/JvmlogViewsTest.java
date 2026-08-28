@@ -152,7 +152,10 @@ class JvmlogViewsTest {
             "jvmlog-gc-efficiency-trend",
             "jvmlog-g1-region-composition", "jvmlog-zgc-live-vs-garbage",
             "jvmlog-stringdedup-roi", "jvmlog-gc-pause-percentile-timeline",
-            "jvmlog-concurrent-vs-stw-work"
+            "jvmlog-concurrent-vs-stw-work",
+            "jvmlog-oom-risk-timeline", "jvmlog-gc-jitter-analysis",
+            "jvmlog-heap-utilisation-heatmap", "jvmlog-old-gen-occupancy-trend",
+            "jvmlog-gc-log-completeness"
     );
 
     @Test
@@ -6225,6 +6228,126 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT \"GC Type\", \"Concurrent/STW Ratio\" FROM \"jvmlog-concurrent-vs-stw-work\" LIMIT 1");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getDouble("Concurrent/STW Ratio")).isGreaterThan(1.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogOomRiskTimeline() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT)");
+            for (int i = 1; i <= 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ",'G1 Young','G1 Evacuation Pause',5.0," + (i * 5.0) + ")");
+                long after = (long)(200 + i * 10) * 1024 * 1024;
+                s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (" + i + "," + (after + 50*1024*1024L) + "," + after + ",256*1024*1024)");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-oom-risk-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-oom-risk-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-oom-risk-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isGreaterThan(0L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcJitterAnalysis() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 1; i <= 20; i++) {
+                double pause = (i % 5 == 0) ? 200.0 : 5.0;
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ",'G1 Young','G1 Evacuation Pause'," + pause + "," + (i * 2.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-jitter-analysis".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-jitter-analysis not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC Type\", \"Coeff of Variation %\", \"Jitter Assessment\" FROM \"jvmlog-gc-jitter-analysis\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Coeff of Variation %")).isGreaterThan(0.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogHeapUtilisationHeatmap() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'G1 Young','G1 Evacuation Pause',5.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'G1 Young','G1 Evacuation Pause',6.0,20.0)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1,200*1024*1024,150*1024*1024,256*1024*1024)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2,210*1024*1024,170*1024*1024,256*1024*1024)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-utilisation-heatmap".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-utilisation-heatmap not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-heap-utilisation-heatmap\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isGreaterThan(0L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogOldGenOccupancyTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_parallel_sizing (gcId INTEGER, oldGenBytes BIGINT, oldGenCapacity BIGINT, edenBytes BIGINT, edenCapacity BIGINT, survivorBytes BIGINT)");
+            s.execute("INSERT INTO jvmlog_parallel_sizing VALUES (1,100*1024*1024,512*1024*1024,NULL,NULL,NULL)");
+            s.execute("INSERT INTO jvmlog_parallel_sizing VALUES (2,120*1024*1024,512*1024*1024,NULL,NULL,NULL)");
+            s.execute("INSERT INTO jvmlog_parallel_sizing VALUES (3,140*1024*1024,512*1024*1024,NULL,NULL,NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-old-gen-occupancy-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-old-gen-occupancy-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_parallel_sizing"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Old Gen Fill %\", \"Occupancy Status\" FROM \"jvmlog-old-gen-occupancy-trend\" ORDER BY \"GC ID\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Old Gen Fill %")).isGreaterThan(0.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcLogCompleteness() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_gc_workers (gcId INTEGER, workersUsed INTEGER, workersMax INTEGER, taskName VARCHAR)");
+            s.execute("CREATE TABLE jvmlog_safepoint (operation VARCHAR, totalMs DOUBLE, syncMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'G1 Young','G1 Evacuation Pause',5.0,10.0)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1,200*1024*1024,100*1024*1024,256*1024*1024)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-log-completeness".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-log-completeness not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Total GC Events\", \"Log Detail Level\" FROM \"jvmlog-gc-log-completeness\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Total GC Events")).isEqualTo(1L);
+            assertThat(rs.getString("Log Detail Level")).isNotEmpty();
         }
         conn.close();
     }

@@ -11194,6 +11194,158 @@ public class ViewCollection {
                     ORDER BY "Total Pause (ms)" DESC
                     """, "jvmlog_gc_event")
                     .description("Concurrent vs STW work ratio — for each GC type, compares the amount of concurrent background work to the actual stop-the-world pause time; low Concurrent/STW ratio on ZGC or Shenandoah indicates the collector is struggling to finish concurrent work before the application outpaces it."),
+
+            // ── Batch 25: capacity planning, jitter, and coverage views ────────────
+
+            new View(
+                    "jvmlog-oom-risk-timeline", "jvmlog",
+                    "GC Log: OOM Risk Score Timeline (Rolling Heap + Frequency Risk)", null,
+                    """
+                    CREATE VIEW "jvmlog-oom-risk-timeline" AS
+                    WITH base AS (
+                        SELECT e.gcId,
+                               e.uptimeSecs,
+                               e.pauseMs,
+                               h.heapAfter * 100.0 / NULLIF(h.heapCommittedAfter, 0) AS heapFillPct
+                        FROM jvmlog_gc_event e
+                        JOIN jvmlog_heap_snapshot h ON h.gcId = e.gcId
+                        WHERE e.uptimeSecs IS NOT NULL AND h.heapCommittedAfter > 0
+                    ),
+                    risk AS (
+                        SELECT gcId,
+                               uptimeSecs AS "Uptime (s)",
+                               round(heapFillPct, 1) AS "Heap Fill %",
+                               round(avg(heapFillPct) OVER (ORDER BY uptimeSecs
+                                   ROWS BETWEEN 9 PRECEDING AND CURRENT ROW), 1) AS "Rolling Fill %",
+                               round(avg(pauseMs) OVER (ORDER BY uptimeSecs
+                                   ROWS BETWEEN 9 PRECEDING AND CURRENT ROW), 2) AS "Rolling Avg Pause (ms)",
+                               CASE
+                                 WHEN avg(heapFillPct) OVER (ORDER BY uptimeSecs
+                                   ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) > 90 THEN 5
+                                 WHEN avg(heapFillPct) OVER (ORDER BY uptimeSecs
+                                   ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) > 80 THEN 3
+                                 WHEN avg(heapFillPct) OVER (ORDER BY uptimeSecs
+                                   ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) > 70 THEN 1
+                                 ELSE 0
+                               END AS riskScore
+                        FROM base
+                    )
+                    SELECT "Uptime (s)",
+                           "Heap Fill %",
+                           "Rolling Fill %",
+                           "Rolling Avg Pause (ms)",
+                           riskScore AS "OOM Risk Score",
+                           CASE riskScore
+                             WHEN 5 THEN 'CRITICAL — heap >90%, OOM imminent'
+                             WHEN 3 THEN 'HIGH — heap 80-90%, proactive action needed'
+                             WHEN 1 THEN 'ELEVATED — heap 70-80%, monitor closely'
+                             ELSE 'LOW — heap <70%, stable'
+                           END AS "Risk Level"
+                    FROM risk
+                    ORDER BY "Uptime (s)"
+                    """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("OOM risk timeline — rolling heap fill percentage with risk score classification; CRITICAL (>90% fill) indicates imminent OutOfMemoryError; combine with the memory-leak-risk and gc-overhead-forecast views for a complete capacity picture."),
+
+            new View(
+                    "jvmlog-gc-jitter-analysis", "jvmlog",
+                    "GC Log: GC Pause Jitter Analysis (Coefficient of Variation by Type)", null,
+                    """
+                    CREATE VIEW "jvmlog-gc-jitter-analysis" AS
+                    SELECT gcType                                                              AS "GC Type",
+                           count(*)                                                           AS "Count",
+                           round(avg(pauseMs), 3)                                            AS "Mean Pause (ms)",
+                           round(stddev_pop(pauseMs), 3)                                     AS "Std Dev (ms)",
+                           round(stddev_pop(pauseMs) / NULLIF(avg(pauseMs), 0) * 100.0, 1)  AS "Coeff of Variation %",
+                           round(approx_quantile(pauseMs, 0.99) / NULLIF(approx_quantile(pauseMs, 0.50), 0), 2) AS "P99/P50 Ratio",
+                           CASE
+                             WHEN stddev_pop(pauseMs) / NULLIF(avg(pauseMs), 0) > 1.0 THEN 'HIGH JITTER — extremely variable, hard to SLA'
+                             WHEN stddev_pop(pauseMs) / NULLIF(avg(pauseMs), 0) > 0.5 THEN 'MODERATE JITTER — occasional outliers'
+                             ELSE 'LOW JITTER — predictable pause times'
+                           END AS "Jitter Assessment"
+                    FROM jvmlog_gc_event
+                    WHERE pauseMs IS NOT NULL
+                    GROUP BY gcType
+                    ORDER BY "Coeff of Variation %" DESC
+                    """,
+                    "jvmlog_gc_event")
+                    .description("GC pause jitter analysis — coefficient of variation and P99/P50 ratio per GC type quantify pause predictability; HIGH JITTER means GC pauses are unpredictable making SLA compliance impossible even when the average looks fine; ZGC should have CV < 50%."),
+
+            new View(
+                    "jvmlog-heap-utilisation-heatmap", "jvmlog",
+                    "GC Log: Heap Utilisation Heatmap (Time × Fill% Buckets)", null,
+                    """
+                    CREATE VIEW "jvmlog-heap-utilisation-heatmap" AS
+                    WITH buckets AS (
+                        SELECT floor(e.uptimeSecs / 60.0)                                   AS timeBucket,
+                               floor(h.heapAfter * 100.0 / NULLIF(h.heapCommittedAfter, 0) / 10.0) * 10 AS fillBucket
+                        FROM jvmlog_gc_event e
+                        JOIN jvmlog_heap_snapshot h ON h.gcId = e.gcId
+                        WHERE e.uptimeSecs IS NOT NULL AND h.heapCommittedAfter > 0
+                    )
+                    SELECT timeBucket  AS "Minute",
+                           fillBucket  AS "Heap Fill % Bucket",
+                           count(*)    AS "GC Events in Bucket"
+                    FROM buckets
+                    GROUP BY timeBucket, fillBucket
+                    ORDER BY timeBucket, fillBucket
+                    """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Heap utilisation heatmap data — counts GC events per time-bucket × fill%-bucket combination; dense clusters at high fill% buckets early in the run indicate rapid heap exhaustion; sparse coverage at consistent low fill% indicates healthy heap sizing."),
+
+            new View(
+                    "jvmlog-old-gen-occupancy-trend", "jvmlog",
+                    "GC Log: Old Gen Occupancy Trend (Parallel/CMS Old Gen Over Time)", null,
+                    """
+                    CREATE VIEW "jvmlog-old-gen-occupancy-trend" AS
+                    SELECT gcId                                              AS "GC ID",
+                           round(oldGenBytes    / 1048576.0, 1)            AS "Old Gen Used (MB)",
+                           round(oldGenCapacity / 1048576.0, 1)            AS "Old Gen Capacity (MB)",
+                           round(oldGenBytes * 100.0 / NULLIF(oldGenCapacity, 0), 1) AS "Old Gen Fill %",
+                           round(avg(oldGenBytes / 1048576.0) OVER (ORDER BY gcId
+                               ROWS BETWEEN 4 PRECEDING AND CURRENT ROW), 1) AS "Rolling Avg Used (MB)",
+                           CASE
+                             WHEN oldGenBytes * 100.0 / NULLIF(oldGenCapacity, 0) > 90 THEN 'CRITICAL — old gen nearly full'
+                             WHEN oldGenBytes * 100.0 / NULLIF(oldGenCapacity, 0) > 75 THEN 'HIGH — old gen under pressure'
+                             WHEN oldGenBytes * 100.0 / NULLIF(oldGenCapacity, 0) > 60 THEN 'MODERATE — watch for growth trend'
+                             ELSE 'OK — old gen headroom available'
+                           END AS "Occupancy Status"
+                    FROM jvmlog_parallel_sizing
+                    WHERE oldGenBytes IS NOT NULL AND oldGenCapacity IS NOT NULL
+                    ORDER BY gcId
+                    """,
+                    "jvmlog_parallel_sizing")
+                    .description("Old gen occupancy trend for Parallel/CMS — tracks old generation used bytes vs capacity over time; sustained growth in rolling average indicates promotion rate exceeding old gen collection speed; trigger for adjusting -XX:NewRatio or -XX:OldSize."),
+
+            new View(
+                    "jvmlog-gc-log-completeness", "jvmlog",
+                    "GC Log: GC Log Completeness (What Detail Levels Are Present)", null,
+                    """
+                    CREATE VIEW "jvmlog-gc-log-completeness" AS
+                    WITH counts AS (
+                        SELECT (SELECT count(*) FROM jvmlog_gc_event)   AS totalEvents,
+                               (SELECT count(*) FROM jvmlog_heap_snapshot) AS heapSnapshots,
+                               (SELECT count(*) FROM jvmlog_gc_phase)   AS phaseRecords,
+                               (SELECT count(*) FROM jvmlog_gc_workers) AS workerRecords,
+                               (SELECT count(*) FROM jvmlog_safepoint)  AS safepointRecords
+                    )
+                    SELECT totalEvents AS "Total GC Events",
+                           heapSnapshots AS "Heap Snapshot Records",
+                           phaseRecords  AS "Phase Records",
+                           workerRecords AS "Worker Records",
+                           safepointRecords AS "Safepoint Records",
+                           round(heapSnapshots * 100.0 / NULLIF(totalEvents, 0), 0) AS "Heap Coverage %",
+                           round(phaseRecords  * 100.0 / NULLIF(totalEvents, 0), 0) AS "Phase Coverage %",
+                           CASE
+                             WHEN phaseRecords > totalEvents AND workerRecords > 0 THEN 'FULL — gc* logging active (gc,phases,task,workers)'
+                             WHEN phaseRecords > 0 THEN 'PARTIAL — gc+phases but not gc+task or gc+workers'
+                             WHEN heapSnapshots > 0 THEN 'BASIC — gc+heap only, no phase detail'
+                             ELSE 'MINIMAL — only gc, no heap or phase data'
+                           END AS "Log Detail Level"
+                    FROM counts
+                    """,
+                    "jvmlog_gc_event")
+                    .description("GC log completeness assessment — shows which data types are present and what coverage percentage phase/heap data achieves; MINIMAL logs limit analysis to pause times only; upgrade to -Xlog:gc* to unlock heap, phase, worker, and safepoint views."),
             };
 
     public static List<View> getViews() {

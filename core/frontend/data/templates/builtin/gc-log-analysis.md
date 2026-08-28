@@ -4347,3 +4347,75 @@ SELECT * FROM "jvmlog-concurrent-vs-stw-work"
 BAR(x="GC Type", y="Concurrent/STW Ratio")
 ```
 
+---
+
+<!-- @cell name=oom-risk-timeline requires="has-heap-snapshot" -->
+
+## OOM Risk Timeline
+
+Rolling heap fill percentage with risk score — CRITICAL (>90%) means OutOfMemoryError is imminent and immediate heap size increase is required; combine this view with the memory-leak-risk and gc-overhead-forecast views to distinguish a temporary burst from a structural heap exhaustion trend.
+
+```sql
+SELECT * FROM "jvmlog-oom-risk-timeline"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Rolling Fill %", color="Risk Level")
+```
+
+---
+
+<!-- @cell name=gc-jitter-analysis requires="has-jvmlog-gc" -->
+
+## GC Pause Jitter Analysis (Predictability by GC Type)
+
+Coefficient of variation and P99/P50 ratio per GC type — HIGH JITTER (CV > 100%) means pause times are unpredictable, making SLA compliance impossible even when the average is low; ZGC and Shenandoah should have CV < 50%; high CV on G1 typically indicates humongous allocations or evacuation failures.
+
+```sql
+SELECT * FROM "jvmlog-gc-jitter-analysis"
+```
+
+```plot
+BAR(x="GC Type", y="Coeff of Variation %", color="Jitter Assessment")
+```
+
+---
+
+<!-- @cell name=heap-utilisation-heatmap requires="has-heap-snapshot" -->
+
+## Heap Utilisation Heatmap
+
+GC event counts per time-bucket × heap-fill-% bucket — dense clusters at high fill% late in the run signal approaching OOM; a diagonal pattern (fill% rising over time) indicates heap growth or memory leak; uniform distribution across fill% buckets indicates healthy, stable heap behaviour.
+
+```sql
+SELECT * FROM "jvmlog-heap-utilisation-heatmap"
+```
+
+---
+
+<!-- @cell name=old-gen-occupancy-trend requires="has-parallel-sizing" -->
+
+## Old Gen Occupancy Trend (Parallel/CMS)
+
+Old generation used bytes vs capacity over time for Parallel/CMS collectors — sustained rolling average growth indicates the old gen is accumulating objects faster than collections can reclaim them; CRITICAL status (>90% fill) means the next Full GC will likely trigger an OOM.
+
+```sql
+SELECT * FROM "jvmlog-old-gen-occupancy-trend"
+```
+
+```plot
+LINE(x="GC ID", y="Old Gen Fill %", color="Occupancy Status")
+```
+
+---
+
+<!-- @cell name=gc-log-completeness -->
+
+## GC Log Completeness Assessment
+
+What data types and detail levels are present in this GC log — MINIMAL logs (only gc) restrict analysis to pause times and basic metrics; upgrade to `-Xlog:gc*` to unlock heap, phase, worker, and safepoint analysis views; shows exact coverage percentages to help decide whether re-running with richer logging is worth it.
+
+```sql
+SELECT * FROM "jvmlog-gc-log-completeness"
+```
+
