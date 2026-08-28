@@ -1,5 +1,7 @@
 import React, { useEffect, useCallback } from 'react';
 
+const TAB_BAR_STYLE: React.CSSProperties = { minHeight: '34px' };
+
 export interface Tab {
     id: string;
     filePath: string | null;
@@ -78,10 +80,14 @@ const NotebookTabs: React.FC<NotebookTabsProps> = ({
         return () => window.removeEventListener('keydown', onKeyDown, true);
     }, [tabs, activeTabId, onNewTab, onCloseTab, onSelectTab]);
 
+    // Hide the tab bar entirely when there's only one tab — saves vertical space
+    // and avoids the overlap with the notebook TOC toggle button at top-right.
+    if (tabs.length <= 1) return null;
+
     return (
         <div className="flex-shrink-0 flex items-center bg-gray-900/60 border-b border-gray-700/80 overflow-x-auto z-20"
             data-testid="notebook-tab-bar"
-            style={{ minHeight: '34px' }}
+            style={TAB_BAR_STYLE}
         >
             <div className="flex items-stretch min-w-0 flex-1">
                 {tabs.map((tab, index) => {

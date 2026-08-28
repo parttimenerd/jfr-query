@@ -24,8 +24,12 @@
 export function cleanDuckDBError(raw: string): string {
     if (!raw) return raw;
 
+    // Strip JDBC exception class prefix ("java.sql.SQLException: " etc.) that
+    // DuckDB's JDBC driver sometimes prepends to error messages.
+    let msg = raw.replace(/^[a-zA-Z][a-zA-Z0-9_.]*Exception:\s*/i, '');
+
     // Strip an outer "Error: " wrapper that DuckDB sometimes prepends.
-    let msg = raw.replace(/^Error:\s*/i, '');
+    msg = msg.replace(/^Error:\s*/i, '');
 
     // Split into lines for per-line filtering.
     const lines = msg.split('\n');
@@ -148,23 +152,29 @@ const TIPS: Array<[RegExp, string]> = [
     // ZGC-specific missing tables — checked before generic table-not-found tip
     [
         /table[^"]*"?(?:GCHeapSummary|ObjectAllocationSample)"?[^.]*does not exist/i,
-        'Tip: This query requires events (GCHeapSummary or ObjectAllocationSample) that ZGC does not emit. This cell is expected to return no results on ZGC recordings.',
+        'This query requires events (GCHeapSummary or ObjectAllocationSample) that ZGC does not emit. This cell is expected to return no results on ZGC recordings.',
+    ],
+    // JFR-only tables queried against a jvmlog server
+    [
+        /(?:catalog error|does not exist).*(?:GarbageCollection|RecordingInfo|ExecutionSample|ObjectAllocation|JVM|jfr)/i,
+        'This query uses a JFR-specific table that is not available in the current file type.',
+    ],
+    // jvmlog-only tables queried against a JFR server
+    [
+        /(?:catalog error|does not exist).*jvmlog/i,
+        'This query uses a JVM log table that is not available in the current file type.',
     ],
     [
         /table[^"]*"([^"]+)"[^.]*does not exist/i,
-        'Tip: Check the table name spelling. Use the schema explorer to see available tables.',
-    ],
-    [
-        /catalog error.*(?:GCHeapSummary|ObjectAllocationSample|allocation-rate|heap-committed(?:-vs-used)?|heap-summary-over-time|allocation-by-class(?:-detail|-thread|-site)?|gc-efficiency|alloc-flamegraph)/i,
-        'Tip: This query requires GCHeapSummary or ObjectAllocationSample events, which ZGC does not emit. This cell is expected to return no results on ZGC recordings.',
+        'Check the table name spelling. Use the schema explorer to see available tables.',
     ],
     [
         /catalog error/i,
-        'Tip: The table or view may not exist yet. Run the notebook cells in order to create required views.',
+        'The table or view may not exist for the current file type, or notebook cells may need to be run in order.',
     ],
     [
         /table with name[^.]*does not exist/i,
-        'Tip: Check the table name. Use the schema explorer to see available tables.',
+        'Check the table name. Use the schema explorer to see available tables.',
     ],
 
     // LIMIT
@@ -207,16 +217,17 @@ const TIPS: Array<[RegExp, string]> = [
 ];
 
 /**
- * Returns true when the error is a known "expected missing table" condition —
- * i.e. the query targets a table or view that simply doesn't exist in this
- * recording type (e.g. GCHeapSummary / ObjectAllocationSample on ZGC).
+ * Returns true when the error is an expected "table/view not found" condition —
+ * i.e. the query targets something that doesn't exist in this recording type
+ * (e.g. a JFR table in a jvmlog notebook, or a jvmlog view in a JFR notebook).
  *
- * These errors should be displayed as soft info messages rather than red errors.
+ * These errors are displayed as soft grey info rather than red errors.
  */
 export function isExpectedMissingTable(cleanedMessage: string): boolean {
-    return /table[^"]*"?(?:GCHeapSummary|ObjectAllocationSample)"?[^.]*does not exist/i.test(cleanedMessage)
-        || /table[^"]*"?(?:heap-committed(?:-vs-used)?|allocation-rate|heap-summary-over-time|allocation-by-class(?:-detail|-thread|-site)?|gc-efficiency|alloc-flamegraph)"?[^.]*does not exist/i.test(cleanedMessage)
-        || /catalog error.*(?:GCHeapSummary|ObjectAllocationSample|allocation-rate|heap-committed(?:-vs-used)?|heap-summary-over-time|allocation-by-class(?:-detail|-thread|-site)?|gc-efficiency|alloc-flamegraph)/i.test(cleanedMessage);
+    // Any DuckDB Catalog Error about a missing table or view is expected — cells
+    // that reference collector-specific or recording-type-specific tables simply
+    // won't apply to every loaded file.
+    return /catalog error:/i.test(cleanedMessage) && /does not exist/i.test(cleanedMessage);
 }
 export function heuristicTip(cleanedMessage: string): string {
     for (const [re, tip] of TIPS) {

@@ -4895,10 +4895,10 @@ public class ViewCollection {
                                    CASE
                                      WHEN slopeMBperSec <= 0 OR r2 < 0.5
                                      THEN 'No clear growth trend'
-                                     ELSE round(
+                                     ELSE CAST(round(
                                              (maxCommittedMB - (intercept + slopeMBperSec * lastUptimeSecs))
                                              / slopeMBperSec / 60.0,
-                                             1)
+                                             1) AS VARCHAR)
                                    END                                                         AS "Est. Time-to-OOM (min)",
                                    CASE
                                      WHEN slopeMBperSec <= 0 OR r2 < 0.5 THEN 'Low — no significant growth'
@@ -4938,7 +4938,7 @@ public class ViewCollection {
                                    round(r2, 4) AS "R²",
                                    CASE
                                      WHEN slopeMBperSec <= 0 OR r2 < 0.5 THEN 'No clear growth trend'
-                                     ELSE round((maxCommittedMB - (intercept + slopeMBperSec * lastUptimeSecs)) / slopeMBperSec / 60.0, 1)
+                                     ELSE CAST(round((maxCommittedMB - (intercept + slopeMBperSec * lastUptimeSecs)) / slopeMBperSec / 60.0, 1) AS VARCHAR)
                                    END AS "Est. Time-to-OOM (min)",
                                    CASE
                                      WHEN slopeMBperSec <= 0 OR r2 < 0.5 THEN 'Low — no significant growth'
@@ -6519,21 +6519,22 @@ public class ViewCollection {
             // -----------------------------------------------------------------------
             new View(
                     "jvmlog-safepoint-heatmap", "jvmlog",
-                    "GC Log: Safepoint Operation Frequency Heatmap", null,
+                    "GC Log: Safepoint Operation Heatmap by Minute", null,
                     """
                         CREATE VIEW "jvmlog-safepoint-heatmap" AS
-                        SELECT operation                                        AS "Operation",
-                               count(*)                                         AS "Count",
-                               round(sum(totalMs), 1)                          AS "Total STW (ms)",
-                               round(avg(totalMs), 2)                          AS "Avg STW (ms)",
-                               round(max(totalMs), 1)                          AS "Max STW (ms)",
-                               round(avg(syncMs), 2)                           AS "Avg Sync (ms)"
-                        FROM jvmlog_safepoint
-                        WHERE operation IS NOT NULL
-                        GROUP BY operation
-                        ORDER BY "Total STW (ms)" DESC
+                        SELECT CAST(floor(e.uptimeSecs / 60) AS INTEGER) AS "Minute",
+                               s.operation                                AS "Operation",
+                               count(*)                                   AS "Count",
+                               round(sum(s.totalMs), 1)                  AS "Total STW (ms)",
+                               round(avg(s.totalMs), 2)                  AS "Avg STW (ms)",
+                               round(max(s.totalMs), 1)                  AS "Max STW (ms)"
+                        FROM jvmlog_safepoint s
+                        JOIN jvmlog_gc_event e USING (gcId)
+                        WHERE s.operation IS NOT NULL AND e.uptimeSecs IS NOT NULL
+                        GROUP BY 1, 2
+                        ORDER BY "Minute", "Total STW (ms)" DESC
                         """,
-                    "jvmlog_safepoint")
+                    "jvmlog_safepoint", "jvmlog_gc_event")
                     .description("Safepoint operation frequency per 1-minute window — shows which operations dominate STW time each minute and whether problematic operations cluster in time."),
 
             // -----------------------------------------------------------------------
@@ -11604,6 +11605,7 @@ public class ViewCollection {
                     definition VARCHAR
                 )
                 """);
+        connection.createStatement().execute("DELETE FROM \"jfr$views\"");
         try (var appender = connection.createAppender("", "jfr$views")) {
             for (View view : getViews()) {
                 appender.beginRow();

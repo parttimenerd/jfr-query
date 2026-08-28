@@ -45,7 +45,7 @@ class AsyncLock {
 const dbLock = new AsyncLock();
 
 export type DBMode = 'server' | 'wasm';
-export type SourceType = 'jfr' | 'duckdb';
+export type SourceType = 'jfr' | 'jvmlog' | 'duckdb';
 export enum DBState { SCHEMA_LOADING, NEEDS_FILE, IMPORTING, READY, ERROR }
 interface Schema {
     tables: TableSchema[];
@@ -257,8 +257,12 @@ const parseMacroParameters = (params: any): string[] => {
 
 async function detectSourceType(runQuery: (sql: string) => Promise<any[]>): Promise<SourceType> {
     try {
-        const r = await runQuery(`SELECT COUNT(*) AS c FROM duckdb_tables() WHERE table_name='RecordingInfo'`);
-        return Number(r[0]?.c) > 0 ? 'jfr' : 'duckdb';
+        const r = await runQuery(`SELECT
+            (SELECT COUNT(*) FROM duckdb_tables() WHERE table_name='RecordingInfo') AS hasJfr,
+            (SELECT COUNT(*) FROM duckdb_tables() WHERE table_name LIKE 'jvmlog_%' LIMIT 1) AS hasJvmlog`);
+        if (Number(r[0]?.hasJfr) > 0) return 'jfr';
+        if (Number(r[0]?.hasJvmlog) > 0) return 'jvmlog';
+        return 'duckdb';
     } catch {
         return 'duckdb';
     }

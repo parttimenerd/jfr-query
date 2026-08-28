@@ -1498,7 +1498,7 @@ SELECT * FROM "jvmlog-shenandoah-mode-analysis"
 ```
 
 ```plot
-BAR(x="Mode", y="Count")
+BAR(x="Mode", y="Events")
 ```
 
 ---
@@ -2415,7 +2415,7 @@ SELECT * FROM "jvmlog-gc-type-mix-trend"
 ```
 
 ```plot
-BAR(x="5-Min Window", y=["Young %","Mixed %","Full %"], stacked=true)
+BAR(x="5-Min Window", y=["Young %","Mixed %","Full %"], layout="stacked")
 ```
 
 ---
@@ -2728,16 +2728,16 @@ BAR(x="Cause", y="Full GCs")
 
 <!-- @cell name=gc-duration-vs-pause requires="has-jvmlog-gc" -->
 
-## Total Duration vs STW Pause Ratio
+## STW Pause by GC Type
 
-STW pause as a fraction of total GC duration per collection type — concurrent collectors should have a low STW/Duration%; a rising ratio means concurrent phases are being cut short and more work falls into STW.
+Average, p50, and p95 STW pause per GC type — for concurrent collectors (ZGC, Shenandoah, G1) pause times should be low; high values indicate STW phases are dominating collection work.
 
 ```sql
 SELECT * FROM "jvmlog-gc-duration-vs-pause"
 ```
 
 ```plot
-BAR(x="GC Type", y="STW / Duration %")
+BAR(x="GC Type", y="Avg Pause (ms)")
 ```
 
 ---

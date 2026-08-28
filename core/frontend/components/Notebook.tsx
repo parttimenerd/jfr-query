@@ -8,7 +8,7 @@ import SQLEditor from './SQLEditor';
 import { NotebookTOC } from './NotebookTOC';
 import { parseCellContent, parseCellDirective, requiresAttrToConditionSql, tokenizeCellContent } from '../utils/notebookParser';
 import { cellHandle } from '../utils/cellHandle';
-import { resolveCellVisibility } from '../utils/cellVisibility';
+import { substituteVariables } from '../utils/variableSubstitution';
 
 interface NotebookProps {
     notebookMarkdown: string;
@@ -38,23 +38,34 @@ interface NotebookProps {
     onRunPreviewQuery: (queryToRun: string) => Promise<any[]>;
     onMetadataChange: (newMetadata: NotebookMetadata) => Promise<void>;
     presenterMode?: boolean;
+    /** When true, the tab bar is showing above the notebook — TOC button shifts down to avoid overlap. */
+    tabBarVisible?: boolean;
+    /** Extra pixels of banner height above the notebook content (each visible banner ~36px). TOC button shifts down by this amount. */
+    bannerOffset?: number;
     /** Forward to NotebookCell → InlineChat for "pop to sidebar" feature. */
     onPopChatToSidebar?: (snapshot: import('./ChatPanel').InlineChatSnapshot) => void;
     /** Forward to NotebookCell → InlineChat for reference link navigation. */
     onNavigateRef?: (ref: string) => void;
 }
 
+const _REQUIRES_EXPR_RE = /^SELECT\s+([\s\S]+)\s+FROM\s+information_schema\.tables$/i;
+const _NORM_BRACES_RE = /\$\{([a-zA-Z_][a-zA-Z0-9_.]*)\}/g;
+
 const Notebook: React.FC<NotebookProps> = (props) => {
     const {
         notebookMarkdown, setNotebookMarkdown, isMarkdownMode, isAutoRunEnabled, cells, metadata, results, queryTimings,
         collapseTrigger, allCollapsed, isAiFeatureActive, clearResultsTrigger, onRunQuery, onUpdateCell, onDeleteCell, onDuplicateCell, onDeleteQueryBlock,
         onAddCell, onAddCellFromTool, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange,
-        presenterMode = false, onPopChatToSidebar, onNavigateRef,
+        presenterMode = false, tabBarVisible = false, bannerOffset = 0, onPopChatToSidebar, onNavigateRef,
     } = props;
 
     const settingsPanelRef = useRef<{ focusVariable: (name: string) => void }>(null);
     const [tocOpen, setTocOpen] = useState(false);
     const handleCloseTOC = useCallback(() => setTocOpen(false), []);
+
+    // Persistent cache: cell content string → parsed directive. Avoids re-running the Ohm
+    // grammar on unchanged cells when any single cell in the notebook is edited.
+    const directiveStrCacheRef = useRef<Map<string, ReturnType<typeof parseCellDirective>>>(new Map());
 
     // Ctrl+Shift+T toggles TOC
     useEffect(() => {
@@ -84,8 +95,21 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     // Cache parsed directives by cell content so parseCellDirective isn't called
     // repeatedly in the render loop and effect loops on unrelated state changes.
     const cellDirectives = useMemo(() => {
+        const cache = directiveStrCacheRef.current;
         const map = new Map<string, ReturnType<typeof parseCellDirective>>();
-        for (const c of cells) map.set(c.id, parseCellDirective(c.content));
+        for (const c of cells) {
+            let d = cache.get(c.content);
+            if (d === undefined) {
+                d = parseCellDirective(c.content);
+                cache.set(c.content, d);
+            }
+            map.set(c.id, d);
+        }
+        if (cache.size > cells.length * 2) {
+            const live = new Set<string>();
+            for (const c of cells) live.add(c.content);
+            for (const k of cache.keys()) { if (!live.has(k)) cache.delete(k); }
+        }
         return map;
     }, [cells]);
 
@@ -113,7 +137,8 @@ const Notebook: React.FC<NotebookProps> = (props) => {
     useEffect(() => {
         // Build effective conditions: notebook-level cellConditions merged with
         // per-cell `requires=` attributes from <!-- @cell requires="Table1,Table2" -->.
-        const effective: Record<string, string> = { ...(metadata.cellConditions ?? {}) };
+        const namedConditions = metadata.cellConditions ?? {};
+        const effective: Record<string, string> = { ...namedConditions };
         for (let idx = 0; idx < cells.length; idx++) {
             const c = cells[idx];
             const name = cellHandle(c, idx);
@@ -121,7 +146,9 @@ const Notebook: React.FC<NotebookProps> = (props) => {
             const directive = cellDirectives.get(c.id);
             const reqAttr = directive?.rest?.requires;
             if (reqAttr?.trim()) {
-                effective[name] = requiresAttrToConditionSql(reqAttr);
+                // If requires="some-name" resolves to a named condition, use that SQL directly.
+                const namedSql = namedConditions[reqAttr.trim()];
+                effective[name] = namedSql ?? requiresAttrToConditionSql(reqAttr);
             }
         }
 
@@ -139,20 +166,58 @@ const Notebook: React.FC<NotebookProps> = (props) => {
         setCellVisibility(pending);
         let cancelled = false;
         (async () => {
-            const next: Record<string, boolean | null | undefined> = { ...pending };
-            for (let idx = 0; idx < cells.length; idx++) {
-                if (cancelled) return;
-                const c = cells[idx];
-                const name = cellHandle(c, idx);
-                next[name] = await resolveCellVisibility(
-                    name,
-                    effective,
-                    metadata.variables ?? {},
-                    onRunPreviewQueryRef.current,
-                );
-                // Update incrementally so visible cells can start running ASAP.
-                if (!cancelled) setCellVisibility(prev => ({ ...prev, [name]: next[name] }));
+            const vars = metadata.variables ?? {};
+            // Batch all grammar-compiled checks (SELECT <expr> FROM information_schema.tables)
+            // into a single query, run raw-SELECT checks individually.
+            type BatchEntry = { name: string; expr: string };
+            type RawEntry  = { name: string; sql: string };
+            const batchEntries: BatchEntry[] = [];
+            const rawEntries: RawEntry[] = [];
+            const normBraces = (s: string) => s.replace(_NORM_BRACES_RE, '$$$1');
+            for (const [name, sql] of Object.entries(effective)) {
+                const expanded = substituteVariables(normBraces(sql), vars);
+                const m = _REQUIRES_EXPR_RE.exec(expanded.trim());
+                if (m) {
+                    batchEntries.push({ name, expr: m[1] });
+                } else {
+                    rawEntries.push({ name, sql: expanded });
+                }
             }
+
+            const next: Record<string, boolean | null | undefined> = { ...pending };
+
+            if (batchEntries.length > 0 && !cancelled) {
+                try {
+                    const selectList = batchEntries.map((e, i) => `(${e.expr}) AS "_vis${i}"`).join(', ');
+                    const rows = await onRunPreviewQueryRef.current(
+                        `SELECT ${selectList} FROM information_schema.tables`,
+                    );
+                    const row = rows?.[0] ?? {};
+                    batchEntries.forEach((e, i) => { next[e.name] = Boolean(row[`_vis${i}`]); });
+                } catch {
+                    batchEntries.forEach(e => { next[e.name] = true; });
+                }
+            }
+
+            for (const { name, sql } of rawEntries) {
+                if (cancelled) return;
+                try {
+                    const rows = await onRunPreviewQueryRef.current(sql);
+                    next[name] = rows && rows.length > 0 ? (() => {
+                        const v = Object.values(rows[0])[0];
+                        if (v === null || v === undefined) return false;
+                        if (typeof v === 'number') return v !== 0 && !Number.isNaN(v);
+                        if (typeof v === 'string') return v.length > 0 && v.toLowerCase() !== 'false' && v !== '0';
+                        if (typeof v === 'boolean') return v;
+                        if (typeof v === 'bigint') return v !== 0n;
+                        return true;
+                    })() : false;
+                } catch {
+                    next[name] = true;
+                }
+            }
+
+            if (!cancelled) setCellVisibility(next);
         })();
         return () => { cancelled = true; };
     // onRunPreviewQuery is intentionally omitted — captured via ref to prevent
@@ -199,11 +264,12 @@ const Notebook: React.FC<NotebookProps> = (props) => {
         // This keeps prop references stable for cells that use crossCellQueryRefs,
         // so arePropsEqual short-circuits without needing to run areCrossCellRefsEqual.
         const prev = prevCrossRef.current;
-        const outKeys = Object.keys(out);
-        const prevKeys = Object.keys(prev);
-        if (outKeys.length === prevKeys.length && outKeys.every(k => prev[k] === out[k])) {
-            return prev;
+        let same = true;
+        for (const k in out) { if (out[k] !== prev[k]) { same = false; break; } }
+        if (same) {
+            for (const k in prev) { if (!(k in out)) { same = false; break; } }
         }
+        if (same) return prev;
         prevCrossRef.current = out;
         return out;
     // Recompute when cell aliases or any result changes.
@@ -237,15 +303,10 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                         />
                         {cells.map((cell, idx) => {
                             const name = cellHandle(cell, idx);
-                            // undefined = not in the visibility map (no requires) → visible
-                            // null = pending requires check → block auto-run but don't hide visually
-                            // true = visible (requires satisfied)
-                            // false = hidden (requires not satisfied)
-                            // If a cell has requires but isn't in the map yet, treat as null (pending)
-                            // to prevent auto-run firing before the async check resolves.
                             const rawVisibility = cellVisibility[name];
                             const visibility = rawVisibility === undefined && cellsWithRequires.has(name) ? null : rawVisibility;
                             const isConditionallyHidden = visibility === null ? undefined : (visibility === false ? true : false);
+                            if (isConditionallyHidden) return null;
                             return (
                                 <NotebookCell
                                     key={cell.id}
@@ -261,7 +322,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                                     allCollapsed={allCollapsed}
                                     isAiFeatureActive={isAiFeatureActive}
                                     initialCellCollapsed={cellCollapseStateRef.current.get(cell.id) ?? cellDirectives.get(cell.id)?.collapsed}
-                                    isConditionallyHidden={isConditionallyHidden}
+                                    isConditionallyHidden={false}
                                     onCellCollapseChange={handleCellCollapseChange}
                                     clearResultsTrigger={clearResultsTrigger}
                                     onRunQuery={onRunQuery}
@@ -282,6 +343,38 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                                 />
                             );
                         })}
+                        <HiddenCellsSection
+                            cells={cells}
+                            cellVisibility={cellVisibility}
+                            cellsWithRequires={cellsWithRequires}
+                            cellCollapseStateRef={cellCollapseStateRef}
+                            cellDirectives={cellDirectives}
+                            metadata={metadata}
+                            results={results}
+                            emptyResults={emptyResults}
+                            queryTimings={queryTimings}
+                            crossCellQueryRefs={crossCellQueryRefs}
+                            isAutoRunEnabled={isAutoRunEnabled}
+                            collapseTrigger={collapseTrigger}
+                            allCollapsed={allCollapsed}
+                            isAiFeatureActive={isAiFeatureActive}
+                            clearResultsTrigger={clearResultsTrigger}
+                            onRunQuery={onRunQuery}
+                            onUpdateCell={onUpdateCell}
+                            onAddCellFromTool={onAddCellFromTool}
+                            onDeleteCell={onDeleteCell}
+                            onDeleteQueryBlock={onDeleteQueryBlock}
+                            onMoveCell={onMoveCell}
+                            onSuggestPlot={onSuggestPlot}
+                            onFormatCode={onFormatCode}
+                            onRunPreviewQuery={onRunPreviewQuery}
+                            handleGlobalVariableClick={handleGlobalVariableClick}
+                            onMetadataChange={onMetadataChange}
+                            presenterMode={presenterMode}
+                            onPopChatToSidebar={onPopChatToSidebar}
+                            onNavigateRef={onNavigateRef}
+                            handleCellCollapseChange={handleCellCollapseChange}
+                        />
                     </div>
                 </div>
             </div>
@@ -297,8 +390,9 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     aria-label="Toggle table of contents"
                     aria-pressed={tocOpen}
                     title="Table of Contents (Ctrl+Shift+T)"
+                    style={{ top: `${48 + (tabBarVisible ? 34 : 0) + bannerOffset + 8}px` }}
                     className={[
-                        'fixed top-14 right-4 z-40 p-1.5 rounded-md border text-xs transition-colors shadow',
+                        `fixed ${tabBarVisible ? 'right-10' : 'right-4'} z-40 p-1.5 rounded-md border text-xs transition-colors shadow`,
                         tocOpen
                             ? 'bg-gray-700 border-cyan-500 text-cyan-300'
                             : 'bg-gray-800 border-gray-600 text-gray-400 hover:text-gray-200 hover:border-gray-500',
@@ -309,7 +403,10 @@ const Notebook: React.FC<NotebookProps> = (props) => {
             )}
             {/* TOC panel */}
             {tocOpen && !presenterMode && (
-                <div className="fixed top-20 right-4 z-40">
+                <div
+                    className={`fixed ${tabBarVisible ? 'right-10' : 'right-4'} z-40`}
+                    style={{ top: `${48 + (tabBarVisible ? 34 : 0) + bannerOffset + 46}px` }}
+                >
                     <NotebookTOC cells={cells} onClose={handleCloseTOC} />
                 </div>
             )}
@@ -349,6 +446,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                 const rawVisibility = cellVisibility[name];
                 const visibility = rawVisibility === undefined && cellsWithRequires.has(name) ? null : rawVisibility;
                 const isConditionallyHidden = visibility === null ? undefined : (visibility === false ? true : false);
+                if (isConditionallyHidden) return null;
                 return (
                     <NotebookCell
                         key={cell.id}
@@ -364,7 +462,7 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                         allCollapsed={allCollapsed}
                         isAiFeatureActive={isAiFeatureActive}
                         initialCellCollapsed={cellCollapseStateRef.current.get(cell.id) ?? cellDirectives.get(cell.id)?.collapsed}
-                        isConditionallyHidden={isConditionallyHidden}
+                        isConditionallyHidden={false}
                         onCellCollapseChange={handleCellCollapseChange}
                         clearResultsTrigger={clearResultsTrigger}
                         onRunQuery={onRunQuery}
@@ -384,6 +482,38 @@ const Notebook: React.FC<NotebookProps> = (props) => {
                     />
                 );
             })}
+            <HiddenCellsSection
+                cells={cells}
+                cellVisibility={cellVisibility}
+                cellsWithRequires={cellsWithRequires}
+                cellCollapseStateRef={cellCollapseStateRef}
+                cellDirectives={cellDirectives}
+                metadata={metadata}
+                results={results}
+                emptyResults={emptyResults}
+                queryTimings={queryTimings}
+                crossCellQueryRefs={crossCellQueryRefs}
+                isAutoRunEnabled={isAutoRunEnabled}
+                collapseTrigger={collapseTrigger}
+                allCollapsed={allCollapsed}
+                isAiFeatureActive={isAiFeatureActive}
+                clearResultsTrigger={clearResultsTrigger}
+                onRunQuery={onRunQuery}
+                onUpdateCell={onUpdateCell}
+                onAddCellFromTool={onAddCellFromTool}
+                onDeleteCell={onDeleteCell}
+                onDeleteQueryBlock={onDeleteQueryBlock}
+                onMoveCell={onMoveCell}
+                onSuggestPlot={onSuggestPlot}
+                onFormatCode={onFormatCode}
+                onRunPreviewQuery={onRunPreviewQuery}
+                handleGlobalVariableClick={handleGlobalVariableClick}
+                onMetadataChange={onMetadataChange}
+                presenterMode={presenterMode}
+                onPopChatToSidebar={onPopChatToSidebar}
+                onNavigateRef={onNavigateRef}
+                handleCellCollapseChange={handleCellCollapseChange}
+            />
             {!presenterMode && cells.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-16 text-center gap-5 max-w-lg mx-auto">
                     <div className="text-gray-600 text-4xl">✦</div>
@@ -454,3 +584,91 @@ const Notebook: React.FC<NotebookProps> = (props) => {
 };
 
 export default React.memo(Notebook);
+
+type HiddenCellsSectionProps = {
+    cells: NotebookCellData[];
+    cellVisibility: Record<string, boolean | null | undefined>;
+    cellsWithRequires: Set<string>;
+    cellCollapseStateRef: React.MutableRefObject<Map<string, boolean>>;
+    cellDirectives: Map<string, ReturnType<typeof parseCellDirective>>;
+    metadata: NotebookMetadata;
+    results: Record<string, (any[] | null)[]>;
+    emptyResults: (any[] | null)[];
+    queryTimings: Record<string, number[]> | undefined;
+    crossCellQueryRefs: Record<string, any[]>;
+    isAutoRunEnabled: boolean;
+    collapseTrigger: number;
+    allCollapsed: boolean;
+    isAiFeatureActive: boolean;
+    clearResultsTrigger: number;
+    onRunQuery: any; onUpdateCell: any; onAddCellFromTool: any; onDeleteCell: any;
+    onDeleteQueryBlock: any; onMoveCell: any; onSuggestPlot: any; onFormatCode: any;
+    onRunPreviewQuery: any; handleGlobalVariableClick: any; onMetadataChange: any;
+    presenterMode: boolean; onPopChatToSidebar: any; onNavigateRef: any;
+    handleCellCollapseChange: any;
+};
+
+const HiddenCellsSection: React.FC<HiddenCellsSectionProps> = (props) => {
+    const [open, setOpen] = React.useState(false);
+    const hiddenCells = props.cells.filter((cell, idx) => {
+        const name = cellHandle(cell, idx);
+        const raw = props.cellVisibility[name];
+        const vis = raw === undefined && props.cellsWithRequires.has(name) ? null : raw;
+        return vis === false;
+    });
+    if (hiddenCells.length === 0) return null;
+    return (
+        <div className="border border-amber-800/30 rounded-lg bg-amber-950/10 mt-2">
+            <button
+                onClick={() => setOpen(o => !o)}
+                className="w-full flex items-center gap-2 px-4 py-2 text-left text-xs text-amber-400/70 hover:text-amber-300 transition-colors"
+                aria-expanded={open}
+            >
+                <span className="text-base leading-none">{open ? '▾' : '▸'}</span>
+                <span className="font-medium">{hiddenCells.length} hidden view{hiddenCells.length !== 1 ? 's' : ''}</span>
+                <span className="text-amber-600/60">— not applicable to the loaded file</span>
+            </button>
+            {open && (
+                <div className="px-3 pb-3 space-y-2 border-t border-amber-800/20 pt-2">
+                    {hiddenCells.map((cell) => {
+                        const idx = props.cells.indexOf(cell);
+                        return (
+                            <NotebookCell
+                                key={cell.id}
+                                cell={cell}
+                                cellIndex={idx}
+                                allCells={props.cells}
+                                metadata={props.metadata}
+                                results={props.results[cell.id] ?? props.emptyResults}
+                                queryTimings={props.queryTimings?.[cell.id]}
+                                crossCellQueryRefs={props.crossCellQueryRefs}
+                                isAutoRunEnabled={props.isAutoRunEnabled}
+                                collapseTrigger={props.collapseTrigger}
+                                allCollapsed={props.allCollapsed}
+                                isAiFeatureActive={props.isAiFeatureActive}
+                                initialCellCollapsed={props.cellCollapseStateRef.current.get(cell.id) ?? props.cellDirectives.get(cell.id)?.collapsed}
+                                isConditionallyHidden={true}
+                                onCellCollapseChange={props.handleCellCollapseChange}
+                                clearResultsTrigger={props.clearResultsTrigger}
+                                onRunQuery={props.onRunQuery}
+                                onUpdateCell={props.onUpdateCell}
+                                onAddCellFromTool={props.onAddCellFromTool}
+                                onDeleteCell={props.onDeleteCell}
+                                onDeleteQueryBlock={props.onDeleteQueryBlock}
+                                onMoveCell={props.onMoveCell}
+                                onSuggestPlot={props.onSuggestPlot}
+                                onFormatCode={props.onFormatCode}
+                                onRunPreviewQuery={props.onRunPreviewQuery}
+                                onGlobalVariableClick={props.handleGlobalVariableClick}
+                                onMetadataChange={props.onMetadataChange}
+                                presenterMode={props.presenterMode}
+                                onPopChatToSidebar={props.onPopChatToSidebar}
+                                onNavigateRef={props.onNavigateRef}
+                            />
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};

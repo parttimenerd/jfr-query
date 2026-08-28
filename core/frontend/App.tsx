@@ -23,7 +23,7 @@ import { aiService } from './services/AiService';
 import type { NotebookCellData, NotebookMetadata } from './types';
 import { initialNotebook } from './data/mockData';
 import { gcAnalysisNotebook } from './data/gcNotebookTemplate';
-import { parseNotebook, reconstructNotebook, tokenizeCellContent, reconstructCellContent, parseCellContent, parseCellDirective, requiresAttrToConditionSql } from './utils/notebookParser';
+import { parseNotebook, reconstructNotebook, tokenizeCellContent, reconstructCellContent, parseCellContent, parseCellDirective, requiresAttrToConditionSql, stringifyFrontMatter } from './utils/notebookParser';
 import { mergeTemplate } from './utils/templateMerge';
 import { formatPlotCode } from './utils/plotFormatter';
 import { formatSql } from './utils/sqlFormatter';
@@ -62,7 +62,7 @@ import { loadTemplate } from './services/TemplateService';
 export { shouldShowOnboarding } from './utils/onboarding';
 
 function topoSort<T extends { name: string; includes?: string[] }>(items: T[], _label: string): T[] {
-    const nameSet = new Set(items.map(i => i.name));
+    const nameMap = new Map(items.map(i => [i.name, i]));
     const visited = new Set<string>();
     const result: T[] = [];
     const visit = (item: T, ancestors: Set<string> = new Set()) => {
@@ -70,8 +70,7 @@ function topoSort<T extends { name: string; includes?: string[] }>(items: T[], _
         if (ancestors.has(item.name)) return; // cycle guard
         ancestors.add(item.name);
         for (const dep of (item.includes || [])) {
-            if (!nameSet.has(dep)) continue;
-            const depItem = items.find(i => i.name === dep);
+            const depItem = nameMap.get(dep);
             if (depItem) visit(depItem, new Set(ancestors));
         }
         visited.add(item.name);
@@ -111,6 +110,10 @@ const STACKTRACE_DEPTH_OPTIONS = [
     { value: 5,  label: '5 frames',  description: 'Faster' },
     { value: 0,  label: 'Skip',      description: 'No call stack — fastest' },
 ];
+const EMPTY_VARS: Record<string, string> = {};
+const _SYNTAX_ERROR_RE = /syntax|parse|unexpected|token|unrecognized/i;
+const _REQUIRES_EXPR_RE = /^SELECT\s+([\s\S]+)\s+FROM\s+information_schema\.tables$/i;
+const _NAV_REF_RE = /^(?:cell-|plot-)?(\d+)$/;
 
 const App: React.FC = () => {    const {
         dbState, mode, sourceType, errorMessage, serverProbeError, query, refreshSchema, loadFile, loadDemo,
@@ -327,6 +330,14 @@ const App: React.FC = () => {    const {
     notebookMarkdownRef.current = notebookMarkdown;
     // Cell-title parse cache: same cell object → same title (no re-parse on unrelated cell edits).
     const cellTitleCacheRef = useRef<WeakMap<object, string>>(new WeakMap());
+    // Full parsed-content cache: same cell object → same ParsedContent (sqlBlocks, variables, etc.)
+    const cellParsedCacheRef = useRef<WeakMap<object, ReturnType<typeof parseCellContent>>>(new WeakMap());
+    // Directive parse cache keyed by cell content string — avoids re-running the Ohm grammar
+    // on every keystroke for cells whose content hasn't changed (used in the cells useMemo).
+    const cellDirectiveStrCacheRef = useRef<Map<string, ReturnType<typeof parseCellDirective>>>(new Map());
+    // Front-matter serialization cache: same metadata object → same YAML string (skips
+    // stringifyFrontMatter on every cell keystroke when only cell content changed).
+    const frontMatterCacheRef = useRef<WeakMap<object, string>>(new WeakMap());
 
     // Warn before tab close if the notebook has unsaved changes (not yet downloaded).
     useEffect(() => {
@@ -759,16 +770,20 @@ const App: React.FC = () => {    const {
             const sqlVars = toSqlVariables(vars);
             let changed = false;
 
-            const currentViewNames = new Set((metadata.views || []).map(v => v.name).filter(Boolean));
-            const currentMacroNames = new Set((metadata.macros || []).map(m => m.name).filter(Boolean));
+            const currentViewNames = new Set<string>();
+            for (const v of (metadata.views || [])) if (v.name) currentViewNames.add(v.name);
+            const currentMacroNames = new Set<string>();
+            for (const m of (metadata.macros || [])) if (m.name) currentMacroNames.add(m.name);
 
             // Batch-drop views and macros removed from metadata.
-            const dropViewStmts = [...prevViewNamesRef.current]
-                .filter(n => !currentViewNames.has(n))
-                .map(n => `DROP VIEW IF EXISTS "${n.replace(/"/g, '""')}"`);
-            const dropMacroStmts = [...prevMacroNamesRef.current]
-                .filter(n => !currentMacroNames.has(n))
-                .map(n => `DROP MACRO IF EXISTS "${n.replace(/"/g, '""')}"`);
+            const dropViewStmts: string[] = [];
+            for (const n of prevViewNamesRef.current) {
+                if (!currentViewNames.has(n)) dropViewStmts.push(`DROP VIEW IF EXISTS "${n.replace(/"/g, '""')}"`);
+            }
+            const dropMacroStmts: string[] = [];
+            for (const n of prevMacroNamesRef.current) {
+                if (!currentMacroNames.has(n)) dropMacroStmts.push(`DROP MACRO IF EXISTS "${n.replace(/"/g, '""')}"`);
+            }
             if (dropViewStmts.length + dropMacroStmts.length > 0) {
                 try { await query([...dropViewStmts, ...dropMacroStmts].join('; ')); changed = true; } catch {}
             }
@@ -823,26 +838,20 @@ const App: React.FC = () => {    const {
         // Detect duplicate cell `name=` directives and apply deterministic
         // `-2`, `-3` suffixes so cell handles stay unique.
         const nameCounts: Record<string, number> = {};
-        const parsedNames: (string | undefined)[] = cellContents.map(c => {
-            const d = parseCellDirective(c);
-            return d?.name?.trim() || undefined;
-        });
-        const finalNames: (string | undefined)[] = parsedNames.map(n => {
-            if (!n) return undefined;
-            const seen = (nameCounts[n] ?? 0) + 1;
-            nameCounts[n] = seen;
-            return seen === 1 ? n : `${n}-${seen}`;
-        });
-        // Use position-based IDs so that editing a cell's content doesn't
-        // re-key the React subtree and orphan its results. This still misaligns
-        // on insert/delete/reorder, but content-edit churn is the common case
-        // and was costing one remount per keystroke (see BUGS.md B-026).
+        const dirCache = cellDirectiveStrCacheRef.current;
         const cache = cellIdentityCacheRef.current;
         const nextCache = new Map<string, NotebookCellData>();
         let anyNew = false;
         const result = cellContents.map((content, index) => {
+            if (!dirCache.has(content)) dirCache.set(content, parseCellDirective(content));
+            const rawName = dirCache.get(content)?.name?.trim() || undefined;
+            let name: string | undefined;
+            if (rawName) {
+                const seen = (nameCounts[rawName] ?? 0) + 1;
+                nameCounts[rawName] = seen;
+                name = seen === 1 ? rawName : `${rawName}-${seen}`;
+            }
             const id = `cell-${index}`;
-            const name = finalNames[index];
             const cacheKey = `${id}:${name ?? ''}:${content}`;
             const existing = cache.get(cacheKey);
             if (existing) {
@@ -855,6 +864,12 @@ const App: React.FC = () => {    const {
             return cell;
         });
         cellIdentityCacheRef.current = nextCache;
+        // Prune directive string-cache to only current contents to prevent unbounded growth
+        // when cells are edited (old content strings would otherwise accumulate forever).
+        if (dirCache.size > cellContents.length * 2) {
+            const keep = new Set(cellContents);
+            for (const k of dirCache.keys()) { if (!keep.has(k)) dirCache.delete(k); }
+        }
         // If every cell is a cache hit AND count matches, reuse the previous array
         // so useMemo([cells]) and allCells === allCells checks short-circuit.
         const prev = prevCellsRef.current;
@@ -909,7 +924,7 @@ const App: React.FC = () => {    const {
             setTiming(null);
             const errMsg: string = error.message || String(error);
             // Attempt AI-assisted fix for parse/syntax errors (not for variable errors).
-            const looksLikeSyntaxError = /syntax|parse|unexpected|token|unrecognized/i.test(errMsg);
+            const looksLikeSyntaxError = _SYNTAX_ERROR_RE.test(errMsg);
             if (looksLikeSyntaxError && isAiEnabled) {
                 const schemaHint = (schemaRef.current?.tables ?? []).map(t =>
                     `${t.name}(${t.columns.map(c => c.name).join(', ')})`
@@ -960,7 +975,17 @@ const App: React.FC = () => {    const {
 
     const updateCellsAndMarkdown = useCallback((newCells: NotebookCellData[]) => {
         const newCellsContent = newCells.map(cell => cell.content).join('\n\n---\n\n');
-        const newNotebookMarkdown = reconstructNotebook({ metadata: metadataRef.current, content: newCellsContent });
+        const meta = metadataRef.current;
+        // Cache the front-matter YAML per metadata object reference — avoids re-serializing
+        // views/macros/settings on every cell keystroke when only cell content changed.
+        let fmString = frontMatterCacheRef.current.get(meta);
+        if (fmString === undefined) {
+            fmString = stringifyFrontMatter(meta);
+            frontMatterCacheRef.current.set(meta, fmString);
+        }
+        const newNotebookMarkdown = fmString
+            ? `---\n${fmString}\n---\n${newCellsContent}`
+            : newCellsContent;
         notebookMarkdownRef.current = newNotebookMarkdown;
         setNotebookMarkdown(newNotebookMarkdown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1204,7 +1229,12 @@ const App: React.FC = () => {    const {
             const rawSelectCells: { cellId: string; sql: string }[] = [];
 
             for (const cell of currentCells) {
-                const directive = parseCellDirective(cell.content);
+                const dirCache = cellDirectiveStrCacheRef.current;
+                let directive = dirCache.get(cell.content);
+                if (directive === undefined) {
+                    directive = parseCellDirective(cell.content);
+                    dirCache.set(cell.content, directive);
+                }
                 const reqAttr = directive?.rest?.requires;
                 if (!reqAttr) continue;
                 const condSql = requiresAttrToConditionSql(reqAttr);
@@ -1214,7 +1244,7 @@ const App: React.FC = () => {    const {
                 } else {
                     // Grammar-compiled expression: extract the boolean expr (strip the FROM clause wrapper).
                     // requiresAttrToConditionSql returns "SELECT <expr> FROM information_schema.tables"
-                    const match = /^SELECT\s+([\s\S]+)\s+FROM\s+information_schema\.tables$/i.exec(condSql.trim());
+                    const match = _REQUIRES_EXPR_RE.exec(condSql.trim());
                     if (match) {
                         batchExprs.push({ cellId: cell.id, expr: match[1] });
                     } else {
@@ -1256,12 +1286,21 @@ const App: React.FC = () => {    const {
             // Within each cell, SQL blocks run in index order (chained promises).
             const cellPromises: Promise<void>[] = [];
             for (const cell of currentCells) {
-                const directive = parseCellDirective(cell.content);
-                const reqAttr = directive?.rest?.requires;
-                if (reqAttr) {
+                const dirCache2 = cellDirectiveStrCacheRef.current;
+                let directive2 = dirCache2.get(cell.content);
+                if (directive2 === undefined) {
+                    directive2 = parseCellDirective(cell.content);
+                    dirCache2.set(cell.content, directive2);
+                }
+                const reqAttr2 = directive2?.rest?.requires;
+                if (reqAttr2) {
                     if (!requiresResults.get(cell.id)) continue;
                 }
-                const parsed = parseCellContent(tokenizeCellContent(cell.content));
+                let parsed = cellParsedCacheRef.current.get(cell);
+                if (!parsed) {
+                    parsed = parseCellContent(tokenizeCellContent(cell.content));
+                    cellParsedCacheRef.current.set(cell, parsed);
+                }
                 if (parsed.sqlBlocks.length === 0) continue;
                 const allVariables = { ...metadataRef.current.variables, ...parsed.variables };
                 // Chain this cell's blocks so block[1] starts only after block[0] finishes,
@@ -1373,7 +1412,12 @@ const App: React.FC = () => {    const {
         cells.map((c, i) => {
             let title = cellTitleCacheRef.current.get(c);
             if (title === undefined) {
-                title = parseCellContent(tokenizeCellContent(c.content)).title ?? '';
+                let parsed = cellParsedCacheRef.current.get(c);
+                if (!parsed) {
+                    parsed = parseCellContent(tokenizeCellContent(c.content));
+                    cellParsedCacheRef.current.set(c, parsed);
+                }
+                title = parsed.title ?? '';
                 cellTitleCacheRef.current.set(c, title);
             }
             return { id: c.id, title, index: i };
@@ -1425,7 +1469,15 @@ const App: React.FC = () => {    const {
         // Only persist to markdown when non-variable fields change (title, cell conditions,
         // template front-matter, etc.) so saves/exports capture the latest state.
         if (!varsChanged) {
-            const newNotebookMarkdown = reconstructNotebook({ metadata: newMetadata, content: cellsContentRef.current });
+            // Invalidate front-matter cache for the new metadata object so updateCellsAndMarkdown
+            // serializes it fresh, then caches the result for subsequent keystroke calls.
+            frontMatterCacheRef.current.delete(metadataRef.current);
+            metadataRef.current = newMetadata;
+            const fmString = stringifyFrontMatter(newMetadata);
+            frontMatterCacheRef.current.set(newMetadata, fmString);
+            const newNotebookMarkdown = fmString
+                ? `---\n${fmString}\n---\n${cellsContentRef.current}`
+                : cellsContentRef.current;
             setNotebookMarkdown(newNotebookMarkdown);
             await refreshSchema();
         } else {
@@ -1436,7 +1488,12 @@ const App: React.FC = () => {    const {
             // so that Save/Export always captures the current variable state.
             if (varMarkdownTimerRef.current) clearTimeout(varMarkdownTimerRef.current);
             varMarkdownTimerRef.current = setTimeout(() => {
-                const flushed = reconstructNotebook({ metadata: newMetadata, content: cellsContentRef.current });
+                let fm = frontMatterCacheRef.current.get(newMetadata);
+                if (fm === undefined) {
+                    fm = stringifyFrontMatter(newMetadata);
+                    frontMatterCacheRef.current.set(newMetadata, fm);
+                }
+                const flushed = fm ? `---\n${fm}\n---\n${cellsContentRef.current}` : cellsContentRef.current;
                 setNotebookMarkdown(flushed);
             }, 600);
         }
@@ -1449,7 +1506,7 @@ const App: React.FC = () => {    const {
     }, [refreshSchema]);
 
     const handleNavigateRef = useCallback((ref: string) => {
-        const idxMatch = /^(?:cell-|plot-)?(\d+)$/.exec(ref);
+        const idxMatch = _NAV_REF_RE.exec(ref);
         const el = idxMatch
             ? document.querySelector(`[data-cell-idx="${idxMatch[1]}"]`)
             : document.querySelector(`[data-cell-alias="${ref}"], [data-cell-alias="${ref.replace(/^@/, '')}"]`);
@@ -1622,11 +1679,13 @@ const App: React.FC = () => {    const {
                             className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${
                                 sourceType === 'jfr'
                                     ? 'border-cyan-700/60 text-cyan-400 bg-cyan-900/20'
+                                    : sourceType === 'jvmlog'
+                                    ? 'border-amber-700/60 text-amber-400 bg-amber-900/20'
                                     : 'border-blue-700/60 text-blue-400 bg-blue-900/20'
                             }`}
-                            title={sourceType === 'jfr' ? 'JFR recording' : 'DuckDB database'}
+                            title={sourceType === 'jfr' ? 'JFR recording' : sourceType === 'jvmlog' ? 'JVM GC log' : 'DuckDB database'}
                         >
-                            {sourceType === 'jfr' ? 'JFR' : 'DuckDB'}
+                            {sourceType === 'jfr' ? 'JFR' : sourceType === 'jvmlog' ? 'JVM Log' : 'DuckDB'}
                         </span>
                     )}
                     {hasSnapshotData && (
@@ -1648,16 +1707,16 @@ const App: React.FC = () => {    const {
                             <div className="w-px h-5 bg-gray-700 mx-1" />
                             <SessionDateChip
                                 label="$session_start"
-                                value={(metadata.variables ?? {})['$session_start'] ?? ''}
-                                onChange={v => void handleMetadataChange({ ...metadata, variables: { ...(metadata.variables ?? {}), '$session_start': v } })}
+                                value={(metadata.variables ?? EMPTY_VARS)['$session_start'] ?? ''}
+                                onChange={v => void handleMetadataChange({ ...metadata, variables: { ...(metadata.variables ?? EMPTY_VARS), '$session_start': v } })}
                                 min={recordingStart}
                                 max={recordingEnd}
                                 defaultIfEmpty={recordingStart}
                             />
                             <SessionDateChip
                                 label="$session_end"
-                                value={(metadata.variables ?? {})['$session_end'] ?? ''}
-                                onChange={v => void handleMetadataChange({ ...metadata, variables: { ...(metadata.variables ?? {}), '$session_end': v } })}
+                                value={(metadata.variables ?? EMPTY_VARS)['$session_end'] ?? ''}
+                                onChange={v => void handleMetadataChange({ ...metadata, variables: { ...(metadata.variables ?? EMPTY_VARS), '$session_end': v } })}
                                 min={recordingStart}
                                 max={recordingEnd}
                                 defaultIfEmpty={recordingEnd}
@@ -1703,7 +1762,10 @@ const App: React.FC = () => {    const {
                     <input ref={notebookFileInputRef} type="file" accept=".md,.markdown" className="hidden" onChange={handleLoadNotebook} />
                     <button onClick={() => notebookFileInputRef.current?.click()} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Load Notebook" aria-label="Load Notebook"><ArrowUpTrayIcon className="w-4 h-4"/></button>
                     <button onClick={() => setIsTemplateGalleryOpen(true)} data-tour="template-gallery" className="p-1.5 rounded-md text-gray-400 hover:text-cyan-300" title="New from template" aria-label="New from template"><DocumentTextIcon className="w-4 h-4"/></button>
-                    <button onClick={() => loadNotebook(gcAnalysisNotebook)} className="p-1.5 rounded-md text-gray-400 hover:text-emerald-400" title="New GC Analysis Notebook" aria-label="New GC Analysis Notebook"><BeakerIcon className="w-4 h-4"/></button>
+                    <button onClick={() => {
+                        const tmpl = sourceType === 'jvmlog' ? 'gc-log-analysis' : 'gc-analysis';
+                        loadTemplate(tmpl, { mode: mode ?? 'server' }).then(body => loadNotebook(body)).catch(() => loadNotebook(gcAnalysisNotebook));
+                    }} className="p-1.5 rounded-md text-gray-400 hover:text-emerald-400" title={sourceType === 'jvmlog' ? 'New GC Log Analysis Notebook' : 'New GC Analysis Notebook'} aria-label="New GC Analysis Notebook"><BeakerIcon className="w-4 h-4"/></button>
                     <button onClick={handleSaveNotebook} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Save Notebook (⌘S)" aria-label="Save Notebook"><ArrowDownTrayIcon className="w-4 h-4"/></button>
                     <button
                         onClick={() => { void handleExportWithData(); }}
@@ -1888,6 +1950,12 @@ const App: React.FC = () => {    const {
                         onMetadataChange={handleMetadataChange}
                         onDeleteQueryBlock={deleteQueryBlock}
                         presenterMode={presenterMode}
+                        tabBarVisible={tabs.length > 1}
+                        bannerOffset={
+                            (showWelcomeBanner ? 36 : 0) +
+                            (gcSuggestion ? 36 : 0) +
+                            (!isAiAvailable && !aiNudgeDismissed && !showWelcomeBanner ? 30 : 0)
+                        }
                         onPopChatToSidebar={handlePopChatToSidebar}
                         onNavigateRef={handleNavigateRef}
                     />

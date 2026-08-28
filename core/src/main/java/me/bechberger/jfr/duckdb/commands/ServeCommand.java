@@ -218,7 +218,12 @@ public class ServeCommand implements Runnable {
                 var results = executeQuery(reqConn, sql);
                 ctx.json(results);
             } catch (SQLException e) {
-                ctx.status(400).json(Map.of("error", e.getMessage()));
+                String msg = cleanSqlError(e.getMessage());
+                // Catalog errors (missing table/view) are expected in notebooks that reference
+                // JFR-only tables against a jvmlog server, or vice versa. Return 200 so the
+                // browser doesn't log every such probe as a failed network request.
+                boolean isCatalogError = msg != null && msg.startsWith("Catalog Error:");
+                ctx.status(isCatalogError ? 200 : 400).json(Map.of("error", msg != null ? msg : "Unknown SQL error"));
             }
         });
 
@@ -450,6 +455,18 @@ public class ServeCommand implements Runnable {
         }
         sb.append("  table: ").append(safeIdentifier(table)).append("\n");
         return sb.toString();
+    }
+
+    /** Strips the JDBC class prefix ("java.sql.SQLException: ") that DuckDB's JDBC driver
+     *  sometimes prepends to error messages, leaving only the DuckDB error text. */
+    private static String cleanSqlError(String msg) {
+        if (msg == null) return null;
+        // Strip "java.sql.SQLException: " (or any other exception class prefix)
+        int colon = msg.indexOf(": ");
+        if (colon > 0 && msg.substring(0, colon).matches("[a-zA-Z][a-zA-Z0-9_.]*Exception")) {
+            return msg.substring(colon + 2);
+        }
+        return msg;
     }
 
     private static String safeIdentifier(String s) {
