@@ -3906,3 +3906,83 @@ SELECT * FROM "jvmlog-parallel-gen-sizing-trend"
 LINE(x="GC ID", y="Old Gen Utilisation %")
 ```
 
+---
+
+<!-- @cell name=gc-pause-sla-rolling requires="has-jvmlog-gc" -->
+
+## Rolling GC Pause SLA Compliance
+
+Rolling 10-cycle 200ms SLA compliance percentage — a declining rolling SLA% is an early warning signal before a full SLA breach; correlate the decline with the GC type timeline and cause shift views to identify the trigger.
+
+```sql
+SELECT * FROM "jvmlog-gc-pause-sla-rolling"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Rolling 10-cycle SLA %")
+```
+
+---
+
+<!-- @cell name=g1-survivor-overflow requires="has-g1-regions" -->
+
+## G1 Survivor Region Overflow Events
+
+G1 GC cycles where survivor regions filled to capacity — "Overflow" events promote objects to old gen prematurely, aging the object graph too fast and inflating old gen size; reduce promotion pressure with `-XX:MaxTenuringThreshold` or increase `-XX:SurvivorRatio`.
+
+```sql
+SELECT * FROM "jvmlog-g1-survivor-overflow"
+```
+
+```plot
+BAR(x="GC ID", y="Survivor Fill %", color="Status")
+```
+
+---
+
+<!-- @cell name=zgc-relocate-garbage requires="has-zgc" -->
+
+## ZGC Relocate Start — Live vs Garbage Ratio
+
+Garbage percentage at ZGC relocation start — higher garbage % means ZGC has more to reclaim; consistently low garbage % (< 20%) with high allocation pressure means the heap is undersized; consider increasing `-Xmx` so more garbage accumulates before collection.
+
+```sql
+SELECT * FROM "jvmlog-zgc-relocate-garbage"
+```
+
+```plot
+LINE(x="GC ID", y="Garbage %")
+```
+
+---
+
+<!-- @cell name=heap-churn-rate requires="has-heap-snapshot" -->
+
+## Heap Allocation Rate (Churn Rate)
+
+Bytes allocated per second between GC events — high MB/s correlates with application allocation bursts and frequently precedes GC pause spikes; use allocation profiling (async-profiler with `alloc` event) to identify the top allocators at burst time.
+
+```sql
+SELECT * FROM "jvmlog-heap-churn-rate"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Alloc Rate MB/s")
+```
+
+---
+
+<!-- @cell name=safepoint-sync-outliers requires="has-safepoint" -->
+
+## Safepoint Sync Time Outliers
+
+Top 50 slowest times to reach a global safepoint — high sync time (> 10ms) means application threads are slow to check safepoint polls; common causes are counted loops, JNI code, or compiled code with infrequent safepoint checks; force more frequent polls with `-XX:+UseCountedLoopSafepoints`.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-sync-outliers"
+```
+
+```plot
+BAR(x="Operation", y="Sync Time (ms)", color="Sync Category")
+```
+

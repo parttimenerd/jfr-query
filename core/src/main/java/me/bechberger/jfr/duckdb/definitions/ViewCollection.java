@@ -10133,6 +10133,140 @@ public class ViewCollection {
                         """,
                     "jvmlog_parallel_sizing")
                     .description("CMS/Parallel old gen sizing trend — utilisation approaching 100% means old gen is nearly full; the GC will escalate to Full GC if it cannot free enough space during concurrent collection."),
+
+            // ── Batch 19 ──────────────────────────────────────────────────────────────
+
+            // Rolling GC pause SLA compliance window — 10-cycle rolling 200ms SLA pass rate
+            new View(
+                    "jvmlog-gc-pause-sla-rolling", "jvmlog",
+                    "GC Log: Rolling GC Pause SLA Compliance (10-Cycle Window)", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-pause-sla-rolling" AS
+                        SELECT gcId                                            AS "GC ID",
+                               round(uptimeSecs, 1)                          AS "Uptime (s)",
+                               round(pauseMs, 2)                              AS "Pause (ms)",
+                               CASE WHEN pauseMs <= 200 THEN 1 ELSE 0 END    AS "Met SLA",
+                               round(
+                                   sum(CASE WHEN pauseMs <= 200 THEN 1 ELSE 0 END) OVER (
+                                       ORDER BY gcId ROWS BETWEEN 9 PRECEDING AND CURRENT ROW
+                                   ) * 100.0 / 10, 1
+                               )                                             AS "Rolling 10-cycle SLA %"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Rolling 10-cycle GC pause SLA compliance — shows the fraction of the last 10 GC events that met the 200ms SLA; a declining rolling SLA% is an early warning signal before a full SLA breach."),
+
+            // G1 survivor region overflow — survivor regions exceeding max configured survivor size
+            new View(
+                    "jvmlog-g1-survivor-overflow", "jvmlog",
+                    "GC Log: G1 Survivor Region Overflow Events", null,
+                    """
+                        CREATE VIEW "jvmlog-g1-survivor-overflow" AS
+                        SELECT r.gcId                                          AS "GC ID",
+                               r.survivorAfter                                AS "Survivor Regions After",
+                               r.survivorMax                                  AS "Survivor Max Regions",
+                               round(r.survivorAfter * 100.0 /
+                                     nullif(r.survivorMax, 0), 1)            AS "Survivor Fill %",
+                               CASE WHEN r.survivorAfter >= r.survivorMax THEN 'Overflow' ELSE 'OK' END AS "Status",
+                               round(e.pauseMs, 2)                           AS "Pause (ms)"
+                        FROM jvmlog_g1_regions r
+                        JOIN jvmlog_gc_event e USING (gcId)
+                        WHERE r.survivorMax > 0
+                        ORDER BY "Survivor Fill %" DESC
+                        """,
+                    "jvmlog_g1_regions", "jvmlog_gc_event")
+                    .addAlternative(
+                        """
+                        SELECT gcId                                            AS "GC ID",
+                               survivorAfter                                  AS "Survivor Regions After",
+                               survivorMax                                    AS "Survivor Max Regions",
+                               round(survivorAfter * 100.0 /
+                                     nullif(survivorMax, 0), 1)               AS "Survivor Fill %",
+                               CASE WHEN survivorAfter >= survivorMax THEN 'Overflow' ELSE 'OK' END AS "Status"
+                        FROM jvmlog_g1_regions
+                        WHERE survivorMax > 0
+                        ORDER BY "Survivor Fill %" DESC
+                        """,
+                        "jvmlog_g1_regions")
+                    .description("G1 survivor region overflow — cycles where survivor regions after collection reached or exceeded the configured maximum; overflow events promote objects to old gen prematurely, aging them too fast and inflating old gen."),
+
+            // ZGC relocate-start garbage ratio — how much is garbage vs live at relocation
+            new View(
+                    "jvmlog-zgc-relocate-garbage", "jvmlog",
+                    "GC Log: ZGC Relocate Start — Live vs Garbage Ratio", null,
+                    """
+                        CREATE VIEW "jvmlog-zgc-relocate-garbage" AS
+                        SELECT gcId                                            AS "GC ID",
+                               round(liveBytes / 1048576.0, 1)               AS "Live (MB)",
+                               round(garbageBytes / 1048576.0, 1)            AS "Garbage (MB)",
+                               round(garbageBytes * 100.0 /
+                                     nullif(liveBytes + garbageBytes, 0), 1) AS "Garbage %",
+                               round(liveBytes * 100.0 /
+                                     nullif(liveBytes + garbageBytes, 0), 1) AS "Live %"
+                        FROM jvmlog_zgc_stats
+                        WHERE phase = 'Relocate Start'
+                          AND liveBytes IS NOT NULL AND garbageBytes IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_zgc_stats")
+                    .description("ZGC garbage ratio at relocation start — higher garbage % means ZGC has more to reclaim per cycle; consistently low garbage % with high allocation pressure means the heap is undersized relative to the live data set."),
+
+            // Heap churn rate — MB/s of heap consumed between GC events
+            new View(
+                    "jvmlog-heap-churn-rate", "jvmlog",
+                    "GC Log: Heap Churn Rate (Allocation Rate Between GCs)", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-churn-rate" AS
+                        SELECT h.gcId                                          AS "GC ID",
+                               round(e.uptimeSecs, 1)                        AS "Uptime (s)",
+                               round(h.heapBefore / 1048576.0, 1)            AS "Heap Before (MB)",
+                               round(h.heapAfter  / 1048576.0, 1)            AS "Heap After (MB)",
+                               round(
+                                   (h.heapBefore - LAG(h.heapAfter, 1) OVER (ORDER BY h.gcId)) /
+                                   nullif(e.uptimeSecs - LAG(e.uptimeSecs, 1) OVER (ORDER BY h.gcId), 0) /
+                                   1048576.0
+                               , 1)                                          AS "Alloc Rate MB/s"
+                        FROM jvmlog_heap_snapshot h
+                        JOIN jvmlog_gc_event e USING (gcId)
+                        WHERE h.heapBefore IS NOT NULL
+                        ORDER BY h.gcId
+                        """,
+                    "jvmlog_heap_snapshot", "jvmlog_gc_event")
+                    .addAlternative(
+                        """
+                        SELECT gcId                                            AS "GC ID",
+                               round(heapBefore / 1048576.0, 1)              AS "Heap Before (MB)",
+                               round(heapAfter  / 1048576.0, 1)              AS "Heap After (MB)"
+                        FROM jvmlog_heap_snapshot
+                        WHERE heapBefore IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                        "jvmlog_heap_snapshot")
+                    .description("Heap allocation rate between GC events — MB/s allocated; spikes in allocation rate correlate with application bursts and frequently precede GC pauses; sustained high allocation rate means the young gen is filling faster than it can be collected."),
+
+            // Safepoint sync time outliers — syncs that took unusually long to reach safepoint
+            new View(
+                    "jvmlog-safepoint-sync-outliers", "jvmlog",
+                    "GC Log: Safepoint Sync Time Outliers", null,
+                    """
+                        CREATE VIEW "jvmlog-safepoint-sync-outliers" AS
+                        SELECT gcId                                            AS "GC ID",
+                               operation                                     AS "Operation",
+                               round(syncMs, 2)                              AS "Sync Time (ms)",
+                               round(totalMs, 2)                             AS "Total STW (ms)",
+                               round(syncMs * 100.0 / nullif(totalMs, 0), 1) AS "Sync % of STW",
+                               CASE WHEN syncMs > 10 THEN 'Slow Sync'
+                                    WHEN syncMs > 5  THEN 'Moderate Sync'
+                                    ELSE 'Fast Sync' END                     AS "Sync Category"
+                        FROM jvmlog_safepoint
+                        WHERE syncMs IS NOT NULL AND totalMs IS NOT NULL
+                        ORDER BY syncMs DESC
+                        LIMIT 50
+                        """,
+                    "jvmlog_safepoint")
+                    .description("Safepoint sync time outliers — the top 50 slowest times to reach a global safepoint; high sync time means application threads are slow to check safepoint polls, often caused by counted loops, JNI code, or compiled code with infrequent safepoint checks."),
             };
 
     public static List<View> getViews() {

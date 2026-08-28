@@ -134,7 +134,10 @@ class JvmlogViewsTest {
             "jvmlog-worker-saturation-rate",
             "jvmlog-zgc-stall-to-gc-ratio", "jvmlog-g1-mixed-effectiveness",
             "jvmlog-concurrent-mark-duration-trend", "jvmlog-stringdedup-savings-trend",
-            "jvmlog-parallel-gen-sizing-trend"
+            "jvmlog-parallel-gen-sizing-trend",
+            "jvmlog-gc-pause-sla-rolling", "jvmlog-g1-survivor-overflow",
+            "jvmlog-zgc-relocate-garbage", "jvmlog-heap-churn-rate",
+            "jvmlog-safepoint-sync-outliers"
     );
 
     @Test
@@ -5476,6 +5479,122 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-parallel-gen-sizing-trend\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcPauseSlaRolling() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',50.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',300.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Young','Allocation Failure',80.0,30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-pause-sla-rolling".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-pause-sla-rolling not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-gc-pause-sla-rolling\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(3L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogG1SurvivorOverflow() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, edenBefore INTEGER, edenAfter INTEGER, edenMax INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, survivorMax INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER)");
+            s.execute("INSERT INTO jvmlog_g1_regions VALUES (1,200,0,250,10,25,25,100,100,0,0)");
+            s.execute("INSERT INTO jvmlog_g1_regions VALUES (2,220,0,250,10,15,25,100,100,0,0)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',80.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',60.0,20.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-survivor-overflow".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-survivor-overflow not found"));
+        assertThat(view.isValid(Set.of("jvmlog_g1_regions", "jvmlog_gc_event"))).isTrue();
+        assertThat(view.getBestMatchingQuery(Set.of("jvmlog_g1_regions"))).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-g1-survivor-overflow\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogZgcRelocateGarbage() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_stats (gcId INTEGER, phase VARCHAR, usedBytes BIGINT, liveBytes BIGINT, garbageBytes BIGINT)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (1,'Relocate Start',536870912,314572800,178257920)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (2,'Relocate Start',524288000,314572800,157286400)");
+            s.execute("INSERT INTO jvmlog_zgc_stats VALUES (1,'Mark Start',419430400,NULL,NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-relocate-garbage".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-relocate-garbage not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_stats"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-zgc-relocate-garbage\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogHeapChurnRate() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1,500000000,200000000,1073741824,1073741824)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2,400000000,180000000,1073741824,1073741824)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',50.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',60.0,12.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-churn-rate".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-churn-rate not found"));
+        assertThat(view.isValid(Set.of("jvmlog_heap_snapshot", "jvmlog_gc_event"))).isTrue();
+        assertThat(view.getBestMatchingQuery(Set.of("jvmlog_heap_snapshot"))).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-heap-churn-rate\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogSafepointSyncOutliers() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_safepoint (gcId INTEGER, operation VARCHAR, totalMs DOUBLE, syncMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (1,'G1CollectFull',300.0,15.0)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (2,'Deoptimize',20.0,2.0)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES (3,'G1CollectFull',250.0,8.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-safepoint-sync-outliers".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-safepoint-sync-outliers not found"));
+        assertThat(view.isValid(Set.of("jvmlog_safepoint"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-safepoint-sync-outliers\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(3L);
         }
         conn.close();
     }
