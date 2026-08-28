@@ -5859,6 +5859,170 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_phase")
                     .description("Concurrent vs STW phase time split — shows what fraction of total GC phase work happens concurrently (off the application thread) vs as stop-the-world pauses."),
+
+            // -----------------------------------------------------------------------
+            // Per-cause pause statistics (GCeasy "GC Causes" panel)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-cause-pause-stats", "jvmlog",
+                    "GC Log: Pause Statistics per GC Cause", null,
+                    """
+                        CREATE VIEW "jvmlog-cause-pause-stats" AS
+                        SELECT gcCause                                             AS "GC Cause",
+                               count(*)                                            AS "Count",
+                               round(sum(pauseMs), 1)                             AS "Total Pause (ms)",
+                               round(avg(pauseMs), 2)                             AS "Avg Pause (ms)",
+                               round(min(pauseMs), 2)                             AS "Min Pause (ms)",
+                               round(max(pauseMs), 2)                             AS "Max Pause (ms)",
+                               round(approx_quantile(pauseMs, 0.50), 2)          AS "p50 (ms)",
+                               round(approx_quantile(pauseMs, 0.95), 2)          AS "p95 (ms)",
+                               round(approx_quantile(pauseMs, 0.99), 2)          AS "p99 (ms)",
+                               round(stddev_pop(pauseMs), 2)                     AS "StdDev (ms)",
+                               round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS "% of GCs"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND gcCause IS NOT NULL
+                        GROUP BY gcCause
+                        ORDER BY "Total Pause (ms)" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Full pause stats per GC cause: count, total/avg/min/max/p50/p95/p99 pause times and standard deviation — mirrors GCeasy's GC Causes detail panel."),
+
+            // -----------------------------------------------------------------------
+            // Per-minute pause bucket summary (GCViewer "Pause time per minute")
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-pause-by-minute", "jvmlog",
+                    "GC Log: Pause Summary per Minute", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-by-minute" AS
+                        SELECT floor(uptimeSecs / 60.0)::BIGINT               AS "Minute",
+                               round(min(uptimeSecs), 1)                       AS "Window Start (s)",
+                               count(*)                                         AS "GC Count",
+                               round(sum(pauseMs), 1)                          AS "Total Pause (ms)",
+                               round(avg(pauseMs), 2)                          AS "Avg Pause (ms)",
+                               round(min(pauseMs), 2)                          AS "Min Pause (ms)",
+                               round(max(pauseMs), 2)                          AS "Max Pause (ms)",
+                               round(100.0 * sum(pauseMs) / 60000.0, 2)       AS "Overhead %"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 60.0)::BIGINT
+                        ORDER BY 1
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC pause summary per 1-minute uptime window: count, total/avg/min/max pause and overhead % — equivalent to GCViewer's pause-per-minute histogram."),
+
+            // -----------------------------------------------------------------------
+            // Allocation rate trend (GCeasy "Object Creation Rate" analysis)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-allocation-rate-trend", "jvmlog",
+                    "GC Log: Allocation Rate Trend", null,
+                    """
+                        CREATE VIEW "jvmlog-allocation-rate-trend" AS
+                        WITH intervals AS (
+                            SELECT gcId,
+                                   uptimeSecs,
+                                   heapBefore,
+                                   heapAfter,
+                                   LAG(heapAfter) OVER (ORDER BY uptimeSecs) AS prevHeapAfter,
+                                   LAG(uptimeSecs) OVER (ORDER BY uptimeSecs) AS prevUptime
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL AND heapBefore IS NOT NULL
+                        ),
+                        rates AS (
+                            SELECT uptimeSecs,
+                                   (heapBefore - prevHeapAfter) / NULLIF(uptimeSecs - prevUptime, 0)
+                                       AS allocBytesPerSec
+                            FROM intervals
+                            WHERE prevHeapAfter IS NOT NULL
+                              AND uptimeSecs > prevUptime
+                              AND heapBefore >= prevHeapAfter
+                        )
+                        SELECT count(*)                                               AS "Intervals",
+                               round(avg(allocBytesPerSec) / 1048576.0, 2)           AS "Avg Alloc Rate (MB/s)",
+                               round(min(allocBytesPerSec) / 1048576.0, 2)           AS "Min Alloc Rate (MB/s)",
+                               round(max(allocBytesPerSec) / 1048576.0, 2)           AS "Max Alloc Rate (MB/s)",
+                               round(approx_quantile(allocBytesPerSec, 0.50) / 1048576.0, 2)
+                                                                                     AS "p50 Alloc Rate (MB/s)",
+                               round(approx_quantile(allocBytesPerSec, 0.95) / 1048576.0, 2)
+                                                                                     AS "p95 Alloc Rate (MB/s)",
+                               round(regr_slope(allocBytesPerSec, uptimeSecs) / 1048576.0, 4)
+                                                                                     AS "Rate Trend (MB/s²)",
+                               round(regr_r2(allocBytesPerSec, uptimeSecs), 4)       AS "R²",
+                               CASE
+                                 WHEN regr_r2(allocBytesPerSec, uptimeSecs) > 0.5
+                                      AND regr_slope(allocBytesPerSec, uptimeSecs) > 0
+                                 THEN 'Growing — allocation pressure increasing over time'
+                                 WHEN regr_r2(allocBytesPerSec, uptimeSecs) > 0.5
+                                      AND regr_slope(allocBytesPerSec, uptimeSecs) < 0
+                                 THEN 'Declining — allocation rate falling over time'
+                                 ELSE 'Stable'
+                               END                                                   AS "Trend Assessment"
+                        FROM rates
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Allocation rate statistics and trend analysis derived from inter-GC heap growth — avg/min/max/p95 rates and a regression-based trend assessment (growing/stable/declining)."),
+
+            // -----------------------------------------------------------------------
+            // JVM GC configuration detail (extended from gc_init — all known columns)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-init-detail", "jvmlog",
+                    "GC Log: JVM GC Configuration Detail", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-init-detail" AS
+                        SELECT max(algorithm)                                        AS "GC Algorithm",
+                               max(jdkVersion)                                       AS "JDK Version",
+                               round(max(minHeap) / 1048576.0, 0)                   AS "Min Heap (MB)",
+                               round(max(initialHeap) / 1048576.0, 0)               AS "Initial Heap (MB)",
+                               round(max(maxHeap) / 1048576.0, 0)                   AS "Max Heap (MB)",
+                               round(max(softMaxCapacity) / 1048576.0, 0)           AS "Soft Max Heap (MB)",
+                               max(parallelWorkers)                                  AS "Parallel Workers",
+                               max(concurrentWorkers)                                AS "Concurrent Workers",
+                               max(cpuTotal)                                         AS "Total CPUs",
+                               round(max(physicalMemory) / 1073741824.0, 2)         AS "Physical Memory (GB)",
+                               max(numaSupport)                                      AS "NUMA Support",
+                               round(max(heapRegionSize) / 1048576.0, 0)            AS "Heap Region (MB)",
+                               max(periodicGc)                                       AS "Periodic GC",
+                               max(preTouch)                                         AS "Pre-Touch",
+                               max(gcMode)                                           AS "Shenandoah Mode",
+                               max(heuristics)                                       AS "Shenandoah Heuristics"
+                        FROM jvmlog_gc_init
+                        """,
+                    "jvmlog_gc_init")
+                    .description("Extended JVM GC configuration: all known init parameters including heap sizes, worker counts, hardware resources, and collector-specific settings."),
+
+            // -----------------------------------------------------------------------
+            // Full GC frequency and impact analysis (GCeasy "Full GC Duration" section)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-full-gc-frequency", "jvmlog",
+                    "GC Log: Full GC Frequency and Impact", null,
+                    """
+                        CREATE VIEW "jvmlog-full-gc-frequency" AS
+                        WITH full_gcs AS (
+                            SELECT gcId, uptimeSecs, gcCause, pauseMs, heapBefore, heapAfter, heapMax,
+                                   LAG(uptimeSecs) OVER (ORDER BY uptimeSecs) AS prevUptime
+                            FROM jvmlog_gc_event
+                            WHERE gcType IN ('Full', 'Degenerated', 'GarbageFirst (Full)')
+                              AND uptimeSecs IS NOT NULL
+                        )
+                        SELECT count(*)                                              AS "Full GC Count",
+                               round(avg(pauseMs), 1)                               AS "Avg Pause (ms)",
+                               round(max(pauseMs), 1)                               AS "Max Pause (ms)",
+                               round(sum(pauseMs) / 1000.0, 2)                     AS "Total Pause (s)",
+                               round(avg(uptimeSecs - prevUptime), 1)              AS "Avg Interval (s)",
+                               round(min(uptimeSecs - prevUptime), 1)              AS "Min Interval (s)",
+                               round(avg(100.0 * heapBefore / NULLIF(heapMax,0)), 1) AS "Avg Heap Fill % at Trigger",
+                               round(avg(100.0 * (heapBefore - heapAfter) / NULLIF(heapBefore,0)), 1)
+                                                                                    AS "Avg Reclaim %",
+                               round(1.0 * count(*) /
+                                   NULLIF((max(uptimeSecs) - min(uptimeSecs)) / 60.0, 0), 2)
+                                                                                    AS "Rate (Full GCs/min)"
+                        FROM full_gcs
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Full GC frequency and impact summary: count, pause times, interval between events, heap fill at trigger, reclaim efficiency, and rate per minute."),
             };
 
     public static List<View> getViews() {

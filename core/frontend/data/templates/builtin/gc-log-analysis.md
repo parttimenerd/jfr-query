@@ -1515,3 +1515,83 @@ SELECT * FROM "jvmlog-concurrent-gc-efficiency"
 ```plot
 BAR(x="Phase Class", y="% of All Phase Time", color="Phase Class")
 ```
+
+---
+
+<!-- @cell name=cause-pause-stats -->
+
+## Pause Statistics per GC Cause
+
+Full pause detail per GC cause: count, total, average, min, max, p50/p95/p99 percentiles, and standard deviation — equivalent to GCeasy's GC Causes panel.
+
+```sql
+SELECT * FROM "jvmlog-cause-pause-stats"
+```
+
+```plot
+BAR(x="GC Cause", y="Avg Pause (ms)", color="GC Cause")
+```
+
+---
+
+<!-- @cell name=pause-by-minute -->
+
+## Pause Summary per Minute
+
+GC activity bucketed into 1-minute windows: count, total/avg/min/max pause and overhead % per minute — mirrors GCViewer's pause-per-minute histogram for spotting bursty GC behaviour.
+
+```sql
+SELECT * FROM "jvmlog-pause-by-minute"
+```
+
+```plot
+BAR(x="Minute", y="Total Pause (ms)")
+```
+
+---
+
+<!-- @cell name=allocation-rate-trend -->
+
+## Allocation Rate Trend
+
+Allocation rate statistics derived from inter-GC heap growth: avg/min/max/p95 rates and a regression-based trend assessment — growing allocation pressure can indicate a memory leak or workload change.
+
+```sql
+SELECT * FROM "jvmlog-allocation-rate-trend"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=gc-init-detail requires="has-gc-init" -->
+
+## JVM GC Configuration Detail
+
+Extended JVM GC configuration parameters from gc,init lines: heap sizes, worker counts, hardware resources, and collector-specific settings.
+
+```sql
+SELECT * FROM "jvmlog-gc-init-detail"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=full-gc-frequency -->
+
+## Full GC Frequency and Impact
+
+Full GC count, pause times, inter-event interval, heap fill at trigger, reclaim efficiency, and rate per minute — high frequency or short intervals indicate severe memory pressure.
+
+```sql
+SELECT * FROM "jvmlog-full-gc-frequency"
+```
+
+```plot
+TABLE()
+```
