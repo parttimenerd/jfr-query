@@ -326,6 +326,38 @@ LINE(x="gcId", y="Heap Before (MB)")
 
 ---
 
+<!-- @cell name=heap-fragmentation requires="has-heap-snapshot" -->
+
+## Heap Fragmentation / Over-Reservation
+
+Committed-but-unused heap headroom — large persistent headroom (> 50%) means the JVM is reserving far more heap than it needs. Consider reducing `-Xmx` if the headroom never shrinks.
+
+```sql
+SELECT * FROM "jvmlog-heap-fragmentation"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=heap-reclaim-ratio requires="has-combined-timeline" -->
+
+## Heap Reclaim Ratio by Cause
+
+Average heap reclaimed as a percentage of heap-before, grouped by GC cause. A low `Avg Reclaim %` for `Allocation Failure` indicates GC cannot keep up with allocation pressure — the JVM reclaims little before the next allocation cycle.
+
+```sql
+SELECT * FROM "jvmlog-heap-reclaim-ratio"
+```
+
+```plot
+BAR(x="Cause", y="Avg Reclaim %")
+```
+
+---
+
 <!-- @cell name=heap-efficiency requires="has-heap-snapshot" -->
 
 ## Heap Collection Efficiency
@@ -434,6 +466,22 @@ SELECT * FROM "jvmlog-gc-overhead"
 
 ```plot
 BAR(x="Window Start (s)", y="GC Overhead %")
+```
+
+---
+
+<!-- @cell name=throughput-degradation -->
+
+## Throughput Degradation Trend
+
+Linear regression on windowed application throughput — a declining trend (negative slope, high R²) indicates accumulating GC pressure over the JVM run. Use this to catch the "boiling frog" scenario where throughput slowly erodes.
+
+```sql
+SELECT * FROM "jvmlog-throughput-degradation"
+```
+
+```plot
+TABLE()
 ```
 
 ---
@@ -744,6 +792,22 @@ SELECT * FROM "jvmlog-g1-regions"
 
 ```plot
 LINE(x="GC ID", y="Eden Before")
+```
+
+---
+
+<!-- @cell name=g1-old-region-trend requires="has-g1-regions" -->
+
+## G1: Old Region Growth Trend
+
+Linear regression on Old region count after each GC — a growing Old generation (positive slope, high R²) indicates promotion rate exceeds reclaim rate, often leading to mixed GC pressure and eventual concurrent mark failures.
+
+```sql
+SELECT * FROM "jvmlog-g1-old-region-trend"
+```
+
+```plot
+TABLE()
 ```
 
 ---

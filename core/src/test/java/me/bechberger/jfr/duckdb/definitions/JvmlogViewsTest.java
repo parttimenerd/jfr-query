@@ -44,7 +44,9 @@ class JvmlogViewsTest {
             "jvmlog-top-pauses-by-cause", "jvmlog-shenandoah-mode-analysis",
             "jvmlog-phase-top-slow",
             "jvmlog-gc-efficiency-by-cause", "jvmlog-metaspace-growth-trend",
-            "jvmlog-oom-risk-estimate", "jvmlog-g1-mark-trend"
+            "jvmlog-oom-risk-estimate", "jvmlog-g1-mark-trend",
+            "jvmlog-heap-fragmentation", "jvmlog-heap-reclaim-ratio",
+            "jvmlog-throughput-degradation", "jvmlog-g1-old-region-trend"
     );
 
     @Test
@@ -1602,6 +1604,115 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("Mark Events")).isEqualTo(6);
             assertThat(rs.getDouble("Trend (ms/s)")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void heapFragmentationViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            // 256 MB used, 512 MB committed = 50% unused
+            for (int i = 0; i < 4; i++) {
+                s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (" + i + ", 314572800, 268435456, 536870912, 536870912)");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-fragmentation".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-fragmentation not found"));
+        // fallback with heap_snapshot only
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_heap_snapshot"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Samples\", \"Avg Unused %\", \"Assessment\" FROM \"jvmlog-heap-fragmentation\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Samples")).isEqualTo(4);
+            assertThat(rs.getDouble("Avg Unused %")).isGreaterThan(40.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void heapReclaimRatioViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'G1 Young', 'Allocation Failure', 10.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'G1 Young', 'Allocation Failure', 12.0, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3, 'G1 Full', 'System.gc()', 500.0, 3.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1, 209715200, 104857600, 268435456, 268435456)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2, 209715200, 104857600, 268435456, 268435456)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (3, 524288000, 52428800, 536870912, 536870912)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-reclaim-ratio".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-reclaim-ratio not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-heap-reclaim-ratio\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(2);
+            // System.gc() reclaims more: (500-50)/500 = 90% vs Alloc Failure (200-100)/200 = 50%
+            rs = s.executeQuery("SELECT \"Cause\", \"Avg Reclaim %\" FROM \"jvmlog-heap-reclaim-ratio\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Cause")).isEqualTo("System.gc()");
+        }
+        conn.close();
+    }
+
+    @Test
+    void throughputDegradationViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // 6 windows of 30s: pause increases over time to show degradation
+            for (int i = 0; i < 6; i++) {
+                double pause = 1000.0 + i * 2000.0;
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'G1 Young', 'Allocation Failure', " + pause + ", " + (i * 30.0 + 5.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-throughput-degradation".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-throughput-degradation not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Windows\", \"Trend Assessment\" FROM \"jvmlog-throughput-degradation\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Windows")).isEqualTo(6);
+            assertThat(rs.getString("Trend Assessment")).isNotNull();
+        }
+        conn.close();
+    }
+
+    @Test
+    void g1OldRegionTrendViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, edenBefore INTEGER, edenAfter INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER)");
+            for (int i = 0; i < 6; i++) {
+                int old = 10 + i * 3;
+                s.execute("INSERT INTO jvmlog_g1_regions VALUES (" + i + ", 100, 0, 5, 5, " + old + ", " + old + ", 0, 0)");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-old-region-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-old-region-trend not found"));
+        // primary needs g1_regions + gc_event; fallback works with g1_regions only
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_g1_regions"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Cycles\", \"Trend (regions/s)\", \"Trend Assessment\" FROM \"jvmlog-g1-old-region-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Cycles")).isEqualTo(6);
+            assertThat(rs.getDouble("Trend (regions/s)")).isGreaterThan(0);
         }
         conn.close();
     }

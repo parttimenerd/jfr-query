@@ -5019,6 +5019,212 @@ public class ViewCollection {
                             FROM marks
                             """,
                         "jvmlog_gc_phase"),
+
+                // ---------------------------------------------------------------
+                // Heap fragmentation / over-reservation indicator
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-heap-fragmentation",
+                        "jvmlog",
+                        "GC Log: Heap Fragmentation / Over-Reservation",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-heap-fragmentation" AS
+                            WITH snap AS (
+                                SELECT h.gcId,
+                                       h.heapAfter         / 1048576.0  AS usedMB,
+                                       h.heapCommittedAfter / 1048576.0 AS committedMB
+                                FROM jvmlog_heap_snapshot h
+                                JOIN jvmlog_gc_event e USING (gcId)
+                                WHERE h.heapAfter IS NOT NULL
+                                  AND h.heapCommittedAfter IS NOT NULL
+                            )
+                            SELECT count(*)                                                           AS "Samples",
+                                   round(min(committedMB), 1)                                        AS "Min Committed (MB)",
+                                   round(max(committedMB), 1)                                        AS "Max Committed (MB)",
+                                   round(avg(committedMB - usedMB), 1)                               AS "Avg Unused Committed (MB)",
+                                   round(max(committedMB - usedMB), 1)                               AS "Max Unused Committed (MB)",
+                                   round(avg(100.0 * (committedMB - usedMB) / NULLIF(committedMB, 0)), 1) AS "Avg Unused %",
+                                   round(max(100.0 * (committedMB - usedMB) / NULLIF(committedMB, 0)), 1) AS "Max Unused %",
+                                   CASE
+                                     WHEN avg(100.0 * (committedMB - usedMB) / NULLIF(committedMB, 0)) > 50
+                                     THEN 'High — large reserved-but-unused headroom, consider -Xmx reduction'
+                                     WHEN avg(100.0 * (committedMB - usedMB) / NULLIF(committedMB, 0)) > 25
+                                     THEN 'Moderate — heap headroom normal for concurrent collectors'
+                                     ELSE 'Low — heap is densely used'
+                                   END                                                               AS "Assessment"
+                            FROM snap
+                            """,
+                        "jvmlog_heap_snapshot", "jvmlog_gc_event")
+                    .description("Tracks committed-but-unused heap headroom — large persistent headroom (> 50%) indicates the JVM is reserving far more heap than it needs.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-heap-fragmentation" AS
+                            WITH snap AS (
+                                SELECT heapAfter         / 1048576.0  AS usedMB,
+                                       heapCommittedAfter / 1048576.0 AS committedMB
+                                FROM jvmlog_heap_snapshot
+                                WHERE heapAfter IS NOT NULL
+                                  AND heapCommittedAfter IS NOT NULL
+                            )
+                            SELECT count(*)                                                           AS "Samples",
+                                   round(min(committedMB), 1)                                        AS "Min Committed (MB)",
+                                   round(max(committedMB), 1)                                        AS "Max Committed (MB)",
+                                   round(avg(committedMB - usedMB), 1)                               AS "Avg Unused Committed (MB)",
+                                   round(max(committedMB - usedMB), 1)                               AS "Max Unused Committed (MB)",
+                                   round(avg(100.0 * (committedMB - usedMB) / NULLIF(committedMB, 0)), 1) AS "Avg Unused %",
+                                   round(max(100.0 * (committedMB - usedMB) / NULLIF(committedMB, 0)), 1) AS "Max Unused %",
+                                   CASE
+                                     WHEN avg(100.0 * (committedMB - usedMB) / NULLIF(committedMB, 0)) > 50
+                                     THEN 'High — large reserved-but-unused headroom, consider -Xmx reduction'
+                                     WHEN avg(100.0 * (committedMB - usedMB) / NULLIF(committedMB, 0)) > 25
+                                     THEN 'Moderate — heap headroom normal for concurrent collectors'
+                                     ELSE 'Low — heap is densely used'
+                                   END                                                               AS "Assessment"
+                            FROM snap
+                            """,
+                        "jvmlog_heap_snapshot"),
+
+                // ---------------------------------------------------------------
+                // Before/after heap ratio per cause
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-heap-reclaim-ratio",
+                        "jvmlog",
+                        "GC Log: Heap Reclaim Ratio by Cause",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-heap-reclaim-ratio" AS
+                            SELECT e.cause AS "Cause",
+                                   count(*)                                                    AS "Events",
+                                   round(avg(h.heapBefore / 1048576.0), 1)                    AS "Avg Heap Before (MB)",
+                                   round(avg(h.heapAfter  / 1048576.0), 1)                    AS "Avg Heap After (MB)",
+                                   round(avg(100.0 * (h.heapBefore - h.heapAfter)
+                                             / NULLIF(h.heapBefore, 0)), 1)                   AS "Avg Reclaim %",
+                                   round(min(100.0 * (h.heapBefore - h.heapAfter)
+                                             / NULLIF(h.heapBefore, 0)), 1)                   AS "Min Reclaim %",
+                                   round(max(100.0 * (h.heapBefore - h.heapAfter)
+                                             / NULLIF(h.heapBefore, 0)), 1)                   AS "Max Reclaim %"
+                            FROM jvmlog_gc_event e
+                            JOIN jvmlog_heap_snapshot h USING (gcId)
+                            WHERE h.heapBefore IS NOT NULL AND h.heapAfter IS NOT NULL
+                            GROUP BY e.cause
+                            ORDER BY "Avg Reclaim %" DESC NULLS LAST
+                            """,
+                        "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Average heap reclaim ratio per GC cause — low reclaim % for Allocation Failure indicates GC cannot keep up with allocation pressure."),
+
+                // ---------------------------------------------------------------
+                // Throughput degradation trend
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-throughput-degradation",
+                        "jvmlog",
+                        "GC Log: Throughput Degradation Trend",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-throughput-degradation" AS
+                            WITH windows AS (
+                                SELECT floor(uptimeSecs / 30.0) * 30 AS windowStart,
+                                       sum(pauseMs) AS totalPauseMs,
+                                       count(*) AS gcCount
+                                FROM jvmlog_gc_event
+                                WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                                GROUP BY floor(uptimeSecs / 30.0) * 30
+                            ),
+                            throughput AS (
+                                SELECT windowStart,
+                                       gcCount,
+                                       CASE WHEN totalPauseMs < 30000
+                                            THEN round(100.0 * (30000.0 - totalPauseMs) / 30000.0, 2)
+                                            ELSE 0.0 END AS throughputPct
+                                FROM windows
+                            )
+                            SELECT count(*)                                                    AS "Windows",
+                                   round(min(throughputPct), 1)                               AS "Min Throughput %",
+                                   round(avg(throughputPct), 1)                               AS "Avg Throughput %",
+                                   round(max(throughputPct), 1)                               AS "Max Throughput %",
+                                   round(regr_slope(throughputPct, windowStart), 6)           AS "Trend (%/s)",
+                                   round(regr_r2(throughputPct, windowStart), 4)              AS "R²",
+                                   CASE
+                                     WHEN regr_r2(throughputPct, windowStart) > 0.5
+                                          AND regr_slope(throughputPct, windowStart) < 0
+                                     THEN 'Degrading — throughput declining over time'
+                                     WHEN regr_r2(throughputPct, windowStart) > 0.5
+                                          AND regr_slope(throughputPct, windowStart) > 0
+                                     THEN 'Improving — throughput increasing over time'
+                                     ELSE 'Stable — no significant throughput trend'
+                                   END                                                        AS "Trend Assessment"
+                            FROM throughput
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Linear regression on windowed application throughput — a declining trend with high R² indicates accumulating GC pressure over the JVM run."),
+
+                // ---------------------------------------------------------------
+                // G1 Old region growth trend
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-g1-old-region-trend",
+                        "jvmlog",
+                        "GC Log: G1 Old Region Growth Trend",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-g1-old-region-trend" AS
+                            WITH old AS (
+                                SELECT r.gcId,
+                                       e.uptimeSecs,
+                                       r.oldAfter
+                                FROM jvmlog_g1_regions r
+                                JOIN jvmlog_gc_event e USING (gcId)
+                                WHERE r.oldAfter IS NOT NULL
+                                  AND e.uptimeSecs IS NOT NULL
+                            )
+                            SELECT count(*)                                              AS "Cycles",
+                                   round(min(oldAfter), 0)                              AS "Min Old Regions",
+                                   round(max(oldAfter), 0)                              AS "Max Old Regions",
+                                   round(avg(oldAfter), 1)                              AS "Avg Old Regions",
+                                   round(regr_slope(oldAfter, uptimeSecs), 4)           AS "Trend (regions/s)",
+                                   round(regr_r2(oldAfter, uptimeSecs), 4)              AS "R²",
+                                   CASE
+                                     WHEN regr_r2(oldAfter, uptimeSecs) > 0.6
+                                          AND regr_slope(oldAfter, uptimeSecs) > 0
+                                     THEN 'Growing — Old generation expanding; watch for mixed GC pressure'
+                                     WHEN regr_r2(oldAfter, uptimeSecs) > 0.6
+                                          AND regr_slope(oldAfter, uptimeSecs) < 0
+                                     THEN 'Shrinking — Old generation being reclaimed'
+                                     ELSE 'Stable'
+                                   END                                                  AS "Trend Assessment"
+                            FROM old
+                            """,
+                        "jvmlog_g1_regions", "jvmlog_gc_event")
+                    .description("Linear regression on G1 Old region count after each GC — a growing Old generation with high R² indicates promotion rate exceeds reclaim rate.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-g1-old-region-trend" AS
+                            WITH old AS (
+                                SELECT gcId * 1.0 AS uptimeSecs,
+                                       oldAfter
+                                FROM jvmlog_g1_regions
+                                WHERE oldAfter IS NOT NULL
+                            )
+                            SELECT count(*)                                              AS "Cycles",
+                                   round(min(oldAfter), 0)                              AS "Min Old Regions",
+                                   round(max(oldAfter), 0)                              AS "Max Old Regions",
+                                   round(avg(oldAfter), 1)                              AS "Avg Old Regions",
+                                   round(regr_slope(oldAfter, uptimeSecs), 4)           AS "Trend (regions/s)",
+                                   round(regr_r2(oldAfter, uptimeSecs), 4)              AS "R²",
+                                   CASE
+                                     WHEN regr_r2(oldAfter, uptimeSecs) > 0.6
+                                          AND regr_slope(oldAfter, uptimeSecs) > 0
+                                     THEN 'Growing — Old generation expanding; watch for mixed GC pressure'
+                                     WHEN regr_r2(oldAfter, uptimeSecs) > 0.6
+                                          AND regr_slope(oldAfter, uptimeSecs) < 0
+                                     THEN 'Shrinking — Old generation being reclaimed'
+                                     ELSE 'Stable'
+                                   END                                                  AS "Trend Assessment"
+                            FROM old
+                            """,
+                        "jvmlog_g1_regions"),
             };
 
     public static List<View> getViews() {
