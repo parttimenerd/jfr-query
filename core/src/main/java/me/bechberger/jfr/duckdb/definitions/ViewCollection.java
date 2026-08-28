@@ -5463,6 +5463,98 @@ public class ViewCollection {
                             """,
                         "jvmlog_gc_event")
                     .description("Stop-the-world time split between Young GC, Mixed GC, Full GC, and concurrent STW phases — shows which generation is responsible for the most pause time."),
+
+                // ---------------------------------------------------------------
+                // Heap fill level at GC trigger: how full is the heap when GC fires?
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-heap-fill-at-trigger",
+                        "jvmlog",
+                        "GC Log: Heap Fill Level at GC Trigger",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-heap-fill-at-trigger" AS
+                            SELECT e.cause AS "Cause",
+                                   count(*)                                                                   AS "Events",
+                                   round(avg(h.heapBefore / 1048576.0), 1)                                   AS "Avg Heap Before (MB)",
+                                   round(avg(100.0 * h.heapBefore / NULLIF(h.heapCommittedBefore, 0)), 1)    AS "Avg Fill % Before",
+                                   round(max(100.0 * h.heapBefore / NULLIF(h.heapCommittedBefore, 0)), 1)    AS "Max Fill % Before",
+                                   round(avg(100.0 * h.heapAfter  / NULLIF(h.heapCommittedAfter, 0)), 1)     AS "Avg Fill % After",
+                                   CASE
+                                     WHEN avg(100.0 * h.heapBefore / NULLIF(h.heapCommittedBefore, 0)) > 90
+                                     THEN 'Near full — GC triggered very late, high OOM risk'
+                                     WHEN avg(100.0 * h.heapBefore / NULLIF(h.heapCommittedBefore, 0)) > 70
+                                     THEN 'High fill — limited headroom between GC cycles'
+                                     ELSE 'Normal'
+                                   END                                                                       AS "Assessment"
+                            FROM jvmlog_gc_event e
+                            JOIN jvmlog_heap_snapshot h USING (gcId)
+                            WHERE h.heapBefore IS NOT NULL
+                              AND h.heapCommittedBefore IS NOT NULL
+                            GROUP BY e.cause
+                            ORDER BY "Avg Fill % Before" DESC NULLS LAST
+                            """,
+                        "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Average heap fill level when each GC cause fires — near-full triggers (> 90%) indicate the GC is barely keeping up and a pause spike or OOM is likely."),
+
+                // ---------------------------------------------------------------
+                // Allocation stall rate timeline: stalls per 30s window
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-alloc-stall-rate-timeline",
+                        "jvmlog",
+                        "GC Log: Allocation Stall Rate Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-alloc-stall-rate-timeline" AS
+                            WITH stalls AS (
+                                SELECT a.stallMs,
+                                       coalesce(e.uptimeSecs, a.gcId * 1.0) AS uptimeSecs
+                                FROM jvmlog_alloc_stall a
+                                LEFT JOIN jvmlog_gc_event e USING (gcId)
+                            )
+                            SELECT floor(uptimeSecs / 30.0) * 30       AS "Window Start (s)",
+                                   count(*)                             AS "Stalls",
+                                   round(sum(stallMs), 1)              AS "Total Stall (ms)",
+                                   round(avg(stallMs), 2)              AS "Avg Stall (ms)",
+                                   round(max(stallMs), 2)              AS "Max Stall (ms)"
+                            FROM stalls
+                            WHERE uptimeSecs IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 30.0) * 30
+                            ORDER BY 1
+                            """,
+                        "jvmlog_alloc_stall")
+                    .description("Allocation stall count and duration per 30-second window — stall bursts show when application threads were most affected by GC throughput failures."),
+
+                // ---------------------------------------------------------------
+                // Phase count per GC: how many phases execute per GC cycle?
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-phases-per-gc",
+                        "jvmlog",
+                        "GC Log: Phase Count per GC Cycle",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-phases-per-gc" AS
+                            WITH phase_counts AS (
+                                SELECT gcId,
+                                       count(*)         AS phaseCount,
+                                       sum(durationMs)  AS totalPhaseDurationMs
+                                FROM jvmlog_gc_phase
+                                WHERE durationMs IS NOT NULL
+                                GROUP BY gcId
+                            )
+                            SELECT count(*)                                                 AS "GC Cycles",
+                                   round(min(phaseCount), 0)                               AS "Min Phases/GC",
+                                   round(avg(phaseCount), 1)                               AS "Avg Phases/GC",
+                                   round(max(phaseCount), 0)                               AS "Max Phases/GC",
+                                   round(min(totalPhaseDurationMs), 2)                     AS "Min Phase Time/GC (ms)",
+                                   round(avg(totalPhaseDurationMs), 2)                     AS "Avg Phase Time/GC (ms)",
+                                   round(max(totalPhaseDurationMs), 2)                     AS "Max Phase Time/GC (ms)"
+                            FROM phase_counts
+                            """,
+                        "jvmlog_gc_phase")
+                    .description("Phase count and total phase time per GC cycle — GC cycles with unusually few phases (< average) may have been aborted; cycles with more phases indicate deeper work phases activated."),
             };
 
     public static List<View> getViews() {

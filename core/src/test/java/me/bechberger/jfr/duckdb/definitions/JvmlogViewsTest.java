@@ -50,7 +50,9 @@ class JvmlogViewsTest {
             "jvmlog-safepoint-ttr-stats", "jvmlog-g1-survivor-trend",
             "jvmlog-zgc-phase-breakdown",
             "jvmlog-pause-variance", "jvmlog-cause-first-occurrence",
-            "jvmlog-young-vs-old-time"
+            "jvmlog-young-vs-old-time",
+            "jvmlog-heap-fill-at-trigger", "jvmlog-alloc-stall-rate-timeline",
+            "jvmlog-phases-per-gc"
     );
 
     @Test
@@ -1885,6 +1887,94 @@ class JvmlogViewsTest {
             rs = s.executeQuery("SELECT \"Generation Type\", \"Total Pause (ms)\" FROM \"jvmlog-young-vs-old-time\" LIMIT 1");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getString("Generation Type")).isEqualTo("Full / Major GC");
+        }
+        conn.close();
+    }
+
+    @Test
+    void heapFillAtTriggerViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'G1 Young', 'Allocation Failure', 10.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'G1 Young', 'Allocation Failure', 12.0, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3, 'G1 Full', 'System.gc()', 500.0, 3.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            // Allocation Failure: 90% fill (472MB before / 524MB committed)
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1, 495976448, 104857600, 549453824, 549453824)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2, 495976448, 104857600, 549453824, 549453824)");
+            // System.gc(): 50% fill (256MB/512MB)
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (3, 268435456, 52428800, 536870912, 536870912)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-fill-at-trigger".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-fill-at-trigger not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-heap-fill-at-trigger\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(2);
+            // Allocation Failure ~90% fill, should be first (ordered by Avg Fill% DESC)
+            rs = s.executeQuery("SELECT \"Cause\", \"Avg Fill % Before\" FROM \"jvmlog-heap-fill-at-trigger\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Cause")).isEqualTo("Allocation Failure");
+        }
+        conn.close();
+    }
+
+    @Test
+    void allocStallRateTimelineViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_alloc_stall (threadName VARCHAR, stallMs DOUBLE, gcId INTEGER)");
+            // gcId null, but no gc_event either → will use gcId*1.0 = NULL for those
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES ('main', 15.0, 1)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES ('worker-1', 10.0, 1)");
+            s.execute("INSERT INTO jvmlog_alloc_stall VALUES ('main', 8.0, 35)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'G1 Young', 'Allocation Failure', 50.0, 5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (35, 'G1 Young', 'Allocation Failure', 30.0, 1055.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-alloc-stall-rate-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-alloc-stall-rate-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_alloc_stall"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_alloc_stall", "jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-alloc-stall-rate-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void phasesPerGcViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE, uptimeSecs DOUBLE)");
+            // GC 1: 3 phases
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1, 'Pre Evacuate Collection Set', 1.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1, 'Merge Heap Roots', 2.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1, 'Evacuate Collection Set', 8.0, 1.0)");
+            // GC 2: 2 phases
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (2, 'Pre Evacuate Collection Set', 1.2, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (2, 'Merge Heap Roots', 2.5, 2.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-phases-per-gc".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-phases-per-gc not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_phase"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_phase"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC Cycles\", \"Avg Phases/GC\" FROM \"jvmlog-phases-per-gc\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("GC Cycles")).isEqualTo(2);
+            assertThat(rs.getDouble("Avg Phases/GC")).isCloseTo(2.5, within(0.1));
         }
         conn.close();
     }

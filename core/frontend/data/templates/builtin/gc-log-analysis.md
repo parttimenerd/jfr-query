@@ -406,6 +406,22 @@ LINE(x="GC ID", y="Reclaim %")
 
 ---
 
+<!-- @cell name=heap-fill-at-trigger requires="has-combined-timeline" -->
+
+## Heap Fill Level at GC Trigger
+
+How full is the heap when each GC cause fires? Near-full triggers (> 90%) indicate the GC is barely keeping up — any allocation spike will cause a long pause or OOM.
+
+```sql
+SELECT * FROM "jvmlog-heap-fill-at-trigger"
+```
+
+```plot
+BAR(x="Cause", y="Avg Fill % Before")
+```
+
+---
+
 <!-- @cell name=allocation-rate requires="has-combined-timeline" -->
 
 ## Allocation Rate
@@ -741,6 +757,22 @@ ORDER BY "Avg ms" DESC
 
 ```plot
 BAR(x="Phase", y="Avg ms")
+```
+
+---
+
+<!-- @cell name=phases-per-gc requires="has-gc-phase" -->
+
+## Phase Count per GC Cycle
+
+How many phases execute per GC cycle, and total phase time — a lower-than-average phase count may indicate an aborted cycle; a higher count indicates more work phases were activated (e.g., reference processing).
+
+```sql
+SELECT * FROM "jvmlog-phases-per-gc"
+```
+
+```plot
+TABLE()
 ```
 
 ---
@@ -1257,6 +1289,22 @@ SELECT * FROM "jvmlog-alloc-stall-summary"
 
 ```plot
 BAR(x="Thread", y="Total Stall (ms)")
+```
+
+---
+
+<!-- @cell name=alloc-stall-rate-timeline requires="has-alloc-stall" -->
+
+## Allocation Stall Rate Timeline
+
+Stall count and duration per 30-second window — bursts of stalls show when GC throughput was insufficient to keep up with allocation and application threads were directly impacted.
+
+```sql
+SELECT * FROM "jvmlog-alloc-stall-rate-timeline"
+```
+
+```plot
+BAR(x="Window Start (s)", y="Stalls")
 ```
 
 ---
