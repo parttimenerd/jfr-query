@@ -8809,6 +8809,145 @@ public class ViewCollection {
                         """,
                     "jvmlog_safepoint")
                     .description("Safepoint activity aggregated into 6 equal-time buckets — rising 'Total STW' across buckets means safepoint pressure is increasing over time; rising 'Distinct Ops' means more types of operations are triggering safepoints."),
+
+                    // Batch 9
+                    new View(
+                    "jvmlog-heap-usage-histogram", "jvmlog",
+                    "GC Log: Heap Usage Distribution After GC (MB histogram)", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-usage-histogram" AS
+                        WITH buckets AS (
+                            SELECT round(heapAfter / 1048576.0 / 50) * 50       AS bucketMB,
+                                   count(*)                                      AS gcCount
+                            FROM jvmlog_heap_snapshot
+                            WHERE heapAfter IS NOT NULL
+                            GROUP BY 1
+                        )
+                        SELECT bucketMB                                          AS "Heap After Bucket (MB)",
+                               gcCount                                           AS "GC Count",
+                               round(gcCount * 100.0 / sum(gcCount) OVER (), 1) AS "Frequency %"
+                        FROM buckets
+                        ORDER BY bucketMB
+                        """,
+                    "jvmlog_heap_snapshot")
+                    .description("Distribution of post-GC heap sizes in 50MB buckets — the modal bucket shows the typical resting heap size; a wide distribution indicates high heap variance; buckets near Xmx indicate the heap is nearly full after GC."),
+
+                    new View(
+                    "jvmlog-young-gen-gc-rate", "jvmlog",
+                    "GC Log: Young GC Rate per 5-min Window", null,
+                    """
+                        CREATE VIEW "jvmlog-young-gen-gc-rate" AS
+                        WITH buckets AS (
+                            SELECT floor(uptimeSecs / 300) * 300        AS bucketSecs,
+                                   count(*)                             AS youngCount,
+                                   sum(pauseMs)                         AS totalPauseMs
+                            FROM jvmlog_gc_event
+                            WHERE gcType IN ('Young', 'ParallelScavenge', 'DefNew', 'PSYoungGen')
+                               OR (gcType IS NULL AND cause IN ('Allocation Failure', 'G1 Evacuation Pause'))
+                            GROUP BY 1
+                        )
+                        SELECT round(bucketSecs / 60.0, 1)             AS "Uptime (min)",
+                               youngCount                               AS "Young GCs",
+                               round(youngCount / 5.0, 2)              AS "GC/min",
+                               round(totalPauseMs, 1)                  AS "Total Pause (ms)"
+                        FROM buckets
+                        ORDER BY bucketSecs
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Young GC frequency per 5-minute window — GC/min above 10 indicates Eden is filling faster than it can be collected; if GC/min is steady but pause time rises, survivor/promotion pressure is growing."),
+
+                    new View(
+                    "jvmlog-alloc-stall-distribution", "jvmlog",
+                    "GC Log: Allocation Stall Duration Distribution (histogram)", null,
+                    """
+                        CREATE VIEW "jvmlog-alloc-stall-distribution" AS
+                        WITH buckets AS (
+                            SELECT CASE WHEN stallMs < 10   THEN '<10ms'
+                                        WHEN stallMs < 50   THEN '10-50ms'
+                                        WHEN stallMs < 100  THEN '50-100ms'
+                                        WHEN stallMs < 500  THEN '100-500ms'
+                                        ELSE '>=500ms' END                       AS bucket,
+                                   count(*)                                      AS stallCount,
+                                   round(sum(stallMs), 1)                        AS totalMs
+                            FROM jvmlog_alloc_stall
+                            GROUP BY 1
+                        )
+                        SELECT bucket                                             AS "Stall Range",
+                               stallCount                                         AS "Count",
+                               totalMs                                            AS "Total (ms)",
+                               round(stallCount * 100.0 / sum(stallCount) OVER (), 1) AS "% of Stalls"
+                        FROM buckets
+                        ORDER BY totalMs DESC
+                        """,
+                    "jvmlog_alloc_stall")
+                    .description("Histogram of allocation stall durations — entries in the '>=500ms' bucket mean application threads were blocked for half a second waiting for GC, which will manifest as severe latency spikes in your SLA metrics."),
+
+                    new View(
+                    "jvmlog-gc-wall-vs-concurrent", "jvmlog",
+                    "GC Log: GC Wall Time vs Concurrent Phase Time per Cycle", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-wall-vs-concurrent" AS
+                        WITH concurrent AS (
+                            SELECT gcId,
+                                   sum(durationMs) AS concurrentMs
+                            FROM jvmlog_gc_phase
+                            GROUP BY gcId
+                        ),
+                        pauses AS (
+                            SELECT gcId,
+                                   sum(pauseMs)    AS stwMs,
+                                   min(uptimeSecs) AS startSecs,
+                                   max(uptimeSecs) AS endSecs
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                            GROUP BY gcId
+                        )
+                        SELECT p.gcId                                                              AS "GC ID",
+                               round(p.startSecs, 2)                                              AS "Start (s)",
+                               round(p.stwMs, 2)                                                  AS "STW (ms)",
+                               round(c.concurrentMs, 1)                                           AS "Concurrent (ms)",
+                               round(p.stwMs + c.concurrentMs, 1)                                AS "Total Work (ms)",
+                               round(p.stwMs * 100.0 / nullif(p.stwMs + c.concurrentMs, 0), 1)   AS "STW Fraction (%)"
+                        FROM pauses p
+                        JOIN concurrent c USING (gcId)
+                        ORDER BY p.gcId
+                        """,
+                    "jvmlog_gc_event", "jvmlog_gc_phase")
+                    .description("Per-cycle split between STW pause and concurrent phase work — STW fraction above 20% for ZGC/Shenandoah indicates the concurrent phase is not completing before space pressure forces a stop-the-world fallback.")
+                    .addAlternative(
+                    """
+                        CREATE VIEW "jvmlog-gc-wall-vs-concurrent" AS
+                        SELECT gcId                                                   AS "GC ID",
+                               round(sum(pauseMs), 2)                               AS "STW (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL
+                        GROUP BY gcId
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_gc_event"),
+
+                    new View(
+                    "jvmlog-full-gc-interval", "jvmlog",
+                    "GC Log: Time Between Full GCs", null,
+                    """
+                        CREATE VIEW "jvmlog-full-gc-interval" AS
+                        WITH fulls AS (
+                            SELECT gcId,
+                                   uptimeSecs,
+                                   ROW_NUMBER() OVER (ORDER BY uptimeSecs) AS rn
+                            FROM jvmlog_gc_event
+                            WHERE gcType = 'Full'
+                        )
+                        SELECT a.gcId                                                          AS "GC ID",
+                               round(a.uptimeSecs, 1)                                         AS "Uptime (s)",
+                               round(a.uptimeSecs - b.uptimeSecs, 1)                          AS "Since Last Full GC (s)",
+                               round((a.uptimeSecs - b.uptimeSecs) / 60.0, 2)                 AS "Interval (min)"
+                        FROM fulls a
+                        JOIN fulls b ON a.rn = b.rn + 1
+                        ORDER BY a.gcId
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Time between consecutive Full GC events — a decreasing interval means Full GC is happening more and more frequently, which is a precursor to OutOfMemoryError; use this to set a baseline and alert when interval drops below your threshold."),
             };
 
     public static List<View> getViews() {

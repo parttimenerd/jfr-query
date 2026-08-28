@@ -3141,3 +3141,84 @@ SELECT * FROM "jvmlog-safepoint-operation-mix"
 LINE(x="Bucket", y="Total STW (ms)")
 ```
 
+
+---
+
+<!-- @cell name=heap-usage-histogram requires="has-heap-snapshot" -->
+
+## Post-GC Heap Usage Distribution
+
+Histogram of heap sizes after GC in 50MB buckets — the modal bucket is your typical resting heap size; buckets concentrated near Xmx mean the heap has no headroom after collection.
+
+```sql
+SELECT * FROM "jvmlog-heap-usage-histogram"
+```
+
+```plot
+BAR(x="Heap After Bucket (MB)", y="GC Count")
+```
+
+---
+
+<!-- @cell name=young-gen-gc-rate requires="has-jvmlog-gc" -->
+
+## Young GC Rate per 5-min Window
+
+Young GC events per minute over time — above 10 GC/min indicates Eden is too small for the allocation rate; rising GC/min with stable pause time means allocation rate is growing, not heap fragmentation.
+
+```sql
+SELECT * FROM "jvmlog-young-gen-gc-rate"
+```
+
+```plot
+LINE(x="Uptime (min)", y="GC/min")
+```
+
+---
+
+<!-- @cell name=alloc-stall-distribution requires="has-alloc-stall" -->
+
+## Allocation Stall Duration Distribution
+
+Histogram of stall durations by severity bucket — entries in ">=500ms" mean application threads blocked for half a second; cross-reference with safepoint data to identify which GC operation caused the stall.
+
+```sql
+SELECT * FROM "jvmlog-alloc-stall-distribution"
+```
+
+```plot
+BAR(x="Stall Range", y="Count")
+```
+
+---
+
+<!-- @cell name=gc-wall-vs-concurrent requires="has-gc-phases" -->
+
+## GC Wall Time vs Concurrent Phase Time
+
+Per-cycle split between STW pause and concurrent work time — STW fraction above 20% for ZGC/Shenandoah indicates concurrent phases are not completing before heap pressure forces a stop-the-world fallback.
+
+```sql
+SELECT * FROM "jvmlog-gc-wall-vs-concurrent"
+```
+
+```plot
+LINE(x="Start (s)", y="STW Fraction (%)")
+```
+
+---
+
+<!-- @cell name=full-gc-interval requires="has-jvmlog-gc" -->
+
+## Time Between Full GCs
+
+Interval in seconds/minutes between consecutive Full GC events — a decreasing interval is an early warning of OutOfMemoryError; use as a trend indicator to set alert thresholds before production incidents.
+
+```sql
+SELECT * FROM "jvmlog-full-gc-interval"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Since Last Full GC (s)")
+```
+
