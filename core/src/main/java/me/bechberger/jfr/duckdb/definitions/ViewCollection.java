@@ -9175,6 +9175,151 @@ public class ViewCollection {
                         ORDER BY "Count" DESC
                         """,
                     "jvmlog_gc_errors"),
+
+                    // Batch 12
+                    new View(
+                    "jvmlog-heap-growth-rate", "jvmlog",
+                    "GC Log: Heap Live Set Growth (Post-GC Heap Regression)", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-growth-rate" AS
+                        WITH data AS (
+                            SELECT e.gcId                                          AS gcId,
+                                   e.uptimeSecs                                   AS x,
+                                   h.heapAfter / 1048576.0                        AS y
+                            FROM jvmlog_gc_event e
+                            JOIN (
+                                SELECT gcId, first(heapAfter) AS heapAfter
+                                FROM jvmlog_heap_snapshot
+                                GROUP BY gcId
+                            ) h USING (gcId)
+                            WHERE h.heapAfter IS NOT NULL AND e.uptimeSecs IS NOT NULL
+                        )
+                        SELECT count(*)                                             AS "Sample Count",
+                               round(avg(y), 1)                                    AS "Mean Post-GC Heap (MB)",
+                               round(regr_slope(y, x), 4)                         AS "Growth Slope (MB/s)",
+                               round(regr_r2(y, x), 4)                            AS "R²",
+                               round(regr_slope(y, x) * 3600, 1)                  AS "Projected +1h Growth (MB)",
+                               CASE WHEN regr_slope(y, x) > 1.0   THEN 'Rapid Growth'
+                                    WHEN regr_slope(y, x) > 0.1   THEN 'Slow Growth'
+                                    WHEN regr_slope(y, x) < -0.1  THEN 'Shrinking'
+                                    ELSE 'Stable' END                              AS "Trend"
+                        FROM data
+                        """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Linear regression of post-GC heap size — a positive slope means the live set is growing; 'Projected +1h Growth' extrapolates to how much more heap will be needed after one hour if the trend continues. Rapid Growth (>1 MB/s) is a memory leak indicator.")
+                    .addAlternative(
+                    """
+                        CREATE VIEW "jvmlog-heap-growth-rate" AS
+                        SELECT count(*)                                              AS "Sample Count",
+                               round(avg(pauseMs), 2)                              AS "Avg Pause (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL
+                        """,
+                    "jvmlog_gc_event"),
+
+                    new View(
+                    "jvmlog-g1-region-waste", "jvmlog",
+                    "GC Log: G1 Region Utilisation — Humongous vs Regular Waste", null,
+                    """
+                        CREATE VIEW "jvmlog-g1-region-waste" AS
+                        SELECT gcId                                                            AS "GC ID",
+                               humongousBefore                                                AS "Humongous Regions Before",
+                               humongousAfter                                                 AS "Humongous Regions After",
+                               (edenBefore + survivorBefore + oldBefore + humongousBefore)   AS "Total Regions Before",
+                               (edenAfter  + survivorAfter  + oldAfter  + humongousAfter)    AS "Total Regions After",
+                               round(humongousBefore * 100.0 /
+                                     nullif(edenBefore + survivorBefore + oldBefore + humongousBefore, 0), 1) AS "Humongous % Before",
+                               round(humongousAfter * 100.0 /
+                                     nullif(edenAfter + survivorAfter + oldAfter + humongousAfter, 0), 1)     AS "Humongous % After"
+                        FROM jvmlog_g1_regions
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_g1_regions")
+                    .description("G1 region utilisation showing humongous object regions as a percentage of total — high humongous% means large objects are fragmenting the heap; tune with -XX:G1HeapRegionSize or reduce object sizes to avoid humongous allocation overhead."),
+
+                    new View(
+                    "jvmlog-pause-budget-analysis", "jvmlog",
+                    "GC Log: Pause Budget Analysis (SLA vs Actual)", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-budget-analysis" AS
+                        WITH sla_targets AS (
+                            SELECT 100 AS sla100ms,
+                                   200 AS sla200ms,
+                                   500 AS sla500ms,
+                                   1000 AS sla1000ms
+                        ),
+                        actual AS (
+                            SELECT count(*)                                             AS total,
+                                   round(avg(pauseMs), 2)                              AS avgPause,
+                                   round(max(pauseMs), 2)                              AS maxPause,
+                                   round(approx_quantile(pauseMs, 0.99), 2)           AS p99Pause,
+                                   sum(CASE WHEN pauseMs <= 100  THEN 1 ELSE 0 END)   AS within100,
+                                   sum(CASE WHEN pauseMs <= 200  THEN 1 ELSE 0 END)   AS within200,
+                                   sum(CASE WHEN pauseMs <= 500  THEN 1 ELSE 0 END)   AS within500,
+                                   sum(CASE WHEN pauseMs <= 1000 THEN 1 ELSE 0 END)   AS within1000
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                        )
+                        SELECT s.sla100ms                                              AS "SLA 100ms Budget",
+                               round(a.within100 * 100.0 / a.total, 2)               AS "% Within 100ms",
+                               s.sla200ms                                              AS "SLA 200ms Budget",
+                               round(a.within200 * 100.0 / a.total, 2)               AS "% Within 200ms",
+                               s.sla500ms                                              AS "SLA 500ms Budget",
+                               round(a.within500 * 100.0 / a.total, 2)               AS "% Within 500ms",
+                               a.avgPause                                              AS "Avg Pause (ms)",
+                               a.p99Pause                                             AS "P99 Pause (ms)",
+                               a.maxPause                                             AS "Max Pause (ms)"
+                        FROM actual a, sla_targets s
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Pause budget analysis: what fraction of GC events fit within 100ms, 200ms, and 500ms pause SLA targets. P99 above your SLA target means 1% of requests will miss the deadline."),
+
+                    new View(
+                    "jvmlog-gc-overhead-by-type", "jvmlog",
+                    "GC Log: GC Overhead Contribution by Collector Type", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-overhead-by-type" AS
+                        SELECT gcType                                                  AS "GC Type",
+                               count(*)                                               AS "Events",
+                               round(sum(pauseMs), 1)                                AS "Total STW (ms)",
+                               round(avg(pauseMs), 2)                                AS "Avg STW (ms)",
+                               round(sum(pauseMs) * 100.0 /
+                                     nullif(sum(sum(pauseMs)) OVER (), 0), 2)        AS "% of Total STW"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL
+                        GROUP BY gcType
+                        ORDER BY "Total STW (ms)" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("STW pause time contribution per GC type as a percentage of total — Full GC taking > 20% of total STW time is a red flag; Young GC taking > 80% is normal for generational collectors."),
+
+                    new View(
+                    "jvmlog-survivor-to-old-rate", "jvmlog",
+                    "GC Log: Survivor→Old Promotion Rate (G1 region-based)", null,
+                    """
+                        CREATE VIEW "jvmlog-survivor-to-old-rate" AS
+                        WITH regions AS (
+                            SELECT gcId,
+                                   survivorBefore,
+                                   survivorAfter,
+                                   oldBefore,
+                                   oldAfter,
+                                   ROW_NUMBER() OVER (ORDER BY gcId) AS rn
+                            FROM jvmlog_g1_regions
+                        )
+                        SELECT r.gcId                                                              AS "GC ID",
+                               r.survivorBefore                                                   AS "Survivor Before",
+                               r.survivorAfter                                                    AS "Survivor After",
+                               r.oldAfter - r.oldBefore                                           AS "Old Growth (regions)",
+                               round((r.oldAfter - r.oldBefore) * 100.0 /
+                                     nullif(r.survivorBefore + r.oldBefore, 0), 1)                AS "Promoted % of Live"
+                        FROM regions r
+                        WHERE r.survivorBefore IS NOT NULL
+                          AND r.oldAfter IS NOT NULL
+                        ORDER BY r.gcId
+                        """,
+                    "jvmlog_g1_regions")
+                    .description("Per-GC G1 old generation growth from survivor promotion — high 'Promoted % of Live' means objects are aging quickly; sustained old gen growth without corresponding Full GC suggests premature tenuring, tune with -XX:MaxTenuringThreshold."),
             };
 
     public static List<View> getViews() {

@@ -3372,3 +3372,76 @@ SELECT * FROM "jvmlog-gc-error-by-type-timeline"
 BAR(x="Uptime (min)", y="Count")
 ```
 
+
+---
+
+<!-- @cell name=heap-growth-rate requires="has-heap-snapshot" -->
+
+## Heap Live Set Growth Rate (Regression)
+
+Linear regression of post-GC heap size — 'Growth Slope' > 0 means the live set is growing; 'Projected +1h Growth' extrapolates how much additional heap will be needed. Rapid Growth (>1 MB/s) is a memory leak indicator.
+
+```sql
+SELECT * FROM "jvmlog-heap-growth-rate"
+```
+
+---
+
+<!-- @cell name=g1-region-waste requires="has-g1-regions" -->
+
+## G1 Humongous Region Utilisation
+
+Humongous object regions as a percentage of total — high humongous% fragments the heap and forces eager Full GC; tune with `-XX:G1HeapRegionSize` to make large objects regular rather than humongous.
+
+```sql
+SELECT * FROM "jvmlog-g1-region-waste"
+```
+
+```plot
+LINE(x="GC ID", y="Humongous % Before")
+```
+
+---
+
+<!-- @cell name=pause-budget-analysis requires="has-jvmlog-gc" -->
+
+## Pause Budget Analysis — SLA Compliance Summary
+
+What fraction of GC events fit within 100ms, 200ms, and 500ms pause budgets — P99 above your SLA target means 1% of requests will miss the deadline; prioritise reducing P99 over reducing average pause.
+
+```sql
+SELECT * FROM "jvmlog-pause-budget-analysis"
+```
+
+---
+
+<!-- @cell name=gc-overhead-by-type requires="has-jvmlog-gc" -->
+
+## GC Overhead by Collector Type
+
+STW pause contribution per GC type as a percentage of total STW time — Full GC taking > 20% of total is a red flag; if Young GC dominates but is frequent, consider increasing heap size.
+
+```sql
+SELECT * FROM "jvmlog-gc-overhead-by-type"
+```
+
+```plot
+BAR(x="GC Type", y="% of Total STW")
+```
+
+---
+
+<!-- @cell name=survivor-to-old-rate requires="has-g1-regions" -->
+
+## G1 Survivor→Old Promotion Rate
+
+Per-GC old generation growth from survivor promotion — high "Promoted % of Live" means objects are tenuring quickly; sustained old gen growth without Full GC suggests premature tenuring, tune with `-XX:MaxTenuringThreshold`.
+
+```sql
+SELECT * FROM "jvmlog-survivor-to-old-rate"
+```
+
+```plot
+LINE(x="GC ID", y="Old Growth (regions)")
+```
+

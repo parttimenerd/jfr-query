@@ -113,7 +113,10 @@ class JvmlogViewsTest {
             "jvmlog-zgc-allocation-rate-trend",
             "jvmlog-gc-errors-timeline", "jvmlog-shenandoah-free-headroom",
             "jvmlog-g1-concurrent-phase-summary", "jvmlog-metaspace-class-space-trend",
-            "jvmlog-gc-error-by-type-timeline"
+            "jvmlog-gc-error-by-type-timeline",
+            "jvmlog-heap-growth-rate", "jvmlog-g1-region-waste",
+            "jvmlog-pause-budget-analysis", "jvmlog-gc-overhead-by-type",
+            "jvmlog-survivor-to-old-rate"
     );
 
     @Test
@@ -4664,6 +4667,118 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-gc-error-by-type-timeline\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("rows")).isGreaterThanOrEqualTo(1L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogHeapGrowthRate() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young',NULL,20.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young',NULL,22.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Young',NULL,25.0,30.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore LONG, heapAfter LONG, heapCommittedBefore LONG, heapCommittedAfter LONG)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1,536870912,268435456,1073741824,1073741824)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2,400000000,280000000,1073741824,1073741824)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (3,450000000,300000000,1073741824,1073741824)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-growth-rate".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-growth-rate not found"));
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Trend\" FROM \"jvmlog-heap-growth-rate\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Trend")).isNotBlank();
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogG1RegionWaste() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, edenBefore INTEGER, edenAfter INTEGER, edenMax INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, survivorMax INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER)");
+            s.execute("INSERT INTO jvmlog_g1_regions VALUES (1,20,0,50,2,3,10,40,41,5,4)");
+            s.execute("INSERT INTO jvmlog_g1_regions VALUES (2,20,0,50,3,4,10,41,42,5,5)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-region-waste".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-region-waste not found"));
+        assertThat(view.isValid(Set.of("jvmlog_g1_regions"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-g1-region-waste\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogPauseBudgetAnalysis() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young',NULL,50.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young',NULL,150.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Full',NULL,800.0,30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-budget-analysis".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-budget-analysis not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"% Within 200ms\", \"P99 Pause (ms)\" FROM \"jvmlog-pause-budget-analysis\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("% Within 200ms")).isLessThan(100.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcOverheadByType() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young',NULL,20.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young',NULL,25.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Full',NULL,500.0,30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-overhead-by-type".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-overhead-by-type not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS types FROM \"jvmlog-gc-overhead-by-type\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("types")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogSurvivorToOldRate() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, edenBefore INTEGER, edenAfter INTEGER, edenMax INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, survivorMax INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER)");
+            s.execute("INSERT INTO jvmlog_g1_regions VALUES (1,20,0,50,5,3,10,40,43,2,2)");
+            s.execute("INSERT INTO jvmlog_g1_regions VALUES (2,20,0,50,3,4,10,43,46,2,2)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-survivor-to-old-rate".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-survivor-to-old-rate not found"));
+        assertThat(view.isValid(Set.of("jvmlog_g1_regions"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-survivor-to-old-rate\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
         }
         conn.close();
     }
