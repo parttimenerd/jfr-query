@@ -3918,6 +3918,255 @@ public class ViewCollection {
                             """,
                         "jvmlog_gc_workers")
                     .description("Per-GC worker thread usage per task — useful for spotting individual GC events where parallelism was reduced."),
+                new View(
+                        "jvmlog-throughput-summary",
+                        "jvmlog",
+                        "GC Log: Application Throughput Summary",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-throughput-summary" AS
+                            WITH stats AS (
+                                SELECT max(uptimeSecs) - min(uptimeSecs) AS totalUptimeSecs,
+                                       sum(pauseMs) / 1000.0 AS gcTimeSecs,
+                                       count(*) AS gcEventCount,
+                                       avg(pauseMs) AS avgPauseMs,
+                                       max(pauseMs) AS maxPauseMs
+                                FROM jvmlog_gc_event
+                                WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                            )
+                            SELECT round(totalUptimeSecs, 3) AS "Total Uptime (s)",
+                                   round(gcTimeSecs, 3) AS "GC Time (s)",
+                                   round((1.0 - gcTimeSecs / nullif(totalUptimeSecs, 0)) * 100.0, 2) AS "Throughput %",
+                                   gcEventCount AS "GC Event Count",
+                                   round(avgPauseMs, 2) AS "Avg Pause (ms)",
+                                   round(maxPauseMs, 2) AS "Max Pause (ms)"
+                            FROM stats
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Overall application throughput — time NOT spent in GC as a percentage of total JVM uptime."),
+                new View(
+                        "jvmlog-gc-interval",
+                        "jvmlog",
+                        "GC Log: GC Event Intervals",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-interval" AS
+                            SELECT gcId AS "GC ID",
+                                   uptimeSecs AS "Uptime (s)",
+                                   round(uptimeSecs - LAG(uptimeSecs) OVER (ORDER BY uptimeSecs), 3) AS "Interval (s)",
+                                   pauseMs AS "Pause (ms)",
+                                   gcType AS "Type",
+                                   cause AS "Cause"
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL
+                            ORDER BY uptimeSecs
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Time between consecutive GC events — short intervals indicate high allocation pressure."),
+                new View(
+                        "jvmlog-gc-interval-stats",
+                        "jvmlog",
+                        "GC Log: GC Interval Statistics",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-interval-stats" AS
+                            WITH intervals AS (
+                                SELECT uptimeSecs - LAG(uptimeSecs) OVER (ORDER BY uptimeSecs) AS intervalSecs
+                                FROM jvmlog_gc_event
+                                WHERE uptimeSecs IS NOT NULL
+                            )
+                            SELECT round(min(intervalSecs), 3) AS "Min Interval (s)",
+                                   round(avg(intervalSecs), 3) AS "Avg Interval (s)",
+                                   round(max(intervalSecs), 3) AS "Max Interval (s)",
+                                   round(approx_quantile(intervalSecs, 0.50), 3) AS "P50 Interval (s)",
+                                   round(approx_quantile(intervalSecs, 0.99), 3) AS "P99 Interval (s)"
+                            FROM intervals
+                            WHERE intervalSecs IS NOT NULL
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Summary statistics for time between GC events — P99 interval helps size allocation rate targets."),
+                new View(
+                        "jvmlog-pause-sla",
+                        "jvmlog",
+                        "GC Log: Pause SLA Compliance",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-pause-sla" AS
+                            WITH total AS (SELECT count(*) AS n FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL)
+                            SELECT 1 AS "SLA Threshold (ms)",
+                                   round(count(*) * 100.0 / nullif((SELECT n FROM total), 0), 1) AS "Pauses Within (%)",
+                                   count(*) AS "Pauses Within (count)",
+                                   (SELECT n FROM total) AS "Total Pauses"
+                            FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL AND pauseMs < 1
+                            UNION ALL
+                            SELECT 5,
+                                   round(count(*) * 100.0 / nullif((SELECT n FROM total), 0), 1),
+                                   count(*),
+                                   (SELECT n FROM total)
+                            FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL AND pauseMs < 5
+                            UNION ALL
+                            SELECT 10,
+                                   round(count(*) * 100.0 / nullif((SELECT n FROM total), 0), 1),
+                                   count(*),
+                                   (SELECT n FROM total)
+                            FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL AND pauseMs < 10
+                            UNION ALL
+                            SELECT 25,
+                                   round(count(*) * 100.0 / nullif((SELECT n FROM total), 0), 1),
+                                   count(*),
+                                   (SELECT n FROM total)
+                            FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL AND pauseMs < 25
+                            UNION ALL
+                            SELECT 50,
+                                   round(count(*) * 100.0 / nullif((SELECT n FROM total), 0), 1),
+                                   count(*),
+                                   (SELECT n FROM total)
+                            FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL AND pauseMs < 50
+                            UNION ALL
+                            SELECT 100,
+                                   round(count(*) * 100.0 / nullif((SELECT n FROM total), 0), 1),
+                                   count(*),
+                                   (SELECT n FROM total)
+                            FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL AND pauseMs < 100
+                            UNION ALL
+                            SELECT 200,
+                                   round(count(*) * 100.0 / nullif((SELECT n FROM total), 0), 1),
+                                   count(*),
+                                   (SELECT n FROM total)
+                            FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL AND pauseMs < 200
+                            UNION ALL
+                            SELECT 500,
+                                   round(count(*) * 100.0 / nullif((SELECT n FROM total), 0), 1),
+                                   count(*),
+                                   (SELECT n FROM total)
+                            FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL AND pauseMs < 500
+                            ORDER BY "SLA Threshold (ms)"
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Fraction of GC pauses within common latency SLA thresholds."),
+                new View(
+                        "jvmlog-cause-distribution",
+                        "jvmlog",
+                        "GC Log: GC Cause Distribution",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-cause-distribution" AS
+                            WITH total AS (SELECT count(*) AS n FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL)
+                            SELECT cause AS "Cause",
+                                   count(*) AS "Count",
+                                   round(count(*) * 100.0 / nullif((SELECT n FROM total), 0), 1) AS "% of Events",
+                                   round(sum(pauseMs), 2) AS "Total Pause (ms)",
+                                   round(avg(pauseMs), 2) AS "Avg Pause (ms)"
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                            GROUP BY cause
+                            ORDER BY count(*) DESC
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Distribution of GC triggers by cause — shows which causes dominate GC activity."),
+                new View(
+                        "jvmlog-throughput-timeline",
+                        "jvmlog",
+                        "GC Log: Throughput Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-throughput-timeline" AS
+                            SELECT floor(uptimeSecs / 10) * 10 AS "Window Start (s)",
+                                   round(sum(pauseMs), 2) AS "GC Pause (ms)",
+                                   round((1.0 - sum(pauseMs) / 10000.0) * 100.0, 2) AS "Throughput %",
+                                   count(*) AS "GC Count"
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL AND pauseMs IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 10) * 10
+                            ORDER BY "Window Start (s)"
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Application throughput per 10-second window — reveals if throughput degrades over time."),
+                new View(
+                        "jvmlog-heap-growth-trend",
+                        "jvmlog",
+                        "GC Log: Heap Growth Trend",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-heap-growth-trend" AS
+                            WITH deduped AS (
+                                SELECT gcId, heapAfter, heapCommittedBefore
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                            ),
+                            joined AS (
+                                SELECT e.uptimeSecs,
+                                       d.heapAfter / 1048576.0 AS heapAfterMB,
+                                       floor(e.uptimeSecs / 10) * 10 AS windowStart
+                                FROM jvmlog_gc_event e
+                                JOIN deduped d ON e.gcId = d.gcId
+                                WHERE e.uptimeSecs IS NOT NULL AND d.heapAfter IS NOT NULL
+                            ),
+                            slope AS (
+                                SELECT regr_slope(heapAfterMB, uptimeSecs) AS slopeMBperSec
+                                FROM joined
+                            )
+                            SELECT j.windowStart AS "Window Start (s)",
+                                   round(max(j.heapAfterMB), 2) AS "Max Heap After (MB)",
+                                   round(s.slopeMBperSec, 4) AS "Heap Trend (MB/s)"
+                            FROM joined j
+                            CROSS JOIN slope s
+                            GROUP BY j.windowStart, s.slopeMBperSec
+                            ORDER BY j.windowStart
+                            """,
+                        "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Heap usage after GC over time with linear growth trend — positive slope may indicate a memory leak."),
+                new View(
+                        "jvmlog-heap-growth-summary",
+                        "jvmlog",
+                        "GC Log: Heap Growth Summary",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-heap-growth-summary" AS
+                            WITH deduped AS (
+                                SELECT gcId, heapAfter, heapCommittedBefore
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                            ),
+                            joined AS (
+                                SELECT e.uptimeSecs,
+                                       d.heapAfter / 1048576.0 AS heapAfterMB,
+                                       d.heapCommittedBefore / 1048576.0 AS committedMB
+                                FROM jvmlog_gc_event e
+                                JOIN deduped d ON e.gcId = d.gcId
+                                WHERE e.uptimeSecs IS NOT NULL AND d.heapAfter IS NOT NULL
+                            )
+                            SELECT round(min(heapAfterMB), 2) AS "Min Heap After (MB)",
+                                   round(max(heapAfterMB), 2) AS "Max Heap After (MB)",
+                                   round(max(committedMB), 2) AS "Committed (MB)",
+                                   round(regr_slope(heapAfterMB, uptimeSecs), 4) AS "Growth Rate (MB/s)",
+                                   round(regr_r2(heapAfterMB, uptimeSecs), 4) AS "R² (fit quality)",
+                                   CASE WHEN regr_slope(heapAfterMB, uptimeSecs) > 0
+                                        THEN round((max(committedMB) - last(heapAfterMB ORDER BY uptimeSecs)) / regr_slope(heapAfterMB, uptimeSecs), 2)
+                                        ELSE NULL
+                                   END AS "Est. Time to OOM (s)"
+                            FROM joined
+                            """,
+                        "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-heap-growth-summary" AS
+                            WITH deduped AS (
+                                SELECT gcId, heapAfter, heapCommittedBefore,
+                                       row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) AS rn
+                                FROM jvmlog_heap_snapshot
+                            )
+                            SELECT round(min(heapAfter) / 1048576.0, 2) AS "Min Heap After (MB)",
+                                   round(max(heapAfter) / 1048576.0, 2) AS "Max Heap After (MB)",
+                                   round(max(heapCommittedBefore) / 1048576.0, 2) AS "Committed (MB)",
+                                   NULL AS "Growth Rate (MB/s)",
+                                   NULL AS "R² (fit quality)",
+                                   NULL AS "Est. Time to OOM (s)"
+                            FROM deduped
+                            WHERE rn = 1 AND heapAfter IS NOT NULL
+                            """,
+                        "jvmlog_heap_snapshot")
+                    .description("Heap growth trend summary — positive growth rate with high R² suggests a memory leak."),
             };
 
     public static List<View> getViews() {

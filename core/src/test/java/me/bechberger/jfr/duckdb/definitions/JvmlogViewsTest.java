@@ -31,7 +31,10 @@ class JvmlogViewsTest {
             "jvmlog-gc-error-timeline", "jvmlog-metaspace-detail",
             "jvmlog-shenandoah-cycle-detail", "jvmlog-shenandoah-free-timeline",
             "jvmlog-zgc-stats",
-            "jvmlog-gc-worker-summary", "jvmlog-gc-worker-timeline"
+            "jvmlog-gc-worker-summary", "jvmlog-gc-worker-timeline",
+            "jvmlog-throughput-summary", "jvmlog-gc-interval", "jvmlog-gc-interval-stats",
+            "jvmlog-pause-sla", "jvmlog-cause-distribution", "jvmlog-throughput-timeline",
+            "jvmlog-heap-growth-trend", "jvmlog-heap-growth-summary"
     );
 
     @Test
@@ -761,6 +764,212 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-gc-worker-timeline\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("cnt")).isEqualTo(4);
+        }
+        conn.close();
+    }
+
+    @Test
+    void throughputSummaryViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 10.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 5.0, 5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Young', 'G1 Evacuation Pause', 20.0, 10.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-throughput-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-throughput-summary not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Throughput %\" FROM \"jvmlog-throughput-summary\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Throughput %")).isGreaterThan(99.0); // 35ms GC in 9s = ~99.6%
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcIntervalViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 5.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 4.0, 3.5)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Young', 'G1 Evacuation Pause', 6.0, 7.0)");
+        }
+        // Test jvmlog-gc-interval
+        View intervalView = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-interval".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-interval not found"));
+        assertThat(intervalView.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = intervalView.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Interval (s)\" FROM \"jvmlog-gc-interval\" ORDER BY \"Uptime (s)\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(0);
+            assertThat(rs.getObject("Interval (s)")).isNull(); // first row has no previous
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Interval (s)")).isCloseTo(2.5, within(0.001));
+        }
+        // Test jvmlog-gc-interval-stats
+        View statsView = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-interval-stats".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-interval-stats not found"));
+        assertThat(statsView.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String statsQuery = statsView.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(statsQuery);
+            var rs = s.executeQuery("SELECT \"Min Interval (s)\", \"Max Interval (s)\" FROM \"jvmlog-gc-interval-stats\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Min Interval (s)")).isCloseTo(2.5, within(0.01));
+            assertThat(rs.getDouble("Max Interval (s)")).isCloseTo(3.5, within(0.01));
+        }
+        conn.close();
+    }
+
+    @Test
+    void pauseSlaViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 0.5, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 3.0, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Full', 'System.gc()', 150.0, 3.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-sla".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-sla not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            // 8 thresholds should produce 8 rows
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-pause-sla\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(8);
+            // 1ms threshold: only 0.5ms pause qualifies → 33.3%
+            rs = s.executeQuery("SELECT \"Pauses Within (count)\", \"Pauses Within (%)\" FROM \"jvmlog-pause-sla\" WHERE \"SLA Threshold (ms)\" = 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Pauses Within (count)")).isEqualTo(1);
+            // 100ms threshold: 0.5 and 3.0 qualify → 2 of 3 = 66.7%
+            rs = s.executeQuery("SELECT \"Pauses Within (count)\" FROM \"jvmlog-pause-sla\" WHERE \"SLA Threshold (ms)\" = 100");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Pauses Within (count)")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void causeDistributionViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 5.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 4.0, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Full', 'System.gc()', 100.0, 3.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-cause-distribution".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-cause-distribution not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Cause\", \"Count\", \"% of Events\" FROM \"jvmlog-cause-distribution\" ORDER BY \"Count\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Cause")).isEqualTo("G1 Evacuation Pause");
+            assertThat(rs.getLong("Count")).isEqualTo(2);
+            assertThat(rs.getDouble("% of Events")).isCloseTo(66.7, within(0.1));
+        }
+        conn.close();
+    }
+
+    @Test
+    void throughputTimelineViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 50.0, 3.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 30.0, 7.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Young', 'G1 Evacuation Pause', 20.0, 15.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-throughput-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-throughput-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            // Two windows: [0,10) with 80ms GC → 99.2% throughput; [10,20) with 20ms GC → 99.8%
+            var rs = s.executeQuery("SELECT \"Window Start (s)\", \"Throughput %\", \"GC Count\" FROM \"jvmlog-throughput-timeline\" ORDER BY \"Window Start (s)\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Window Start (s)")).isEqualTo(0.0);
+            assertThat(rs.getLong("GC Count")).isEqualTo(2);
+            assertThat(rs.getDouble("Throughput %")).isGreaterThan(99.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void heapGrowthViewsExecuteWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 5.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 4.0, 11.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Young', 'G1 Evacuation Pause', 6.0, 21.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            // Simulating growing heap after GC: 100MB, 110MB, 120MB
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (0, 157286400, 104857600, 536870912, 536870912)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1, 167772160, 115343360, 536870912, 536870912)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2, 178257920, 125829120, 536870912, 536870912)");
+        }
+        Set<String> tables = Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot");
+
+        // Test jvmlog-heap-growth-trend
+        View trendView = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-growth-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-growth-trend not found"));
+        assertThat(trendView.isValid(tables)).isTrue();
+        String trendQuery = trendView.getBestMatchingQuery(tables);
+        try (Statement s = conn.createStatement()) {
+            s.execute(trendQuery);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-heap-growth-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isGreaterThanOrEqualTo(1);
+            // Heap trend should be positive (growing heap)
+            rs = s.executeQuery("SELECT \"Heap Trend (MB/s)\" FROM \"jvmlog-heap-growth-trend\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Heap Trend (MB/s)")).isGreaterThan(0);
+        }
+
+        // Test jvmlog-heap-growth-summary
+        View summaryView = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-growth-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-growth-summary not found"));
+        assertThat(summaryView.isValid(tables)).isTrue();
+        String summaryQuery = summaryView.getBestMatchingQuery(tables);
+        try (Statement s = conn.createStatement()) {
+            s.execute(summaryQuery);
+            var rs = s.executeQuery("SELECT \"Growth Rate (MB/s)\", \"R² (fit quality)\", \"Est. Time to OOM (s)\" FROM \"jvmlog-heap-growth-summary\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Growth Rate (MB/s)")).isGreaterThan(0); // positive growth
+            assertThat(rs.getObject("Est. Time to OOM (s)")).isNotNull(); // slope > 0 so OOM estimate present
+        }
+
+        // Test heap-growth-summary alternative (heap_snapshot only)
+        String altQuery = summaryView.getBestMatchingQuery(Set.of("jvmlog_heap_snapshot"));
+        assertThat(altQuery).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute("DROP VIEW IF EXISTS \"jvmlog-heap-growth-summary\"");
+            s.execute(altQuery);
+            var rs = s.executeQuery("SELECT \"Min Heap After (MB)\", \"Max Heap After (MB)\" FROM \"jvmlog-heap-growth-summary\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Min Heap After (MB)")).isGreaterThan(0);
         }
         conn.close();
     }

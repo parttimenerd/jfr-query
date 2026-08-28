@@ -67,6 +67,22 @@ TABLE()
 
 ---
 
+<!-- @cell name=throughput-summary -->
+
+## Application Throughput
+
+Time NOT spent in GC — the primary health metric. 99%+ throughput means < 1% of time is GC.
+
+```sql
+SELECT * FROM "jvmlog-throughput-summary"
+```
+
+```plot
+TABLE()
+```
+
+---
+
 <!-- @cell name=pause-summary -->
 
 ## Pause Summary
@@ -111,6 +127,22 @@ SELECT * FROM "jvmlog-pause-percentiles-by-cause"
 
 ```plot
 BAR(x="Cause", y="P99 (ms)")
+```
+
+---
+
+<!-- @cell name=pause-sla -->
+
+## Pause SLA Compliance
+
+What fraction of pauses fall within common latency targets — maps directly to SLA requirements.
+
+```sql
+SELECT * FROM "jvmlog-pause-sla"
+```
+
+```plot
+BAR(x="SLA Threshold (ms)", y="Pauses Within (%)")
 ```
 
 ---
@@ -246,6 +278,38 @@ LINE(x="GC ID", y="Reclaim %")
 
 ---
 
+<!-- @cell name=heap-growth-summary requires="has-combined-timeline" -->
+
+## Heap Growth Summary
+
+Linear regression over heap-after-GC values — positive growth rate with high R² strongly suggests a memory leak.
+
+```sql
+SELECT * FROM "jvmlog-heap-growth-summary"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=heap-growth-trend requires="has-combined-timeline" -->
+
+## Heap Growth Trend
+
+Heap usage after each GC event over time with per-window max — a rising baseline is the hallmark of a memory leak.
+
+```sql
+SELECT * FROM "jvmlog-heap-growth-trend"
+```
+
+```plot
+LINE(x="Window Start (s)", y="Max Heap After (MB)")
+```
+
+---
+
 <!-- @cell name=gc-overhead -->
 
 ## GC Overhead
@@ -258,6 +322,22 @@ SELECT * FROM "jvmlog-gc-overhead"
 
 ```plot
 BAR(x="Window Start (s)", y="GC Overhead %")
+```
+
+---
+
+<!-- @cell name=throughput-timeline -->
+
+## Throughput Over Time
+
+Application throughput per 10-second window — a declining trend here is a strong indicator of accumulating GC pressure.
+
+```sql
+SELECT * FROM "jvmlog-throughput-timeline"
+```
+
+```plot
+LINE(x="Window Start (s)", y="Throughput %")
 ```
 
 ---
@@ -290,6 +370,56 @@ SELECT * FROM "jvmlog-pause-histogram"
 
 ```plot
 BAR(x="Bucket (ms)", y="Count")
+```
+
+---
+
+<!-- @cell name=cause-distribution -->
+
+## GC Cause Distribution
+
+What is triggering GC — typically dominated by allocation pressure, but `System.gc()` or ergonomics-driven causes indicate problems.
+
+```sql
+SELECT * FROM "jvmlog-cause-distribution"
+```
+
+```plot
+BAR(x="Cause", y="Count")
+```
+
+---
+
+<!-- @cell name=gc-interval-stats -->
+
+## GC Interval Statistics
+
+Min, average, and P99 time between GC events — short P99 intervals indicate the JVM spends most of its time in GC.
+
+```sql
+SELECT * FROM "jvmlog-gc-interval-stats"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=gc-interval-timeline -->
+
+## GC Interval Timeline
+
+Time between consecutive GC events over JVM lifetime — shrinking gaps indicate accelerating allocation pressure.
+
+```sql
+SELECT "Uptime (s)", "Interval (s)", "Type", "Cause" FROM "jvmlog-gc-interval"
+WHERE "Interval (s)" IS NOT NULL
+ORDER BY "Uptime (s)"
+```
+
+```plot
+SCATTER(x="Uptime (s)", y="Interval (s)", color="Type")
 ```
 
 ---
