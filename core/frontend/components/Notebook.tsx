@@ -42,6 +42,9 @@ interface NotebookProps {
     tabBarVisible?: boolean;
     /** Extra pixels of banner height above the notebook content (each visible banner ~36px). TOC button shifts down by this amount. */
     bannerOffset?: number;
+    /** Controlled TOC open state — owned by App so the header button can toggle it. */
+    tocOpen?: boolean;
+    onToggleTOC?: () => void;
     /** Forward to NotebookCell → InlineChat for "pop to sidebar" feature. */
     onPopChatToSidebar?: (snapshot: import('./ChatPanel').InlineChatSnapshot) => void;
     /** Forward to NotebookCell → InlineChat for reference link navigation. */
@@ -56,28 +59,33 @@ const Notebook: React.FC<NotebookProps> = (props) => {
         notebookMarkdown, setNotebookMarkdown, isMarkdownMode, isAutoRunEnabled, cells, metadata, results, queryTimings,
         collapseTrigger, allCollapsed, isAiFeatureActive, clearResultsTrigger, onRunQuery, onUpdateCell, onDeleteCell, onDuplicateCell, onDeleteQueryBlock,
         onAddCell, onAddCellFromTool, onMoveCell, onSuggestPlot, onFormatCode, onRunPreviewQuery, onMetadataChange,
-        presenterMode = false, tabBarVisible = false, bannerOffset = 0, onPopChatToSidebar, onNavigateRef,
+        presenterMode = false, tabBarVisible = false, bannerOffset = 0, tocOpen: tocOpenProp, onToggleTOC, onPopChatToSidebar, onNavigateRef,
     } = props;
 
     const settingsPanelRef = useRef<{ focusVariable: (name: string) => void }>(null);
-    const [tocOpen, setTocOpen] = useState(false);
-    const handleCloseTOC = useCallback(() => setTocOpen(false), []);
+    const [tocOpenInternal, setTocOpenInternal] = useState(false);
+    const tocOpen = tocOpenProp !== undefined ? tocOpenProp : tocOpenInternal;
+    const handleCloseTOC = useCallback(() => {
+        if (onToggleTOC && tocOpenProp) onToggleTOC();
+        else setTocOpenInternal(false);
+    }, [onToggleTOC, tocOpenProp]);
 
     // Persistent cache: cell content string → parsed directive. Avoids re-running the Ohm
     // grammar on unchanged cells when any single cell in the notebook is edited.
     const directiveStrCacheRef = useRef<Map<string, ReturnType<typeof parseCellDirective>>>(new Map());
 
-    // Ctrl+Shift+T toggles TOC
+    // Ctrl+Shift+T toggles TOC — delegate to App handler if controlled, else internal
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 't' || e.key === 'T')) {
                 e.preventDefault();
-                setTocOpen(prev => !prev);
+                if (onToggleTOC) onToggleTOC();
+                else setTocOpenInternal(prev => !prev);
             }
         };
         window.addEventListener('keydown', handler, true);
         return () => window.removeEventListener('keydown', handler, true);
-    }, []);
+    }, [onToggleTOC]);
 
     // B-033: persist per-cell collapse state across raw-mode remounts.
     const cellCollapseStateRef = useRef<Map<string, boolean>>(new Map());
@@ -383,24 +391,6 @@ const Notebook: React.FC<NotebookProps> = (props) => {
 
     return (
         <div className="relative p-4 md:p-6 space-y-4">
-            {/* TOC toggle button — fixed top-right, only when not in presenter mode */}
-            {!presenterMode && (
-                <button
-                    onClick={() => setTocOpen(prev => !prev)}
-                    aria-label="Toggle table of contents"
-                    aria-pressed={tocOpen}
-                    title="Table of Contents (Ctrl+Shift+T)"
-                    style={{ top: `${48 + (tabBarVisible ? 34 : 0) + bannerOffset + 8}px` }}
-                    className={[
-                        `fixed ${tabBarVisible ? 'right-10' : 'right-4'} z-40 p-1.5 rounded-md border text-xs transition-colors shadow`,
-                        tocOpen
-                            ? 'bg-gray-700 border-cyan-500 text-cyan-300'
-                            : 'bg-gray-800 border-gray-600 text-gray-400 hover:text-gray-200 hover:border-gray-500',
-                    ].join(' ')}
-                >
-                    ☰
-                </button>
-            )}
             {/* TOC panel */}
             {tocOpen && !presenterMode && (
                 <div

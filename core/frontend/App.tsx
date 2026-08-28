@@ -21,7 +21,7 @@ import { SkillContextProvider } from './context/SkillContext';
 import { useHistoryState } from './hooks/useHistoryState';
 import { aiService } from './services/AiService';
 import type { NotebookCellData, NotebookMetadata } from './types';
-import { initialNotebook } from './data/mockData';
+import { initialNotebook, jvmlogInitialNotebook } from './data/mockData';
 import { gcAnalysisNotebook } from './data/gcNotebookTemplate';
 import { parseNotebook, reconstructNotebook, tokenizeCellContent, reconstructCellContent, parseCellContent, parseCellDirective, requiresAttrToConditionSql, stringifyFrontMatter } from './utils/notebookParser';
 import { mergeTemplate } from './utils/templateMerge';
@@ -53,6 +53,7 @@ import { DocumentTextIcon } from './components/icons/DocumentTextIcon';
 import { EyeIcon } from './components/icons/EyeIcon';
 import { BookOpenIcon } from './components/icons/BookOpenIcon';
 import { QuestionMarkCircleIcon } from './components/icons/QuestionMarkCircleIcon';
+import { Bars3Icon } from './components/icons/Bars3Icon';
 import * as EmbeddingService from './services/ml/EmbeddingService';
 import { initPlotModel } from './services/ml/PlotGenerationService';
 import { AutocompleteRanker } from './services/ml/AutocompleteRanker';
@@ -314,6 +315,25 @@ const App: React.FC = () => {    const {
     // Smart-Start: after a JFR file loads, detect the GC collector and suggest the best template.
     const [gcSuggestion, setGcSuggestion] = useState<{ collector: GCCollector; templateName: string; label: string } | null>(null);
     const gcDetectionRanRef = useRef(false);
+
+    // Auto-load jvmlog default notebook when sourceType first resolves to 'jvmlog' and the
+    // current notebook is JFR-specific (contains JFR table names) or still the JFR welcome default.
+    // This avoids showing broken queries when the user opens a GC log file.
+    const jvmlogDefaultLoadedRef = useRef(false);
+    useEffect(() => {
+        if (sourceType !== 'jvmlog' || jvmlogDefaultLoadedRef.current) return;
+        jvmlogDefaultLoadedRef.current = true;
+        const nb = notebookMarkdownRef.current;
+        const isJfrNotebook =
+            nb.trimStart().startsWith('# JFR SQL Notebook') ||
+            /FROM\s+"?GarbageCollection"?\b/i.test(nb) ||
+            /FROM\s+"?RecordingInfo"?\b/i.test(nb) ||
+            /FROM\s+"?jdk\./i.test(nb);
+        if (isJfrNotebook) {
+            loadNotebook(jvmlogInitialNotebook);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sourceType]);
 
     const [onboardingDismissed, setOnboardingDismissed] = useState(
         () => { try { return !!localStorage.getItem('jfrq:onboarding-dismissed'); } catch { return false; } }
@@ -1211,6 +1231,7 @@ const App: React.FC = () => {    const {
     
     const [isRunningAll, setIsRunningAll] = useState(false);
     const [presenterMode, setPresenterMode] = useState(false);
+    const [tocOpen, setTocOpen] = useState(false);
     const isRunningAllRef = useRef(false);
 
     const handleRunAll = useCallback(async () => {
@@ -1734,7 +1755,7 @@ const App: React.FC = () => {    const {
                         </button>
                         <button
                             onClick={() => setIsVarPaused(v => !v)}
-                            className={`p-1.5 rounded-md transition-colors text-xs font-semibold ${isVarPaused ? 'text-amber-300 bg-amber-900/30 ring-1 ring-amber-600/40' : 'text-gray-400 hover:bg-gray-700/50'}`}
+                            className={`p-1.5 rounded-md transition-colors text-xs font-semibold whitespace-nowrap ${isVarPaused ? 'text-amber-300 bg-amber-900/30 ring-1 ring-amber-600/40' : 'text-gray-400 hover:bg-gray-700/50'}`}
                             title={isVarPaused ? "Variable updates paused — click to resume and re-run stale cells" : "Pause variable updates (prevents re-runs while editing variables)"}
                             aria-label={isVarPaused ? "Resume variable updates" : "Pause variable updates"}
                         >
@@ -1757,6 +1778,7 @@ const App: React.FC = () => {    const {
                 <div className="flex items-center gap-1">
                     <button onClick={() => { setCollapseTrigger(Date.now()); setAllCollapsed(true); }} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Collapse All" aria-label="Collapse All"><ChevronDoubleUpIcon className="w-4 h-4"/></button>
                     <button onClick={() => { setCollapseTrigger(Date.now()); setAllCollapsed(false); }} className="p-1.5 rounded-md text-gray-400 hover:text-gray-200" title="Expand All" aria-label="Expand All"><ChevronDoubleDownIcon className="w-4 h-4"/></button>
+                    <button onClick={() => setTocOpen(v => !v)} className={`p-1.5 rounded-md transition-colors ${tocOpen ? 'text-cyan-300 bg-cyan-900/30' : 'text-gray-400 hover:text-gray-200'}`} title="Table of Contents (Ctrl+Shift+T)" aria-label="Table of Contents" aria-pressed={tocOpen}><Bars3Icon className="w-4 h-4"/></button>
                     <button onClick={handleClearResults} className="p-1.5 rounded-md text-gray-400 hover:text-red-400" title="Clear All Results" aria-label="Clear All Results"><TrashIcon className="w-4 h-4"/></button>
                     <div className="w-px h-5 bg-gray-700 mx-1" />
                     <input ref={notebookFileInputRef} type="file" accept=".md,.markdown" className="hidden" onChange={handleLoadNotebook} />
@@ -1956,6 +1978,8 @@ const App: React.FC = () => {    const {
                             (gcSuggestion ? 36 : 0) +
                             (!isAiAvailable && !aiNudgeDismissed && !showWelcomeBanner ? 30 : 0)
                         }
+                        tocOpen={tocOpen}
+                        onToggleTOC={() => setTocOpen(v => !v)}
                         onPopChatToSidebar={handlePopChatToSidebar}
                         onNavigateRef={handleNavigateRef}
                     />

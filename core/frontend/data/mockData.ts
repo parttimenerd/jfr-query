@@ -1,3 +1,80 @@
+export const jvmlogInitialNotebook: string = `# JVM GC Log Notebook
+
+A quick-start notebook for JVM GC log analysis. All queries run against the tables parsed from your \`-Xlog:gc*\` log file.
+
+**Quick navigation:** Load a file, then use **New GC Analysis Notebook** (⚗) in the toolbar for the full analysis, or explore below.
+
+---
+
+## GC Overview
+
+Collector, JDK version, heap configuration, and GC algorithm detected at JVM startup.
+
+\`\`\`sql
+SELECT * FROM "jvmlog-gc-init-summary"
+\`\`\`
+
+\`\`\`plot
+TABLE()
+\`\`\`
+
+---
+
+## GC Pause Summary
+
+P50, P90, P99, and max pause across all GC events — the key SLA check.
+
+\`\`\`sql
+SELECT * FROM "jvmlog-pause-percentiles"
+\`\`\`
+
+\`\`\`plot
+TABLE()
+\`\`\`
+
+---
+
+## Pause by GC Cause
+
+Total events, average pause, and p99 pause grouped by trigger cause.
+
+\`\`\`sql
+SELECT * FROM "jvmlog-cause-pause-stats"
+\`\`\`
+
+\`\`\`plot
+BAR(x="GC Cause", y="Avg Pause (ms)")
+\`\`\`
+
+---
+
+## Heap Usage Over Time
+
+Before-GC and after-GC heap sizes across all events — a steady rise in "After GC" indicates heap growth or a memory leak.
+
+\`\`\`sql
+SELECT * FROM "jvmlog-heap-timeline"
+\`\`\`
+
+\`\`\`plot
+LINE(x=gcId, y="Heap Before (MB)")
+\`\`\`
+
+---
+
+## GC Overhead
+
+GC time as a percentage of elapsed time — sustained overhead above 5% means the JVM is spending too much time collecting garbage.
+
+\`\`\`sql
+SELECT * FROM "jvmlog-gc-overhead"
+\`\`\`
+
+\`\`\`plot
+TABLE()
+\`\`\`
+`;
+
 export const initialNotebook: string = `# JFR SQL Notebook
 
 Welcome! This notebook lets you query a loaded JFR recording (or any DuckDB database) using SQL, then visualize results as charts. Here's how it works:
