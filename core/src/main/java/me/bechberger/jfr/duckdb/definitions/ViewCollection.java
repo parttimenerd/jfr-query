@@ -8221,6 +8221,166 @@ public class ViewCollection {
                         ORDER BY gcId
                         """,
                         "jvmlog_gc_phase"),
+
+            // -----------------------------------------------------------------------
+            // Heap saturation events (heap > 90% full before GC)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-heap-saturation-events", "jvmlog",
+                    "GC Log: Heap Saturation Events (> 90% Full)", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-saturation-events" AS
+                        WITH heap AS (
+                            SELECT gcId, heapBefore, heapAfter, heapCommittedBefore
+                            FROM jvmlog_heap_snapshot
+                            QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                        )
+                        SELECT e.gcId                                                              AS "GC ID",
+                               round(e.uptimeSecs, 3)                                             AS "Uptime (s)",
+                               e.gcType                                                            AS "GC Type",
+                               e.cause                                                             AS "Cause",
+                               round(e.pauseMs, 2)                                                AS "Pause (ms)",
+                               round(h.heapBefore / 1048576.0, 1)                                 AS "Heap Before (MB)",
+                               round(h.heapCommittedBefore / 1048576.0, 1)                        AS "Committed (MB)",
+                               round(100.0 * h.heapBefore / NULLIF(h.heapCommittedBefore, 0), 1)  AS "Utilisation %",
+                               round((h.heapBefore - h.heapAfter) / 1048576.0, 1)                 AS "Reclaimed (MB)"
+                        FROM jvmlog_gc_event e
+                        JOIN heap h USING (gcId)
+                        WHERE 100.0 * h.heapBefore / NULLIF(h.heapCommittedBefore, 0) >= 90
+                          AND e.uptimeSecs IS NOT NULL
+                        ORDER BY e.uptimeSecs
+                        """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("GC events where heap was at least 90% full before collection — these indicate the JVM is running at the edge of heap capacity; repeated saturation events precede OutOfMemoryError.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-heap-saturation-events" AS
+                        SELECT gcId AS "GC ID", gcType AS "GC Type", cause AS "Cause",
+                               round(pauseMs, 2) AS "Pause (ms)", round(uptimeSecs, 3) AS "Uptime (s)"
+                        FROM jvmlog_gc_event
+                        WHERE uptimeSecs IS NOT NULL
+                        ORDER BY uptimeSecs
+                        LIMIT 0
+                        """,
+                        "jvmlog_gc_event"),
+
+            // -----------------------------------------------------------------------
+            // GC burst detection: 30-second windows with > 3 GC events
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-burst-detection", "jvmlog",
+                    "GC Log: GC Burst Windows (Rapid-Fire GC)", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-burst-detection" AS
+                        WITH windows AS (
+                            SELECT floor(uptimeSecs / 30.0)::BIGINT AS w,
+                                   count(*)                          AS gcCount,
+                                   round(sum(pauseMs), 1)            AS totalPauseMs,
+                                   min(uptimeSecs)                   AS windowStart
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL AND pauseMs IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 30.0)::BIGINT
+                            HAVING count(*) > 3
+                        )
+                        SELECT round(windowStart, 1)  AS "Window Start (s)",
+                               gcCount                 AS "GC Count in 30s",
+                               totalPauseMs            AS "Total Pause (ms)"
+                        FROM windows
+                        ORDER BY gcCount DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("30-second windows with more than 3 GC events — rapid-fire GC bursts indicate allocation spikes or heap exhaustion; the worst windows by count are shown first."),
+
+            // -----------------------------------------------------------------------
+            // ZGC garbage ratio by cycle
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-zgc-garbage-ratio-by-cycle", "jvmlog",
+                    "GC Log: ZGC Garbage vs Live Bytes per Cycle", null,
+                    """
+                        CREATE VIEW "jvmlog-zgc-garbage-ratio-by-cycle" AS
+                        WITH reloc AS (
+                            SELECT gcId,
+                                   max(liveBytes)    AS liveBytes,
+                                   max(garbageBytes) AS garbageBytes
+                            FROM jvmlog_zgc_stats
+                            WHERE phase = 'Relocate Start'
+                              AND liveBytes IS NOT NULL AND garbageBytes IS NOT NULL
+                            GROUP BY gcId
+                        )
+                        SELECT r.gcId                                                          AS "GC ID",
+                               round(r.liveBytes    / 1048576.0, 1)                           AS "Live (MB)",
+                               round(r.garbageBytes / 1048576.0, 1)                           AS "Garbage (MB)",
+                               round(100.0 * r.garbageBytes / NULLIF(r.liveBytes + r.garbageBytes, 0), 1)
+                                                                                              AS "Garbage %",
+                               round(e.uptimeSecs, 3)                                         AS "Uptime (s)"
+                        FROM reloc r
+                        JOIN jvmlog_gc_event e USING (gcId)
+                        WHERE e.uptimeSecs IS NOT NULL
+                        ORDER BY e.uptimeSecs
+                        """,
+                    "jvmlog_zgc_stats", "jvmlog_gc_event")
+                    .description("ZGC live vs garbage bytes at Relocate Start per cycle — Garbage% shows how much of the heap is actual garbage; low Garbage% means ZGC is working hard for small gains.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-zgc-garbage-ratio-by-cycle" AS
+                        SELECT gcId AS "GC ID",
+                               max(liveBytes) / 1048576.0    AS "Live (MB)",
+                               max(garbageBytes) / 1048576.0 AS "Garbage (MB)"
+                        FROM jvmlog_zgc_stats
+                        WHERE phase = 'Relocate Start'
+                        GROUP BY gcId
+                        ORDER BY gcId
+                        """,
+                        "jvmlog_zgc_stats"),
+
+            // -----------------------------------------------------------------------
+            // Full GC cause summary
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-full-gc-cause-summary", "jvmlog",
+                    "GC Log: Full GC Events by Cause", null,
+                    """
+                        CREATE VIEW "jvmlog-full-gc-cause-summary" AS
+                        SELECT cause                                                AS "Cause",
+                               count(*)                                             AS "Full GCs",
+                               round(avg(pauseMs), 2)                              AS "Avg Pause (ms)",
+                               round(max(pauseMs), 2)                              AS "Max Pause (ms)",
+                               round(sum(pauseMs), 1)                              AS "Total Pause (ms)",
+                               round(approx_quantile(pauseMs, 0.95), 2)            AS "P95 Pause (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE gcType IN ('Full', 'GarbageFirst (Full)', 'PSMarkSweep',
+                                         'Degenerated', 'Concurrent Mark Abort')
+                          AND cause IS NOT NULL
+                        GROUP BY cause
+                        ORDER BY "Full GCs" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Full GC events grouped by trigger cause — System.gc() calls indicate explicit GC invocations (often by third-party libraries), while Allocation Failure or Last ditch collection means heap exhaustion."),
+
+            // -----------------------------------------------------------------------
+            // GC duration vs pause time ratio (concurrent collector efficiency)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-duration-vs-pause", "jvmlog",
+                    "GC Log: Total Duration vs STW Pause Ratio", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-duration-vs-pause" AS
+                        SELECT gcType                                                AS "GC Type",
+                               count(*)                                              AS "Events",
+                               round(avg(pauseMs), 2)                               AS "Avg Pause (ms)",
+                               round(avg(durationMs), 2)                            AS "Avg Duration (ms)",
+                               round(avg(durationMs - pauseMs), 2)                  AS "Avg Concurrent (ms)",
+                               round(100.0 * avg(pauseMs) / NULLIF(avg(durationMs), 0), 1)
+                                                                                    AS "STW / Duration %"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND durationMs IS NOT NULL
+                          AND durationMs >= pauseMs AND gcType IS NOT NULL
+                        GROUP BY gcType
+                        ORDER BY "STW / Duration %" ASC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("STW pause as a fraction of total GC duration per type — for concurrent collectors (ZGC, Shenandoah, G1) a low STW/Duration% is expected; a rising ratio means concurrent phases are being cut short."),
             };
 
     public static List<View> getViews() {

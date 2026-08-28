@@ -2561,3 +2561,83 @@ LIMIT 50
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=heap-saturation-events requires="has-heap-snapshot" -->
+
+## Heap Saturation Events (≥ 90% Full)
+
+GC events where heap was at least 90% full before collection — repeated saturation events mean the JVM is running at the edge of capacity and OutOfMemoryError is imminent without heap expansion.
+
+```sql
+SELECT * FROM "jvmlog-heap-saturation-events"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=gc-burst-detection requires="has-jvmlog-gc" -->
+
+## GC Burst Windows (Rapid-Fire GC)
+
+30-second windows with more than 3 GC events — burst GC means the application is allocating faster than minor GC can keep up with, indicating allocation-rate spikes or heap exhaustion.
+
+```sql
+SELECT * FROM "jvmlog-gc-burst-detection"
+```
+
+```plot
+BAR(x="Window Start (s)", y="GC Count in 30s")
+```
+
+---
+
+<!-- @cell name=full-gc-cause-summary requires="has-jvmlog-gc" -->
+
+## Full GC Events by Cause
+
+Full/Major GC events grouped by trigger cause — System.gc() indicates explicit calls; Allocation Failure or Last Ditch Collection means heap is exhausted.
+
+```sql
+SELECT * FROM "jvmlog-full-gc-cause-summary"
+```
+
+```plot
+BAR(x="Cause", y="Full GCs")
+```
+
+---
+
+<!-- @cell name=gc-duration-vs-pause requires="has-jvmlog-gc" -->
+
+## Total Duration vs STW Pause Ratio
+
+STW pause as a fraction of total GC duration per collection type — concurrent collectors should have a low STW/Duration%; a rising ratio means concurrent phases are being cut short and more work falls into STW.
+
+```sql
+SELECT * FROM "jvmlog-gc-duration-vs-pause"
+```
+
+```plot
+BAR(x="GC Type", y="STW / Duration %")
+```
+
+---
+
+<!-- @cell name=zgc-garbage-ratio-by-cycle requires="has-zgc" -->
+
+## ZGC Garbage vs Live Bytes per Cycle
+
+Live and garbage bytes at Relocate Start per ZGC cycle — Garbage% shows how much of the heap is actual garbage; low Garbage% means ZGC is working hard for small gains.
+
+```sql
+SELECT * FROM "jvmlog-zgc-garbage-ratio-by-cycle"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Garbage %")
+```
