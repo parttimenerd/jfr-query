@@ -2415,3 +2415,83 @@ SELECT * FROM "jvmlog-concurrent-stall-timeline"
 ```plot
 BAR(x="Bucket (20 events)", y="Total Stall (ms)")
 ```
+
+---
+
+<!-- @cell name=heap-reclaim-efficiency requires="has-heap-snapshot" -->
+
+## Heap Reclaim Efficiency
+
+MB reclaimed per ms of pause time, grouped by GC type and cause — low efficiency means GC spends more pause time per unit of heap freed, indicating fragmentation or high tenure pressure.
+
+```sql
+SELECT * FROM "jvmlog-heap-reclaim-efficiency"
+```
+
+```plot
+BAR(x="GC Type", y="Reclaim Rate (MB/ms)")
+```
+
+---
+
+<!-- @cell name=safepoint-non-gc requires="has-safepoint" -->
+
+## Non-GC Safepoint Operations
+
+JIT deoptimisation, biased-lock revocation, and other non-GC STW events — these contribute to application pauses independent of the garbage collector.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-non-gc"
+```
+
+```plot
+BAR(x="Operation", y="Total STW (ms)")
+```
+
+---
+
+<!-- @cell name=young-gen-sizing-trend requires="has-g1-regions" -->
+
+## G1 Young Generation Sizing Trend
+
+Eden and Survivor max region counts per GC event — G1 adapts the young generation size dynamically; steady growth in Eden max means G1 is responding to allocation pressure by enlarging the young generation.
+
+```sql
+SELECT * FROM "jvmlog-young-gen-sizing-trend"
+```
+
+```plot
+LINE(x="Uptime (s)", y=["Eden Max Regions","Survivor Max Regions"])
+```
+
+---
+
+<!-- @cell name=gc-interval-histogram requires="has-jvmlog-gc" -->
+
+## GC Interval Distribution
+
+Histogram of inter-GC times — a spike in '< 0.1s' means GCs are back-to-back (heap exhaustion); a spike in '>= 30s' means GC is infrequent (healthy throughput mode for ZGC/Shenandoah).
+
+```sql
+SELECT * FROM "jvmlog-gc-interval-histogram"
+```
+
+```plot
+BAR(x="Interval Bucket", y="Count")
+```
+
+---
+
+<!-- @cell name=phase-worst-by-type requires="has-gc-phase" -->
+
+## Worst GC Phases per GC Type
+
+Top-5 slowest phases per GC collection type — identifies where Young GC and Mixed GC spend most of their pause budget, enabling focused tuning of the dominant phases.
+
+```sql
+SELECT * FROM "jvmlog-phase-worst-by-type"
+```
+
+```plot
+TABLE()
+```

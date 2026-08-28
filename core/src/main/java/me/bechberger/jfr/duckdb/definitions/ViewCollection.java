@@ -7879,6 +7879,201 @@ public class ViewCollection {
                         """,
                     "jvmlog_alloc_stall")
                     .description("Allocation stall count and total stall time in rolling 20-event buckets — for ZGC/Shenandoah, stalls mean the mutator was blocked waiting for the concurrent collector; sustained stalls indicate the GC cannot keep up with allocation."),
+
+            // -----------------------------------------------------------------------
+            // Heap reclaim efficiency: MB reclaimed per ms of pause
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-heap-reclaim-efficiency", "jvmlog",
+                    "GC Log: Heap Reclaim Efficiency", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-reclaim-efficiency" AS
+                        WITH heap AS (
+                            SELECT gcId, heapBefore, heapAfter
+                            FROM jvmlog_heap_snapshot
+                            QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                        )
+                        SELECT e.gcType                                                              AS "GC Type",
+                               e.cause                                                              AS "Cause",
+                               count(*)                                                              AS "Events",
+                               round(avg((h.heapBefore - h.heapAfter) / 1048576.0), 1)              AS "Avg Reclaimed (MB)",
+                               round(avg(e.pauseMs), 2)                                             AS "Avg Pause (ms)",
+                               round(avg((h.heapBefore - h.heapAfter) / 1048576.0 / NULLIF(e.pauseMs, 0)), 2)
+                                                                                                    AS "Reclaim Rate (MB/ms)",
+                               round(approx_quantile((h.heapBefore - h.heapAfter) / 1048576.0 / NULLIF(e.pauseMs, 0), 0.50), 2)
+                                                                                                    AS "p50 Reclaim Rate (MB/ms)"
+                        FROM jvmlog_gc_event e
+                        JOIN heap h USING (gcId)
+                        WHERE e.pauseMs > 0 AND h.heapBefore > h.heapAfter
+                          AND e.gcType IS NOT NULL
+                        GROUP BY e.gcType, e.cause
+                        ORDER BY "Reclaim Rate (MB/ms)" DESC
+                        """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Heap reclamation efficiency: MB reclaimed per ms of pause time, grouped by GC type and cause — low efficiency (< 0.5 MB/ms) means GC is spending more pause time per unit of heap reclaimed, a sign of fragmentation or tenure promotion pressure.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-heap-reclaim-efficiency" AS
+                        SELECT gcType AS "GC Type", cause AS "Cause",
+                               count(*) AS "Events", round(avg(pauseMs), 2) AS "Avg Pause (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE gcType IS NOT NULL
+                        GROUP BY gcType, cause
+                        ORDER BY "Avg Pause (ms)" DESC
+                        """,
+                        "jvmlog_gc_event"),
+
+            // -----------------------------------------------------------------------
+            // Safepoint non-GC operations (JIT, deopt, biased-lock, etc.)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-safepoint-non-gc", "jvmlog",
+                    "GC Log: Non-GC Safepoint Operations", null,
+                    """
+                        CREATE VIEW "jvmlog-safepoint-non-gc" AS
+                        SELECT operation                                        AS "Operation",
+                               count(*)                                         AS "Count",
+                               round(sum(totalMs), 1)                           AS "Total STW (ms)",
+                               round(avg(totalMs), 2)                           AS "Avg STW (ms)",
+                               round(max(totalMs), 2)                           AS "Max STW (ms)",
+                               round(avg(syncMs), 2)                            AS "Avg Sync (ms)"
+                        FROM jvmlog_safepoint
+                        WHERE operation IS NOT NULL
+                          AND operation NOT LIKE 'G1%'
+                          AND operation NOT LIKE 'ZGC%'
+                          AND operation NOT LIKE 'Shenandoah%'
+                          AND operation NOT IN ('GenCollect', 'ParallelGCSystemGC',
+                                                'CGC_Operation', 'CMS_Initial_Mark',
+                                                'CMS_Final_Remark', 'G1PauseRemark',
+                                                'G1PauseCleanup', 'PSMarkSweep',
+                                                'ParallelGCFailedAllocation',
+                                                'ParallelGCSystemGC')
+                        GROUP BY operation
+                        ORDER BY "Total STW (ms)" DESC
+                        """,
+                    "jvmlog_safepoint")
+                    .description("Non-GC safepoints (JIT deoptimisation, biased-lock revocation, thread dumps, etc.) — these add STW time independent of GC; high JIT deopt safepoints indicate code quality issues or profiling overhead."),
+
+            // -----------------------------------------------------------------------
+            // G1 young generation sizing trend (Eden max regions over time)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-young-gen-sizing-trend", "jvmlog",
+                    "GC Log: G1 Young Generation Size Trend", null,
+                    """
+                        CREATE VIEW "jvmlog-young-gen-sizing-trend" AS
+                        WITH regions AS (
+                            SELECT gcId,
+                                   max(edenMax)     AS edenMax,
+                                   max(survivorMax) AS survivorMax
+                            FROM jvmlog_g1_regions
+                            WHERE edenMax IS NOT NULL
+                            GROUP BY gcId
+                        )
+                        SELECT e.gcId                                         AS "GC ID",
+                               round(e.uptimeSecs, 3)                         AS "Uptime (s)",
+                               r.edenMax                                       AS "Eden Max Regions",
+                               r.survivorMax                                   AS "Survivor Max Regions",
+                               r.edenMax + r.survivorMax                       AS "Young Gen Max Regions"
+                        FROM jvmlog_gc_event e
+                        JOIN regions r USING (gcId)
+                        WHERE e.uptimeSecs IS NOT NULL
+                        ORDER BY e.uptimeSecs
+                        """,
+                    "jvmlog_gc_event", "jvmlog_g1_regions")
+                    .description("G1 adaptive young generation sizing: Eden and Survivor max regions per GC — steady growth in edenMax means G1 is responding to allocation pressure by enlarging the young generation, trading more memory for fewer promotions.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-young-gen-sizing-trend" AS
+                        SELECT gcId, max(edenMax) AS "Eden Max", max(survivorMax) AS "Survivor Max"
+                        FROM jvmlog_g1_regions
+                        WHERE edenMax IS NOT NULL
+                        GROUP BY gcId
+                        ORDER BY gcId
+                        """,
+                        "jvmlog_g1_regions"),
+
+            // -----------------------------------------------------------------------
+            // GC interval distribution (histogram of inter-GC time buckets)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-interval-histogram", "jvmlog",
+                    "GC Log: GC Interval Distribution", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-interval-histogram" AS
+                        WITH intervals AS (
+                            SELECT uptimeSecs - LAG(uptimeSecs) OVER (ORDER BY uptimeSecs) AS intervalSecs
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL
+                        ),
+                        bucketed AS (
+                            SELECT CASE
+                                     WHEN intervalSecs < 0.1  THEN '< 0.1s'
+                                     WHEN intervalSecs < 0.5  THEN '0.1–0.5s'
+                                     WHEN intervalSecs < 1.0  THEN '0.5–1s'
+                                     WHEN intervalSecs < 5.0  THEN '1–5s'
+                                     WHEN intervalSecs < 10.0 THEN '5–10s'
+                                     WHEN intervalSecs < 30.0 THEN '10–30s'
+                                     ELSE '>= 30s'
+                                   END AS bucket,
+                                   CASE
+                                     WHEN intervalSecs < 0.1  THEN 1
+                                     WHEN intervalSecs < 0.5  THEN 2
+                                     WHEN intervalSecs < 1.0  THEN 3
+                                     WHEN intervalSecs < 5.0  THEN 4
+                                     WHEN intervalSecs < 10.0 THEN 5
+                                     WHEN intervalSecs < 30.0 THEN 6
+                                     ELSE 7
+                                   END AS bucketOrder
+                            FROM intervals
+                            WHERE intervalSecs IS NOT NULL
+                        )
+                        SELECT bucket                                        AS "Interval Bucket",
+                               count(*)                                      AS "Count",
+                               round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS "% of Events"
+                        FROM bucketed
+                        GROUP BY bucket, bucketOrder
+                        ORDER BY bucketOrder
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Distribution of inter-GC intervals in time buckets — a spike in '< 0.1s' means GCs are back-to-back (heap exhaustion), while a spike in '>= 30s' means GC is infrequent (good for throughput, often seen with ZGC)."),
+
+            // -----------------------------------------------------------------------
+            // Phase worst performers by GC type
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-phase-worst-by-type", "jvmlog",
+                    "GC Log: Worst Phases by GC Type", null,
+                    """
+                        CREATE VIEW "jvmlog-phase-worst-by-type" AS
+                        SELECT p.phaseName                                         AS "Phase",
+                               e.gcType                                             AS "GC Type",
+                               count(*)                                             AS "Events",
+                               round(avg(p.durationMs), 2)                         AS "Avg (ms)",
+                               round(max(p.durationMs), 2)                         AS "Max (ms)",
+                               round(approx_quantile(p.durationMs, 0.95), 2)       AS "P95 (ms)"
+                        FROM jvmlog_gc_phase p
+                        JOIN jvmlog_gc_event e USING (gcId)
+                        WHERE p.durationMs IS NOT NULL AND e.gcType IS NOT NULL
+                        GROUP BY p.phaseName, e.gcType
+                        QUALIFY row_number() OVER (PARTITION BY e.gcType ORDER BY avg(p.durationMs) DESC) <= 5
+                        ORDER BY e.gcType, "Avg (ms)" DESC
+                        """,
+                    "jvmlog_gc_phase", "jvmlog_gc_event")
+                    .description("Top-5 slowest GC phases per GC type — identifies which phases dominate each collection type (e.g., 'Mark from Roots' in Young vs 'Rebuild Remembered Sets' in Mixed) to direct tuning effort.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-phase-worst-by-type" AS
+                        SELECT phaseName AS "Phase", count(*) AS "Events",
+                               round(avg(durationMs), 2) AS "Avg (ms)",
+                               round(max(durationMs), 2) AS "Max (ms)"
+                        FROM jvmlog_gc_phase
+                        WHERE durationMs IS NOT NULL
+                        GROUP BY phaseName
+                        ORDER BY "Avg (ms)" DESC
+                        LIMIT 20
+                        """,
+                        "jvmlog_gc_phase"),
             };
 
     public static List<View> getViews() {
