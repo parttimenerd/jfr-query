@@ -4199,3 +4199,79 @@ Linear regression on per-minute GC overhead projects when overhead will exceed t
 SELECT * FROM "jvmlog-gc-overhead-forecast"
 ```
 
+---
+
+<!-- @cell name=gc-error-frequency requires="has-gc-errors" -->
+
+## GC Error Frequency Over Time
+
+GC errors (evacuation failures, OOM events, to-space exhaustion) counted per occurrence with persistence assessment — persistent errors across multiple minutes indicate structural heap or configuration problems that a single patch won't fix; isolated errors may be transient burst events.
+
+```sql
+SELECT * FROM "jvmlog-gc-error-frequency"
+```
+
+```plot
+BAR(x="Error Type", y="Total Occurrences", color="Severity Assessment")
+```
+
+---
+
+<!-- @cell name=safepoint-dominant-ops requires="has-safepoint" -->
+
+## Dominant Safepoint Operations (80% of STW)
+
+The minimal set of safepoint operations that together account for 80% of all stop-the-world time — focus tuning effort here; the long tail of rare operations typically contributes little total impact and doesn't justify configuration changes.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-dominant-ops"
+```
+
+```plot
+BAR(x="Operation", y="% of STW")
+```
+
+---
+
+<!-- @cell name=phase-heap-pressure requires="has-gc-phase" -->
+
+## GC Phase Duration vs Heap Pressure
+
+Correlation between each GC phase's execution time and heap fill percentage at GC trigger — phases with STRONG coupling will directly benefit from heap sizing changes; phases with WEAK coupling are bottlenecked by something other than live data (e.g., promotion, CPU saturation, or remembered sets).
+
+```sql
+SELECT * FROM "jvmlog-phase-heap-pressure"
+```
+
+---
+
+<!-- @cell name=young-vs-full-pause-trend requires="has-jvmlog-gc" -->
+
+## Young vs Full GC Pause Time Share per Minute
+
+Per-minute breakdown of GC pause time split between young and full/major collections — a rising Full % trend indicates old gen accumulation; if Full % reaches >30%, investigate heap sizing, survivor tuning, or allocation patterns before full GC pauses dominate application latency.
+
+```sql
+SELECT * FROM "jvmlog-young-vs-full-pause-trend"
+```
+
+```plot
+LINE(x="Minute", y="Full %")
+```
+
+---
+
+<!-- @cell name=gc-efficiency-trend requires="has-heap-snapshot" -->
+
+## GC Efficiency Trend (MB Reclaimed per ms of Pause)
+
+Rolling average of megabytes reclaimed per millisecond of GC pause time — a declining trend means GC is working harder to reclaim less memory, indicating heap fragmentation or growing live set; stable high efficiency (>1 MB/ms) indicates a well-tuned heap with healthy object turnover.
+
+```sql
+SELECT * FROM "jvmlog-gc-efficiency-trend"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Rolling Avg Efficiency (MB/ms)", color="Efficiency Rating")
+```
+

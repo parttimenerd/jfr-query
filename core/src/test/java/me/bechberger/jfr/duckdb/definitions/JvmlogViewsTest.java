@@ -146,7 +146,10 @@ class JvmlogViewsTest {
             "jvmlog-heap-live-data-ratio",
             "jvmlog-zgc-load-vs-duration", "jvmlog-gc-interval-trend",
             "jvmlog-g1-mixed-decision-log", "jvmlog-alloc-stall-cause-summary",
-            "jvmlog-gc-overhead-forecast"
+            "jvmlog-gc-overhead-forecast",
+            "jvmlog-gc-error-frequency", "jvmlog-safepoint-dominant-ops",
+            "jvmlog-phase-heap-pressure", "jvmlog-young-vs-full-pause-trend",
+            "jvmlog-gc-efficiency-trend"
     );
 
     @Test
@@ -5970,6 +5973,141 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT \"Current Avg Overhead %\", \"20% Threshold Projection\" FROM \"jvmlog-gc-overhead-forecast\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getString("20% Threshold Projection")).isNotEmpty();
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcErrorFrequency() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_errors (gcId INTEGER, errorType VARCHAR, durationMs DOUBLE, errorDetail VARCHAR)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'G1 Young','G1 Evacuation Pause',5.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'G1 Young','G1 Evacuation Pause',6.0,70.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'G1 Full','Allocation Failure',100.0,130.0)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (1,'To-space exhausted',NULL,NULL)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (2,'Evacuation Failure',1.5,NULL)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (3,'To-space exhausted',NULL,NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-error-frequency".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-error-frequency not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_errors", "jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Error Type\", \"Total Occurrences\" FROM \"jvmlog-gc-error-frequency\" ORDER BY \"Total Occurrences\" DESC LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Error Type")).isEqualTo("To-space exhausted");
+            assertThat(rs.getLong("Total Occurrences")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcErrorFrequencyAlternative() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_errors (gcId INTEGER, errorType VARCHAR, durationMs DOUBLE, errorDetail VARCHAR)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (1,'Evacuation Failure',1.5,NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-error-frequency".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-error-frequency not found"));
+        assertThat(view.getBestMatchingQuery(Set.of("jvmlog_gc_errors"))).isNotNull();
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogSafepointDominantOps() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_safepoint (operation VARCHAR, totalMs DOUBLE, syncMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('G1CollectForAllocation',50.0,2.0)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('G1CollectForAllocation',60.0,3.0)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('Deoptimize',5.0,0.5)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('RevokeBias',2.0,0.2)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('PrintJNI',0.5,0.1)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-safepoint-dominant-ops".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-safepoint-dominant-ops not found"));
+        assertThat(view.isValid(Set.of("jvmlog_safepoint"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Operation\", \"% of STW\" FROM \"jvmlog-safepoint-dominant-ops\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Operation")).isEqualTo("G1CollectForAllocation");
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogPhaseHeapPressure() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Evacuate Collection Set',10.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (2,'Evacuate Collection Set',15.0)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1,180*1024*1024,80*1024*1024,256*1024*1024)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2,220*1024*1024,90*1024*1024,256*1024*1024)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-phase-heap-pressure".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-phase-heap-pressure not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_phase", "jvmlog_heap_snapshot"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Phase\", \"Avg Heap Fill % at Trigger\" FROM \"jvmlog-phase-heap-pressure\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Avg Heap Fill % at Trigger")).isGreaterThan(0.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogYoungVsFullPauseTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'G1 Young','G1 Evacuation Pause',5.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'G1 Full','Allocation Failure',200.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'G1 Young','G1 Evacuation Pause',6.0,25.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-young-vs-full-pause-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-young-vs-full-pause-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-young-vs-full-pause-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isGreaterThan(0L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcEfficiencyTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'G1 Young','G1 Evacuation Pause',10.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'G1 Young','G1 Evacuation Pause',12.0,20.0)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1,200*1024*1024,100*1024*1024,256*1024*1024)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2,210*1024*1024,105*1024*1024,256*1024*1024)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-efficiency-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-efficiency-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Efficiency (MB/ms)\", \"Efficiency Rating\" FROM \"jvmlog-gc-efficiency-trend\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Efficiency (MB/ms)")).isGreaterThan(0.0);
         }
         conn.close();
     }

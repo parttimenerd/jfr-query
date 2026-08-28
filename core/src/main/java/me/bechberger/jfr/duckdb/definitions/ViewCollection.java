@@ -10824,6 +10824,208 @@ public class ViewCollection {
                     """,
                     "jvmlog_gc_event")
                     .description("GC overhead forecast — uses linear regression on per-minute GC overhead to project when overhead will cross the 20% threshold; R² < 0.5 means the trend is too variable to project; useful for capacity planning and alerting on degrading applications."),
+
+            // ── Batch 23: error analysis, phase pressure, and efficiency trend views ─
+
+            new View(
+                    "jvmlog-gc-error-frequency", "jvmlog",
+                    "GC Log: GC Error Frequency Over Time (Errors per Minute)", null,
+                    """
+                    CREATE VIEW "jvmlog-gc-error-frequency" AS
+                    WITH error_times AS (
+                        SELECT e.gcId,
+                               evt.uptimeSecs,
+                               e.errorType,
+                               floor(evt.uptimeSecs / 60.0) AS minute
+                        FROM jvmlog_gc_errors e
+                        JOIN jvmlog_gc_event evt ON evt.gcId = e.gcId
+                        WHERE evt.uptimeSecs IS NOT NULL
+                    )
+                    SELECT errorType                  AS "Error Type",
+                           count(*)                  AS "Total Occurrences",
+                           count(DISTINCT minute)    AS "Minutes with Errors",
+                           round(count(*) * 1.0 / NULLIF(max(minute) - min(minute) + 1, 0), 3) AS "Errors/min (avg)",
+                           min(minute)               AS "First Minute",
+                           max(minute)               AS "Last Minute",
+                           CASE
+                             WHEN count(*) >= 5 AND count(DISTINCT minute) >= 3 THEN 'PERSISTENT — recurring error, investigate immediately'
+                             WHEN count(*) >= 2 THEN 'RECURRING — investigate before next deployment'
+                             ELSE 'ISOLATED — single occurrence, monitor'
+                           END AS "Severity Assessment"
+                    FROM error_times
+                    GROUP BY errorType
+                    ORDER BY "Total Occurrences" DESC
+                    """,
+                    "jvmlog_gc_errors", "jvmlog_gc_event")
+                    .addAlternative(
+                    """
+                    CREATE VIEW "jvmlog-gc-error-frequency" AS
+                    SELECT errorType    AS "Error Type",
+                           count(*)    AS "Total Occurrences",
+                           min(gcId)   AS "First GC ID",
+                           max(gcId)   AS "Last GC ID"
+                    FROM jvmlog_gc_errors
+                    GROUP BY errorType
+                    ORDER BY "Total Occurrences" DESC
+                    """, "jvmlog_gc_errors")
+                    .description("GC error frequency analysis — counts and classifies recurring GC errors (evacuation failures, to-space exhaustion, OOM events) by persistence across minutes; persistent errors require urgent investigation, isolated events may be transient."),
+
+            new View(
+                    "jvmlog-safepoint-dominant-ops", "jvmlog",
+                    "GC Log: Dominant Safepoint Operations (Cumulative 80% of STW)", null,
+                    """
+                    CREATE VIEW "jvmlog-safepoint-dominant-ops" AS
+                    WITH op_totals AS (
+                        SELECT operation,
+                               count(*)               AS "Count",
+                               round(sum(totalMs), 1) AS "Total ms",
+                               round(avg(totalMs), 3) AS "Avg ms"
+                        FROM jvmlog_safepoint
+                        WHERE totalMs IS NOT NULL
+                        GROUP BY operation
+                    ),
+                    grand AS (SELECT sum("Total ms") AS g FROM op_totals),
+                    ranked AS (
+                        SELECT op_totals.*,
+                               round("Total ms" / grand.g * 100.0, 1) AS "% of STW",
+                               sum("Total ms") OVER (ORDER BY "Total ms" DESC
+                                   ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) / grand.g * 100.0 AS cumPct
+                        FROM op_totals, grand
+                    )
+                    SELECT operation   AS "Operation",
+                           "Count",
+                           "Total ms",
+                           "% of STW",
+                           round(cumPct, 1) AS "Cumulative % of STW",
+                           "Avg ms"
+                    FROM ranked
+                    WHERE cumPct - "% of STW" < 80.0
+                    ORDER BY "Total ms" DESC
+                    """,
+                    "jvmlog_safepoint")
+                    .description("Dominant safepoint operations — identifies the subset of operations that together account for 80% of total stop-the-world time; focus tuning effort on this minimal set rather than the long tail of rare operations."),
+
+            new View(
+                    "jvmlog-phase-heap-pressure", "jvmlog",
+                    "GC Log: GC Phase Duration vs Heap Pressure Correlation", null,
+                    """
+                    CREATE VIEW "jvmlog-phase-heap-pressure" AS
+                    WITH heap_fill AS (
+                        SELECT gcId,
+                               round(heapBefore * 100.0 / NULLIF(heapCommittedAfter, 0), 1) AS heapFillPct
+                        FROM jvmlog_heap_snapshot
+                        WHERE heapBefore IS NOT NULL AND heapCommittedAfter IS NOT NULL
+                    )
+                    SELECT p.phaseName                         AS "Phase",
+                           count(*)                           AS "Occurrences",
+                           round(avg(p.durationMs), 3)        AS "Avg Duration (ms)",
+                           round(avg(h.heapFillPct), 1)       AS "Avg Heap Fill % at Trigger",
+                           round(corr(p.durationMs, h.heapFillPct), 3) AS "Duration/HeapFill Correlation",
+                           CASE
+                             WHEN abs(corr(p.durationMs, h.heapFillPct)) > 0.7
+                               THEN 'STRONG — phase duration scales with heap fill'
+                             WHEN abs(corr(p.durationMs, h.heapFillPct)) > 0.4
+                               THEN 'MODERATE — some heap-pressure dependency'
+                             ELSE 'WEAK — phase duration largely independent of heap fill'
+                           END AS "Pressure Coupling"
+                    FROM jvmlog_gc_phase p
+                    JOIN heap_fill h ON h.gcId = p.gcId
+                    WHERE p.durationMs IS NOT NULL
+                    GROUP BY p.phaseName
+                    ORDER BY "Avg Duration (ms)" DESC
+                    """,
+                    "jvmlog_gc_phase", "jvmlog_heap_snapshot")
+                    .addAlternative(
+                    """
+                    CREATE VIEW "jvmlog-phase-heap-pressure" AS
+                    SELECT phaseName          AS "Phase",
+                           count(*)          AS "Occurrences",
+                           round(avg(durationMs), 3) AS "Avg Duration (ms)",
+                           round(max(durationMs), 3) AS "Max Duration (ms)"
+                    FROM jvmlog_gc_phase
+                    WHERE durationMs IS NOT NULL
+                    GROUP BY phaseName
+                    ORDER BY "Avg Duration (ms)" DESC
+                    """, "jvmlog_gc_phase")
+                    .description("GC phase duration vs heap pressure — correlates individual phase durations with heap fill percentage at GC trigger time; strong correlation means the phase is pressure-sensitive and reducing live data would decrease its duration proportionally."),
+
+            new View(
+                    "jvmlog-young-vs-full-pause-trend", "jvmlog",
+                    "GC Log: Young vs Full GC Pause Time Share Trend", null,
+                    """
+                    CREATE VIEW "jvmlog-young-vs-full-pause-trend" AS
+                    WITH bucketed AS (
+                        SELECT floor(uptimeSecs / 60.0) AS minute,
+                               sum(CASE WHEN gcType NOT LIKE '%Full%' AND gcType NOT LIKE '%Major%' THEN pauseMs ELSE 0 END) AS youngMs,
+                               sum(CASE WHEN gcType LIKE '%Full%' OR gcType LIKE '%Major%' THEN pauseMs ELSE 0 END) AS fullMs,
+                               sum(pauseMs) AS totalMs
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 60.0)
+                    )
+                    SELECT minute                                           AS "Minute",
+                           round(youngMs, 1)                               AS "Young GC ms",
+                           round(fullMs, 1)                                AS "Full GC ms",
+                           round(totalMs, 1)                               AS "Total GC ms",
+                           round(youngMs * 100.0 / NULLIF(totalMs, 0), 1) AS "Young %",
+                           round(fullMs  * 100.0 / NULLIF(totalMs, 0), 1) AS "Full %"
+                    FROM bucketed
+                    ORDER BY minute
+                    """,
+                    "jvmlog_gc_event")
+                    .description("Young vs Full GC pause share per minute — a rising 'Full %' over time indicates old gen accumulation and is the earliest signal that heap sizing or tenuring thresholds need attention before full GC pauses dominate application latency."),
+
+            new View(
+                    "jvmlog-gc-efficiency-trend", "jvmlog",
+                    "GC Log: GC Efficiency Trend (MB Reclaimed per ms of Pause)", null,
+                    """
+                    CREATE VIEW "jvmlog-gc-efficiency-trend" AS
+                    WITH per_gc AS (
+                        SELECT e.gcId,
+                               e.uptimeSecs,
+                               e.pauseMs,
+                               (h.heapBefore - h.heapAfter) / 1048576.0 AS reclaimedMb
+                        FROM jvmlog_gc_event e
+                        JOIN jvmlog_heap_snapshot h ON h.gcId = e.gcId
+                        WHERE e.pauseMs > 0 AND h.heapBefore > h.heapAfter AND e.uptimeSecs IS NOT NULL
+                    ),
+                    windowed AS (
+                        SELECT gcId,
+                               uptimeSecs AS "Uptime (s)",
+                               round(reclaimedMb / pauseMs, 4) AS efficiencyMbPerMs,
+                               round(avg(reclaimedMb / pauseMs) OVER (ORDER BY uptimeSecs
+                                   ROWS BETWEEN 9 PRECEDING AND CURRENT ROW), 4) AS rollingEfficiency
+                        FROM per_gc
+                    )
+                    SELECT "Uptime (s)",
+                           round(efficiencyMbPerMs, 3) AS "Efficiency (MB/ms)",
+                           round(rollingEfficiency, 3) AS "Rolling Avg Efficiency (MB/ms)",
+                           CASE
+                             WHEN rollingEfficiency < 0.1 THEN 'LOW — GC spending much time for little reclaim'
+                             WHEN rollingEfficiency < 1.0 THEN 'MODERATE — normal efficiency range'
+                             ELSE 'HIGH — GC very productive per ms of pause'
+                           END AS "Efficiency Rating"
+                    FROM windowed
+                    ORDER BY "Uptime (s)"
+                    """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .addAlternative(
+                    """
+                    CREATE VIEW "jvmlog-gc-efficiency-trend" AS
+                    WITH per_gc AS (
+                        SELECT gcId, pauseMs,
+                               (heapBefore - heapAfter) / 1048576.0 AS reclaimedMb
+                        FROM jvmlog_heap_snapshot
+                        WHERE heapBefore > heapAfter
+                    )
+                    SELECT round(avg(reclaimedMb / pauseMs), 3) AS "Avg Efficiency (MB/ms)",
+                           round(min(reclaimedMb / pauseMs), 3) AS "Min Efficiency (MB/ms)",
+                           round(max(reclaimedMb / pauseMs), 3) AS "Max Efficiency (MB/ms)"
+                    FROM per_gc
+                    JOIN jvmlog_gc_event e ON e.gcId = per_gc.gcId
+                    WHERE e.pauseMs > 0
+                    """, "jvmlog_heap_snapshot", "jvmlog_gc_event")
+                    .description("GC efficiency trend — measures and tracks MB reclaimed per millisecond of GC pause over time; declining efficiency (less reclaim per pause) is a leading indicator of heap fragmentation or live data growth that GC must work harder to navigate."),
             };
 
     public static List<View> getViews() {
