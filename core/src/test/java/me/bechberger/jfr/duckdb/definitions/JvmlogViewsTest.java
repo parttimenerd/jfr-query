@@ -46,7 +46,9 @@ class JvmlogViewsTest {
             "jvmlog-gc-efficiency-by-cause", "jvmlog-metaspace-growth-trend",
             "jvmlog-oom-risk-estimate", "jvmlog-g1-mark-trend",
             "jvmlog-heap-fragmentation", "jvmlog-heap-reclaim-ratio",
-            "jvmlog-throughput-degradation", "jvmlog-g1-old-region-trend"
+            "jvmlog-throughput-degradation", "jvmlog-g1-old-region-trend",
+            "jvmlog-safepoint-ttr-stats", "jvmlog-g1-survivor-trend",
+            "jvmlog-zgc-phase-breakdown"
     );
 
     @Test
@@ -1713,6 +1715,87 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("Cycles")).isEqualTo(6);
             assertThat(rs.getDouble("Trend (regions/s)")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void safepointTtrStatsViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_safepoint (operation VARCHAR, totalMs DOUBLE, syncMs DOUBLE, gcId INTEGER)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('G1CollectForAllocation', 15.234, 1.234, 1)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('G1CollectForAllocation', 12.000, 0.800, 2)");
+            s.execute("INSERT INTO jvmlog_safepoint VALUES ('Deoptimize', 5.000, 3.500, NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-safepoint-ttr-stats".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-safepoint-ttr-stats not found"));
+        assertThat(view.isValid(Set.of("jvmlog_safepoint"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_safepoint"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-safepoint-ttr-stats\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(2);
+            // Deoptimize has 3.5ms TTR / 5ms total = 70% of STW
+            rs = s.executeQuery("SELECT \"Avg TTR % of STW\" FROM \"jvmlog-safepoint-ttr-stats\" WHERE \"Operation\" = 'Deoptimize'");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Avg TTR % of STW")).isGreaterThan(60.0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void g1SurvivorTrendViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, edenBefore INTEGER, edenAfter INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, survivorMax INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER)");
+            for (int i = 0; i < 5; i++) {
+                int surv = 2 + i;
+                s.execute("INSERT INTO jvmlog_g1_regions VALUES (" + i + ", 100, 0, " + (surv - 1) + ", " + surv + ", 10, 20, 20, 0, 0)");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-survivor-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-survivor-trend not found"));
+        // fallback with g1_regions only
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_g1_regions"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Cycles\", \"Avg Survivor Regions\", \"Assessment\" FROM \"jvmlog-g1-survivor-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Cycles")).isEqualTo(5);
+            assertThat(rs.getDouble("Avg Survivor Regions")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void zgcPhaseBreakdownViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_phases (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE, generation VARCHAR, concurrent BOOLEAN)");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (1, 'Concurrent Mark', 45.0, 'N/A', true)");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (1, 'Pause Mark Start', 0.5, 'N/A', false)");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (1, 'Concurrent Relocate', 12.0, 'N/A', true)");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (2, 'Concurrent Mark', 50.0, 'N/A', true)");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (2, 'Pause Mark Start', 0.6, 'N/A', false)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-phase-breakdown".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-phase-breakdown not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_phases"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_zgc_phases"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-zgc-phase-breakdown\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(3);
+            rs = s.executeQuery("SELECT \"Type\" FROM \"jvmlog-zgc-phase-breakdown\" WHERE \"Phase\" = 'Pause Mark Start' LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Type")).isEqualTo("STW");
         }
         conn.close();
     }

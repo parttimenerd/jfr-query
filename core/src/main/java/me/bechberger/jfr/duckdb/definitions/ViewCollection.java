@@ -5225,6 +5225,142 @@ public class ViewCollection {
                             FROM old
                             """,
                         "jvmlog_g1_regions"),
+
+                // ---------------------------------------------------------------
+                // Safepoint time-to-reach (TTR) statistics: syncMs analysis
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-safepoint-ttr-stats",
+                        "jvmlog",
+                        "GC Log: Safepoint Time-to-Reach Statistics",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-safepoint-ttr-stats" AS
+                            SELECT operation AS "Operation",
+                                   count(*)                                          AS "Events",
+                                   round(sum(syncMs), 1)                             AS "Total TTR (ms)",
+                                   round(avg(syncMs), 2)                             AS "Avg TTR (ms)",
+                                   round(approx_quantile(syncMs, 0.99), 2)           AS "P99 TTR (ms)",
+                                   round(max(syncMs), 2)                             AS "Max TTR (ms)",
+                                   round(sum(totalMs), 1)                            AS "Total STW (ms)",
+                                   round(avg(syncMs) / NULLIF(avg(totalMs), 0) * 100, 1) AS "Avg TTR % of STW"
+                            FROM jvmlog_safepoint
+                            WHERE syncMs IS NOT NULL
+                            GROUP BY operation
+                            ORDER BY "Total TTR (ms)" DESC
+                            """,
+                        "jvmlog_safepoint")
+                    .description("Time-to-reach (TTR) safepoint statistics per operation — high TTR % of STW indicates threads are slow to reach the safepoint, pointing to long JNI calls, loops without safepoint polls, or JIT-compiled code without polls."),
+
+                // ---------------------------------------------------------------
+                // G1 survivor region trend
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-g1-survivor-trend",
+                        "jvmlog",
+                        "GC Log: G1 Survivor Region Trend",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-g1-survivor-trend" AS
+                            WITH surv AS (
+                                SELECT r.gcId,
+                                       e.uptimeSecs,
+                                       r.survivorAfter,
+                                       r.survivorMax
+                                FROM jvmlog_g1_regions r
+                                JOIN jvmlog_gc_event e USING (gcId)
+                                WHERE r.survivorAfter IS NOT NULL
+                                  AND e.uptimeSecs IS NOT NULL
+                            )
+                            SELECT count(*)                                               AS "Cycles",
+                                   round(min(survivorAfter), 0)                          AS "Min Survivor Regions",
+                                   round(max(survivorAfter), 0)                          AS "Max Survivor Regions",
+                                   round(avg(survivorAfter), 1)                          AS "Avg Survivor Regions",
+                                   round(max(survivorMax), 0)                            AS "Survivor Max (regions)",
+                                   round(regr_slope(survivorAfter, uptimeSecs), 4)       AS "Trend (regions/s)",
+                                   round(regr_r2(survivorAfter, uptimeSecs), 4)          AS "R²",
+                                   CASE
+                                     WHEN max(survivorAfter) >= max(survivorMax) * 0.9
+                                     THEN 'Survivor space at capacity — objects promoting early to Old'
+                                     WHEN regr_r2(survivorAfter, uptimeSecs) > 0.6
+                                          AND regr_slope(survivorAfter, uptimeSecs) > 0
+                                     THEN 'Growing — increasing survivor pressure'
+                                     ELSE 'Normal'
+                                   END                                                   AS "Assessment"
+                            FROM surv
+                            """,
+                        "jvmlog_g1_regions", "jvmlog_gc_event")
+                    .description("G1 survivor region stats and trend — survivor space at capacity causes premature promotion to Old gen, accelerating Old gen growth.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-g1-survivor-trend" AS
+                            WITH surv AS (
+                                SELECT gcId * 1.0 AS uptimeSecs,
+                                       survivorAfter,
+                                       survivorMax
+                                FROM jvmlog_g1_regions
+                                WHERE survivorAfter IS NOT NULL
+                            )
+                            SELECT count(*)                                               AS "Cycles",
+                                   round(min(survivorAfter), 0)                          AS "Min Survivor Regions",
+                                   round(max(survivorAfter), 0)                          AS "Max Survivor Regions",
+                                   round(avg(survivorAfter), 1)                          AS "Avg Survivor Regions",
+                                   round(max(survivorMax), 0)                            AS "Survivor Max (regions)",
+                                   round(regr_slope(survivorAfter, uptimeSecs), 4)       AS "Trend (regions/s)",
+                                   round(regr_r2(survivorAfter, uptimeSecs), 4)          AS "R²",
+                                   CASE
+                                     WHEN max(survivorAfter) >= max(survivorMax) * 0.9
+                                     THEN 'Survivor space at capacity — objects promoting early to Old'
+                                     WHEN regr_r2(survivorAfter, uptimeSecs) > 0.6
+                                          AND regr_slope(survivorAfter, uptimeSecs) > 0
+                                     THEN 'Growing — increasing survivor pressure'
+                                     ELSE 'Normal'
+                                   END                                                   AS "Assessment"
+                            FROM surv
+                            """,
+                        "jvmlog_g1_regions"),
+
+                // ---------------------------------------------------------------
+                // ZGC phase breakdown by type (concurrent vs STW, mark vs relocation)
+                // ---------------------------------------------------------------
+                new View(
+                        "jvmlog-zgc-phase-breakdown",
+                        "jvmlog",
+                        "GC Log: ZGC Phase Type Breakdown",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-zgc-phase-breakdown" AS
+                            WITH phases AS (
+                                SELECT phaseName,
+                                       CASE
+                                         WHEN lower(phaseName) LIKE '%pause%' THEN 'STW'
+                                         ELSE 'Concurrent'
+                                       END AS phaseType,
+                                       CASE
+                                         WHEN lower(phaseName) LIKE '%mark%'    THEN 'Mark'
+                                         WHEN lower(phaseName) LIKE '%relocat%' THEN 'Relocate'
+                                         WHEN lower(phaseName) LIKE '%refer%'   THEN 'Reference Processing'
+                                         WHEN lower(phaseName) LIKE '%weak%'    THEN 'Weak Processing'
+                                         ELSE 'Other'
+                                       END AS category,
+                                       durationMs
+                                FROM jvmlog_zgc_phases
+                                WHERE durationMs IS NOT NULL
+                            )
+                            SELECT phaseName AS "Phase",
+                                   phaseType  AS "Type",
+                                   category   AS "Category",
+                                   count(*)   AS "Executions",
+                                   round(sum(durationMs), 1)                   AS "Total (ms)",
+                                   round(avg(durationMs), 2)                   AS "Avg (ms)",
+                                   round(approx_quantile(durationMs, 0.99), 2) AS "P99 (ms)",
+                                   round(max(durationMs), 2)                   AS "Max (ms)"
+                            FROM phases
+                            GROUP BY phaseName, phaseType, category
+                            ORDER BY phaseType, "Total (ms)" DESC
+                            """,
+                        "jvmlog_zgc_phases")
+                    .description("ZGC phase breakdown by STW vs concurrent and by work category (mark/relocate/reference) — shows which phase categories dominate cycle time."),
             };
 
     public static List<View> getViews() {

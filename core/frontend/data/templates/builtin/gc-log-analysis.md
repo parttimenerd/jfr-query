@@ -796,6 +796,22 @@ LINE(x="GC ID", y="Eden Before")
 
 ---
 
+<!-- @cell name=g1-survivor-trend requires="has-g1-regions" -->
+
+## G1: Survivor Region Trend
+
+Survivor space usage and trend — survivor space at capacity (> 90% of max) causes premature promotion to the Old generation, accelerating Old gen growth and mixed GC pressure.
+
+```sql
+SELECT * FROM "jvmlog-g1-survivor-trend"
+```
+
+```plot
+TABLE()
+```
+
+---
+
 <!-- @cell name=g1-old-region-trend requires="has-g1-regions" -->
 
 ## G1: Old Region Growth Trend
@@ -921,6 +937,22 @@ ORDER BY "GC ID"
 
 ```plot
 BAR(x="GC ID", y="Concurrent ms")
+```
+
+---
+
+<!-- @cell name=zgc-phase-breakdown requires="has-zgc" -->
+
+## ZGC: Phase Type Breakdown
+
+All ZGC phases grouped by STW vs concurrent and by work category (Mark/Relocate/Reference Processing). Shows which phase categories dominate total cycle time.
+
+```sql
+SELECT * FROM "jvmlog-zgc-phase-breakdown"
+```
+
+```plot
+BAR(x="Phase", y="Total (ms)", color="Type")
 ```
 
 ---
@@ -1081,6 +1113,22 @@ SELECT * FROM "jvmlog-safepoint-summary"
 
 ```plot
 BAR(x="Operation", y="Total (ms)")
+```
+
+---
+
+<!-- @cell name=safepoint-ttr-stats requires="has-safepoint" -->
+
+## Safepoint Time-to-Reach (TTR) Analysis
+
+Time for all threads to reach a safepoint, per operation. High TTR % of STW indicates slow safepoint entry — commonly caused by long JNI calls, tight loops without safepoint polls, or large JIT-compiled methods.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-ttr-stats"
+```
+
+```plot
+BAR(x="Operation", y="P99 TTR (ms)")
 ```
 
 ---
