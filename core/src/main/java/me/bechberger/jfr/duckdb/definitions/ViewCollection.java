@@ -6726,6 +6726,193 @@ public class ViewCollection {
                             WHERE metaspaceAfter IS NOT NULL AND metaspaceCommitted IS NOT NULL
                             """,
                         "jvmlog_metaspace"),
+
+            // -----------------------------------------------------------------------
+            // Pause histogram per GC type
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-pause-histogram-by-type", "jvmlog",
+                    "GC Log: Pause Time Histogram per GC Type", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-histogram-by-type" AS
+                        WITH bucketed AS (
+                            SELECT gcType,
+                                   CASE
+                                     WHEN pauseMs < 10    THEN '<10ms'
+                                     WHEN pauseMs < 25    THEN '10-25ms'
+                                     WHEN pauseMs < 50    THEN '25-50ms'
+                                     WHEN pauseMs < 100   THEN '50-100ms'
+                                     WHEN pauseMs < 200   THEN '100-200ms'
+                                     WHEN pauseMs < 500   THEN '200-500ms'
+                                     WHEN pauseMs < 1000  THEN '500ms-1s'
+                                     ELSE '1s+'
+                                   END AS bucket,
+                                   CASE
+                                     WHEN pauseMs < 10    THEN 0
+                                     WHEN pauseMs < 25    THEN 1
+                                     WHEN pauseMs < 50    THEN 2
+                                     WHEN pauseMs < 100   THEN 3
+                                     WHEN pauseMs < 200   THEN 4
+                                     WHEN pauseMs < 500   THEN 5
+                                     WHEN pauseMs < 1000  THEN 6
+                                     ELSE 7
+                                   END AS sortKey
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL AND gcType IS NOT NULL
+                        )
+                        SELECT gcType                                              AS "GC Type",
+                               bucket                                              AS "Pause Bucket",
+                               count(*)                                            AS "Count",
+                               round(100.0 * count(*) / sum(count(*)) OVER (PARTITION BY gcType), 1)
+                                                                                  AS "% of Type"
+                        FROM bucketed
+                        GROUP BY gcType, bucket, sortKey
+                        ORDER BY gcType, sortKey
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Pause time histogram per GC type — shows the distribution shape for each type separately, revealing whether Young GCs have a long tail that Full GCs might be hiding in the global histogram."),
+
+            // -----------------------------------------------------------------------
+            // Allocation vs reclaim balance (creation vs GC throughput ratio)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-alloc-reclaim-balance", "jvmlog",
+                    "GC Log: Allocation vs Reclaim Balance", null,
+                    """
+                        CREATE VIEW "jvmlog-alloc-reclaim-balance" AS
+                        WITH intervals AS (
+                            SELECT gcId,
+                                   heapBefore - LAG(heapAfter) OVER (ORDER BY uptimeSecs) AS allocatedBytes,
+                                   heapBefore - heapAfter                                  AS reclaimedBytes,
+                                   pauseMs
+                            FROM jvmlog_gc_event
+                            WHERE heapBefore IS NOT NULL AND heapAfter IS NOT NULL
+                              AND uptimeSecs IS NOT NULL
+                        )
+                        SELECT count(*) FILTER (WHERE allocatedBytes IS NOT NULL)    AS "GC Cycles",
+                               round(sum(allocatedBytes) / 1073741824.0, 2)          AS "Total Allocated (GB)",
+                               round(sum(reclaimedBytes) / 1073741824.0, 2)          AS "Total Reclaimed (GB)",
+                               round(sum(reclaimedBytes) * 100.0
+                                     / NULLIF(sum(allocatedBytes), 0), 1)            AS "Reclaim/Alloc Ratio %",
+                               round(avg(allocatedBytes) / 1048576.0, 1)             AS "Avg Alloc per GC (MB)",
+                               round(avg(reclaimedBytes) / 1048576.0, 1)             AS "Avg Reclaim per GC (MB)",
+                               round(sum(allocatedBytes - reclaimedBytes) / 1073741824.0, 3)
+                                                                                     AS "Net Live Growth (GB)",
+                               CASE
+                                 WHEN sum(reclaimedBytes) * 100.0
+                                      / NULLIF(sum(allocatedBytes), 0) > 95
+                                 THEN 'Balanced — GC reclaiming nearly all allocations'
+                                 WHEN sum(reclaimedBytes) * 100.0
+                                      / NULLIF(sum(allocatedBytes), 0) > 80
+                                 THEN 'Mild net growth — live data set slowly expanding'
+                                 ELSE 'Significant net growth — high live data set accumulation'
+                               END                                                   AS "Assessment"
+                        FROM intervals
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Allocation vs reclaim balance: total allocated and reclaimed across the log, reclaim ratio %, and net live data set growth — high net growth indicates a memory leak or workload imbalance."),
+
+            // -----------------------------------------------------------------------
+            // GC cause category analysis
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-cause-categories", "jvmlog",
+                    "GC Log: GC Cause Category Summary", null,
+                    """
+                        CREATE VIEW "jvmlog-cause-categories" AS
+                        WITH categorized AS (
+                            SELECT gcId,
+                                   gcCause,
+                                   pauseMs,
+                                   CASE
+                                     WHEN gcCause LIKE '%Evacuation%' OR gcCause LIKE '%G1%'
+                                     THEN 'Young-Gen Evacuation'
+                                     WHEN gcCause IN ('Allocation Failure', 'Allocation Stall')
+                                     THEN 'Allocation Pressure'
+                                     WHEN gcCause LIKE '%Humongous%'
+                                     THEN 'Humongous Allocation'
+                                     WHEN gcCause IN ('System.gc()', 'Heap Inspection Initiated GC',
+                                                      'Heap Dump Initiated GC', 'WhiteBox Initiated Young GC')
+                                     THEN 'Explicit / Diagnostic'
+                                     WHEN gcCause IN ('GCLocker Initiated GC', 'JNI Critical')
+                                     THEN 'JNI / GCLocker'
+                                     WHEN gcCause LIKE '%Ergonomic%' OR gcCause LIKE '%Threshold%'
+                                     THEN 'Ergonomics / Threshold'
+                                     WHEN gcCause LIKE '%Metadata%' OR gcCause LIKE '%Metaspace%'
+                                     THEN 'Metaspace Pressure'
+                                     WHEN gcCause LIKE '%Concurrent%' OR gcCause LIKE '%Proactive%'
+                                     THEN 'Concurrent / Proactive'
+                                     ELSE 'Other'
+                                   END AS category
+                            FROM jvmlog_gc_event
+                            WHERE gcCause IS NOT NULL AND pauseMs IS NOT NULL
+                        )
+                        SELECT category                                              AS "Category",
+                               count(DISTINCT gcCause)                              AS "Distinct Causes",
+                               count(*)                                              AS "Total GCs",
+                               round(sum(pauseMs), 1)                               AS "Total Pause (ms)",
+                               round(avg(pauseMs), 2)                               AS "Avg Pause (ms)",
+                               round(100.0 * count(*) / sum(count(*)) OVER (), 1)  AS "% of All GCs"
+                        FROM categorized
+                        GROUP BY category
+                        ORDER BY "Total GCs" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC causes grouped into high-level categories (Evacuation, Allocation Pressure, Explicit, Ergonomics, Metaspace, etc.) — simplifies cause analysis when many distinct cause strings appear in the log."),
+
+            // -----------------------------------------------------------------------
+            // GC CPU time estimate (pause × CPU cores × efficiency)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-cpu-estimate", "jvmlog",
+                    "GC Log: Estimated GC CPU Consumption", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-cpu-estimate" AS
+                        WITH init AS (
+                            SELECT max(parallelWorkers) AS workers,
+                                   max(cpuTotal)         AS cpus
+                            FROM jvmlog_gc_init
+                        ),
+                        gc_totals AS (
+                            SELECT count(*)            AS gcCount,
+                                   sum(pauseMs) / 1000.0 AS totalPauseSecs,
+                                   max(uptimeSecs) - min(uptimeSecs) AS wallSecs
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        )
+                        SELECT i.workers                                             AS "GC Workers",
+                               i.cpus                                               AS "Total CPUs",
+                               g.gcCount                                            AS "GC Events",
+                               round(g.totalPauseSecs, 2)                          AS "Total STW (s)",
+                               round(g.wallSecs, 2)                                AS "Wall Time (s)",
+                               round(g.totalPauseSecs * COALESCE(i.workers, 4), 2)
+                                                                                   AS "Est. GC CPU-Seconds (STW)",
+                               round(100.0 * g.totalPauseSecs / NULLIF(g.wallSecs, 0), 2)
+                                                                                   AS "STW Overhead %",
+                               CASE
+                                 WHEN i.cpus IS NOT NULL
+                                 THEN round(100.0 * g.totalPauseSecs * COALESCE(i.workers, 4)
+                                            / NULLIF(g.wallSecs * i.cpus, 0), 2)
+                                 ELSE NULL
+                               END                                                 AS "GC CPU% of Total"
+                        FROM gc_totals g
+                        LEFT JOIN init i ON true
+                        """,
+                    "jvmlog_gc_event", "jvmlog_gc_init")
+                    .description("Estimated GC CPU consumption: total STW pause × worker thread count approximates CPU-seconds spent on GC — shows GC's share of total CPU capacity.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-gc-cpu-estimate" AS
+                            SELECT count(*)                                             AS "GC Events",
+                                   round(sum(pauseMs) / 1000.0, 2)                    AS "Total STW (s)",
+                                   round(max(uptimeSecs) - min(uptimeSecs), 2)         AS "Wall Time (s)",
+                                   round(100.0 * sum(pauseMs) /
+                                         NULLIF((max(uptimeSecs) - min(uptimeSecs)) * 1000.0, 0), 2)
+                                                                                      AS "STW Overhead %"
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                            """,
+                        "jvmlog_gc_event"),
             };
 
     public static List<View> getViews() {

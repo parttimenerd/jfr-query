@@ -71,7 +71,9 @@ class JvmlogViewsTest {
             "jvmlog-safepoint-heatmap",
             "jvmlog-class-space-trend", "jvmlog-throughput-consistency",
             "jvmlog-heap-headroom-timeline", "jvmlog-concurrent-mode-failure",
-            "jvmlog-metaspace-pressure"
+            "jvmlog-metaspace-pressure",
+            "jvmlog-pause-histogram-by-type", "jvmlog-alloc-reclaim-balance",
+            "jvmlog-cause-categories", "jvmlog-gc-cpu-estimate"
     );
 
     @Test
@@ -2829,6 +2831,103 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT \"Peak Use %\" FROM \"jvmlog-metaspace-pressure\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getDouble("Peak Use %")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void pauseHistogramByTypeViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 8; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, " + (5.0 + i * 3) + ", " + (i * 5.0) + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (10, 'Full', 'System.gc()', 0, 0, 0, 350.0, 60.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-histogram-by-type".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-histogram-by-type not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(DISTINCT \"GC Type\") AS types FROM \"jvmlog-pause-histogram-by-type\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("types")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void allocReclaimBalanceViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 5; i++) {
+                long after  = 100L * 1048576;
+                long before = (100L + 50L) * 1048576;
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', " +
+                        before + ", " + after + ", " + (512L * 1048576) + ", 5.0, " + (i * 4.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-alloc-reclaim-balance".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-alloc-reclaim-balance not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Total Reclaimed (GB)\", \"Assessment\" FROM \"jvmlog-alloc-reclaim-balance\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Total Reclaimed (GB)")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void causeCategoriesViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 8; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, " + (i * 5.0) + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (10, 'Full', 'System.gc()', 0, 0, 0, 300.0, 100.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (11, 'Young', 'Allocation Failure', 0, 0, 0, 15.0, 110.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-cause-categories".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-cause-categories not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS categories FROM \"jvmlog-cause-categories\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("categories")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcCpuEstimateViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 10; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'Cause', 0, 0, 0, 10.0, " + (i * 5.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-cpu-estimate".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-cpu-estimate not found"));
+        // alternative: only gc_event needed
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC Events\", \"STW Overhead %\" FROM \"jvmlog-gc-cpu-estimate\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("GC Events")).isEqualTo(10);
+            assertThat(rs.getDouble("STW Overhead %")).isGreaterThan(0);
         }
         conn.close();
     }

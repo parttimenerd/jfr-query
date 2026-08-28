@@ -1922,3 +1922,69 @@ SELECT * FROM "jvmlog-metaspace-pressure"
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=pause-histogram-by-type -->
+
+## Pause Time Histogram per GC Type
+
+Pause distribution bucketed by GC type — reveals whether Young GCs have a long tail that would be hidden in the global pause histogram.
+
+```sql
+SELECT * FROM "jvmlog-pause-histogram-by-type"
+ORDER BY "GC Type", "Pause Bucket"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=alloc-reclaim-balance -->
+
+## Allocation vs Reclaim Balance
+
+Total allocated vs reclaimed across the log and the net live data set growth — high net growth is a strong indicator of a memory leak or growing workload.
+
+```sql
+SELECT * FROM "jvmlog-alloc-reclaim-balance"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=cause-categories -->
+
+## GC Cause Category Summary
+
+GC causes grouped into high-level categories (Evacuation, Allocation Pressure, Explicit, Ergonomics, Metaspace, etc.) — simplifies cause analysis when many distinct cause strings appear.
+
+```sql
+SELECT * FROM "jvmlog-cause-categories"
+ORDER BY "Total GCs" DESC
+```
+
+```plot
+BAR(x="Category", y="Total GCs", color="Category")
+```
+
+---
+
+<!-- @cell name=gc-cpu-estimate -->
+
+## Estimated GC CPU Consumption
+
+Approximate CPU-seconds consumed by GC: total STW pause × GC worker threads, and GC's share of total CPU capacity — useful for capacity planning.
+
+```sql
+SELECT * FROM "jvmlog-gc-cpu-estimate"
+```
+
+```plot
+TABLE()
+```
