@@ -3750,3 +3750,79 @@ SELECT * FROM "jvmlog-safepoint-gc-vs-nongc-stw"
 BAR(x="Category", y="Total STW (ms)")
 ```
 
+---
+
+<!-- @cell name=g1-humongous-objects requires="has-g1-regions" -->
+
+## G1 Humongous Object Allocation Pressure
+
+GC cycles with humongous region allocations — humongous objects (larger than half a G1 region) bypass Eden and go directly to the old generation, skipping young GC collection. Frequent humongous allocations inflate old gen and trigger expensive mixed GCs; profile allocators with `-XX:+G1SummarizeRSetStats`.
+
+```sql
+SELECT * FROM "jvmlog-g1-humongous-objects"
+```
+
+```plot
+BAR(x="Cause", y="Humongous Regions Before")
+```
+
+---
+
+<!-- @cell name=gc-cause-shift requires="has-jvmlog-gc" -->
+
+## GC Cause Distribution Shift
+
+Cause distribution comparison between the first and second half of the recording — a rising share of "Allocation Failure" or "G1 Evacuation Pause" in the second half indicates a growing live data set eating into heap headroom; increase `-Xmx` or investigate memory leaks.
+
+```sql
+SELECT * FROM "jvmlog-gc-cause-shift"
+```
+
+---
+
+<!-- @cell name=gc-phase-summary requires="has-gc-phase" -->
+
+## GC Phase Aggregated Duration Summary
+
+Total and P50/P95/Max duration per concurrent GC phase — the phase with the highest total time is the dominant cost driver; a large gap between P95 and Max indicates occasional phase stalls that cause latency outliers.
+
+```sql
+SELECT * FROM "jvmlog-gc-phase-summary"
+```
+
+```plot
+BAR(x="Phase", y="Total (ms)")
+```
+
+---
+
+<!-- @cell name=heap-pressure-events requires="has-heap-snapshot" -->
+
+## High Heap Pressure Events
+
+GC events where heap utilisation before collection exceeded 80% of committed capacity — these events are precursors to OOM; if they cluster in time, the application reached heap saturation and needs either a larger `-Xmx` or reduced allocation rate.
+
+```sql
+SELECT * FROM "jvmlog-heap-pressure-events"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Utilisation %")
+```
+
+---
+
+<!-- @cell name=worker-saturation-rate requires="has-gc-workers" -->
+
+## GC Worker Thread Saturation Rate
+
+Average worker utilisation and saturation rate per GC task — tasks below 70% average saturation are under-using available parallel threads; check that `-XX:ParallelGCThreads` matches available CPUs and that the task is not artificially limited by work queue depth.
+
+```sql
+SELECT * FROM "jvmlog-worker-saturation-rate"
+```
+
+```plot
+BAR(x="Task", y="Avg Saturation %")
+```
+

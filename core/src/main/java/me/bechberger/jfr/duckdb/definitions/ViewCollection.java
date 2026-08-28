@@ -9846,6 +9846,148 @@ public class ViewCollection {
                         """,
                     "jvmlog_safepoint")
                     .description("Safepoint STW breakdown — shows what fraction of total stop-the-world time is caused by GC versus other JVM operations (deoptimisation, class loading, biased lock revocation); high non-GC STW often points to deopt storms."),
+
+            // ── Batch 17 ──────────────────────────────────────────────────────────────
+
+            // G1 humongous allocation detection — GCs triggered by humongous object pressure
+            new View(
+                    "jvmlog-g1-humongous-objects", "jvmlog",
+                    "GC Log: G1 Humongous Object Allocation Pressure", null,
+                    """
+                        CREATE VIEW "jvmlog-g1-humongous-objects" AS
+                        SELECT e.gcId                                           AS "GC ID",
+                               round(e.uptimeSecs, 1)                         AS "Uptime (s)",
+                               e.cause                                        AS "Cause",
+                               round(e.pauseMs, 2)                            AS "Pause (ms)",
+                               r.humongousBefore                              AS "Humongous Regions Before",
+                               r.humongousAfter                               AS "Humongous Regions After",
+                               r.edenMax                                      AS "Eden Max Regions",
+                               round(r.humongousBefore * 100.0 /
+                                     nullif(r.edenMax + r.humongousBefore, 0), 1) AS "Humongous % of Heap"
+                        FROM jvmlog_g1_regions r
+                        JOIN jvmlog_gc_event e USING (gcId)
+                        WHERE r.humongousBefore > 0
+                        ORDER BY r.humongousBefore DESC
+                        """,
+                    "jvmlog_g1_regions", "jvmlog_gc_event")
+                    .addAlternative(
+                        """
+                        SELECT gcId                                            AS "GC ID",
+                               humongousBefore                                AS "Humongous Regions Before",
+                               humongousAfter                                 AS "Humongous Regions After",
+                               edenMax                                        AS "Eden Max Regions"
+                        FROM jvmlog_g1_regions
+                        WHERE humongousBefore > 0
+                        ORDER BY humongousBefore DESC
+                        """,
+                        "jvmlog_g1_regions")
+                    .description("G1 humongous allocation pressure — GC cycles with non-zero humongous regions; humongous objects bypass Eden and go directly to the old gen region; frequent humongous allocations inflate old gen and trigger expensive mixed GCs."),
+
+            // GC cause shift analysis — how the distribution of GC causes changes over time
+            new View(
+                    "jvmlog-gc-cause-shift", "jvmlog",
+                    "GC Log: GC Cause Distribution Shift Over Time", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-cause-shift" AS
+                        WITH halves AS (
+                            SELECT gcId, cause, pauseMs,
+                                   uptimeSecs,
+                                   CASE WHEN uptimeSecs <= (SELECT max(uptimeSecs) / 2.0 FROM jvmlog_gc_event WHERE uptimeSecs IS NOT NULL)
+                                        THEN 'First Half' ELSE 'Second Half' END AS period
+                            FROM jvmlog_gc_event
+                            WHERE cause IS NOT NULL AND pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        )
+                        SELECT cause                                           AS "Cause",
+                               period                                         AS "Period",
+                               count(*)                                       AS "Count",
+                               round(avg(pauseMs), 2)                        AS "Avg Pause (ms)",
+                               round(count(*) * 100.0 / sum(count(*)) OVER (PARTITION BY period), 1) AS "% in Period"
+                        FROM halves
+                        GROUP BY cause, period
+                        ORDER BY cause, period
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC cause shift — compares cause distribution in the first vs second half of the run; if 'Allocation Failure' % rises sharply in the second half, the live data set is growing and heap headroom is shrinking."),
+
+            // GC phase aggregated summary — total and average duration per phase name across all GCs
+            new View(
+                    "jvmlog-gc-phase-summary", "jvmlog",
+                    "GC Log: GC Phase Aggregated Duration Summary", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-phase-summary" AS
+                        SELECT phaseName                                       AS "Phase",
+                               count(*)                                       AS "Occurrences",
+                               round(sum(durationMs), 2)                     AS "Total (ms)",
+                               round(avg(durationMs), 2)                     AS "Avg (ms)",
+                               round(approx_quantile(durationMs, 0.50), 2)   AS "P50 (ms)",
+                               round(approx_quantile(durationMs, 0.95), 2)   AS "P95 (ms)",
+                               round(max(durationMs), 2)                     AS "Max (ms)"
+                        FROM jvmlog_gc_phase
+                        WHERE durationMs IS NOT NULL
+                        GROUP BY phaseName
+                        ORDER BY "Total (ms)" DESC
+                        """,
+                    "jvmlog_gc_phase")
+                    .description("GC phase aggregated timing — total and P50/P95/Max per phase; the phase with the highest total time is the dominant cost driver; outlier Max vs P95 ratios indicate occasional phase stalls."),
+
+            // Heap pressure events — GCs where heap before exceeds 80% of committed capacity
+            new View(
+                    "jvmlog-heap-pressure-events", "jvmlog",
+                    "GC Log: High Heap Pressure Events (>80% Committed)", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-pressure-events" AS
+                        SELECT h.gcId                                          AS "GC ID",
+                               e.gcType                                       AS "GC Type",
+                               e.cause                                        AS "Cause",
+                               round(h.heapBefore / 1048576.0, 1)            AS "Heap Before (MB)",
+                               round(h.heapCommittedBefore / 1048576.0, 1)   AS "Committed (MB)",
+                               round(h.heapBefore * 100.0 /
+                                     nullif(h.heapCommittedBefore, 0), 1)    AS "Utilisation %",
+                               round(e.pauseMs, 2)                           AS "Pause (ms)",
+                               round(e.uptimeSecs, 1)                        AS "Uptime (s)"
+                        FROM jvmlog_heap_snapshot h
+                        JOIN jvmlog_gc_event e USING (gcId)
+                        WHERE h.heapCommittedBefore > 0
+                          AND h.heapBefore * 100.0 / h.heapCommittedBefore >= 80
+                        ORDER BY "Utilisation %" DESC
+                        """,
+                    "jvmlog_heap_snapshot", "jvmlog_gc_event")
+                    .addAlternative(
+                        """
+                        SELECT gcId                                            AS "GC ID",
+                               round(heapBefore / 1048576.0, 1)              AS "Heap Before (MB)",
+                               round(heapCommittedBefore / 1048576.0, 1)     AS "Committed (MB)",
+                               round(heapBefore * 100.0 /
+                                     nullif(heapCommittedBefore, 0), 1)      AS "Utilisation %"
+                        FROM jvmlog_heap_snapshot
+                        WHERE heapCommittedBefore > 0
+                          AND heapBefore * 100.0 / heapCommittedBefore >= 80
+                        ORDER BY "Utilisation %" DESC
+                        """,
+                        "jvmlog_heap_snapshot")
+                    .description("High heap pressure events — GCs where the heap before collection exceeded 80% of committed capacity; repeated high-utilisation events mean the heap is consistently near full and a single large allocation could trigger an OOM."),
+
+            // Worker thread saturation rate — average worker utilisation weighted by phase frequency
+            new View(
+                    "jvmlog-worker-saturation-rate", "jvmlog",
+                    "GC Log: GC Worker Thread Saturation Rate", null,
+                    """
+                        CREATE VIEW "jvmlog-worker-saturation-rate" AS
+                        SELECT taskName                                        AS "Task",
+                               count(*)                                       AS "Occurrences",
+                               max(workersMax)                                AS "Max Workers Available",
+                               round(avg(workersUsed), 1)                    AS "Avg Workers Used",
+                               round(avg(workersUsed) * 100.0 /
+                                     nullif(max(workersMax), 0), 1)          AS "Avg Saturation %",
+                               min(workersUsed)                              AS "Min Workers Used",
+                               sum(CASE WHEN workersUsed = workersMax THEN 1 ELSE 0 END) AS "Fully Saturated Runs"
+                        FROM jvmlog_gc_workers
+                        WHERE workersMax > 0
+                        GROUP BY taskName
+                        ORDER BY "Avg Saturation %" ASC
+                        """,
+                    "jvmlog_gc_workers")
+                    .description("Worker thread saturation by task — tasks with saturation below 70% are under-utilising available GC threads; increase `-XX:ParallelGCThreads` or investigate why threads are not being assigned to phases."),
             };
 
     public static List<View> getViews() {
