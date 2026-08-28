@@ -1467,3 +1467,51 @@ SELECT * FROM "jvmlog-gc-log-quality"
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=evacuation-failure-detail requires="has-gc-errors" -->
+
+## G1 Evacuation Failure Detail
+
+G1 evacuation failure and to-space exhaustion events with heap fill level and pause overhead — each event here is a serious degradation where the GC couldn't complete normal evacuation.
+
+```sql
+SELECT * FROM "jvmlog-evacuation-failure-detail"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=log-time-range -->
+
+## GC Log Coverage Statistics
+
+First and last GC timestamps, total log duration, GC event rate, and overall pause overhead — a quick sanity check on how much of the JVM's lifetime the log captures.
+
+```sql
+SELECT * FROM "jvmlog-log-time-range"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=concurrent-gc-efficiency requires="has-phases" -->
+
+## Concurrent vs STW Phase Time Split
+
+What fraction of total GC phase work happens concurrently (off the application thread) vs as stop-the-world pauses. High concurrent % indicates an efficient concurrent collector configuration.
+
+```sql
+SELECT * FROM "jvmlog-concurrent-gc-efficiency"
+```
+
+```plot
+BAR(x="Phase Class", y="% of All Phase Time", color="Phase Class")
+```

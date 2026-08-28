@@ -54,7 +54,9 @@ class JvmlogViewsTest {
             "jvmlog-heap-fill-at-trigger", "jvmlog-alloc-stall-rate-timeline",
             "jvmlog-phases-per-gc",
             "jvmlog-zgc-garbage-ratio", "jvmlog-shenandoah-headroom",
-            "jvmlog-gc-worker-efficiency-trend"
+            "jvmlog-gc-worker-efficiency-trend",
+            "jvmlog-evacuation-failure-detail", "jvmlog-log-time-range",
+            "jvmlog-concurrent-gc-efficiency"
     );
 
     @Test
@@ -2063,6 +2065,111 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-gc-worker-efficiency-trend\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("cnt")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void evacuationFailureDetailViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_errors (gcId INTEGER, errorType VARCHAR, durationMs DOUBLE, errorDetail VARCHAR)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Evacuation failure at GC 3
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (3, 'Evacuation Failure', 1.5, NULL)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (7, 'To-space exhausted', NULL, NULL)");
+            for (int i = 0; i < 10; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', " +
+                        (400L * 1048576) + ", " + (200L * 1048576) + ", " + (512L * 1048576) + ", " +
+                        (5.0 + i * 0.5) + ", " + (i * 1.5) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-evacuation-failure-detail".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-evacuation-failure-detail not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_errors", "jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-evacuation-failure-detail\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void evacuationFailureDetailViewFallbackWithErrorsOnly() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_errors (gcId INTEGER, errorType VARCHAR, durationMs DOUBLE, errorDetail VARCHAR)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (2, 'Evacuation Failure', 2.1, NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-evacuation-failure-detail".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-evacuation-failure-detail not found"));
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_errors"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"GC ID\", \"Error Type\" FROM \"jvmlog-evacuation-failure-detail\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getInt("GC ID")).isEqualTo(2);
+            assertThat(rs.getString("Error Type")).isEqualTo("Evacuation Failure");
+        }
+        conn.close();
+    }
+
+    @Test
+    void logTimeRangeViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 10; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', " +
+                        (300L * 1048576) + ", " + (150L * 1048576) + ", " + (512L * 1048576) + ", " +
+                        (4.0 + i * 0.2) + ", " + (i * 5.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-log-time-range".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-log-time-range not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Total GC Events\", \"Log Duration (s)\", \"First GC (s)\", \"Last GC (s)\" FROM \"jvmlog-log-time-range\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Total GC Events")).isEqualTo(10);
+            assertThat(rs.getDouble("Log Duration (s)")).isCloseTo(45.0, within(0.01));
+            assertThat(rs.getDouble("First GC (s)")).isCloseTo(0.0, within(0.01));
+            assertThat(rs.getDouble("Last GC (s)")).isCloseTo(45.0, within(0.01));
+        }
+        conn.close();
+    }
+
+    @Test
+    void concurrentGcEfficiencyViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            // STW phases
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_phase VALUES (" + i + ", 'Pause Young', " + (10.0 + i) + ")");
+            }
+            // Concurrent phases
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_phase VALUES (" + (i + 5) + ", 'Concurrent Mark', " + (80.0 + i * 5) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-concurrent-gc-efficiency".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-concurrent-gc-efficiency not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_phase"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Phase Class\", \"% of All Phase Time\" FROM \"jvmlog-concurrent-gc-efficiency\" ORDER BY \"% of All Phase Time\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Phase Class")).isEqualTo("Concurrent");
+            assertThat(rs.getDouble("% of All Phase Time")).isGreaterThan(70.0);
         }
         conn.close();
     }

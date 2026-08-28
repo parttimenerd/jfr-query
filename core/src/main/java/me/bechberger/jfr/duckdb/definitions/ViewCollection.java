@@ -5733,6 +5733,132 @@ public class ViewCollection {
                             ORDER BY "Avg Utilisation %" ASC
                             """,
                         "jvmlog_gc_workers"),
+
+            // -----------------------------------------------------------------------
+            // Evacuation Failure Detail (G1 to-space exhaustion analysis)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-evacuation-failure-detail", "jvmlog",
+                    "GC Log: G1 Evacuation Failure Detail", null,
+                    """
+                        CREATE VIEW "jvmlog-evacuation-failure-detail" AS
+                        WITH failures AS (
+                            SELECT err.gcId,
+                                   err.errorType,
+                                   err.durationMs  AS failDurationMs,
+                                   e.gcType,
+                                   e.gcCause,
+                                   e.heapBefore,
+                                   e.heapAfter,
+                                   e.heapMax,
+                                   e.pauseMs,
+                                   e.uptimeSecs,
+                                   100.0 * e.heapBefore / NULLIF(e.heapMax, 0) AS heapFillPct
+                            FROM jvmlog_gc_errors err
+                            JOIN jvmlog_gc_event  e USING (gcId)
+                            WHERE err.errorType IN ('To-space exhausted', 'Evacuation Failure',
+                                                    'Humongous Allocation Failed')
+                        )
+                        SELECT gcId                                          AS "GC ID",
+                               errorType                                     AS "Error Type",
+                               gcType                                        AS "GC Type",
+                               gcCause                                       AS "Cause",
+                               round(uptimeSecs, 3)                         AS "Uptime (s)",
+                               heapBefore                                   AS "Heap Before",
+                               heapAfter                                    AS "Heap After",
+                               heapMax                                      AS "Heap Max",
+                               round(heapFillPct, 1)                        AS "Heap Fill %",
+                               round(pauseMs, 2)                            AS "Pause (ms)",
+                               round(failDurationMs, 2)                     AS "Fail Duration (ms)"
+                        FROM failures
+                        ORDER BY uptimeSecs
+                        """,
+                    "jvmlog_gc_errors", "jvmlog_gc_event")
+                    .description("G1 evacuation failure and to-space exhaustion events joined with GC event context — shows heap fill level and pause overhead at each failure point.")
+                    .addAlternative(
+                        """
+                            CREATE VIEW "jvmlog-evacuation-failure-detail" AS
+                            SELECT gcId                                      AS "GC ID",
+                                   errorType                                 AS "Error Type",
+                                   durationMs                               AS "Fail Duration (ms)"
+                            FROM jvmlog_gc_errors
+                            WHERE errorType IN ('To-space exhausted', 'Evacuation Failure',
+                                                'Humongous Allocation Failed')
+                            ORDER BY gcId
+                            """,
+                        "jvmlog_gc_errors"),
+
+            // -----------------------------------------------------------------------
+            // GC Log Time Range (coverage statistics)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-log-time-range", "jvmlog",
+                    "GC Log: Log Coverage Statistics", null,
+                    """
+                        CREATE VIEW "jvmlog-log-time-range" AS
+                        SELECT count(*)                                              AS "Total GC Events",
+                               round(min(uptimeSecs), 3)                            AS "First GC (s)",
+                               round(max(uptimeSecs), 3)                            AS "Last GC (s)",
+                               round(max(uptimeSecs) - min(uptimeSecs), 3)          AS "Log Duration (s)",
+                               round((max(uptimeSecs) - min(uptimeSecs)) / 60.0, 2) AS "Log Duration (min)",
+                               round(count(*) / NULLIF(max(uptimeSecs) - min(uptimeSecs), 0), 3)
+                                                                                    AS "GC Rate (events/s)",
+                               round(sum(pauseMs), 1)                               AS "Total Pause (ms)",
+                               round(100.0 * sum(pauseMs) / NULLIF((max(uptimeSecs) - min(uptimeSecs)) * 1000.0, 0), 2)
+                                                                                    AS "Overhead %",
+                               min(gcType)                                          AS "First GC Type",
+                               max(gcType)                                          AS "Last GC Type"
+                        FROM jvmlog_gc_event
+                        WHERE uptimeSecs IS NOT NULL
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Log file coverage summary — first/last GC timestamps, total log duration, overall GC rate and pause overhead for the entire captured period."),
+
+            // -----------------------------------------------------------------------
+            // Concurrent GC Efficiency (what % of work happens concurrently vs STW)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-concurrent-gc-efficiency", "jvmlog",
+                    "GC Log: Concurrent vs STW Phase Time Split", null,
+                    """
+                        CREATE VIEW "jvmlog-concurrent-gc-efficiency" AS
+                        WITH phase_classified AS (
+                            SELECT gcId,
+                                   phaseName,
+                                   durationMs,
+                                   CASE
+                                     WHEN lower(phaseName) LIKE '%concurrent%'
+                                       OR lower(phaseName) LIKE '%parallel mark%'
+                                     THEN 'Concurrent'
+                                     ELSE 'STW'
+                                   END AS phaseClass
+                            FROM jvmlog_gc_phase
+                            WHERE durationMs IS NOT NULL
+                        ),
+                        totals AS (
+                            SELECT phaseClass,
+                                   count(*)               AS "Phase Count",
+                                   round(sum(durationMs), 1)  AS "Total (ms)",
+                                   round(avg(durationMs), 2)  AS "Avg (ms)",
+                                   round(max(durationMs), 2)  AS "Max (ms)"
+                            FROM phase_classified
+                            GROUP BY phaseClass
+                        ),
+                        grand AS (
+                            SELECT sum("Total (ms)") AS grandTotal FROM totals
+                        )
+                        SELECT t.phaseClass                                           AS "Phase Class",
+                               t."Phase Count",
+                               t."Total (ms)",
+                               t."Avg (ms)",
+                               t."Max (ms)",
+                               round(100.0 * t."Total (ms)" / NULLIF(g.grandTotal, 0), 1)
+                                                                                     AS "% of All Phase Time"
+                        FROM totals t, grand g
+                        ORDER BY t."Total (ms)" DESC
+                        """,
+                    "jvmlog_gc_phase")
+                    .description("Concurrent vs STW phase time split — shows what fraction of total GC phase work happens concurrently (off the application thread) vs as stop-the-world pauses."),
             };
 
     public static List<View> getViews() {
