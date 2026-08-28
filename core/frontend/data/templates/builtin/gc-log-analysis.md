@@ -3295,3 +3295,80 @@ SELECT * FROM "jvmlog-zgc-allocation-rate-trend"
 LINE(x="GC ID", y="Alloc Rate (MB/s)")
 ```
 
+
+---
+
+<!-- @cell name=gc-errors-timeline requires="has-gc-errors" -->
+
+## GC Error Events Timeline
+
+Chronological list of serious GC error events — evacuation failures, to-space exhaustion, OOM events, and degenerated GC fallbacks. Any entry here represents a health problem that caused application pauses or potential data loss.
+
+```sql
+SELECT * FROM "jvmlog-gc-errors-timeline"
+```
+
+---
+
+<!-- @cell name=shenandoah-free-headroom requires="has-shenandoah-ergo" -->
+
+## Shenandoah Free Heap and Headroom per Cycle
+
+Free regions and headroom (free minus spikes and penalties) after each Shenandoah GC — headroom approaching 0 means Shenandoah is about to run out of room for concurrent evacuation, which triggers a Degenerated (STW) GC fallback.
+
+```sql
+SELECT * FROM "jvmlog-shenandoah-free-headroom"
+```
+
+```plot
+LINE(x="GC ID", y="Headroom (MB)")
+```
+
+---
+
+<!-- @cell name=g1-concurrent-phase-summary requires="has-gc-phases" -->
+
+## G1 Concurrent Phase Summary
+
+G1 concurrent phase statistics (Concurrent Cycle, Mark from Roots, Rebuild Remembered Sets) — non-zero Aborts mean mixed GC was triggered before marking completed (allocation outpacing marking); tune with `-XX:G1HeapWastePercent`.
+
+```sql
+SELECT * FROM "jvmlog-g1-concurrent-phase-summary"
+```
+
+```plot
+BAR(x="Phase", y="Avg (ms)")
+```
+
+---
+
+<!-- @cell name=metaspace-class-space-trend requires="has-metaspace" -->
+
+## Metaspace Usage per GC Cycle
+
+Per-GC metaspace before/after with delta — a positive delta on every GC means continuous class loading; a large drop means class unloading fired; monitor Committed against `-XX:MaxMetaspaceSize` if set.
+
+```sql
+SELECT * FROM "jvmlog-metaspace-class-space-trend"
+```
+
+```plot
+LINE(x="GC ID", y="Meta After (MB)")
+```
+
+---
+
+<!-- @cell name=gc-error-by-type-timeline requires="has-gc-errors" -->
+
+## GC Error Frequency Over Time
+
+GC error counts per 5-minute window — sustained errors indicate a chronic heap problem; isolated clusters suggest a transient load spike that can be addressed with tuning.
+
+```sql
+SELECT * FROM "jvmlog-gc-error-by-type-timeline"
+```
+
+```plot
+BAR(x="Uptime (min)", y="Count")
+```
+

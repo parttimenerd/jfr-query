@@ -110,7 +110,10 @@ class JvmlogViewsTest {
             "jvmlog-full-gc-interval",
             "jvmlog-gc-start-of-trouble", "jvmlog-safepoint-gc-split",
             "jvmlog-metaspace-oom-proximity", "jvmlog-gc-cause-first-last",
-            "jvmlog-zgc-allocation-rate-trend"
+            "jvmlog-zgc-allocation-rate-trend",
+            "jvmlog-gc-errors-timeline", "jvmlog-shenandoah-free-headroom",
+            "jvmlog-g1-concurrent-phase-summary", "jvmlog-metaspace-class-space-trend",
+            "jvmlog-gc-error-by-type-timeline"
     );
 
     @Test
@@ -4551,6 +4554,116 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("rows")).isEqualTo(3L);
             assertThat(rs.getLong("levels")).isEqualTo(3L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcErrorsTimeline() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_errors (gcId INTEGER, errorType VARCHAR, durationMs DOUBLE, errorDetail VARCHAR)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (5,'Evacuation Failure',12.5,NULL)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (10,'To-space exhausted',NULL,NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-errors-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-errors-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_errors"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS errors FROM \"jvmlog-gc-errors-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("errors")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogShenandoahFreeHeadroom() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_shenandoah_free (gcId INTEGER, freeBytes LONG, freeRegions INTEGER, headroomBytes LONG, uncommittedBytes LONG)");
+            s.execute("INSERT INTO jvmlog_shenandoah_free VALUES (1,524288000,500,104857600,52428800)");
+            s.execute("INSERT INTO jvmlog_shenandoah_free VALUES (2,314572800,300,52428800,0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-shenandoah-free-headroom".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-shenandoah-free-headroom not found"));
+        assertThat(view.isValid(Set.of("jvmlog_shenandoah_free"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-shenandoah-free-headroom\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogG1ConcurrentPhaseSummary() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Concurrent Cycle',250.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (2,'Concurrent Cycle',280.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (1,'Concurrent Mark from Roots',80.0)");
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (3,'Concurrent Mark Abort',NULL)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-g1-concurrent-phase-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-g1-concurrent-phase-summary not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_phase"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS phases FROM \"jvmlog-g1-concurrent-phase-summary\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("phases")).isEqualTo(3L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogMetaspaceClassSpaceTrend() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_metaspace (gcId INTEGER, metaspaceBefore LONG, metaspaceAfter LONG, metaspaceCommitted LONG)");
+            s.execute("INSERT INTO jvmlog_metaspace VALUES (1,104857600,104900000,134217728)");
+            s.execute("INSERT INTO jvmlog_metaspace VALUES (2,104900000,105000000,134217728)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-metaspace-class-space-trend".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-metaspace-class-space-trend not found"));
+        assertThat(view.isValid(Set.of("jvmlog_metaspace"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-metaspace-class-space-trend\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcErrorByTypeTimeline() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_errors (gcId INTEGER, errorType VARCHAR, durationMs DOUBLE, errorDetail VARCHAR)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (5,'Evacuation Failure',12.5,NULL)");
+            s.execute("INSERT INTO jvmlog_gc_errors VALUES (10,'To-space exhausted',NULL,NULL)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (5,'Young',NULL,50.0,100.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (10,'Young',NULL,80.0,300.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-error-by-type-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-error-by-type-timeline not found"));
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_errors", "jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-gc-error-by-type-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isGreaterThanOrEqualTo(1L);
         }
         conn.close();
     }

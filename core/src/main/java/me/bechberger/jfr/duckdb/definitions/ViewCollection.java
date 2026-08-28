@@ -9062,6 +9062,119 @@ public class ViewCollection {
                         """,
                     "jvmlog_zgc_load")
                     .description("ZGC allocation rate per cycle with system load — Critical (>500 MB/s) allocation rate means ZGC cannot collect fast enough; correlate with alloc stall count to confirm backpressure."),
+
+                    // Batch 11
+                    new View(
+                    "jvmlog-gc-errors-timeline", "jvmlog",
+                    "GC Log: GC Error Events Timeline", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-errors-timeline" AS
+                        SELECT gcId                                                   AS "GC ID",
+                               errorType                                              AS "Error Type",
+                               round(durationMs, 2)                                  AS "Duration (ms)",
+                               errorDetail                                            AS "Detail"
+                        FROM jvmlog_gc_errors
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_gc_errors")
+                    .description("Chronological list of GC error events (evacuation failures, to-space exhaustion, OOM, degenerated GC) — any entry here represents a serious GC health problem that will have caused application pauses or failures."),
+
+                    new View(
+                    "jvmlog-shenandoah-free-headroom", "jvmlog",
+                    "GC Log: Shenandoah Free Heap and Headroom per Cycle", null,
+                    """
+                        CREATE VIEW "jvmlog-shenandoah-free-headroom" AS
+                        SELECT gcId                                                    AS "GC ID",
+                               round(freeBytes / 1048576.0, 1)                        AS "Free (MB)",
+                               freeRegions                                            AS "Free Regions",
+                               round(headroomBytes / 1048576.0, 1)                   AS "Headroom (MB)",
+                               round(uncommittedBytes / 1048576.0, 1)                AS "Uncommitted (MB)"
+                        FROM jvmlog_shenandoah_free
+                        WHERE freeBytes IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_shenandoah_free")
+                    .description("Shenandoah per-cycle free heap and headroom — headroom dropping toward 0 means Shenandoah is running out of room to complete concurrent evacuation; this precedes Degenerated GC fallback."),
+
+                    new View(
+                    "jvmlog-g1-concurrent-phase-summary", "jvmlog",
+                    "GC Log: G1 Concurrent Phase Summary (cycle, mark-from-roots, rebuild)", null,
+                    """
+                        CREATE VIEW "jvmlog-g1-concurrent-phase-summary" AS
+                        SELECT phaseName                                               AS "Phase",
+                               count(*)                                               AS "Count",
+                               round(avg(durationMs), 2)                             AS "Avg (ms)",
+                               round(max(durationMs), 2)                             AS "Max (ms)",
+                               sum(CASE WHEN phaseName = 'Concurrent Mark Abort' THEN 1 ELSE 0 END) AS "Aborts"
+                        FROM jvmlog_gc_phase
+                        WHERE phaseName IN ('Concurrent Cycle', 'Concurrent Mark from Roots',
+                                            'Concurrent Mark Abort', 'Concurrent Rebuild Remembered Sets',
+                                            'Concurrent Cleanup for Next Mark')
+                        GROUP BY phaseName
+                        ORDER BY "Avg (ms)" DESC
+                        """,
+                    "jvmlog_gc_phase")
+                    .description("G1 concurrent phase statistics — non-zero 'Aborts' for Concurrent Mark means mixed GC was triggered before marking completed (allocation outpaced marking); long 'Concurrent Rebuild Remembered Sets' indicates a large old-gen live set."),
+
+                    new View(
+                    "jvmlog-metaspace-class-space-trend", "jvmlog",
+                    "GC Log: Metaspace and Class Space per GC", null,
+                    """
+                        CREATE VIEW "jvmlog-metaspace-class-space-trend" AS
+                        SELECT gcId                                                    AS "GC ID",
+                               round(metaspaceBefore / 1048576.0, 2)                  AS "Meta Before (MB)",
+                               round(metaspaceAfter  / 1048576.0, 2)                  AS "Meta After (MB)",
+                               round(metaspaceCommitted / 1048576.0, 2)               AS "Committed (MB)",
+                               round((metaspaceAfter - metaspaceBefore) / 1048576.0, 3) AS "Delta (MB)"
+                        FROM jvmlog_metaspace
+                        WHERE metaspaceBefore IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_metaspace")
+                    .description("Per-GC metaspace usage before/after collection — a positive delta every GC means class loading is continuous; a large drop after a specific GC means class unloading triggered; monitor Committed against MaxMetaspaceSize."),
+
+                    new View(
+                    "jvmlog-gc-error-by-type-timeline", "jvmlog",
+                    "GC Log: GC Error Count per 5-min Window", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-error-by-type-timeline" AS
+                        WITH err_with_uptime AS (
+                            SELECT e.gcId,
+                                   e.errorType,
+                                   g.uptimeSecs
+                            FROM jvmlog_gc_errors e
+                            LEFT JOIN (
+                                SELECT gcId, min(uptimeSecs) AS uptimeSecs
+                                FROM jvmlog_gc_event
+                                GROUP BY gcId
+                            ) g USING (gcId)
+                        ),
+                        buckets AS (
+                            SELECT floor(uptimeSecs / 300) * 300         AS bucketSecs,
+                                   errorType,
+                                   count(*)                              AS errorCount
+                            FROM err_with_uptime
+                            WHERE uptimeSecs IS NOT NULL
+                            GROUP BY 1, 2
+                        )
+                        SELECT round(bucketSecs / 60.0, 1)               AS "Uptime (min)",
+                               errorType                                  AS "Error Type",
+                               errorCount                                 AS "Count"
+                        FROM buckets
+                        ORDER BY bucketSecs, "Error Type"
+                        """,
+                    "jvmlog_gc_errors", "jvmlog_gc_event")
+                    .description("GC error frequency per 5-minute window — clustering of errors in time means a specific load spike or heap state caused repeated failures; isolated errors are less severe than sustained error bursts.")
+                    .addAlternative(
+                    """
+                        CREATE VIEW "jvmlog-gc-error-by-type-timeline" AS
+                        SELECT errorType                                  AS "Error Type",
+                               count(*)                                  AS "Count"
+                        FROM jvmlog_gc_errors
+                        GROUP BY errorType
+                        ORDER BY "Count" DESC
+                        """,
+                    "jvmlog_gc_errors"),
             };
 
     public static List<View> getViews() {
