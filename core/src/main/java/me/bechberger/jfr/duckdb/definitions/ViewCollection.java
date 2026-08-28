@@ -6195,6 +6195,155 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("Per-GC allocation pressure: bytes allocated since the previous GC, interval length, and instantaneous allocation rate — useful for identifying allocation spikes."),
+
+            // -----------------------------------------------------------------------
+            // SLA breaches per GC cause (GCViewer "pause above SLA per cause")
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-sla-breach-by-cause", "jvmlog",
+                    "GC Log: SLA Breach Rate per GC Cause", null,
+                    """
+                        CREATE VIEW "jvmlog-sla-breach-by-cause" AS
+                        SELECT gcCause                                             AS "GC Cause",
+                               count(*)                                            AS "Total GCs",
+                               count(*) FILTER (WHERE pauseMs > 200)              AS "Breaches >200ms",
+                               count(*) FILTER (WHERE pauseMs > 500)              AS "Breaches >500ms",
+                               count(*) FILTER (WHERE pauseMs > 1000)             AS "Breaches >1s",
+                               round(100.0 * count(*) FILTER (WHERE pauseMs > 200)
+                                     / NULLIF(count(*), 0), 1)                    AS "Breach % (>200ms)",
+                               round(max(pauseMs), 1)                             AS "Worst Pause (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND gcCause IS NOT NULL
+                        GROUP BY gcCause
+                        ORDER BY "Breaches >200ms" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("SLA breach counts per GC cause at 200ms/500ms/1s thresholds — shows which causes are responsible for the most latency violations."),
+
+            // -----------------------------------------------------------------------
+            // Consecutive high-pause sequence detector
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-pause-burst-windows", "jvmlog",
+                    "GC Log: High-Pause Burst Windows", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-burst-windows" AS
+                        WITH flagged AS (
+                            SELECT gcId,
+                                   uptimeSecs,
+                                   gcType,
+                                   gcCause,
+                                   pauseMs,
+                                   pauseMs > 200 AS isHigh
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        ),
+                        grouped AS (
+                            SELECT *,
+                                   gcId - row_number() OVER (PARTITION BY isHigh ORDER BY gcId) AS grp
+                            FROM flagged
+                            WHERE isHigh
+                        )
+                        SELECT count(*)                                          AS "Consecutive High-Pause GCs",
+                               round(min(uptimeSecs), 3)                        AS "Burst Start (s)",
+                               round(max(uptimeSecs), 3)                        AS "Burst End (s)",
+                               round(max(uptimeSecs) - min(uptimeSecs), 3)      AS "Burst Duration (s)",
+                               round(sum(pauseMs), 1)                           AS "Total Pause (ms)",
+                               round(max(pauseMs), 1)                           AS "Peak Pause (ms)",
+                               string_agg(DISTINCT gcCause, ', ')               AS "Causes"
+                        FROM grouped
+                        GROUP BY grp
+                        HAVING count(*) >= 2
+                        ORDER BY "Total Pause (ms)" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Consecutive sequences of GC pauses >200ms — bursts of back-to-back high pauses indicate sustained heap pressure or concurrent-mode failure conditions."),
+
+            // -----------------------------------------------------------------------
+            // GC health score trend over time (windowed — GCeasy temporal health)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-health-timeline", "jvmlog",
+                    "GC Log: GC Health Score Over Time", null,
+                    """
+                        CREATE VIEW "jvmlog-health-timeline" AS
+                        WITH windows AS (
+                            SELECT floor(uptimeSecs / 60.0)::BIGINT AS minute,
+                                   count(*)                           AS gcCount,
+                                   avg(pauseMs)                       AS avgPause,
+                                   max(pauseMs)                       AS maxPause,
+                                   sum(pauseMs)                       AS totalPause,
+                                   100.0 * sum(pauseMs) / 60000.0    AS overhead
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                            GROUP BY floor(uptimeSecs / 60.0)::BIGINT
+                        )
+                        SELECT minute                                              AS "Minute",
+                               gcCount                                             AS "GC Count",
+                               round(avgPause, 1)                                 AS "Avg Pause (ms)",
+                               round(maxPause, 1)                                 AS "Max Pause (ms)",
+                               round(overhead, 2)                                 AS "Overhead %",
+                               CASE
+                                 WHEN overhead > 20 OR maxPause > 1000 THEN 0
+                                 WHEN overhead > 10 OR maxPause > 500  THEN 30
+                                 WHEN overhead > 5  OR maxPause > 200  THEN 60
+                                 WHEN overhead > 2  OR maxPause > 100  THEN 80
+                                 ELSE 100
+                               END                                                AS "Health Score"
+                        FROM windows
+                        ORDER BY minute
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC health score per 1-minute window over the log — tracks how GC health evolves over time, surfacing degradation periods that a single aggregate score hides."),
+
+            // -----------------------------------------------------------------------
+            // Heap efficiency per GC type (MB reclaimed per ms pause)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-heap-efficiency-by-type", "jvmlog",
+                    "GC Log: Heap Efficiency per GC Type", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-efficiency-by-type" AS
+                        SELECT gcType                                              AS "GC Type",
+                               count(*)                                            AS "Count",
+                               round(avg((heapBefore - heapAfter) / 1048576.0), 1)
+                                                                                  AS "Avg Reclaimed (MB)",
+                               round(avg(pauseMs), 2)                             AS "Avg Pause (ms)",
+                               round(sum(heapBefore - heapAfter) / 1048576.0
+                                     / NULLIF(sum(pauseMs), 0), 4)                AS "MB/ms (Efficiency)",
+                               round(sum(heapBefore - heapAfter) / 1073741824.0, 2)
+                                                                                  AS "Total Reclaimed (GB)",
+                               round(sum(pauseMs) / 1000.0, 2)                   AS "Total Pause (s)"
+                        FROM jvmlog_gc_event
+                        WHERE heapBefore IS NOT NULL AND heapAfter IS NOT NULL
+                          AND heapBefore >= heapAfter AND pauseMs > 0 AND gcType IS NOT NULL
+                        GROUP BY gcType
+                        ORDER BY "MB/ms (Efficiency)" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Heap reclamation efficiency per GC type: MB reclaimed per ms of pause — high efficiency means the GC type recovers a lot of memory quickly; Full GC typically scores lowest."),
+
+            // -----------------------------------------------------------------------
+            // GC pressure heatmap (cause × hour of uptime)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-cause-heatmap", "jvmlog",
+                    "GC Log: GC Cause Activity Heatmap", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-cause-heatmap" AS
+                        SELECT floor(uptimeSecs / 300.0)::BIGINT           AS "5-Min Window",
+                               round(min(uptimeSecs), 0)                   AS "Window Start (s)",
+                               gcCause                                      AS "GC Cause",
+                               count(*)                                     AS "Count",
+                               round(sum(pauseMs), 1)                      AS "Total Pause (ms)",
+                               round(max(pauseMs), 1)                      AS "Max Pause (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE gcCause IS NOT NULL AND uptimeSecs IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 300.0)::BIGINT, gcCause
+                        ORDER BY 1, "Total Pause (ms)" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC cause activity per 5-minute window — a cross-tabulation of time vs cause showing when specific causes dominate and how the cause mix evolves across the log."),
             };
 
     public static List<View> getViews() {

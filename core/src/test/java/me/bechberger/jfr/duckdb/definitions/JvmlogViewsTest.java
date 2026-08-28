@@ -62,7 +62,10 @@ class JvmlogViewsTest {
             "jvmlog-full-gc-frequency",
             "jvmlog-gc-type-per-minute", "jvmlog-memory-reclaimed",
             "jvmlog-pause-outliers", "jvmlog-heap-after-trend",
-            "jvmlog-alloc-pressure-timeline"
+            "jvmlog-alloc-pressure-timeline",
+            "jvmlog-sla-breach-by-cause", "jvmlog-pause-burst-windows",
+            "jvmlog-health-timeline", "jvmlog-heap-efficiency-by-type",
+            "jvmlog-gc-cause-heatmap"
     );
 
     @Test
@@ -2433,6 +2436,139 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-alloc-pressure-timeline\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("cnt")).isEqualTo(4); // 5 GCs → 4 intervals
+        }
+        conn.close();
+    }
+
+    @Test
+    void slaBreachByCauseViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // 5 normal pauses, 2 breaches
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 15.0, " + (i * 5.0) + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (10, 'Full', 'System.gc()', 0, 0, 0, 350.0, 60.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (11, 'Full', 'System.gc()', 0, 0, 0, 600.0, 120.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-sla-breach-by-cause".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-sla-breach-by-cause not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC Cause\", \"Breaches >200ms\" FROM \"jvmlog-sla-breach-by-cause\" ORDER BY \"Breaches >200ms\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("GC Cause")).isEqualTo("System.gc()");
+            assertThat(rs.getLong("Breaches >200ms")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void pauseBurstWindowsViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Burst of 3 high-pause GCs
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (5, 'Full', 'System.gc()', 0, 0, 0, 350.0, 50.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (6, 'Full', 'System.gc()', 0, 0, 0, 400.0, 55.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (7, 'Full', 'System.gc()', 0, 0, 0, 450.0, 60.0)");
+            // Normal GC (should not be in results)
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 0, 0, 0, 10.0, 10.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-pause-burst-windows".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-pause-burst-windows not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Consecutive High-Pause GCs\" FROM \"jvmlog-pause-burst-windows\" ORDER BY \"Total Pause (ms)\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Consecutive High-Pause GCs")).isEqualTo(3);
+        }
+        conn.close();
+    }
+
+    @Test
+    void healthTimelineViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Minute 0: healthy GCs
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, " + (i * 10.0) + ")");
+            }
+            // Minute 1: unhealthy — very high overhead
+            for (int i = 0; i < 30; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + (i + 10) + ", 'Full', 'System.gc()', 0, 0, 0, 1500.0, " + (60.0 + i * 0.5) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-health-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-health-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Minute\", \"Health Score\" FROM \"jvmlog-health-timeline\" ORDER BY \"Minute\"");
+            assertThat(rs.next()).isTrue();
+            long healthyScore = rs.getLong("Health Score");
+            assertThat(rs.next()).isTrue();
+            long unhealthyScore = rs.getLong("Health Score");
+            assertThat(healthyScore).isGreaterThan(unhealthyScore);
+        }
+        conn.close();
+    }
+
+    @Test
+    void heapEfficiencyByTypeViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Young GC: small pause, modest reclaim
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', " +
+                        (200L * 1048576) + ", " + (100L * 1048576) + ", " + (512L * 1048576) + ", 10.0, " + (i * 5.0) + ")");
+            }
+            // Full GC: large pause, large reclaim — but less efficient per ms
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (10, 'Full', 'System.gc()', " +
+                    (450L * 1048576) + ", " + (100L * 1048576) + ", " + (512L * 1048576) + ", 400.0, 100.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-efficiency-by-type".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-efficiency-by-type not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"GC Type\", \"MB/ms (Efficiency)\" FROM \"jvmlog-heap-efficiency-by-type\" ORDER BY \"MB/ms (Efficiency)\" DESC");
+            assertThat(rs.next()).isTrue();
+            // Young GC should be more efficient (10MB per 10ms = 1 MB/ms vs Full ~0.875 MB/ms)
+            assertThat(rs.getString("GC Type")).isEqualTo("Young");
+        }
+        conn.close();
+    }
+
+    @Test
+    void gcCauseHeatmapViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, gcCause VARCHAR, heapBefore BIGINT, heapAfter BIGINT, heapMax BIGINT, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 10; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', 0, 0, 0, 5.0, " + (i * 20.0) + ")");
+            }
+            // In a different 5-min window
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (20, 'Full', 'System.gc()', 0, 0, 0, 300.0, 310.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-cause-heatmap".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-cause-heatmap not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-gc-cause-heatmap\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isGreaterThan(0);
         }
         conn.close();
     }

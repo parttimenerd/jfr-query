@@ -1676,3 +1676,86 @@ SELECT * FROM "jvmlog-alloc-pressure-timeline"
 ```plot
 LINE(x="Uptime (s)", y="Alloc Rate (MB/s)")
 ```
+
+---
+
+<!-- @cell name=sla-breach-by-cause -->
+
+## SLA Breach Rate per GC Cause
+
+Pause SLA breach counts per GC cause at 200ms, 500ms, and 1s thresholds with breach % — shows which causes are responsible for the most latency violations.
+
+```sql
+SELECT * FROM "jvmlog-sla-breach-by-cause"
+ORDER BY "Breaches >200ms" DESC
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=pause-burst-windows -->
+
+## High-Pause Burst Windows
+
+Consecutive sequences of GC pauses >200ms — bursts of back-to-back high pauses indicate sustained heap pressure or concurrent-mode failure, not isolated spikes.
+
+```sql
+SELECT * FROM "jvmlog-pause-burst-windows"
+ORDER BY "Total Pause (ms)" DESC
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=health-timeline -->
+
+## GC Health Score Over Time
+
+Health score (0-100) per 1-minute window — tracks how GC health evolves over the log and surfaces degradation periods that a single aggregate score conceals.
+
+```sql
+SELECT * FROM "jvmlog-health-timeline"
+```
+
+```plot
+LINE(x="Minute", y="Health Score")
+```
+
+---
+
+<!-- @cell name=heap-efficiency-by-type -->
+
+## Heap Efficiency per GC Type
+
+MB reclaimed per ms of pause by GC type — high efficiency means fast, effective reclamation; Full GC typically has the lowest ratio despite large reclaim volumes.
+
+```sql
+SELECT * FROM "jvmlog-heap-efficiency-by-type"
+```
+
+```plot
+BAR(x="GC Type", y="MB/ms (Efficiency)", color="GC Type")
+```
+
+---
+
+<!-- @cell name=gc-cause-heatmap -->
+
+## GC Cause Activity Heatmap
+
+GC cause × 5-minute uptime window — cross-tabulation showing when specific causes dominate and how the cause mix evolves across the log duration.
+
+```sql
+SELECT * FROM "jvmlog-gc-cause-heatmap"
+ORDER BY "5-Min Window", "Total Pause (ms)" DESC
+```
+
+```plot
+TABLE()
+```
