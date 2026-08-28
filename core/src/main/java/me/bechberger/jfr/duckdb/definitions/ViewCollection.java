@@ -10267,6 +10267,228 @@ public class ViewCollection {
                         """,
                     "jvmlog_safepoint")
                     .description("Safepoint sync time outliers — the top 50 slowest times to reach a global safepoint; high sync time means application threads are slow to check safepoint polls, often caused by counted loops, JNI code, or compiled code with infrequent safepoint checks."),
+
+            // ── Batch 20: Combined/multi-dimensional analysis views ───────────────────
+            // Inspired by GCeasy health score, GCViewer, JVM Mon monitoring views
+            // These are combined views that correlate multiple metrics for actionable insights.
+
+            // GC health dashboard — combined KPIs: pause percentiles, overhead, throughput, risk
+            new View(
+                    "jvmlog-gc-health-dashboard", "jvmlog",
+                    "GC Log: Overall GC Health Dashboard (Combined KPIs)", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-health-dashboard" AS
+                        SELECT count(*)                                        AS "Total GC Events",
+                               sum(CASE WHEN gcType = 'Full' OR gcType LIKE '%Full%' THEN 1 ELSE 0 END) AS "Full GC Count",
+                               round(sum(CASE WHEN gcType = 'Full' OR gcType LIKE '%Full%' THEN 1 ELSE 0 END) * 100.0 / count(*), 1) AS "Full GC %",
+                               round(avg(pauseMs), 2)                        AS "Avg Pause (ms)",
+                               round(approx_quantile(pauseMs, 0.50), 2)      AS "P50 Pause (ms)",
+                               round(approx_quantile(pauseMs, 0.95), 2)      AS "P95 Pause (ms)",
+                               round(approx_quantile(pauseMs, 0.99), 2)      AS "P99 Pause (ms)",
+                               round(max(pauseMs), 2)                        AS "Max Pause (ms)",
+                               round(sum(pauseMs) / nullif(max(uptimeSecs) * 1000.0, 0) * 100, 2) AS "GC Overhead %",
+                               round(100 - sum(pauseMs) / nullif(max(uptimeSecs) * 1000.0, 0) * 100, 2) AS "Throughput %",
+                               round(count(*) / nullif(max(uptimeSecs) / 60.0, 0), 1) AS "GC Frequency (per min)",
+                               CASE
+                                 WHEN sum(CASE WHEN gcType = 'Full' OR gcType LIKE '%Full%' THEN 1 ELSE 0 END) * 100.0 / count(*) > 5 THEN 'CRITICAL — Excessive Full GCs'
+                                 WHEN sum(pauseMs) / nullif(max(uptimeSecs) * 1000.0, 0) * 100 >= 20 THEN 'CRITICAL — GC Overhead > 20%'
+                                 WHEN approx_quantile(pauseMs, 0.99) >= 1000 THEN 'DANGER — P99 Pause > 1s'
+                                 WHEN approx_quantile(pauseMs, 0.99) >= 500 THEN 'WARNING — P99 Pause > 500ms'
+                                 WHEN sum(pauseMs) / nullif(max(uptimeSecs) * 1000.0, 0) * 100 >= 10 THEN 'WARNING — GC Overhead 10-20%'
+                                 WHEN approx_quantile(pauseMs, 0.95) >= 200 THEN 'WARNING — P95 Pause > 200ms'
+                                 ELSE 'OK — GC Health Good'
+                               END AS "Health Status"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC health dashboard — single-row KPI summary combining pause percentiles, overhead, throughput, and automated health status classification; the Health Status column gives an immediate verdict with the most critical finding."),
+
+            // Memory leak risk assessment — heap-after-GC trend with linear regression projection
+            new View(
+                    "jvmlog-memory-leak-risk", "jvmlog",
+                    "GC Log: Memory Leak Risk Assessment (Heap-After Trend)", null,
+                    """
+                        CREATE VIEW "jvmlog-memory-leak-risk" AS
+                        WITH after_gc AS (
+                            SELECT h.gcId,
+                                   e.uptimeSecs,
+                                   h.heapAfter,
+                                   h.heapCommittedAfter
+                            FROM jvmlog_heap_snapshot h
+                            JOIN jvmlog_gc_event e USING (gcId)
+                            WHERE h.heapAfter IS NOT NULL AND e.uptimeSecs IS NOT NULL
+                        ),
+                        stats AS (
+                            SELECT count(*)                                   AS n,
+                                   round(min(heapAfter) / 1048576.0, 1)      AS "Min Live (MB)",
+                                   round(max(heapAfter) / 1048576.0, 1)      AS "Max Live (MB)",
+                                   round(avg(heapAfter) / 1048576.0, 1)      AS "Avg Live (MB)",
+                                   round(max(heapAfter) / 1048576.0, 1) -
+                                   round(min(heapAfter) / 1048576.0, 1)      AS "Live Growth (MB)",
+                                   round(regr_slope(heapAfter / 1048576.0, uptimeSecs), 4) AS "Growth Rate (MB/s)",
+                                   round(regr_r2(heapAfter / 1048576.0, uptimeSecs), 3)   AS "R² (linearity)",
+                                   round(max(heapCommittedAfter) / 1048576.0, 1)          AS "Max Committed (MB)"
+                            FROM after_gc
+                        )
+                        SELECT *,
+                               CASE
+                                 WHEN "Growth Rate (MB/s)" > 0.5 AND "R² (linearity)" > 0.7 THEN 'HIGH RISK — Steady memory leak detected'
+                                 WHEN "Growth Rate (MB/s)" > 0.1 AND "R² (linearity)" > 0.5  THEN 'MEDIUM RISK — Gradual heap growth'
+                                 WHEN "Live Growth (MB)" > "Max Committed (MB)" * 0.3       THEN 'MONITOR — Large live set growth observed'
+                                 ELSE 'LOW RISK — Heap after GC appears stable'
+                               END AS "Leak Risk"
+                        FROM stats
+                        """,
+                    "jvmlog_heap_snapshot", "jvmlog_gc_event")
+                    .addAlternative(
+                        """
+                        SELECT round(min(heapAfter) / 1048576.0, 1)          AS "Min Live (MB)",
+                               round(max(heapAfter) / 1048576.0, 1)          AS "Max Live (MB)",
+                               round(max(heapAfter) / 1048576.0, 1) -
+                               round(min(heapAfter) / 1048576.0, 1)          AS "Live Growth (MB)"
+                        FROM jvmlog_heap_snapshot
+                        WHERE heapAfter IS NOT NULL
+                        """,
+                        "jvmlog_heap_snapshot")
+                    .description("Memory leak risk assessment — uses linear regression on heap-after-GC values to detect steady heap growth; high R² (> 0.7) combined with positive growth rate strongly suggests a memory leak; MEDIUM RISK is normal for growing caches."),
+
+            // Allocation pressure correlation — combines alloc rate with pause and heap utilisation
+            new View(
+                    "jvmlog-alloc-pressure-correlation", "jvmlog",
+                    "GC Log: Allocation Pressure vs Pause Correlation", null,
+                    """
+                        CREATE VIEW "jvmlog-alloc-pressure-correlation" AS
+                        WITH gc_data AS (
+                            SELECT h.gcId,
+                                   e.uptimeSecs,
+                                   e.gcType,
+                                   e.cause,
+                                   e.pauseMs,
+                                   h.heapBefore,
+                                   h.heapAfter,
+                                   h.heapCommittedBefore,
+                                   h.heapBefore - LAG(h.heapAfter, 1) OVER (ORDER BY h.gcId) AS allocSinceLast,
+                                   e.uptimeSecs - LAG(e.uptimeSecs, 1) OVER (ORDER BY e.gcId) AS intervalSecs
+                            FROM jvmlog_heap_snapshot h
+                            JOIN jvmlog_gc_event e USING (gcId)
+                            WHERE h.heapBefore IS NOT NULL AND e.pauseMs IS NOT NULL AND e.uptimeSecs IS NOT NULL
+                        )
+                        SELECT gcId                                            AS "GC ID",
+                               round(uptimeSecs, 1)                          AS "Uptime (s)",
+                               gcType                                        AS "GC Type",
+                               cause                                         AS "Cause",
+                               round(pauseMs, 2)                              AS "Pause (ms)",
+                               round(heapBefore / 1048576.0, 1)              AS "Heap Before (MB)",
+                               round(heapBefore * 100.0 /
+                                     nullif(heapCommittedBefore, 0), 1)      AS "Utilisation %",
+                               round(allocSinceLast / 1048576.0 /
+                                     nullif(intervalSecs, 0), 1)             AS "Alloc Rate MB/s",
+                               CASE
+                                 WHEN heapBefore * 100.0 / nullif(heapCommittedBefore, 0) >= 80
+                                      AND allocSinceLast / 1048576.0 / nullif(intervalSecs, 0) > 50 THEN 'CRITICAL — High Util + High Alloc'
+                                 WHEN heapBefore * 100.0 / nullif(heapCommittedBefore, 0) >= 80  THEN 'HIGH — Heap Near Full'
+                                 WHEN allocSinceLast / 1048576.0 / nullif(intervalSecs, 0) > 50  THEN 'ELEVATED — High Allocation Rate'
+                                 ELSE 'NORMAL'
+                               END AS "Pressure Level"
+                        FROM gc_data
+                        ORDER BY "Alloc Rate MB/s" DESC NULLS LAST
+                        """,
+                    "jvmlog_heap_snapshot", "jvmlog_gc_event")
+                    .addAlternative(
+                        """
+                        SELECT gcId AS "GC ID",
+                               round(heapBefore / 1048576.0, 1)              AS "Heap Before (MB)",
+                               round(heapBefore * 100.0 /
+                                     nullif(heapCommittedBefore, 0), 1)      AS "Utilisation %"
+                        FROM jvmlog_heap_snapshot
+                        WHERE heapBefore IS NOT NULL
+                        ORDER BY "Utilisation %" DESC
+                        """,
+                        "jvmlog_heap_snapshot")
+                    .description("Allocation pressure correlation — combines allocation rate (MB/s), heap utilisation, and GC pause to find cycles under combined pressure; CRITICAL rows are the most dangerous — the heap is nearly full AND the application is allocating rapidly."),
+
+            // GC SLA impact summary — multi-dimensional SLA view: pause + overhead + frequency
+            new View(
+                    "jvmlog-gc-sla-impact-summary", "jvmlog",
+                    "GC Log: GC SLA Impact Summary (Multi-Dimensional)", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-sla-impact-summary" AS
+                        SELECT 'Pause Latency SLA (200ms)'                   AS "Dimension",
+                               sum(CASE WHEN pauseMs <= 200 THEN 1 ELSE 0 END) AS "Pass",
+                               count(*) - sum(CASE WHEN pauseMs <= 200 THEN 1 ELSE 0 END) AS "Fail",
+                               round(sum(CASE WHEN pauseMs <= 200 THEN 1 ELSE 0 END) * 100.0 / count(*), 1) AS "SLA %",
+                               round(approx_quantile(pauseMs, 0.99), 2)     AS "P99 Value (ms)",
+                               CASE WHEN sum(CASE WHEN pauseMs <= 200 THEN 1 ELSE 0 END) * 100.0 / count(*) >= 99 THEN 'PASS' ELSE 'FAIL' END AS "Status"
+                        FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL
+                        UNION ALL
+                        SELECT 'Pause Latency SLA (500ms)'                   AS "Dimension",
+                               sum(CASE WHEN pauseMs <= 500 THEN 1 ELSE 0 END),
+                               count(*) - sum(CASE WHEN pauseMs <= 500 THEN 1 ELSE 0 END),
+                               round(sum(CASE WHEN pauseMs <= 500 THEN 1 ELSE 0 END) * 100.0 / count(*), 1),
+                               round(approx_quantile(pauseMs, 0.99), 2),
+                               CASE WHEN sum(CASE WHEN pauseMs <= 500 THEN 1 ELSE 0 END) * 100.0 / count(*) >= 99 THEN 'PASS' ELSE 'FAIL' END
+                        FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL
+                        UNION ALL
+                        SELECT 'GC Overhead SLA (< 10%)'                     AS "Dimension",
+                               CASE WHEN sum(pauseMs) / nullif(max(uptimeSecs) * 1000.0, 0) * 100 < 10 THEN 1 ELSE 0 END,
+                               CASE WHEN sum(pauseMs) / nullif(max(uptimeSecs) * 1000.0, 0) * 100 >= 10 THEN 1 ELSE 0 END,
+                               round(100 - sum(pauseMs) / nullif(max(uptimeSecs) * 1000.0, 0) * 100, 1),
+                               round(sum(pauseMs) / nullif(max(uptimeSecs) * 1000.0, 0) * 100, 2),
+                               CASE WHEN sum(pauseMs) / nullif(max(uptimeSecs) * 1000.0, 0) * 100 < 10 THEN 'PASS' ELSE 'FAIL' END
+                        FROM jvmlog_gc_event WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        UNION ALL
+                        SELECT 'Full GC Rate SLA (< 5% of events)'           AS "Dimension",
+                               sum(CASE WHEN gcType NOT LIKE '%Full%' THEN 1 ELSE 0 END),
+                               sum(CASE WHEN gcType LIKE '%Full%' THEN 1 ELSE 0 END),
+                               round(sum(CASE WHEN gcType NOT LIKE '%Full%' THEN 1 ELSE 0 END) * 100.0 / count(*), 1),
+                               sum(CASE WHEN gcType LIKE '%Full%' THEN 1 ELSE 0 END),
+                               CASE WHEN sum(CASE WHEN gcType LIKE '%Full%' THEN 1 ELSE 0 END) * 100.0 / count(*) < 5 THEN 'PASS' ELSE 'FAIL' END
+                        FROM jvmlog_gc_event WHERE gcType IS NOT NULL
+                        ORDER BY "Status" DESC, "Dimension"
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Multi-dimensional SLA impact summary — checks 4 key SLA criteria (200ms pause, 500ms pause, <10% GC overhead, <5% Full GC rate) with PASS/FAIL status; any FAIL row indicates a production-level SLA breach requiring immediate tuning."),
+
+            // Collector-specific diagnostics — detects which GC is in use and returns relevant stats
+            new View(
+                    "jvmlog-collector-diagnostics", "jvmlog",
+                    "GC Log: Detected Collector and Collector-Specific Diagnostics", null,
+                    """
+                        CREATE VIEW "jvmlog-collector-diagnostics" AS
+                        WITH gc_types AS (
+                            SELECT CASE
+                                     WHEN count(*) FILTER (WHERE gcType LIKE '%ZGC%' OR cause LIKE '%ZGC%') > 0 THEN 'ZGC'
+                                     WHEN count(*) FILTER (WHERE gcType LIKE '%Shenandoah%' OR cause LIKE '%Shenandoah%') > 0 THEN 'Shenandoah'
+                                     WHEN count(*) FILTER (WHERE gcType LIKE '%G1%' OR cause LIKE '%G1%' OR cause LIKE '%Humongous%') > 0 THEN 'G1'
+                                     WHEN count(*) FILTER (WHERE gcType LIKE '%CMS%' OR cause LIKE '%CMS%') > 0 THEN 'CMS'
+                                     WHEN count(*) FILTER (WHERE gcType LIKE '%Parallel%') > 0 THEN 'Parallel'
+                                     ELSE 'Unknown/Serial'
+                                   END AS collector,
+                                   count(*) AS total,
+                                   round(avg(pauseMs), 2) AS avgPause,
+                                   round(approx_quantile(pauseMs, 0.99), 2) AS p99Pause,
+                                   round(sum(pauseMs) / nullif(max(uptimeSecs) * 1000.0, 0) * 100, 2) AS overheadPct
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                        )
+                        SELECT collector                                       AS "Detected Collector",
+                               total                                          AS "Total GC Events",
+                               avgPause                                       AS "Avg Pause (ms)",
+                               p99Pause                                       AS "P99 Pause (ms)",
+                               overheadPct                                    AS "GC Overhead %",
+                               CASE collector
+                                 WHEN 'ZGC' THEN 'Ultra-low latency; target P99 < 10ms; check zgc-mmu-approximation and zgc-capacity-trend'
+                                 WHEN 'Shenandoah' THEN 'Low latency; target P99 < 50ms; check shenandoah-free-headroom and shenandoah-uncommit-trend'
+                                 WHEN 'G1' THEN 'Balanced; target P99 < 200ms; check g1-humongous-objects and g1-eden-fill-rate'
+                                 WHEN 'CMS' THEN 'Concurrent; check for concurrent mode failure in gc-errors-timeline'
+                                 WHEN 'Parallel' THEN 'Throughput-oriented; check parallel-gen-sizing-trend for old gen pressure'
+                                 ELSE 'Check gc-pause-summary and heap-timeline for baseline metrics'
+                               END AS "Tuning Focus"
+                        FROM gc_types
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Collector-specific diagnostics — auto-detects which GC collector is in use and provides targeted tuning focus with links to the most relevant views for that collector; use as the starting point for any GC log analysis session."),
             };
 
     public static List<View> getViews() {

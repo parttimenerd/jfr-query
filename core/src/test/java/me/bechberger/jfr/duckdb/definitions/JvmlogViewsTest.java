@@ -137,7 +137,10 @@ class JvmlogViewsTest {
             "jvmlog-parallel-gen-sizing-trend",
             "jvmlog-gc-pause-sla-rolling", "jvmlog-g1-survivor-overflow",
             "jvmlog-zgc-relocate-garbage", "jvmlog-heap-churn-rate",
-            "jvmlog-safepoint-sync-outliers"
+            "jvmlog-safepoint-sync-outliers",
+            "jvmlog-gc-health-dashboard", "jvmlog-memory-leak-risk",
+            "jvmlog-alloc-pressure-correlation", "jvmlog-gc-sla-impact-summary",
+            "jvmlog-collector-diagnostics"
     );
 
     @Test
@@ -5595,6 +5598,125 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-safepoint-sync-outliers\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("rows")).isEqualTo(3L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcHealthDashboard() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',50.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',80.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Full','Ergonomics',800.0,30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-health-dashboard".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-health-dashboard not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Total GC Events\", \"Health Status\" FROM \"jvmlog-gc-health-dashboard\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("Total GC Events")).isEqualTo(3L);
+            assertThat(rs.getString("Health Status")).isNotNull();
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogMemoryLeakRisk() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1,400000000,200000000,1073741824,1073741824)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2,450000000,250000000,1073741824,1073741824)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (3,500000000,300000000,1073741824,1073741824)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',50.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',60.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Young','Allocation Failure',70.0,30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-memory-leak-risk".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-memory-leak-risk not found"));
+        assertThat(view.isValid(Set.of("jvmlog_heap_snapshot", "jvmlog_gc_event"))).isTrue();
+        assertThat(view.getBestMatchingQuery(Set.of("jvmlog_heap_snapshot"))).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Leak Risk\" FROM \"jvmlog-memory-leak-risk\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Leak Risk")).isNotNull();
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogAllocPressureCorrelation() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1,900000000,300000000,1073741824,1073741824)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2,800000000,250000000,1073741824,1073741824)");
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',50.0,5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',60.0,10.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-alloc-pressure-correlation".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-alloc-pressure-correlation not found"));
+        assertThat(view.isValid(Set.of("jvmlog_heap_snapshot", "jvmlog_gc_event"))).isTrue();
+        assertThat(view.getBestMatchingQuery(Set.of("jvmlog_heap_snapshot"))).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-alloc-pressure-correlation\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogGcSlaImpactSummary() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Young','Allocation Failure',50.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Young','Allocation Failure',80.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Full','Ergonomics',800.0,30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-sla-impact-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-sla-impact-summary not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS dimensions FROM \"jvmlog-gc-sla-impact-summary\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("dimensions")).isEqualTo(4L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testJvmlogCollectorDiagnostics() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'G1 Young','G1 Humongous Allocation',5.0,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'G1 Young','G1 Humongous Allocation',6.0,20.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'G1 Mixed','Mixed GC',12.0,30.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-collector-diagnostics".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-collector-diagnostics not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT \"Detected Collector\", \"Tuning Focus\" FROM \"jvmlog-collector-diagnostics\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Detected Collector")).isEqualTo("G1");
         }
         conn.close();
     }

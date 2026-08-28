@@ -4,6 +4,7 @@ description: Analyse JVM -Xlog GC logs — pause summary, heap timeline, phase b
 tags: [gc, jvmlog, performance]
 license: MIT
 cellConditions:
+  has-jvmlog-gc: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_gc_event'"
   has-heap-snapshot: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_heap_snapshot'"
   has-gc-phase: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_gc_phase'"
   has-g1-regions: "SELECT count(*) > 0 FROM information_schema.tables WHERE table_name = 'jvmlog_g1_regions'"
@@ -31,7 +32,71 @@ cellConditions:
 
 A ready-to-run analysis of JVM garbage-collection logs captured with `-Xlog:gc*`.
 
-**What's here:** Pause summary and percentiles, heap + pause combined timeline, pause histogram, GC frequency, problematic GC events, error events, phase breakdown, and collector-specific details (G1, ZGC, Parallel, CMS, Shenandoah). Load a `.log` file to begin.
+**What's here:** Health dashboard, memory leak risk, SLA impact summary, collector diagnostics, pause summary and percentiles, heap + pause combined timeline, pause histogram, GC frequency, problematic GC events, error events, phase breakdown, and collector-specific details (G1, ZGC, Parallel, CMS, Shenandoah). Load a `.log` file to begin.
+
+---
+
+<!-- @cell name=collector-diagnostics requires="has-jvmlog-gc" -->
+
+## Detected Collector and Collector-Specific Diagnostics
+
+Auto-detects which GC collector is in use and provides targeted tuning guidance — **start here** for any GC log analysis session to orient which views are most relevant for your collector.
+
+```sql
+SELECT * FROM "jvmlog-collector-diagnostics"
+```
+
+---
+
+<!-- @cell name=gc-health-dashboard requires="has-jvmlog-gc" -->
+
+## GC Health Dashboard
+
+Single-row KPI summary — pause percentiles, GC overhead, throughput, and automated **Health Status** verdict. The Health Status column gives an immediate diagnosis of the most critical GC issue found.
+
+```sql
+SELECT * FROM "jvmlog-gc-health-dashboard"
+```
+
+---
+
+<!-- @cell name=gc-sla-impact-summary requires="has-jvmlog-gc" -->
+
+## GC SLA Impact Summary
+
+Multi-dimensional SLA compliance check — evaluates 4 key SLA criteria (200ms pause, 500ms pause, <10% GC overhead, <5% Full GC rate) with a PASS/FAIL verdict for each. Any FAIL row indicates a production-level SLA breach.
+
+```sql
+SELECT * FROM "jvmlog-gc-sla-impact-summary"
+```
+
+---
+
+<!-- @cell name=memory-leak-risk requires="has-heap-snapshot" -->
+
+## Memory Leak Risk Assessment
+
+Linear regression on heap-after-GC values to detect steady heap growth — HIGH RISK with high R² means a confirmed leak; MEDIUM RISK means gradual growth; LOW RISK means the live data set is stable.
+
+```sql
+SELECT * FROM "jvmlog-memory-leak-risk"
+```
+
+---
+
+<!-- @cell name=alloc-pressure-correlation requires="has-heap-snapshot" -->
+
+## Allocation Pressure Correlation
+
+Per-GC allocation rate combined with heap utilisation — CRITICAL rows (high utilisation AND high allocation rate) are the most dangerous cycles; these are the precursors to OOM errors.
+
+```sql
+SELECT * FROM "jvmlog-alloc-pressure-correlation"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Alloc Rate MB/s", color="Pressure Level")
+```
 
 ---
 
@@ -3892,7 +3957,7 @@ LINE(x="GC ID", y="Saved (MB)")
 
 ---
 
-<!-- @cell name=parallel-gen-sizing-trend requires="has-parallel-sizing" -->
+<!-- @cell name=parallel-gen-sizing-trend requires="has-parallel" -->
 
 ## Parallel/CMS Old Gen Sizing Trend
 
