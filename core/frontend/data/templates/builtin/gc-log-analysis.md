@@ -2641,3 +2641,83 @@ SELECT * FROM "jvmlog-zgc-garbage-ratio-by-cycle"
 ```plot
 LINE(x="Uptime (s)", y="Garbage %")
 ```
+
+---
+
+<!-- @cell name=zgc-load-timeline requires="has-zgc-load" -->
+
+## ZGC System Load and Allocation Rate per Cycle
+
+System load averages and allocation rate at each ZGC cycle — high load at GC time means CPU contention with other processes; rising allocation rate often precedes allocation stalls.
+
+```sql
+SELECT * FROM "jvmlog-zgc-load-timeline"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Alloc Rate (MB/s)")
+```
+
+---
+
+<!-- @cell name=gc-worker-utilisation requires="has-gc-workers" -->
+
+## GC Worker Thread Utilisation
+
+Average workers used vs available per GC task — tasks consistently below 80% utilisation indicate under-parallelisation; may be tunable with `-XX:ParallelGCThreads`.
+
+```sql
+SELECT * FROM "jvmlog-gc-worker-utilisation"
+```
+
+```plot
+BAR(x="Task", y="Utilisation %")
+```
+
+---
+
+<!-- @cell name=gc-pause-by-hour requires="has-jvmlog-gc" -->
+
+## GC Pause Aggregated by Hour
+
+Total and average GC pause per hour of JVM uptime — useful for detecting degradation over long-running sessions; rising GC overhead% per hour indicates heap fragmentation or tenuring pressure buildup.
+
+```sql
+SELECT * FROM "jvmlog-gc-pause-by-hour"
+```
+
+```plot
+BAR(x="Hour", y="GC Overhead %")
+```
+
+---
+
+<!-- @cell name=old-gen-growth requires="has-g1-regions" -->
+
+## G1 Old Generation Growth Trend
+
+Old generation region count after each GC with rolling 10-GC trend — a consistently positive trend means Old gen is growing faster than GC can reclaim it, a precursor to Concurrent Mode Failure.
+
+```sql
+SELECT * FROM "jvmlog-old-gen-growth"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Old Regions After GC")
+```
+
+---
+
+<!-- @cell name=shenandoah-summary requires="has-jvmlog-gc" -->
+
+## Shenandoah Pause Summary by Phase
+
+Shenandoah STW phase breakdown — Init/Final Mark and Update Refs should be short (< 10ms); long Final Mark means concurrent marking didn't finish in time; Degenerated means a full STW fallback occurred.
+
+```sql
+SELECT * FROM "jvmlog-shenandoah-summary"
+```
+
+```plot
+BAR(x="STW Phase", y="Avg Pause (ms)")
+```

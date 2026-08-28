@@ -95,7 +95,10 @@ class JvmlogViewsTest {
             "jvmlog-g1-mixed-trigger-analysis", "jvmlog-concurrent-phase-efficiency",
             "jvmlog-heap-saturation-events", "jvmlog-gc-burst-detection",
             "jvmlog-zgc-garbage-ratio-by-cycle", "jvmlog-full-gc-cause-summary",
-            "jvmlog-gc-duration-vs-pause"
+            "jvmlog-gc-duration-vs-pause",
+            "jvmlog-zgc-load-timeline", "jvmlog-gc-worker-utilisation",
+            "jvmlog-gc-pause-by-hour", "jvmlog-old-gen-growth",
+            "jvmlog-shenandoah-summary"
     );
 
     @Test
@@ -3962,6 +3965,131 @@ class JvmlogViewsTest {
             var rs = s.executeQuery("SELECT count(*) AS types FROM \"jvmlog-gc-duration-vs-pause\"");
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong("types")).isGreaterThan(0);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testZgcLoadTimeline() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Concurrent Mark','GCLocker Initiated GC',1.5,10.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Concurrent Mark','GCLocker Initiated GC',1.8,20.0)");
+            s.execute("CREATE TABLE jvmlog_zgc_load (gcId INTEGER, load1s DOUBLE, load5s DOUBLE, load15s DOUBLE, allocRateMbps DOUBLE, allocStalls INTEGER)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (1, 2.5, 2.3, 2.1, 450.0, 0)");
+            s.execute("INSERT INTO jvmlog_zgc_load VALUES (2, 3.1, 2.8, 2.5, 520.0, 2)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-load-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-load-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_load", "jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_zgc_load", "jvmlog_gc_event"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cycles FROM \"jvmlog-zgc-load-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cycles")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testGcWorkerUtilisation() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_workers (gcId INTEGER, workersUsed INTEGER, workersMax INTEGER, taskName VARCHAR)");
+            s.execute("INSERT INTO jvmlog_gc_workers VALUES (1, 8, 8, 'evacuation')");
+            s.execute("INSERT INTO jvmlog_gc_workers VALUES (2, 6, 8, 'evacuation')");
+            s.execute("INSERT INTO jvmlog_gc_workers VALUES (1, 4, 8, 'marking')");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-worker-utilisation".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-worker-utilisation not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_workers"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS tasks FROM \"jvmlog-gc-worker-utilisation\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("tasks")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testGcPauseByHour() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ",'Young','Allocation Failure',10.0," + (i * 600.0) + ")");
+            }
+            for (int i = 0; i < 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + (10 + i) + ",'Young','Allocation Failure',15.0," + (3600.0 + i * 600.0) + ")");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-pause-by-hour".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-pause-by-hour not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS hours FROM \"jvmlog-gc-pause-by-hour\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("hours")).isEqualTo(2L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testOldGenGrowth() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 1; i <= 5; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ",'Young','G1 Evacuation Pause',5.0," + (i * 10.0) + ")");
+            }
+            s.execute("CREATE TABLE jvmlog_g1_regions (gcId INTEGER, edenBefore INTEGER, edenAfter INTEGER, edenMax INTEGER, survivorBefore INTEGER, survivorAfter INTEGER, survivorMax INTEGER, oldBefore INTEGER, oldAfter INTEGER, humongousBefore INTEGER, humongousAfter INTEGER)");
+            for (int i = 1; i <= 5; i++) {
+                s.execute("INSERT INTO jvmlog_g1_regions VALUES (" + i + ", 10, 0, 60, 2, 3, 10, " + (40 + i) + ", " + (42 + i) + ", 0, 0)");
+            }
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-old-gen-growth".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-old-gen-growth not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_g1_regions"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_g1_regions"));
+        assertThat(query).isNotNull();
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS rows FROM \"jvmlog-old-gen-growth\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("rows")).isEqualTo(5L);
+        }
+        conn.close();
+    }
+
+    @Test
+    void testShenandoahSummary() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1,'Init Mark',NULL,1.2,5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2,'Final Mark',NULL,2.5,15.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3,'Init Update Refs',NULL,0.8,25.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (4,'Final Update Refs',NULL,1.1,35.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (5,'Young','Allocation Failure',10.0,40.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-shenandoah-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-shenandoah-summary not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        try (Statement s = conn.createStatement()) {
+            s.execute(view.definition());
+            var rs = s.executeQuery("SELECT count(*) AS phases FROM \"jvmlog-shenandoah-summary\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("phases")).isEqualTo(4L);
         }
         conn.close();
     }

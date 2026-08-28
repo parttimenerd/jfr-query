@@ -8381,6 +8381,157 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("STW pause as a fraction of total GC duration per type — for concurrent collectors (ZGC, Shenandoah, G1) a low STW/Duration% is expected; a rising ratio means concurrent phases are being cut short."),
+
+            // -----------------------------------------------------------------------
+            // ZGC load: allocation rate and system load per cycle
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-zgc-load-timeline", "jvmlog",
+                    "GC Log: ZGC System Load and Allocation Rate per Cycle", null,
+                    """
+                        CREATE VIEW "jvmlog-zgc-load-timeline" AS
+                        WITH loads AS (
+                            SELECT gcId,
+                                   max(load1s)        AS load1s,
+                                   max(load5s)        AS load5s,
+                                   max(allocRateMbps) AS allocRateMbps,
+                                   max(allocStalls)   AS allocStalls
+                            FROM jvmlog_zgc_load
+                            GROUP BY gcId
+                        )
+                        SELECT e.gcId                                   AS "GC ID",
+                               round(e.uptimeSecs, 3)                   AS "Uptime (s)",
+                               round(l.load1s, 2)                       AS "Load (1s avg)",
+                               round(l.load5s, 2)                       AS "Load (5s avg)",
+                               round(l.allocRateMbps, 1)                AS "Alloc Rate (MB/s)",
+                               coalesce(l.allocStalls, 0)               AS "Alloc Stalls"
+                        FROM jvmlog_gc_event e
+                        JOIN loads l USING (gcId)
+                        WHERE e.uptimeSecs IS NOT NULL
+                        ORDER BY e.uptimeSecs
+                        """,
+                    "jvmlog_zgc_load", "jvmlog_gc_event")
+                    .description("ZGC system load averages and allocation rate per GC cycle — high load at GC time means the JVM is competing with other processes; rising allocation rate often precedes allocation stalls.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-zgc-load-timeline" AS
+                        SELECT gcId AS "GC ID",
+                               max(load1s) AS "Load (1s avg)",
+                               max(allocRateMbps) AS "Alloc Rate (MB/s)",
+                               max(allocStalls) AS "Alloc Stalls"
+                        FROM jvmlog_zgc_load
+                        GROUP BY gcId
+                        ORDER BY gcId
+                        """,
+                        "jvmlog_zgc_load"),
+
+            // -----------------------------------------------------------------------
+            // GC worker utilisation: unused threads per phase
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-worker-utilisation", "jvmlog",
+                    "GC Log: GC Worker Thread Utilisation", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-worker-utilisation" AS
+                        SELECT taskName                                              AS "Task",
+                               count(*)                                              AS "Observations",
+                               round(avg(workersUsed), 1)                           AS "Avg Workers Used",
+                               max(workersMax)                                      AS "Max Available",
+                               round(100.0 * avg(workersUsed) / NULLIF(max(workersMax), 0), 1)
+                                                                                    AS "Utilisation %",
+                               min(workersUsed)                                     AS "Min Used"
+                        FROM jvmlog_gc_workers
+                        WHERE taskName IS NOT NULL
+                        GROUP BY taskName
+                        ORDER BY "Utilisation %" ASC
+                        """,
+                    "jvmlog_gc_workers")
+                    .description("GC parallel worker utilisation per task — phases consistently using fewer workers than available indicate under-parallelisation; low utilisation on evacuation or marking suggests CPU affinity or NUMA issues."),
+
+            // -----------------------------------------------------------------------
+            // GC pause aggregated by hour (for long-running services)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-pause-by-hour", "jvmlog",
+                    "GC Log: GC Pause Aggregated by Hour", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-pause-by-hour" AS
+                        SELECT floor(uptimeSecs / 3600.0)::BIGINT AS "Hour",
+                               count(*)                            AS "GC Events",
+                               round(sum(pauseMs) / 1000.0, 2)    AS "Total Pause (s)",
+                               round(avg(pauseMs), 2)              AS "Avg Pause (ms)",
+                               round(max(pauseMs), 2)              AS "Max Pause (ms)",
+                               round(100.0 * sum(pauseMs) / 3600000.0, 3) AS "GC Overhead %"
+                        FROM jvmlog_gc_event
+                        WHERE uptimeSecs IS NOT NULL AND pauseMs IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 3600.0)::BIGINT
+                        ORDER BY "Hour"
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC pause aggregated per hour of JVM uptime — useful for long-running services to detect degradation over hours of operation; rising GC overhead % per hour indicates heap drift or fragmentation buildup."),
+
+            // -----------------------------------------------------------------------
+            // Old gen growth trend (G1 regions — old region count over time)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-old-gen-growth", "jvmlog",
+                    "GC Log: G1 Old Generation Growth Trend", null,
+                    """
+                        CREATE VIEW "jvmlog-old-gen-growth" AS
+                        WITH regions AS (
+                            SELECT gcId, max(oldAfter) AS oldRegions
+                            FROM jvmlog_g1_regions
+                            WHERE oldAfter IS NOT NULL
+                            GROUP BY gcId
+                        )
+                        SELECT e.gcId                                            AS "GC ID",
+                               round(e.uptimeSecs, 3)                            AS "Uptime (s)",
+                               r.oldRegions                                       AS "Old Regions After GC",
+                               round(regr_slope(r.oldRegions, e.uptimeSecs)
+                                     OVER (ORDER BY e.uptimeSecs ROWS BETWEEN 9 PRECEDING AND CURRENT ROW)
+                                     , 4)                                         AS "10-GC Trend (regions/s)"
+                        FROM jvmlog_gc_event e
+                        JOIN regions r USING (gcId)
+                        WHERE e.uptimeSecs IS NOT NULL
+                        ORDER BY e.uptimeSecs
+                        """,
+                    "jvmlog_gc_event", "jvmlog_g1_regions")
+                    .description("G1 Old generation region count after each GC with rolling 10-GC trend — a consistently positive trend means Old gen is growing faster than GC can reclaim it, a precursor to Concurrent Mode Failure.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-old-gen-growth" AS
+                        SELECT gcId AS "GC ID", max(oldAfter) AS "Old Regions After GC"
+                        FROM jvmlog_g1_regions
+                        WHERE oldAfter IS NOT NULL
+                        GROUP BY gcId
+                        ORDER BY gcId
+                        """,
+                        "jvmlog_g1_regions"),
+
+            // -----------------------------------------------------------------------
+            // Shenandoah heuristics and mode summary
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-shenandoah-summary", "jvmlog",
+                    "GC Log: Shenandoah Pause Summary by Type", null,
+                    """
+                        CREATE VIEW "jvmlog-shenandoah-summary" AS
+                        SELECT gcType                                                AS "STW Phase",
+                               count(*)                                              AS "Events",
+                               round(avg(pauseMs), 2)                               AS "Avg Pause (ms)",
+                               round(max(pauseMs), 2)                               AS "Max Pause (ms)",
+                               round(sum(pauseMs), 1)                               AS "Total Pause (ms)",
+                               round(approx_quantile(pauseMs, 0.95), 2)             AS "P95 (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE gcType IN ('Init Mark', 'Final Mark',
+                                         'Init Update Refs', 'Final Update Refs',
+                                         'Degenerated')
+                          AND pauseMs IS NOT NULL
+                        GROUP BY gcType
+                        ORDER BY "Total Pause (ms)" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Shenandoah STW pause breakdown by phase — Init/Final Mark and Init/Final Update Refs should be short (< 10ms); long Final Mark means concurrent marking didn't finish; Degenerated means Shenandoah fell back to full STW collection."),
             };
 
     public static List<View> getViews() {
