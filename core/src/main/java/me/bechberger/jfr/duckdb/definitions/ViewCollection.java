@@ -4582,6 +4582,67 @@ public class ViewCollection {
                             """,
                         "jvmlog_gc_event", "jvmlog_unknown_lines")
                     .description("GC log quality diagnostics — checks for missing GC IDs (truncated/rotated logs), uptime coverage, and unmatched lines."),
+                new View(
+                        "jvmlog-heap-resize-summary",
+                        "jvmlog",
+                        "GC Log: Heap Resize Summary",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-heap-resize-summary" AS
+                            SELECT decision AS "Decision",
+                                   count(*) AS "Count",
+                                   round(sum(actualExpansionBytes) / 1048576.0, 1) AS "Total (MB)",
+                                   round(avg(actualExpansionBytes) / 1048576.0, 1) AS "Avg (MB)",
+                                   round(max(actualExpansionBytes) / 1048576.0, 1) AS "Max (MB)"
+                            FROM jvmlog_g1_ergonomics
+                            GROUP BY decision
+                            ORDER BY count(*) DESC
+                            """,
+                        "jvmlog_g1_ergonomics")
+                    .description("Summary of G1 heap resize decisions — frequent expansions with no shrinks indicates the JVM needs a larger -Xms."),
+                new View(
+                        "jvmlog-allocation-rate-timeline",
+                        "jvmlog",
+                        "GC Log: Allocation Rate Timeline",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-allocation-rate-timeline" AS
+                            WITH snapshots AS (
+                                SELECT gcId,
+                                       heapBefore / 1048576.0 AS heapBeforeMB,
+                                       heapAfter / 1048576.0 AS heapAfterMB
+                                FROM jvmlog_heap_snapshot
+                                QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapBefore DESC NULLS LAST) = 1
+                            ),
+                            joined AS (
+                                SELECT e.gcId,
+                                       e.uptimeSecs,
+                                       s.heapBeforeMB - LAG(s.heapAfterMB) OVER (ORDER BY e.uptimeSecs) AS allocatedMB,
+                                       e.uptimeSecs - LAG(e.uptimeSecs) OVER (ORDER BY e.uptimeSecs) AS intervalSecs
+                                FROM jvmlog_gc_event e
+                                JOIN snapshots s ON e.gcId = s.gcId
+                                WHERE e.uptimeSecs IS NOT NULL
+                            ),
+                            with_rate AS (
+                                SELECT gcId,
+                                       uptimeSecs,
+                                       allocatedMB,
+                                       intervalSecs,
+                                       allocatedMB / nullif(intervalSecs, 0) AS allocRateMBperSec
+                                FROM joined
+                                WHERE allocatedMB IS NOT NULL AND intervalSecs > 0
+                            )
+                            SELECT floor(uptimeSecs / 10) * 10 AS "Window Start (s)",
+                                   round(sum(allocatedMB), 2) AS "Total Allocated (MB)",
+                                   round(avg(allocRateMBperSec), 2) AS "Avg Alloc Rate (MB/s)",
+                                   round(max(allocRateMBperSec), 2) AS "Peak Alloc Rate (MB/s)",
+                                   count(*) AS "GC Events"
+                            FROM with_rate
+                            GROUP BY floor(uptimeSecs / 10) * 10
+                            ORDER BY "Window Start (s)"
+                            """,
+                        "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Windowed allocation rate — average and peak MB/s per 10-second window. Spikes correlate with allocation bursts that cause GC pressure."),
             };
 
     public static List<View> getViews() {

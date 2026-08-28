@@ -38,7 +38,8 @@ class JvmlogViewsTest {
             "jvmlog-allocation-rate", "jvmlog-gc-type-breakdown", "jvmlog-full-gc-analysis",
             "jvmlog-g1-humongous", "jvmlog-parallel-gc-detail", "jvmlog-gc-health-score",
             "jvmlog-gc-recommendations", "jvmlog-zgc-generational",
-            "jvmlog-concurrent-overhead", "jvmlog-gc-log-quality"
+            "jvmlog-concurrent-overhead", "jvmlog-gc-log-quality",
+            "jvmlog-heap-resize-summary", "jvmlog-allocation-rate-timeline"
     );
 
     @Test
@@ -1282,6 +1283,62 @@ class JvmlogViewsTest {
             assertThat(rs.getLong("Missing GC IDs")).isEqualTo(1); // GC ID 2 is missing
             assertThat(rs.getLong("Unmatched Lines")).isEqualTo(5);
             assertThat(rs.getDouble("Log Duration (s)")).isCloseTo(6.0, within(0.1));
+        }
+        conn.close();
+    }
+
+    @Test
+    void heapResizeSummaryViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_g1_ergonomics (requestedExpansionBytes BIGINT, actualExpansionBytes BIGINT, decision VARCHAR)");
+            s.execute("INSERT INTO jvmlog_g1_ergonomics VALUES (268435456, 268435456, 'expand')");
+            s.execute("INSERT INTO jvmlog_g1_ergonomics VALUES (134217728, 134217728, 'expand')");
+            s.execute("INSERT INTO jvmlog_g1_ergonomics VALUES (134217728, 67108864, 'shrink')");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-heap-resize-summary".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-heap-resize-summary not found"));
+        assertThat(view.isValid(Set.of("jvmlog_g1_ergonomics"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_g1_ergonomics"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Decision\", \"Count\", \"Total (MB)\" FROM \"jvmlog-heap-resize-summary\" ORDER BY \"Count\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Decision")).isEqualTo("expand");
+            assertThat(rs.getLong("Count")).isEqualTo(2);
+            assertThat(rs.getDouble("Total (MB)")).isCloseTo(384.0, within(0.1));
+        }
+        conn.close();
+    }
+
+    @Test
+    void allocationRateTimelineViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'G1 Evacuation Pause', 5.0, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'G1 Evacuation Pause', 4.0, 5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Young', 'G1 Evacuation Pause', 6.0, 15.0)");
+            s.execute("CREATE TABLE jvmlog_heap_snapshot (gcId INTEGER, heapBefore BIGINT, heapAfter BIGINT, heapCommittedBefore BIGINT, heapCommittedAfter BIGINT)");
+            // GC 0: 100MB before, 50MB after; GC 1: 110MB before (allocated 60MB in 3s), 55MB after; GC 2: 80MB before, 40MB after
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (0, 104857600, 52428800, 536870912, 536870912)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (1, 115343360, 57671680, 536870912, 536870912)");
+            s.execute("INSERT INTO jvmlog_heap_snapshot VALUES (2, 83886080, 41943040, 536870912, 536870912)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-allocation-rate-timeline".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-allocation-rate-timeline not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event", "jvmlog_heap_snapshot"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-allocation-rate-timeline\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isGreaterThanOrEqualTo(1);
+            rs = s.executeQuery("SELECT \"Avg Alloc Rate (MB/s)\" FROM \"jvmlog-allocation-rate-timeline\" ORDER BY \"Window Start (s)\" LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Avg Alloc Rate (MB/s)")).isGreaterThan(0);
         }
         conn.close();
     }

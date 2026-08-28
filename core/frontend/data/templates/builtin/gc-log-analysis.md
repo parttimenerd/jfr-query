@@ -358,6 +358,22 @@ LINE(x="Uptime (s)", y="Allocation Rate (MB/s)")
 
 ---
 
+<!-- @cell name=allocation-rate-timeline requires="has-combined-timeline" -->
+
+## Allocation Rate Timeline
+
+Average and peak allocation rate (MB/s) per 10-second window — rising peaks identify allocation bursts that spike GC pressure.
+
+```sql
+SELECT * FROM "jvmlog-allocation-rate-timeline"
+```
+
+```plot
+LINE(x="Window Start (s)", y="Avg Alloc Rate (MB/s)")
+```
+
+---
+
 <!-- @cell name=heap-growth-summary requires="has-combined-timeline" -->
 
 ## Heap Growth Summary
@@ -696,6 +712,22 @@ SELECT * FROM "jvmlog-g1-heap-expansion"
 
 ```plot
 TABLE()
+```
+
+---
+
+<!-- @cell name=heap-resize-summary requires="has-g1-ergo" -->
+
+## G1: Heap Resize Summary
+
+Expand vs shrink decision counts, total, and average sizes — frequent expansions with no shrinks suggests -Xms is too low.
+
+```sql
+SELECT * FROM "jvmlog-heap-resize-summary"
+```
+
+```plot
+BAR(x="Decision", y="Count")
 ```
 
 ---
