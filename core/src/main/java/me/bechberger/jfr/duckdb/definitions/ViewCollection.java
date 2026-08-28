@@ -6023,6 +6023,178 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("Full GC frequency and impact summary: count, pause times, interval between events, heap fill at trigger, reclaim efficiency, and rate per minute."),
+
+            // -----------------------------------------------------------------------
+            // GC activity per type per minute (GCeasy "GC Activity Chart" parity)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-type-per-minute", "jvmlog",
+                    "GC Log: GC Type Activity per Minute", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-type-per-minute" AS
+                        SELECT floor(uptimeSecs / 60.0)::BIGINT               AS "Minute",
+                               gcType                                           AS "GC Type",
+                               count(*)                                         AS "Count",
+                               round(sum(pauseMs), 1)                          AS "Total Pause (ms)",
+                               round(avg(pauseMs), 2)                          AS "Avg Pause (ms)",
+                               round(max(pauseMs), 2)                          AS "Max Pause (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE uptimeSecs IS NOT NULL AND gcType IS NOT NULL
+                        GROUP BY floor(uptimeSecs / 60.0)::BIGINT, gcType
+                        ORDER BY 1, gcType
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC type activity per 1-minute uptime window — see how Young, Mixed, Full, and Concurrent-STW counts shift over time, equivalent to GCeasy's GC Activity Chart."),
+
+            // -----------------------------------------------------------------------
+            // Memory reclaimed per GC (distribution of bytes freed)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-memory-reclaimed", "jvmlog",
+                    "GC Log: Memory Reclaimed per GC", null,
+                    """
+                        CREATE VIEW "jvmlog-memory-reclaimed" AS
+                        WITH reclaim AS (
+                            SELECT gcId,
+                                   gcType,
+                                   gcCause,
+                                   heapBefore - heapAfter                    AS reclaimedBytes,
+                                   heapBefore,
+                                   heapMax
+                            FROM jvmlog_gc_event
+                            WHERE heapBefore IS NOT NULL AND heapAfter IS NOT NULL
+                              AND heapBefore >= heapAfter
+                        )
+                        SELECT gcType                                                AS "GC Type",
+                               count(*)                                              AS "Events",
+                               round(avg(reclaimedBytes) / 1048576.0, 1)            AS "Avg Reclaimed (MB)",
+                               round(min(reclaimedBytes) / 1048576.0, 1)            AS "Min Reclaimed (MB)",
+                               round(max(reclaimedBytes) / 1048576.0, 1)            AS "Max Reclaimed (MB)",
+                               round(approx_quantile(reclaimedBytes, 0.50) / 1048576.0, 1)
+                                                                                    AS "p50 (MB)",
+                               round(approx_quantile(reclaimedBytes, 0.95) / 1048576.0, 1)
+                                                                                    AS "p95 (MB)",
+                               round(sum(reclaimedBytes) / 1073741824.0, 2)         AS "Total Reclaimed (GB)",
+                               round(avg(100.0 * reclaimedBytes / NULLIF(heapBefore, 0)), 1)
+                                                                                    AS "Avg Reclaim %"
+                        FROM reclaim
+                        GROUP BY gcType
+                        ORDER BY "Total Reclaimed (GB)" DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Memory reclaimed per GC type: avg/min/max/p50/p95 bytes freed and total reclaim over the log — shows which GC types do the most reclamation work."),
+
+            // -----------------------------------------------------------------------
+            // GC pause outliers (statistical outliers by Z-score)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-pause-outliers", "jvmlog",
+                    "GC Log: GC Pause Outliers", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-outliers" AS
+                        WITH stats AS (
+                            SELECT avg(pauseMs) AS meanMs, stddev_pop(pauseMs) AS stdMs
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                        ),
+                        scored AS (
+                            SELECT e.gcId,
+                                   e.gcType,
+                                   e.gcCause,
+                                   e.pauseMs,
+                                   e.uptimeSecs,
+                                   e.heapBefore,
+                                   e.heapAfter,
+                                   e.heapMax,
+                                   (e.pauseMs - s.meanMs) / NULLIF(s.stdMs, 0) AS zScore
+                            FROM jvmlog_gc_event e, stats s
+                            WHERE e.pauseMs IS NOT NULL
+                        )
+                        SELECT gcId                                              AS "GC ID",
+                               gcType                                            AS "GC Type",
+                               gcCause                                           AS "Cause",
+                               round(uptimeSecs, 3)                             AS "Uptime (s)",
+                               round(pauseMs, 2)                                AS "Pause (ms)",
+                               round(zScore, 2)                                 AS "Z-Score",
+                               heapBefore                                       AS "Heap Before",
+                               heapAfter                                        AS "Heap After",
+                               heapMax                                          AS "Heap Max"
+                        FROM scored
+                        WHERE abs(zScore) > 2.0
+                        ORDER BY zScore DESC
+                        """,
+                    "jvmlog_gc_event")
+                    .description("GC pauses that are statistical outliers (|Z-score| > 2.0 from mean) — these abnormally long or short GCs warrant investigation for heap pressure, JIT de-opt, or safepoint delays."),
+
+            // -----------------------------------------------------------------------
+            // Heap-after trend (GCViewer "Tenured generation fill" equivalent)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-heap-after-trend", "jvmlog",
+                    "GC Log: Post-GC Heap Level Trend", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-after-trend" AS
+                        WITH base AS (
+                            SELECT gcId,
+                                   uptimeSecs,
+                                   heapAfter,
+                                   heapMax,
+                                   100.0 * heapAfter / NULLIF(heapMax, 0) AS heapAfterPct,
+                                   gcType
+                            FROM jvmlog_gc_event
+                            WHERE heapAfter IS NOT NULL AND uptimeSecs IS NOT NULL
+                        )
+                        SELECT count(*)                                               AS "GC Events",
+                               round(avg(heapAfterPct), 1)                           AS "Avg Post-GC Heap %",
+                               round(min(heapAfterPct), 1)                           AS "Min Post-GC Heap %",
+                               round(max(heapAfterPct), 1)                           AS "Max Post-GC Heap %",
+                               round(regr_slope(heapAfterPct, uptimeSecs), 6)        AS "Trend (%/s)",
+                               round(regr_r2(heapAfterPct, uptimeSecs), 4)           AS "R²",
+                               CASE
+                                 WHEN regr_r2(heapAfterPct, uptimeSecs) > 0.5
+                                      AND regr_slope(heapAfterPct, uptimeSecs) > 0
+                                 THEN 'Rising — live data set growing (potential memory leak)'
+                                 WHEN regr_r2(heapAfterPct, uptimeSecs) > 0.5
+                                      AND regr_slope(heapAfterPct, uptimeSecs) < 0
+                                 THEN 'Falling — live data set shrinking (warm-up or load reduction)'
+                                 ELSE 'Stable'
+                               END                                                   AS "Assessment"
+                        FROM base
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Post-GC heap level trend over time — rising post-GC heap % is the primary indicator of live data set growth and potential memory leaks, mirroring GCViewer's tenured fill chart."),
+
+            // -----------------------------------------------------------------------
+            // Inter-GC allocation timeline (allocation pressure per window)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-alloc-pressure-timeline", "jvmlog",
+                    "GC Log: Allocation Pressure Timeline", null,
+                    """
+                        CREATE VIEW "jvmlog-alloc-pressure-timeline" AS
+                        WITH intervals AS (
+                            SELECT gcId,
+                                   uptimeSecs,
+                                   heapBefore,
+                                   LAG(heapAfter)   OVER (ORDER BY uptimeSecs) AS prevAfter,
+                                   LAG(uptimeSecs)  OVER (ORDER BY uptimeSecs) AS prevUptime
+                            FROM jvmlog_gc_event
+                            WHERE uptimeSecs IS NOT NULL AND heapBefore IS NOT NULL
+                        )
+                        SELECT gcId                                                      AS "GC ID",
+                               round(uptimeSecs, 3)                                     AS "Uptime (s)",
+                               round((heapBefore - prevAfter) / 1048576.0, 1)           AS "Allocated Since Last GC (MB)",
+                               round((uptimeSecs - prevUptime), 3)                      AS "Interval (s)",
+                               round((heapBefore - prevAfter) /
+                                     NULLIF((uptimeSecs - prevUptime) * 1048576.0, 0), 2)
+                                                                                        AS "Alloc Rate (MB/s)"
+                        FROM intervals
+                        WHERE prevAfter IS NOT NULL AND uptimeSecs > prevUptime
+                          AND heapBefore >= prevAfter
+                        ORDER BY uptimeSecs
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Per-GC allocation pressure: bytes allocated since the previous GC, interval length, and instantaneous allocation rate — useful for identifying allocation spikes."),
             };
 
     public static List<View> getViews() {

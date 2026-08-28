@@ -1595,3 +1595,84 @@ SELECT * FROM "jvmlog-full-gc-frequency"
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=gc-type-per-minute -->
+
+## GC Type Activity per Minute
+
+Young, Mixed, Full, and Concurrent-STW GC counts per 1-minute window — spot shifts in GC pattern over time, equivalent to GCeasy's GC Activity Chart.
+
+```sql
+SELECT * FROM "jvmlog-gc-type-per-minute"
+```
+
+```plot
+BAR(x="Minute", y="Count", color="GC Type")
+```
+
+---
+
+<!-- @cell name=memory-reclaimed -->
+
+## Memory Reclaimed per GC
+
+Bytes freed per GC type: avg/min/max/p50/p95 reclaim and total GBs reclaimed — shows which GC types do the most memory recovery work.
+
+```sql
+SELECT * FROM "jvmlog-memory-reclaimed"
+```
+
+```plot
+BAR(x="GC Type", y="Avg Reclaimed (MB)", color="GC Type")
+```
+
+---
+
+<!-- @cell name=pause-outliers -->
+
+## GC Pause Outliers
+
+Pauses that are statistical outliers (|Z-score| > 2.0 from mean) — abnormally long pauses indicate heap pressure, JIT de-optimisation, or safepoint delays and deserve individual investigation.
+
+```sql
+SELECT * FROM "jvmlog-pause-outliers"
+ORDER BY "Z-Score" DESC
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=heap-after-trend -->
+
+## Post-GC Heap Level Trend
+
+Post-GC heap fill % trend over the log — a rising trend indicates live data set growth and potential memory leak, mirroring GCViewer's tenured generation fill chart.
+
+```sql
+SELECT * FROM "jvmlog-heap-after-trend"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=alloc-pressure-timeline -->
+
+## Allocation Pressure Timeline
+
+Bytes allocated between consecutive GCs and instantaneous allocation rate — allocation spikes show up as sudden jumps in allocated MB or MB/s.
+
+```sql
+SELECT * FROM "jvmlog-alloc-pressure-timeline"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Alloc Rate (MB/s)")
+```
