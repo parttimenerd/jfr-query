@@ -36,7 +36,8 @@ class JvmlogViewsTest {
             "jvmlog-pause-sla", "jvmlog-cause-distribution", "jvmlog-throughput-timeline",
             "jvmlog-heap-growth-trend", "jvmlog-heap-growth-summary",
             "jvmlog-allocation-rate", "jvmlog-gc-type-breakdown", "jvmlog-full-gc-analysis",
-            "jvmlog-g1-humongous", "jvmlog-parallel-gc-detail", "jvmlog-gc-health-score"
+            "jvmlog-g1-humongous", "jvmlog-parallel-gc-detail", "jvmlog-gc-health-score",
+            "jvmlog-gc-recommendations", "jvmlog-zgc-generational"
     );
 
     @Test
@@ -1095,7 +1096,7 @@ class JvmlogViewsTest {
         try (Statement s = conn.createStatement()) {
             s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
             s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'Allocation Failure', 12.0, 1.0)");
-            s.execute("CREATE TABLE jvmlog_parallel_sizing (gcId INTEGER, youngGenBytes BIGINT, youngGenCapacity BIGINT, oldGenBytes BIGINT, oldGenCapacity BIGINT, throughputPercent DOUBLE)");
+            s.execute("CREATE TABLE jvmlog_parallel_sizing (gcId INTEGER, youngGenBytes BIGINT, youngGenCapacity BIGINT, oldGenBytes BIGINT, oldGenCapacity BIGINT, throughputPct DOUBLE)");
             s.execute("INSERT INTO jvmlog_parallel_sizing VALUES (0, 52428800, 134217728, 209715200, 536870912, 98.5)");
         }
         View view = ViewCollection.getViews().stream()
@@ -1159,5 +1160,72 @@ class JvmlogViewsTest {
         }
         conn.close();
         conn2.close();
+    }
+
+    @Test
+    void gcRecommendationsViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            // Scenario: frequent allocation failures, one System.gc(), low throughput
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Young', 'Allocation Failure', 15.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Young', 'Allocation Failure', 20.0, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Full GC', 'System.gc()', 500.0, 3.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-gc-recommendations".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-gc-recommendations not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            // Should have 6 recommendation rows
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-gc-recommendations\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(6);
+            // System.gc() should appear as Warning
+            rs = s.executeQuery("SELECT \"Severity\" FROM \"jvmlog-gc-recommendations\" WHERE \"Category\" = 'System.gc() Calls'");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Severity")).isEqualTo("Warning");
+            // Full GC should appear as Warning or Critical
+            rs = s.executeQuery("SELECT \"Severity\" FROM \"jvmlog-gc-recommendations\" WHERE \"Category\" = 'Full GC Events'");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Severity")).isIn("Warning", "Critical");
+        }
+        conn.close();
+    }
+
+    @Test
+    void zgcGenerationalViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_zgc_phases (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE, generation VARCHAR, concurrent BOOLEAN)");
+            // Young collection cycles: 3 concurrent, 3 STW
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (0, 'Young Collection', 45.6, 'Young', true)");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (0, 'Pause Mark Start', 0.2, 'Young', false)");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (1, 'Young Collection', 38.2, 'Young', true)");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (1, 'Pause Mark Start', 0.3, 'Young', false)");
+            // Old collection cycle
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (2, 'Old Collection', 120.0, 'Old', true)");
+            s.execute("INSERT INTO jvmlog_zgc_phases VALUES (2, 'Pause Mark Start', 0.5, 'Old', false)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-zgc-generational".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-zgc-generational not found"));
+        assertThat(view.isValid(Set.of("jvmlog_zgc_phases"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_zgc_phases"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Generation\", \"Cycles\", \"Total Concurrent (ms)\", \"Avg Pause (ms)\" FROM \"jvmlog-zgc-generational\" ORDER BY \"Generation\"");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Generation")).isEqualTo("Old");
+            assertThat(rs.getLong("Cycles")).isEqualTo(1);
+            assertThat(rs.getDouble("Avg Pause (ms)")).isCloseTo(0.5, within(0.01));
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Generation")).isEqualTo("Young");
+            assertThat(rs.getLong("Cycles")).isEqualTo(2);
+            assertThat(rs.getDouble("Total Concurrent (ms)")).isCloseTo(83.8, within(0.1));
+        }
+        conn.close();
     }
 }

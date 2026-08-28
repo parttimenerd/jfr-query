@@ -4317,7 +4317,7 @@ public class ViewCollection {
                                        max(oldGenBytes) AS oldGenBytes,
                                        max(youngGenCapacity) AS youngGenCapacity,
                                        max(oldGenCapacity) AS oldGenCapacity,
-                                       max(throughputPercent) AS throughputPercent
+                                       max(throughputPct) AS throughputPct
                                 FROM jvmlog_parallel_sizing
                                 GROUP BY gcId
                             )
@@ -4330,7 +4330,7 @@ public class ViewCollection {
                                    round(s.youngGenCapacity / 1048576.0, 2) AS "Young Capacity (MB)",
                                    round(s.oldGenBytes / 1048576.0, 2) AS "Old Gen (MB)",
                                    round(s.oldGenCapacity / 1048576.0, 2) AS "Old Capacity (MB)",
-                                   round(s.throughputPercent, 2) AS "Throughput %"
+                                   round(s.throughputPct, 2) AS "Throughput %"
                             FROM jvmlog_gc_event e
                             JOIN sizing s ON e.gcId = s.gcId
                             WHERE e.pauseMs IS NOT NULL
@@ -4391,6 +4391,132 @@ public class ViewCollection {
                             """,
                         "jvmlog_gc_event")
                     .description("GC health score — composite diagnostic inspired by GCeasy. Throughput, P99, Full GC count, and a traffic-light rating with primary concern."),
+                new View(
+                        "jvmlog-gc-recommendations",
+                        "jvmlog",
+                        "GC Log: Tuning Recommendations",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-gc-recommendations" AS
+                            WITH stats AS (
+                                SELECT max(uptimeSecs) - min(uptimeSecs) AS totalUptimeSecs,
+                                       sum(pauseMs) / 1000.0 AS gcTimeSecs,
+                                       count(*) AS gcEventCount,
+                                       approx_quantile(pauseMs, 0.99) AS p99PauseMs,
+                                       max(pauseMs) AS maxPauseMs,
+                                       avg(pauseMs) AS avgPauseMs,
+                                       count(*) FILTER (WHERE lower(gcType) LIKE '%full%'
+                                                           OR cause = 'System.gc()') AS fullGcCount,
+                                       count(*) FILTER (WHERE cause = 'System.gc()') AS systemGcCount,
+                                       count(*) FILTER (WHERE cause = 'Allocation Failure'
+                                                           OR cause = 'G1 Humongous Allocation') AS allocFailures
+                                FROM jvmlog_gc_event
+                                WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                            ),
+                            derived AS (
+                                SELECT *,
+                                       round((1.0 - gcTimeSecs / nullif(totalUptimeSecs, 0)) * 100.0, 2) AS throughputPct,
+                                       round(gcEventCount * 1.0 / nullif(totalUptimeSecs, 0), 3) AS gcFreqHz
+                                FROM stats
+                            ),
+                            recs AS (
+                                SELECT 'Throughput' AS category,
+                                       CASE WHEN throughputPct < 95 THEN 'Critical'
+                                            WHEN throughputPct < 99 THEN 'Warning'
+                                            ELSE 'OK' END AS severity,
+                                       round(throughputPct, 2) || '%' AS observed,
+                                       CASE WHEN throughputPct < 95 THEN 'Increase -Xmx / -Xms or switch to ZGC/Shenandoah for lower STW overhead'
+                                            WHEN throughputPct < 99 THEN 'Consider tuning GC thread count (-XX:ParallelGCThreads) or increasing heap'
+                                            ELSE 'Throughput is healthy (≥ 99%)' END AS recommendation
+                                FROM derived
+                                UNION ALL
+                                SELECT 'P99 Pause',
+                                       CASE WHEN p99PauseMs >= 500 THEN 'Critical'
+                                            WHEN p99PauseMs >= 100 THEN 'Warning'
+                                            ELSE 'OK' END,
+                                       round(p99PauseMs, 1) || 'ms',
+                                       CASE WHEN p99PauseMs >= 500 THEN 'P99 ≥ 500ms: switch to ZGC or Shenandoah for sub-millisecond STW; investigate Full GC triggers'
+                                            WHEN p99PauseMs >= 100 THEN 'P99 ≥ 100ms: tune -XX:MaxGCPauseMillis or increase heap to reduce evacuation pause frequency'
+                                            ELSE 'P99 pause is within typical latency targets' END
+                                FROM derived
+                                UNION ALL
+                                SELECT 'Full GC Events',
+                                       CASE WHEN fullGcCount > 5 THEN 'Critical'
+                                            WHEN fullGcCount > 0 THEN 'Warning'
+                                            ELSE 'OK' END,
+                                       fullGcCount::VARCHAR || ' events',
+                                       CASE WHEN fullGcCount > 5 THEN 'Severe Full GC activity: profile heap allocation, check for memory leaks, increase -Xmx'
+                                            WHEN fullGcCount > 0 THEN 'Full GC occurred: review heap sizing and allocation patterns; add -XX:+PrintGCDetails for more context'
+                                            ELSE 'No Full GC events — good' END
+                                FROM derived
+                                UNION ALL
+                                SELECT 'System.gc() Calls',
+                                       CASE WHEN systemGcCount > 0 THEN 'Warning' ELSE 'OK' END,
+                                       systemGcCount::VARCHAR || ' calls',
+                                       CASE WHEN systemGcCount > 0 THEN 'Application or library calling System.gc() — add -XX:+DisableExplicitGC to suppress; investigate callers'
+                                            ELSE 'No explicit System.gc() calls detected' END
+                                FROM derived
+                                UNION ALL
+                                SELECT 'Allocation Failures',
+                                       CASE WHEN allocFailures > 10 THEN 'Critical'
+                                            WHEN allocFailures > 0 THEN 'Warning'
+                                            ELSE 'OK' END,
+                                       allocFailures::VARCHAR || ' events',
+                                       CASE WHEN allocFailures > 10 THEN 'Frequent allocation failures: young gen too small (-XX:NewSize/-XX:NewRatio) or allocation rate too high'
+                                            WHEN allocFailures > 0 THEN 'Allocation failures present: monitor with -Xlog:gc*:file to check allocation hotspots'
+                                            ELSE 'No allocation failures detected' END
+                                FROM derived
+                                UNION ALL
+                                SELECT 'GC Frequency',
+                                       CASE WHEN gcFreqHz > 10 THEN 'Warning'
+                                            WHEN gcFreqHz > 5 THEN 'Info'
+                                            ELSE 'OK' END,
+                                       round(gcFreqHz, 2) || ' Hz',
+                                       CASE WHEN gcFreqHz > 10 THEN 'Very high GC frequency (> 10/s): increase young gen size or reduce allocation rate'
+                                            WHEN gcFreqHz > 5 THEN 'Elevated GC frequency (> 5/s): consider -XX:NewRatio or heap expansion'
+                                            ELSE 'GC frequency within normal range' END
+                                FROM derived
+                            )
+                            SELECT category AS "Category",
+                                   severity AS "Severity",
+                                   observed AS "Observed",
+                                   recommendation AS "Recommendation"
+                            FROM recs
+                            ORDER BY CASE severity WHEN 'Critical' THEN 1 WHEN 'Warning' THEN 2 WHEN 'Info' THEN 3 ELSE 4 END, category
+                            """,
+                        "jvmlog_gc_event")
+                    .description("SQL-driven tuning recommendations — analyses throughput, P99, Full GC, System.gc(), allocation failures, and GC frequency to suggest configuration changes."),
+                new View(
+                        "jvmlog-zgc-generational",
+                        "jvmlog",
+                        "GC Log: ZGC Generational Breakdown",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-zgc-generational" AS
+                            WITH gen_stats AS (
+                                SELECT generation,
+                                       count(DISTINCT gcId) AS cycleCount,
+                                       sum(CASE WHEN concurrent THEN durationMs ELSE 0 END) AS totalConcurrentMs,
+                                       sum(CASE WHEN NOT concurrent THEN durationMs ELSE 0 END) AS totalPauseMs,
+                                       avg(CASE WHEN concurrent THEN durationMs ELSE NULL END) AS avgConcurrentMs,
+                                       avg(CASE WHEN NOT concurrent THEN durationMs ELSE NULL END) AS avgPauseMs,
+                                       max(CASE WHEN NOT concurrent THEN durationMs ELSE NULL END) AS maxPauseMs
+                                FROM jvmlog_zgc_phases
+                                WHERE generation IS NOT NULL AND generation != 'N/A'
+                                GROUP BY generation
+                            )
+                            SELECT generation AS "Generation",
+                                   cycleCount AS "Cycles",
+                                   round(totalConcurrentMs, 2) AS "Total Concurrent (ms)",
+                                   round(totalPauseMs, 2) AS "Total Pause (ms)",
+                                   round(avgConcurrentMs, 2) AS "Avg Concurrent (ms)",
+                                   round(avgPauseMs, 2) AS "Avg Pause (ms)",
+                                   round(maxPauseMs, 2) AS "Max Pause (ms)"
+                            FROM gen_stats
+                            ORDER BY generation
+                            """,
+                        "jvmlog_zgc_phases")
+                    .description("ZGC generational collection breakdown (JDK 21+) — Young vs Old generation cycle counts, concurrent time, and pause time."),
             };
 
     public static List<View> getViews() {

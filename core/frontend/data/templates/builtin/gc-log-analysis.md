@@ -99,6 +99,22 @@ TABLE()
 
 ---
 
+<!-- @cell name=gc-recommendations -->
+
+## GC Tuning Recommendations
+
+SQL-driven recommendations for each diagnostic category — severity-ranked from Critical to OK, with specific JVM flag suggestions. Inspired by GCeasy's recommendation engine.
+
+```sql
+SELECT * FROM "jvmlog-gc-recommendations"
+```
+
+```plot
+TABLE()
+```
+
+---
+
 <!-- @cell name=pause-summary -->
 
 ## Pause Summary
@@ -713,6 +729,22 @@ ORDER BY "GC ID"
 
 ```plot
 BAR(x="GC ID", y="Concurrent ms")
+```
+
+---
+
+<!-- @cell name=zgc-generational requires="has-zgc" -->
+
+## ZGC: Generational Breakdown (JDK 21+)
+
+Young vs Old generation collection stats for Generational ZGC — cycle counts, total and average concurrent time, and max pause per generation.
+
+```sql
+SELECT * FROM "jvmlog-zgc-generational"
+```
+
+```plot
+BAR(x="Generation", y="Total Concurrent (ms)")
 ```
 
 ---
