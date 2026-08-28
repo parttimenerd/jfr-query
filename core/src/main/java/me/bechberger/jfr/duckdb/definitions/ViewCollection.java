@@ -4688,6 +4688,77 @@ public class ViewCollection {
                             """,
                         "jvmlog_zgc_load")
                     .description("ZGC allocation rate per cycle from [gc,load] tag — high allocation rates with stalls indicate the application is outpacing the GC."),
+                new View(
+                        "jvmlog-top-pauses-by-cause",
+                        "jvmlog",
+                        "GC Log: Top Pauses by Cause",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-top-pauses-by-cause" AS
+                            SELECT cause AS "Cause",
+                                   gcId AS "GC ID",
+                                   round(uptimeSecs, 3) AS "Uptime (s)",
+                                   gcType AS "Type",
+                                   round(pauseMs, 2) AS "Pause (ms)"
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL
+                            QUALIFY row_number() OVER (PARTITION BY cause ORDER BY pauseMs DESC) <= 10
+                            ORDER BY cause, pauseMs DESC
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Top 10 longest pause events per GC cause — useful for identifying whether worst-case latency concentrates in one cause."),
+                new View(
+                        "jvmlog-shenandoah-mode-analysis",
+                        "jvmlog",
+                        "GC Log: Shenandoah Mode Analysis",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-shenandoah-mode-analysis" AS
+                            WITH modes AS (
+                                SELECT CASE
+                                           WHEN lower(gcType) LIKE '%full%' THEN 'Full GC'
+                                           WHEN lower(gcType) LIKE '%degenerat%' THEN 'Degenerated GC'
+                                           WHEN gcType IN ('Init Mark', 'Final Mark', 'Init Update Refs', 'Final Update Refs') THEN 'Normal Cycle'
+                                           WHEN gcType IN ('Final Evac') THEN 'Normal Cycle'
+                                           ELSE 'Other'
+                                       END AS mode,
+                                       pauseMs,
+                                       uptimeSecs
+                                FROM jvmlog_gc_event
+                                WHERE pauseMs IS NOT NULL
+                            ),
+                            total AS (SELECT count(*) AS n, sum(pauseMs) AS totalMs FROM modes)
+                            SELECT mode AS "Mode",
+                                   count(*) AS "Events",
+                                   round(count(*) * 100.0 / nullif((SELECT n FROM total), 0), 1) AS "% of Events",
+                                   round(sum(pauseMs), 2) AS "Total Pause (ms)",
+                                   round(sum(pauseMs) * 100.0 / nullif((SELECT totalMs FROM total), 0), 1) AS "% of Pause",
+                                   round(avg(pauseMs), 2) AS "Avg Pause (ms)",
+                                   round(max(pauseMs), 2) AS "Max Pause (ms)"
+                            FROM modes
+                            GROUP BY mode
+                            ORDER BY "Total Pause (ms)" DESC
+                            """,
+                        "jvmlog_gc_event")
+                    .description("Shenandoah GC mode breakdown — Degenerated and Full GC modes indicate the JVM could not keep up with allocation pressure."),
+                new View(
+                        "jvmlog-phase-top-slow",
+                        "jvmlog",
+                        "GC Log: Slowest Phase Executions",
+                        null,
+                        """
+                            CREATE VIEW "jvmlog-phase-top-slow" AS
+                            SELECT phaseName AS "Phase",
+                                   gcId AS "GC ID",
+                                   round(uptimeSecs, 3) AS "Uptime (s)",
+                                   round(durationMs, 3) AS "Duration (ms)"
+                            FROM jvmlog_gc_phase
+                            WHERE durationMs IS NOT NULL
+                            QUALIFY row_number() OVER (PARTITION BY phaseName ORDER BY durationMs DESC) <= 5
+                            ORDER BY phaseName, durationMs DESC
+                            """,
+                        "jvmlog_gc_phase")
+                    .description("Top 5 slowest executions per GC phase — identifies outlier phase durations that cause the occasional long pause."),
             };
 
     public static List<View> getViews() {

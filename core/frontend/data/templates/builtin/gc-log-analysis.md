@@ -617,6 +617,22 @@ BAR(x="Phase", y="Avg ms")
 
 ---
 
+<!-- @cell name=phase-top-slow requires="has-gc-phase" -->
+
+## Slowest Phase Executions
+
+Top 5 slowest individual executions per GC phase — reveals outlier events where a normally fast phase ran unusually long, indicating JVM or OS interference.
+
+```sql
+SELECT * FROM "jvmlog-phase-top-slow"
+```
+
+```plot
+SCATTER(x="GC ID", y="Duration (ms)", color="Phase")
+```
+
+---
+
 <!-- @cell name=phase-timeline requires="has-gc-phase" -->
 
 ## Phase Timeline
@@ -989,6 +1005,22 @@ BAR(x="GC ID", y="Pause (ms)")
 
 ---
 
+<!-- @cell name=top-pauses-by-cause -->
+
+## Top Pauses by Cause
+
+Top 10 longest pause events per GC cause — pinpoints the worst individual latency offenders within each trigger category.
+
+```sql
+SELECT * FROM "jvmlog-top-pauses-by-cause"
+```
+
+```plot
+SCATTER(x="Uptime (s)", y="Pause (ms)", color="Cause")
+```
+
+---
+
 <!-- @cell name=alloc-stall requires="has-alloc-stall" -->
 
 ## Allocation Stalls
@@ -1033,6 +1065,22 @@ SELECT * FROM "jvmlog-shenandoah-cycle-detail"
 
 ```plot
 BAR(x="GC ID", y="Total STW (ms)")
+```
+
+---
+
+<!-- @cell name=shenandoah-mode-analysis requires="has-shenandoah" -->
+
+## Shenandoah: Mode Analysis
+
+Normal vs Degenerated vs Full GC classification — Degenerated and Full GC indicate Shenandoah cannot keep pace with allocation and has fallen back to stop-the-world collection. Frequent degraded cycles are a sign of allocation rate exceeding GC capacity.
+
+```sql
+SELECT * FROM "jvmlog-shenandoah-mode-analysis"
+```
+
+```plot
+BAR(x="Mode", y="Count")
 ```
 
 ---

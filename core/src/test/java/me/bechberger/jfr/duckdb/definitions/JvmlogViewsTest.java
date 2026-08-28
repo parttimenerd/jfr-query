@@ -40,7 +40,9 @@ class JvmlogViewsTest {
             "jvmlog-gc-recommendations", "jvmlog-zgc-generational",
             "jvmlog-concurrent-overhead", "jvmlog-gc-log-quality",
             "jvmlog-heap-resize-summary", "jvmlog-allocation-rate-timeline",
-            "jvmlog-pause-regression", "jvmlog-zgc-allocation-rate"
+            "jvmlog-pause-regression", "jvmlog-zgc-allocation-rate",
+            "jvmlog-top-pauses-by-cause", "jvmlog-shenandoah-mode-analysis",
+            "jvmlog-phase-top-slow"
     );
 
     @Test
@@ -1400,6 +1402,91 @@ class JvmlogViewsTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getInt("GC ID")).isEqualTo(1);
             assertThat(rs.getLong("Alloc Stalls")).isEqualTo(2);
+        }
+        conn.close();
+    }
+
+    @Test
+    void topPausesByCauseViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 15; i++) {
+                s.execute("INSERT INTO jvmlog_gc_event VALUES (" + i + ", 'Young', 'G1 Evacuation Pause', " + (i * 2.0 + 1.0) + ", " + i + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (15, 'Full', 'System.gc()', 500.0, 15.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-top-pauses-by-cause".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-top-pauses-by-cause not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            // 15 G1 Evacuation Pause events: top 10 returned per cause
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-top-pauses-by-cause\" WHERE \"Cause\" = 'G1 Evacuation Pause'");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(10); // top 10 per cause
+            // System.gc() has 1 event — all 1 returned
+            rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-top-pauses-by-cause\" WHERE \"Cause\" = 'System.gc()'");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(1);
+        }
+        conn.close();
+    }
+
+    @Test
+    void shenandoahModeAnalysisViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_event (gcId INTEGER, gcType VARCHAR, cause VARCHAR, pauseMs DOUBLE, uptimeSecs DOUBLE)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (0, 'Init Mark', 'Metadata GC Threshold', 3.0, 1.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (1, 'Final Mark', 'Metadata GC Threshold', 2.5, 2.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (2, 'Degenerated GC', 'Allocation Failure', 150.0, 5.0)");
+            s.execute("INSERT INTO jvmlog_gc_event VALUES (3, 'Full GC', 'Allocation Failure', 800.0, 10.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-shenandoah-mode-analysis".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-shenandoah-mode-analysis not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_event"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_event"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            var rs = s.executeQuery("SELECT \"Mode\", \"Events\" FROM \"jvmlog-shenandoah-mode-analysis\" ORDER BY \"Total Pause (ms)\" DESC");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Mode")).isEqualTo("Full GC");
+            assertThat(rs.getLong("Events")).isEqualTo(1);
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("Mode")).isEqualTo("Degenerated GC");
+        }
+        conn.close();
+    }
+
+    @Test
+    void phaseTopSlowViewExecutesWithData() throws Exception {
+        DuckDBConnection conn = (DuckDBConnection) DriverManager.getConnection("jdbc:duckdb:");
+        try (Statement s = conn.createStatement()) {
+            s.execute("CREATE TABLE jvmlog_gc_phase (gcId INTEGER, phaseName VARCHAR, durationMs DOUBLE, uptimeSecs DOUBLE)");
+            for (int i = 0; i < 8; i++) {
+                s.execute("INSERT INTO jvmlog_gc_phase VALUES (" + i + ", 'Pre Evacuate Collection Set', " + (i * 0.5 + 0.1) + ", " + i + ")");
+            }
+            s.execute("INSERT INTO jvmlog_gc_phase VALUES (8, 'Merge Heap Roots', 5.0, 8.0)");
+        }
+        View view = ViewCollection.getViews().stream()
+                .filter(v -> "jvmlog-phase-top-slow".equals(v.name()))
+                .findFirst().orElseThrow(() -> new AssertionError("jvmlog-phase-top-slow not found"));
+        assertThat(view.isValid(Set.of("jvmlog_gc_phase"))).isTrue();
+        String query = view.getBestMatchingQuery(Set.of("jvmlog_gc_phase"));
+        try (Statement s = conn.createStatement()) {
+            s.execute(query);
+            // 8 Pre Evacuate events: top 5 returned
+            var rs = s.executeQuery("SELECT count(*) AS cnt FROM \"jvmlog-phase-top-slow\" WHERE \"Phase\" = 'Pre Evacuate Collection Set'");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong("cnt")).isEqualTo(5);
+            // First row (slowest) should be the last inserted event (index 7, duration=3.6ms)
+            rs = s.executeQuery("SELECT \"Duration (ms)\" FROM \"jvmlog-phase-top-slow\" WHERE \"Phase\" = 'Pre Evacuate Collection Set' LIMIT 1");
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getDouble("Duration (ms)")).isCloseTo(3.6, within(0.01));
         }
         conn.close();
     }
