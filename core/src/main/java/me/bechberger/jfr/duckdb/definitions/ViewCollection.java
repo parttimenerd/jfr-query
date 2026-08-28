@@ -7717,6 +7717,168 @@ public class ViewCollection {
                         """,
                     "jvmlog_gc_event")
                     .description("Pause duration trend per GC cause — detects which causes are getting systematically worse over the log duration, not just which are worst overall."),
+
+            // -----------------------------------------------------------------------
+            // GC footprint summary (GCViewer-style: min/max/avg heap after GC)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-gc-footprint", "jvmlog",
+                    "GC Log: Heap Footprint Summary", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-footprint" AS
+                        WITH heap AS (
+                            SELECT gcId, heapAfter, heapCommittedBefore
+                            FROM jvmlog_heap_snapshot
+                            QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                        )
+                        SELECT
+                            round(min(h.heapAfter)            / 1048576.0, 1) AS "Min Heap After (MB)",
+                            round(avg(h.heapAfter)            / 1048576.0, 1) AS "Avg Heap After (MB)",
+                            round(max(h.heapAfter)            / 1048576.0, 1) AS "Max Heap After (MB)",
+                            round(min(h.heapCommittedBefore)  / 1048576.0, 1) AS "Min Committed (MB)",
+                            round(avg(h.heapCommittedBefore)  / 1048576.0, 1) AS "Avg Committed (MB)",
+                            round(max(h.heapCommittedBefore)  / 1048576.0, 1) AS "Max Committed (MB)",
+                            round(approx_quantile(h.heapAfter, 0.50) / 1048576.0, 1) AS "p50 Heap After (MB)",
+                            round(approx_quantile(h.heapAfter, 0.95) / 1048576.0, 1) AS "p95 Heap After (MB)"
+                        FROM jvmlog_gc_event e
+                        JOIN heap h USING (gcId)
+                        """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("GCViewer-style heap footprint: min/avg/max heap after GC and committed heap across the entire log — minimum footprint represents the true working set.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-gc-footprint" AS
+                        SELECT count(*) AS "GC Events", round(avg(pauseMs), 2) AS "Avg Pause (ms)"
+                        FROM jvmlog_gc_event
+                        """,
+                        "jvmlog_gc_event"),
+
+            // -----------------------------------------------------------------------
+            // Committed heap timeline (heap expansion / shrinkage over time)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-heap-committed-timeline", "jvmlog",
+                    "GC Log: Committed Heap Timeline", null,
+                    """
+                        CREATE VIEW "jvmlog-heap-committed-timeline" AS
+                        WITH heap AS (
+                            SELECT gcId, heapBefore, heapAfter, heapCommittedBefore, heapCommittedAfter
+                            FROM jvmlog_heap_snapshot
+                            QUALIFY row_number() OVER (PARTITION BY gcId ORDER BY heapCommittedBefore DESC NULLS LAST) = 1
+                        )
+                        SELECT e.gcId                                                    AS "GC ID",
+                               round(e.uptimeSecs, 3)                                   AS "Uptime (s)",
+                               round(h.heapBefore         / 1048576.0, 1)               AS "Used Before (MB)",
+                               round(h.heapAfter          / 1048576.0, 1)               AS "Used After (MB)",
+                               round(h.heapCommittedBefore / 1048576.0, 1)              AS "Committed (MB)",
+                               round((h.heapCommittedBefore - h.heapBefore) / 1048576.0, 1)
+                                                                                        AS "Free Before (MB)",
+                               round(100.0 * h.heapBefore / NULLIF(h.heapCommittedBefore, 0), 1)
+                                                                                        AS "Utilisation %"
+                        FROM jvmlog_gc_event e
+                        JOIN heap h USING (gcId)
+                        WHERE e.uptimeSecs IS NOT NULL
+                        ORDER BY e.uptimeSecs
+                        """,
+                    "jvmlog_gc_event", "jvmlog_heap_snapshot")
+                    .description("Committed and used heap at every GC event — a flat committed line with rising used% indicates the JVM has stopped resizing (Xms=Xmx or GCLocker) and heap saturation is imminent.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-heap-committed-timeline" AS
+                        SELECT gcId AS "GC ID", round(uptimeSecs, 3) AS "Uptime (s)",
+                               round(pauseMs, 2) AS "Pause (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE uptimeSecs IS NOT NULL
+                        ORDER BY uptimeSecs
+                        """,
+                        "jvmlog_gc_event"),
+
+            // -----------------------------------------------------------------------
+            // G1 humongous allocation timeline
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-g1-humongous-timeline", "jvmlog",
+                    "GC Log: G1 Humongous Region Count Timeline", null,
+                    """
+                        CREATE VIEW "jvmlog-g1-humongous-timeline" AS
+                        WITH regions AS (
+                            SELECT gcId, max(humongousBefore) AS humongousBefore, max(humongousAfter) AS humongousAfter
+                            FROM jvmlog_g1_regions
+                            WHERE humongousBefore IS NOT NULL
+                            GROUP BY gcId
+                        )
+                        SELECT e.gcId                  AS "GC ID",
+                               round(e.uptimeSecs, 3)  AS "Uptime (s)",
+                               r.humongousBefore        AS "Humongous Regions Before",
+                               r.humongousAfter         AS "Humongous Regions After",
+                               r.humongousBefore - r.humongousAfter
+                                                        AS "Humongous Reclaimed"
+                        FROM jvmlog_gc_event e
+                        JOIN regions r USING (gcId)
+                        WHERE e.uptimeSecs IS NOT NULL
+                        ORDER BY e.uptimeSecs
+                        """,
+                    "jvmlog_gc_event", "jvmlog_g1_regions")
+                    .description("G1 humongous region count before/after each GC — persistent humongous regions across GCs indicate large object retention; high before-count with low reclaim indicates GC pressure from large objects.")
+                    .addAlternative(
+                        """
+                        CREATE VIEW "jvmlog-g1-humongous-timeline" AS
+                        SELECT gcId AS "GC ID", max(humongousBefore) AS "Humongous Before", max(humongousAfter) AS "Humongous After"
+                        FROM jvmlog_g1_regions
+                        WHERE humongousBefore IS NOT NULL
+                        GROUP BY gcId
+                        ORDER BY gcId
+                        """,
+                        "jvmlog_g1_regions"),
+
+            // -----------------------------------------------------------------------
+            // Pause percentile SLA compliance table
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-pause-sla-compliance", "jvmlog",
+                    "GC Log: Pause SLA Compliance", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-sla-compliance" AS
+                        SELECT
+                            count(*) AS "Total GCs",
+                            round(100.0 * count(*) FILTER (WHERE pauseMs < 10)   / count(*), 1) AS "< 10 ms %",
+                            round(100.0 * count(*) FILTER (WHERE pauseMs < 50)   / count(*), 1) AS "< 50 ms %",
+                            round(100.0 * count(*) FILTER (WHERE pauseMs < 100)  / count(*), 1) AS "< 100 ms %",
+                            round(100.0 * count(*) FILTER (WHERE pauseMs < 200)  / count(*), 1) AS "< 200 ms %",
+                            round(100.0 * count(*) FILTER (WHERE pauseMs < 500)  / count(*), 1) AS "< 500 ms %",
+                            round(100.0 * count(*) FILTER (WHERE pauseMs >= 500) / count(*), 1) AS ">= 500 ms %",
+                            round(max(pauseMs), 1) AS "Max Pause (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL
+                        """,
+                    "jvmlog_gc_event")
+                    .description("SLA compliance summary: percentage of GC pauses under common latency thresholds (10/50/100/200/500 ms) — GCeasy-style pass/fail visibility for pause budgets."),
+
+            // -----------------------------------------------------------------------
+            // Concurrent GC stall rate (ZGC / Shenandoah allocation stalls per minute)
+            // -----------------------------------------------------------------------
+            new View(
+                    "jvmlog-concurrent-stall-timeline", "jvmlog",
+                    "GC Log: Concurrent GC Allocation Stall Rate", null,
+                    """
+                        CREATE VIEW "jvmlog-concurrent-stall-timeline" AS
+                        WITH buckets AS (
+                            SELECT (rowid / 20)::BIGINT          AS bucket,
+                                   count(*)                       AS stallCount,
+                                   round(sum(stallMs), 1)         AS totalStallMs,
+                                   round(avg(stallMs), 2)         AS avgStallMs
+                            FROM jvmlog_alloc_stall
+                            GROUP BY (rowid / 20)::BIGINT
+                        )
+                        SELECT bucket        AS "Bucket (20 events)",
+                               stallCount    AS "Stalls",
+                               totalStallMs  AS "Total Stall (ms)",
+                               avgStallMs    AS "Avg Stall (ms)"
+                        FROM buckets
+                        ORDER BY bucket
+                        """,
+                    "jvmlog_alloc_stall")
+                    .description("Allocation stall count and total stall time in rolling 20-event buckets — for ZGC/Shenandoah, stalls mean the mutator was blocked waiting for the concurrent collector; sustained stalls indicate the GC cannot keep up with allocation."),
             };
 
     public static List<View> getViews() {

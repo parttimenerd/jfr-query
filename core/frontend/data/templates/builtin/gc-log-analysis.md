@@ -2335,3 +2335,83 @@ SELECT * FROM "jvmlog-pause-trend-by-cause"
 ```plot
 TABLE()
 ```
+
+---
+
+<!-- @cell name=gc-footprint requires="has-heap-snapshot" -->
+
+## Heap Footprint Summary
+
+GCViewer-style heap footprint: min/avg/max heap after GC and committed heap across the entire log — the minimum heap after GC is the true working set, and max committed shows peak reservation.
+
+```sql
+SELECT * FROM "jvmlog-gc-footprint"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=heap-committed-timeline requires="has-heap-snapshot" -->
+
+## Committed Heap Timeline
+
+Committed and used heap at every GC event — a flat committed line with rising utilisation% indicates the JVM has stopped resizing (Xms=Xmx or GCLocker) and saturation is imminent.
+
+```sql
+SELECT * FROM "jvmlog-heap-committed-timeline"
+```
+
+```plot
+LINE(x="Uptime (s)", y=["Used Before (MB)","Committed (MB)"])
+```
+
+---
+
+<!-- @cell name=pause-sla-compliance requires="has-jvmlog-gc" -->
+
+## Pause SLA Compliance
+
+Percentage of GC pauses under common latency thresholds — GCeasy-style pass/fail for 10 ms, 50 ms, 100 ms, 200 ms, and 500 ms pause budgets.
+
+```sql
+SELECT * FROM "jvmlog-pause-sla-compliance"
+```
+
+```plot
+TABLE()
+```
+
+---
+
+<!-- @cell name=g1-humongous-timeline requires="has-g1-regions" -->
+
+## G1 Humongous Region Count Timeline
+
+Humongous regions before/after each GC — persistent humongous regions across GCs indicate large object retention; a high before-count that doesn't drop after GC means those objects are still live.
+
+```sql
+SELECT * FROM "jvmlog-g1-humongous-timeline"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Humongous Regions Before")
+```
+
+---
+
+<!-- @cell name=concurrent-stall-timeline requires="has-alloc-stall" -->
+
+## Concurrent GC Allocation Stall Rate
+
+Allocation stall count and cumulative stall time in rolling 20-event buckets — for ZGC/Shenandoah, stalls mean the mutator was blocked waiting for the concurrent collector to catch up.
+
+```sql
+SELECT * FROM "jvmlog-concurrent-stall-timeline"
+```
+
+```plot
+BAR(x="Bucket (20 events)", y="Total Stall (ms)")
+```
