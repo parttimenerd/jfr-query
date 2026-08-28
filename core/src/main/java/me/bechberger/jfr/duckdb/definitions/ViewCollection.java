@@ -9320,6 +9320,140 @@ public class ViewCollection {
                         """,
                     "jvmlog_g1_regions")
                     .description("Per-GC G1 old generation growth from survivor promotion — high 'Promoted % of Live' means objects are aging quickly; sustained old gen growth without corresponding Full GC suggests premature tenuring, tune with -XX:MaxTenuringThreshold."),
+
+                    // Batch 13
+                    new View(
+                    "jvmlog-pause-worst-10", "jvmlog",
+                    "GC Log: Top 10 Worst GC Pauses with Context", null,
+                    """
+                        CREATE VIEW "jvmlog-pause-worst-10" AS
+                        SELECT gcId                                                   AS "GC ID",
+                               gcType                                                 AS "GC Type",
+                               cause                                                  AS "Cause",
+                               round(uptimeSecs, 1)                                  AS "At (s)",
+                               round(pauseMs, 2)                                     AS "Pause (ms)",
+                               round(durationMs, 2)                                  AS "Duration (ms)"
+                        FROM jvmlog_gc_event
+                        WHERE pauseMs IS NOT NULL
+                        ORDER BY pauseMs DESC
+                        LIMIT 10
+                        """,
+                    "jvmlog_gc_event")
+                    .description("The 10 worst GC pause events — inspect the cause and time-of-occurrence for each; pauses clustering at the same uptime indicate a load spike; repeated Full GC in the top-10 means the old generation is consistently under pressure."),
+
+                    new View(
+                    "jvmlog-safepoint-top-ops", "jvmlog",
+                    "GC Log: Top 10 Safepoint Operations by Total STW Time", null,
+                    """
+                        CREATE VIEW "jvmlog-safepoint-top-ops" AS
+                        SELECT operation                                              AS "Operation",
+                               count(*)                                              AS "Count",
+                               round(sum(totalMs), 1)                               AS "Total STW (ms)",
+                               round(avg(totalMs), 2)                               AS "Avg STW (ms)",
+                               round(max(totalMs), 2)                               AS "Max STW (ms)",
+                               round(avg(syncMs), 2)                                AS "Avg Sync (ms)"
+                        FROM jvmlog_safepoint
+                        WHERE operation IS NOT NULL
+                        GROUP BY operation
+                        ORDER BY "Total STW (ms)" DESC
+                        LIMIT 10
+                        """,
+                    "jvmlog_safepoint")
+                    .description("Top 10 safepoint operations by total STW time — non-GC operations (RevokeBias, Deoptimize) in the top 10 mean JIT activity is competing for stop-the-world slots; check if tiered compilation is producing excessive deoptimizations."),
+
+                    new View(
+                    "jvmlog-worker-utilisation-by-phase", "jvmlog",
+                    "GC Log: GC Worker Utilisation by Phase (workers used vs max)", null,
+                    """
+                        CREATE VIEW "jvmlog-worker-utilisation-by-phase" AS
+                        SELECT taskName                                              AS "Task",
+                               count(*)                                             AS "Invocations",
+                               round(avg(workersUsed), 1)                          AS "Avg Workers Used",
+                               max(workersMax)                                      AS "Max Available",
+                               round(avg(workersUsed * 100.0 / nullif(workersMax, 0)), 1) AS "Avg Utilisation %",
+                               min(workersUsed)                                    AS "Min Used"
+                        FROM jvmlog_gc_workers
+                        GROUP BY taskName
+                        ORDER BY "Avg Utilisation %" ASC
+                        """,
+                    "jvmlog_gc_workers")
+                    .description("Worker thread utilisation per GC task — tasks with Avg Utilisation% below 60% are under-parallelised; check that -XX:ParallelGCThreads is set appropriately for your CPU count."),
+
+                    new View(
+                    "jvmlog-gc-pause-interval-correlation", "jvmlog",
+                    "GC Log: Pause Duration vs Inter-GC Interval Correlation", null,
+                    """
+                        CREATE VIEW "jvmlog-gc-pause-interval-correlation" AS
+                        WITH intervals AS (
+                            SELECT gcId,
+                                   gcType,
+                                   pauseMs,
+                                   uptimeSecs - LAG(uptimeSecs) OVER (ORDER BY uptimeSecs) AS intervalSecs
+                            FROM jvmlog_gc_event
+                            WHERE pauseMs IS NOT NULL AND uptimeSecs IS NOT NULL
+                        )
+                        SELECT gcId                                                    AS "GC ID",
+                               gcType                                                  AS "GC Type",
+                               round(intervalSecs, 2)                                  AS "Interval (s)",
+                               round(pauseMs, 2)                                       AS "Pause (ms)",
+                               CASE WHEN intervalSecs < 1.0 THEN 'Burst'
+                                    WHEN intervalSecs < 5.0 THEN 'Frequent'
+                                    WHEN intervalSecs < 30.0 THEN 'Normal'
+                                    ELSE 'Infrequent' END                              AS "Frequency Class"
+                        FROM intervals
+                        WHERE intervalSecs IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_gc_event")
+                    .description("Per-GC pause vs time-since-last-GC — Burst class (< 1s intervals) means back-to-back GC cycles that starve the application; this view helps distinguish high-frequency short pauses from low-frequency long pauses."),
+
+                    new View(
+                    "jvmlog-g1-eden-fill-rate", "jvmlog",
+                    "GC Log: G1 Eden Region Fill Rate (regions per minute)", null,
+                    """
+                        CREATE VIEW "jvmlog-g1-eden-fill-rate" AS
+                        WITH gc_times AS (
+                            SELECT gcId, min(uptimeSecs) AS uptimeSecs
+                            FROM jvmlog_gc_event
+                            GROUP BY gcId
+                        ),
+                        gc_with_interval AS (
+                            SELECT r.gcId,
+                                   t.uptimeSecs,
+                                   r.edenBefore,
+                                   r.edenAfter,
+                                   r.edenMax,
+                                   t.uptimeSecs - LAG(t.uptimeSecs) OVER (ORDER BY r.gcId) AS intervalSecs
+                            FROM jvmlog_g1_regions r
+                            JOIN gc_times t USING (gcId)
+                            WHERE r.edenBefore IS NOT NULL
+                        )
+                        SELECT gcId                                                           AS "GC ID",
+                               round(uptimeSecs, 1)                                          AS "Uptime (s)",
+                               edenBefore                                                    AS "Eden Before (regions)",
+                               edenAfter                                                     AS "Eden After (regions)",
+                               edenMax                                                       AS "Eden Max (regions)",
+                               round(edenBefore * 100.0 / nullif(edenMax, 0), 1)            AS "Eden Fill %",
+                               round(edenBefore / nullif(intervalSecs / 60.0, 0), 1)        AS "Fill Rate (regions/min)"
+                        FROM gc_with_interval
+                        WHERE intervalSecs IS NOT NULL AND intervalSecs > 0
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_g1_regions", "jvmlog_gc_event")
+                    .description("G1 Eden region fill rate — how many Eden regions are filled per minute. A high fill rate with low Eden Max means Eden is too small for the allocation rate; consider increasing -XX:NewSize or allowing G1 to adaptively size Eden.")
+                    .addAlternative(
+                    """
+                        CREATE VIEW "jvmlog-g1-eden-fill-rate" AS
+                        SELECT gcId                                                           AS "GC ID",
+                               edenBefore                                                    AS "Eden Before (regions)",
+                               edenAfter                                                     AS "Eden After (regions)",
+                               edenMax                                                       AS "Eden Max (regions)",
+                               round(edenBefore * 100.0 / nullif(edenMax, 0), 1)            AS "Eden Fill %"
+                        FROM jvmlog_g1_regions
+                        WHERE edenBefore IS NOT NULL
+                        ORDER BY gcId
+                        """,
+                    "jvmlog_g1_regions"),
             };
 
     public static List<View> getViews() {

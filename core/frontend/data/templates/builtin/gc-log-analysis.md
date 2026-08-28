@@ -3445,3 +3445,76 @@ SELECT * FROM "jvmlog-survivor-to-old-rate"
 LINE(x="GC ID", y="Old Growth (regions)")
 ```
 
+
+---
+
+<!-- @cell name=pause-worst-10 requires="has-jvmlog-gc" -->
+
+## Top 10 Worst GC Pauses
+
+The 10 highest-latency GC events with cause, type, and timestamp — inspect these for patterns: pauses clustering at the same uptime indicate a load spike; repeated Full GC in the top-10 means old generation is consistently under pressure.
+
+```sql
+SELECT * FROM "jvmlog-pause-worst-10"
+```
+
+---
+
+<!-- @cell name=safepoint-top-ops requires="has-safepoint" -->
+
+## Top 10 Safepoint Operations by Total STW Time
+
+Safepoint operations ranked by cumulative STW time — non-GC operations (RevokeBias, Deoptimize) appearing in the top 10 indicates JIT activity or thread-state management is competing for stop-the-world time.
+
+```sql
+SELECT * FROM "jvmlog-safepoint-top-ops"
+```
+
+```plot
+BAR(x="Operation", y="Total STW (ms)")
+```
+
+---
+
+<!-- @cell name=worker-utilisation-by-phase requires="has-gc-workers" -->
+
+## GC Worker Thread Utilisation by Phase
+
+Average worker utilisation per GC task phase — tasks below 60% utilisation are under-parallelised; verify `-XX:ParallelGCThreads` is set appropriate to your available CPU count.
+
+```sql
+SELECT * FROM "jvmlog-worker-utilisation-by-phase"
+```
+
+```plot
+BAR(x="Task", y="Avg Utilisation %")
+```
+
+---
+
+<!-- @cell name=gc-pause-interval-correlation requires="has-jvmlog-gc" -->
+
+## GC Pause vs Inter-GC Interval
+
+Per-GC pause duration with interval since last GC and frequency class — Burst class (< 1s intervals) means back-to-back collections starving the application; Infrequent class with high pause means a rare but severe event (humongous allocation, Full GC).
+
+```sql
+SELECT * FROM "jvmlog-gc-pause-interval-correlation"
+```
+
+---
+
+<!-- @cell name=g1-eden-fill-rate requires="has-g1-regions" -->
+
+## G1 Eden Region Fill Rate
+
+How many Eden regions are filled per minute — a high fill rate with small Eden Max means Eden is too small for the allocation rate; consider increasing `-XX:NewSize` or letting G1 adaptively resize Eden.
+
+```sql
+SELECT * FROM "jvmlog-g1-eden-fill-rate"
+```
+
+```plot
+LINE(x="Uptime (s)", y="Fill Rate (regions/min)")
+```
+
