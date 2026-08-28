@@ -13,7 +13,7 @@ cellConditions:
   has-zgc: "SELECT count(*) > 0 FROM jvmlog_zgc_phases"
   has-zgc-director: "SELECT count(*) > 0 FROM jvmlog_zgc_director"
   has-zgc-load: "SELECT count(*) > 0 FROM jvmlog_zgc_load"
-  has-parallel: "SELECT count(*) > 0 FROM jvmlog_gc_init WHERE algorithm LIKE 'Parallel%' OR algorithm LIKE 'Serial%'"
+  has-parallel: "SELECT count(*) > 0 FROM jvmlog_gc_init WHERE algorithm LIKE 'Parallel%' OR algorithm LIKE 'Serial%' OR algorithm LIKE 'Concurrent Mark Sweep%' OR algorithm = 'CMS'"
   has-stringdedup: "SELECT count(*) > 0 FROM jvmlog_stringdedup"
   has-metaspace: "SELECT count(*) > 0 FROM jvmlog_metaspace"
   has-gc-workers: "SELECT count(*) > 0 FROM jvmlog_gc_workers"
@@ -29,7 +29,7 @@ cellConditions:
   has-phases: "SELECT count(*) > 0 FROM jvmlog_gc_phase"
   has-gc-init: "SELECT count(*) > 0 FROM jvmlog_gc_init"
   has-safepoints: "SELECT count(*) > 0 FROM jvmlog_safepoint"
-  has-parallel-sizing: "SELECT count(*) > 0 FROM jvmlog_gc_init WHERE algorithm LIKE 'Parallel%' OR algorithm LIKE 'Serial%'"
+  has-parallel-sizing: "SELECT count(*) > 0 FROM jvmlog_gc_init WHERE algorithm LIKE 'Parallel%' OR algorithm LIKE 'Serial%' OR algorithm LIKE 'Concurrent Mark Sweep%' OR algorithm = 'CMS'"
   has-shenandoah-ergo: "SELECT count(*) > 0 FROM jvmlog_gc_init WHERE algorithm = 'Shenandoah'"
 ---
 
