@@ -1,0 +1,98 @@
+tag: experimental
+tagline: Turns JFR recordings and JDK unified log files (GC logs) into a DuckDB database and exposes
+  them through an in-browser notebook UI. Write SQL, get charts, explore event distributions, and
+  use built-in views for common analyses — no install needed. Use it for ad-hoc investigation when
+  you want to correlate events across types (GC, allocations, CPU) in a single query.
+tagline_short: SQL notebook for JFR recordings and JDK GC logs — drag in a file, write SQL, get charts.
+github_pages: https://parttimenerd.github.io/jfr-query/
+when_to_use:
+- You want to run ad-hoc SQL queries over JFR event data or JDK unified log files (GC logs)
+- You need charts and notebook-style exploration of recordings
+- You want to correlate events across types (GC, allocations, CPU) in one query
+- You need to share a JFR analysis without requiring the recipient to install anything
+when_not_to_use:
+- You need a stable, production-ready tool (schema may change between versions)
+- You need IDE integration (use the profiler plugin instead)
+- You have very large recordings — DuckDB runs in-browser via WASM, memory-constrained
+links:
+- label: Docs ↗
+  url: https://parttimenerd.github.io/jfr-query/docs/
+install:
+- label: Download JAR
+  lang: bash
+  code: |
+    gh release download --repo parttimenerd/jfr-query \
+      --pattern '*.jar' --dir .
+- label: jbang
+  lang: bash
+  code: |
+    jbang jfr-query@parttimenerd/jfr-query
+usage:
+- label: Notebook UI
+  lang: bash
+  code: |
+    java -jar query.jar serve myrecording.jfr
+    # opens http://localhost:4244
+- label: CLI query
+  lang: bash
+  code: |
+    java -jar query.jar query myrecording.jfr "hot-methods"
+how_to:
+- title: Explore a recording in the browser without installing anything
+  body: |
+    Visit **[parttimenerd.github.io/jfr-query](https://parttimenerd.github.io/jfr-query/)**
+    and drag-and-drop your `.jfr` file. The app runs entirely in-browser via DuckDB WASM —
+    no data leaves your machine.
+
+    Use **New from template** to open ready-made notebooks for GC analysis, heap allocation,
+    threading, and exceptions.
+
+- title: Find the hottest methods from the command line
+  body: |
+    ```bash
+    java -jar query.jar query myrecording.jfr "hot-methods"
+    ```
+    `hot-methods` is a built-in view. List all available views and macros:
+    ```bash
+    java -jar query.jar views
+    java -jar query.jar macros
+    ```
+
+- title: Import once, query many times with DuckDB
+  body: |
+    ```bash
+    # Import the recording into a persistent .db file:
+    java -jar query.jar import myrecording.jfr mydb.db
+
+    # Query it directly with DuckDB CLI:
+    duckdb mydb.db "SELECT * FROM hot_methods"
+
+    # Or open DuckDB's own browser UI:
+    duckdb -ui mydb.db
+    ```
+    Useful when you want to run many queries without re-parsing the JFR file each time.
+
+- title: Analyse GC logs (JDK unified log format)
+  body: |
+    jfr-query also accepts JDK unified log files (the output of `-Xlog:gc*:file=gc.log`):
+    ```bash
+    java -jar query.jar serve gc.log
+    # or in the browser: drag-and-drop a .log file
+    ```
+    Built-in GC log templates cover pause analysis, heap pressure, and allocation rate.
+    Use the **New from template** button and select a GC log notebook.
+
+- title: Start the notebook server with custom templates
+  body: |
+    ```bash
+    java -jar query.jar serve \
+      --templates-dir ~/my-jfr-templates \
+      --port 4244 \
+      myrecording.jfr
+    ```
+    Point `--templates-dir` at a folder of `.json` notebook files to share team-wide analysis
+    templates. The AI assistant (Gemini/OpenAI) can be enabled via environment variables —
+    see the [docs](https://parttimenerd.github.io/jfr-query/docs/) for configuration.
+
+note: Runs entirely in-browser via DuckDB WASM — no data leaves your machine. Very large recordings
+  (>500 MB) may be slow due to browser memory limits. Stack traces are stored at 10 frames depth.
