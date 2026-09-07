@@ -58,6 +58,60 @@ Run `java -jar query.jar views` to list all views, `macros` to list SQL macros.
 
 ---
 
+## Common Tasks
+
+### Diagnose long GC pauses
+
+Use the built-in `gc-pauses` view to see every pause sorted by duration:
+
+```bash
+java -jar query.jar query myrecording.jfr "gc-pauses"
+```
+
+Or write a SQL query to find pauses over 200 ms and correlate with allocation rate:
+
+```sql
+SELECT
+    start_time,
+    duration_ms,
+    cause,
+    heap_used_after_mb
+FROM gc_pauses
+WHERE duration_ms > 200
+ORDER BY duration_ms DESC
+```
+
+In the browser UI, open **New from template → GC Analysis** for a pre-built notebook
+with pause histogram, cause breakdown, and heap-after-GC chart.
+
+### Find which code is allocating the most
+
+JFR's `ObjectAllocationInNewTLAB` / `ObjectAllocationOutsideTLAB` events record the
+stack at allocation time. Use the `allocation-by-site` view:
+
+```bash
+java -jar query.jar query myrecording.jfr "allocation-by-site"
+```
+
+Or query the top allocating methods directly:
+
+```sql
+SELECT
+    stack_top,
+    SUM(allocation_size) AS total_bytes,
+    COUNT(*)             AS samples
+FROM object_allocations
+GROUP BY stack_top
+ORDER BY total_bytes DESC
+LIMIT 20
+```
+
+**Note:** allocation profiling must be enabled in the JFR configuration.
+Use `-XX:StartFlightRecording=settings=profile` or enable
+`jdk.ObjectAllocationInNewTLAB` in a custom `.jfc` file.
+
+---
+
 ## Features
 
 ### Notebook-style analysis
